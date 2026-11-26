@@ -1,5 +1,3 @@
-/** Editor composition for the host-neutral suggestion interaction lease. */
-
 import type { Editor } from "@tiptap/core";
 
 import type { SuggestionHost } from "@/core/completion";

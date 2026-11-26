@@ -1,10 +1,3 @@
-/**
- * Postgres file facts (file-access §2, §5): follows
- * `the view's node → its folders → context_sources → (project | work → project)` with
- * every lifecycle on the way. The view's relations supply the source, the folders and the
- * deletion; a document no view places has no facts.
- */
-
 import type { DraftId } from "@meridian/contracts";
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
@@ -52,7 +45,6 @@ import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 type WorkRow = {
   id: WorkId;
   projectId: ProjectId;
-  /** The account that owns the Work's project: its draft's holder (`draftMayHold`). */
   accountId: UserId;
   handle: string | null;
   isNoWork: boolean;
@@ -90,7 +82,6 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
     const facts: FileFacts = { ...base, ...physical, target };
     if (draftOwnerId === undefined) return facts;
     const draftOwner = await readDraftOwner(db, draftOwnerId);
-    // An owner's draft of a document it may not hold doesn't exist.
     if (draftOwner && !draftMayHold(draftOwner.holder, ownerOf(facts))) return null;
     return {
       ...facts,
@@ -190,7 +181,6 @@ async function sourceRows(
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
   return new Map(
     rows
-      // A source whose project row is gone has no owner left to answer for it.
       .filter((row) => row.ownerAccountId !== null)
       .map(({ projectId, userId, ...row }) => [
         row.sourceId,
@@ -226,11 +216,6 @@ function documentBase(
   };
 }
 
-/**
- * The facts of the documents the view places, Trash and the Work's deletes included (a restore
- * reads through Trash: `includeTreeDeletion: false`). `deleted` is live's: Trash, or the source.
- * `survivingDraft`: live has it in Trash and this Work's tree still shows it.
- */
 async function loadDocuments(
   db: Database,
   documentIds: readonly DocumentId[],
@@ -270,7 +255,6 @@ type PhysicalOwnership = Pick<
   "contentScheme" | "ownerRootThreadId" | "ownerChatThreadId" | "ownerWork"
 >;
 
-/** Content ownership is the source the document is placed in, live's before a Work's. */
 async function loadPhysicalOwnership(
   db: Database,
   documentIds: readonly DocumentId[],
@@ -325,7 +309,6 @@ async function loadContainer(
   let ownerLive = true;
   if (owner.scope === "chat") {
     if (scheme !== "uploads") return null;
-    // The chat's row may not exist yet (a New chat's first upload); a trashed one is deleted.
     const [chat] = await currentDrizzleDb(db)
       .select({ deleted: sql<boolean>`${threads.deletedAt} IS NOT NULL` })
       .from(threads)
@@ -383,7 +366,6 @@ async function loadContainer(
     ownerRootThreadId: owner.scope === "lineage" ? owner.rootThreadId : null,
     ownerChatThreadId: owner.scope === "chat" ? owner.threadId : null,
     ownerWork: work ? workFacts(work) : null,
-    // A missing source is provisioned by the create itself.
     deleted: !ownerLive,
     scheme,
     contentScheme: scheme,
@@ -395,7 +377,6 @@ async function loadContainer(
   };
 }
 
-/** The home folder: the account's own source, made with the account. */
 async function loadAccountContainer(
   db: Database,
   scheme: ContextUriScheme,
@@ -473,10 +454,6 @@ function workFacts(
   };
 }
 
-/**
- * The lifecycle of whoever names a draft (its Work, or the lineage its root chat begins), and the
- * project that holds the draft. Null when there is no such draft.
- */
 async function readDraftOwner(
   db: Database,
   draftId: DraftId,
@@ -540,7 +517,6 @@ async function readDraftOwner(
   };
 }
 
-/** A purged draft is gone, never a free pass. */
 function missingOwner(draftId: DraftId): FileDraftOwnerFacts {
   return {
     draftId,

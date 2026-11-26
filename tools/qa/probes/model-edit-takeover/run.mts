@@ -46,7 +46,6 @@ const cases: ModelEditCase[] = [
       await waitForAssistantTurn(h, thread);
       await first.release("response.beforeStore");
       await sleep(1500);
-      // Its session connection is gone, so a clean shutdown is not possible: stop it as a crash.
       await first.kill();
       const [{ uses }] = await h.raw<{ uses: number }[]>`
         select count(*)::int as uses from turn_blocks b join turns t on t.id=b.turn_id
@@ -99,7 +98,6 @@ const cases: ModelEditCase[] = [
       assert.equal(await first.died(), "SIGKILL");
       const second = await start();
       await second.script([reply]);
-      // The writer's next message waits behind the dead run's lease; the sweep is what frees it.
       await send(second, h, thread, "next");
       await second.call({ op: "sweep" });
       await waitForAssistantTurn(h, thread, { count: 2 });
@@ -127,7 +125,6 @@ const cases: ModelEditCase[] = [
       await second.arm("recovery.beforeResolve", "hold");
       const swept = second.post({ op: "sweep" });
       await second.at("recovery.beforeResolve");
-      // Recovery holds the thread lock and has not asked yet; the held edit now commits.
       await first.release("command.afterClaim");
       await sleep(1000);
       await second.release("recovery.beforeResolve");
@@ -221,7 +218,6 @@ const cases: ModelEditCase[] = [
       await first.script([{ toolCalls: [insertCall("call-a", path, "Added.")] }, reply]);
       await send(first, h, one);
       await first.at("command.afterLock");
-      // Another process, the second chat: its edit waits for the document lock.
       const second = await start();
       await second.script([{ toolCalls: [insertCall("call-b", path, "Then.")] }, reply]);
       await send(second, h, two);
@@ -290,7 +286,6 @@ const cases: ModelEditCase[] = [
         commandId: randomUUID(),
         direction: "undo",
       };
-      // The first call's own model edit was the command's first commit; the Undo is the second.
       await first.arm("command.afterCommit", "kill", 1);
       first.post(undo);
       assert.equal(await first.died(), "SIGKILL");

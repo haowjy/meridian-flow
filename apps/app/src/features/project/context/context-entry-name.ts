@@ -1,4 +1,3 @@
-/** Shared naming logic for inline context-entry create rows. */
 import { t } from "@lingui/core/macro";
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import {
@@ -10,13 +9,11 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ContextCreateKind } from "./context-create-kind";
 
-/** A tracked document's naming facts from its canonical name: a registered suffix is its own. */
 export function documentRow(name: string): NamedRow {
   const parsed = parseDocumentFilename(name);
   return { extension: parsed.ok ? parsed.value.extension : "", editable: true };
 }
 
-/** Where the part a writer renames ends: before the row's extension, otherwise the whole name. */
 export function entryNameStemEnd(name: string, row?: NamedRow): number {
   return splitRendered(name, row?.extension ?? "").name.length;
 }
@@ -46,7 +43,6 @@ export function parentContextEntryPath(path: string): string {
   return cut <= 0 ? "" : path.slice(0, cut);
 }
 
-/** Live severity for the desktop tree's inline create/rename input, shown as a floating overlay (never inline, so rows don't shift). */
 export type ContextEntryNameSeverity = {
   level: "error" | "warning";
   message: string;
@@ -56,7 +52,6 @@ export type ContextEntryNameSeverity = {
 export function validateContextEntryName(
   raw: string,
   kind: ContextCreateKind = "file",
-  /** The file being renamed; absent when creating. */
   current?: NamedRow,
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();

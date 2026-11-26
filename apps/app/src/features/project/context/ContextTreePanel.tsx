@@ -1,5 +1,3 @@
-/** One area's document tree in a sidebar list: Manuscript, Knowledge, Your files, Unfiled, a Work's Scratch. */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
@@ -35,14 +33,12 @@ import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
 import { NOWHERE, treePlace, useTreeNoticeWords } from "./use-tree-notice-words";
 
-/** What a row offers in a tree that takes no change: its documents still copy out. */
 const READ_ONLY: EntryCapabilities = ["copy"];
 
 type ContextTreeInput = {
   treeState: TreeViewResult;
   writable: boolean;
   projectId: string;
-  /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   activeDocumentId: string | null;
@@ -51,11 +47,8 @@ type ContextTreeInput = {
     file: TreeFile,
     options?: { focus?: true },
   ) => void;
-  /** A file the writer picked opened: the phone's drawer closes. */
   onPicked?: () => void;
-  /** The folder the rows start at (`/.agents`); the source's top when absent. */
   rootPath?: string;
-  /** A note on a file's row, after its name. */
   meta?: TreeEnv["meta"];
   folderEnd?: TreeEnv["folderEnd"];
   crossedOut?: TreeEnv["crossedOut"];
@@ -63,10 +56,6 @@ type ContextTreeInput = {
 
 export type ContextTree = ReturnType<typeof useContextTree>;
 
-/**
- * One source's rows and what acts on them: expansion, reveal of main's document, inline create,
- * and import. A pane renders it with `ContextTreeBody` and puts `requestCreate` in its heading.
- */
 export function useContextTree({
   treeState,
   writable,
@@ -176,7 +165,6 @@ export function useContextTree({
     [requestTreeCreate, scheme],
   );
 
-  // A created file opens once its row shows in the tree, in the version it was made in.
   const openCreated = useOpenCreatedDocument();
   useEffect(() => {
     if (!pendingOpenId || !tree) return;
@@ -227,7 +215,6 @@ export function useContextTree({
                   placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
                 }
               : undefined,
-            // Opening a document is the writer's next action here: the tree's notices end.
             onSelectFile: (picked, file) => {
               notices.end();
               onSelectFile(picked, file);
@@ -241,7 +228,6 @@ export function useContextTree({
                     const destination = destinationOf(scheme, folder);
                     if (!destination || !pickImport) return;
                     pickImport(destination, kind);
-                    // The imported rows' ids come from the server: the folder opens for them.
                     if (folder) revealPlaced(folder.entryId, [], null);
                   },
                 }
@@ -280,7 +266,6 @@ export function useContextTree({
     ],
   );
 
-  // Opening another document since moves the place to its folder.
   const placed =
     place && place.activePath === activeLocationPath
       ? place.folderPath
@@ -302,7 +287,6 @@ export function useContextTree({
     isComplete,
     isError,
     loaded: Boolean(isComplete && importedTree),
-    /** The folder the rows start at; null while it doesn't exist (`.agents` not made yet). */
     rootFolder: rootFolder && rootPath !== "" ? rootFolder : null,
     rootPath,
     creates,
@@ -314,12 +298,10 @@ export function useContextTree({
     pickImport,
     openFolder,
     notices,
-    /** Opens the file made with this id once its row shows. */
     openWhenListed: setPendingOpenId,
   };
 }
 
-/** A tree's rows, or the line that stands in for them: loading, unreadable, empty. */
 export function ContextTreeBody({
   tree,
   emptyLine = <Trans>No files yet.</Trans>,
@@ -351,7 +333,6 @@ export function ContextTreeBody({
           </div>
         </TreeEnvProvider>
       ) : null}
-      {/* A load still running and a list the account cannot read both leave the list empty; this line says which. */}
       {tree.isError ? (
         <InlineErrorRow message={t`You can't open these files.`} />
       ) : !tree.loaded ? (
@@ -369,11 +350,6 @@ export function ContextTreeBody({
   );
 }
 
-/**
- * An area's rows under its name, with New file, New folder and Import in the
- * heading. Creation requests come from the shell's `TreeCreationProvider`. A tree that is not
- * `writable` (an ended Work's Scratch) offers none of them, and its rows offer only Copy.
- */
 export function ContextTreePanel({
   drop,
   ...input
@@ -403,7 +379,6 @@ export function ContextTreePanel({
   ) : undefined;
 
   const [search, setSearch] = useState<string | null>(null);
-  // The inline row lives in the tree, which a search hides: asking to create shows the tree.
   useEffect(() => {
     if (creating) setSearch(null);
   }, [creating]);
@@ -441,10 +416,6 @@ export function ContextTreePanel({
   );
 }
 
-/**
- * A search's matches as one flat list, best first; the folder tells two of one name apart. A
- * folder found opens in place in the tree, where its menu moves or deletes it.
- */
 function FoundEntries({
   tree,
   scheme,
@@ -504,7 +475,6 @@ function FoundEntries({
   );
 }
 
-/** Brings a tree row to the top of the list, so what it holds shows below it, and focuses it once drawn. */
 function focusRow(key: string) {
   requestAnimationFrame(() => {
     const row = document.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`);

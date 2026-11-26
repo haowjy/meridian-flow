@@ -23,7 +23,6 @@ export function normalizeRequestedSlug(slug: string): string {
   return slug.toLowerCase().replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
-/** Each heading's `#slug`, in order: its text's slug, numbered from the second repeat on. */
 export function headingSlugs(texts: readonly string[]): string[] {
   const counts = new Map<string, number>();
   return texts.map((text) => {

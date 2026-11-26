@@ -66,7 +66,6 @@ const DRAFT = "linkscopebr1";
 
 const schema = buildDocumentSchema();
 
-/** A holder's blocks, carrying one occurrence per stored `[ref, href]`. */
 function holderBlocks(
   links: readonly (readonly [string, string])[],
   sources: readonly string[] = [],
@@ -85,7 +84,6 @@ function holderBlocks(
   return [paragraph, ...images];
 }
 
-/** The file policy's list path, with one document the reader may not read. */
 const fileAccess: Pick<FileAccess, "listAccess"> = {
   async listAccess(_principal, ids) {
     return new Map(
@@ -124,7 +122,6 @@ if (!RUN) {
         { id: SOURCE, projectId: PROJECT, slug: "manuscript" },
         { id: OTHER_SOURCE, projectId: OTHER_PROJECT, slug: "manuscript" },
       ]);
-      // A retired lineage Scratch source keeps its documents.
       await db.insert(threads).values({
         id: RETIRED_CHAT,
         projectId: PROJECT,
@@ -163,16 +160,13 @@ if (!RUN) {
       await seed.document(SOURCE, "gone", { id: DELETED });
       await seed.document(SOURCE, "secret", { id: SECRET });
       await seed.document(SOURCE, "notes", { id: NOTES });
-      // Documents that exist only in the Work's draft.
       await seed.document(SOURCE, "drafted", { id: DRAFTED, view: { draft: DRAFT } });
       await seed.document(SOURCE, "staged", { id: STAGED, view: { draft: DRAFT } });
       await seed.file(SOURCE, "part1/map.png", PNG, { id: MAP });
-      // A deleted picture alone at its path, and one whose path a live picture took.
       await seed.file(SOURCE, "seal.png", PNG, { id: SEAL });
       await seed.file(SOURCE, "crest.png", PNG, { id: OLD_CREST });
       await trash(SOURCE, DELETED, SEAL, OLD_CREST);
       await seed.file(SOURCE, "crest.png", PNG, { id: CREST });
-      // A discarded draft's picture: in no view, so never a live or deleted image.
       await db.insert(documents).values({ id: WRECK, projectId: PROJECT });
       await seed.document(OTHER_SOURCE, "foreign", { id: FOREIGN });
       await seed.file(RETIRED_SOURCE, "sketch.png", PNG, { id: RETIRED_IMAGE });
@@ -225,7 +219,6 @@ if (!RUN) {
         });
       });
     });
-    // The resolve route's answers run over the composed app, as the route handler wires it.
     const runtimes = useComposedRuntimes(() => db);
     beforeEach(seed);
     afterAll(async () => {
@@ -282,19 +275,13 @@ if (!RUN) {
         expect
           .soft(scope.spellSource({ src: `asset:${MAP}`, ref: null }).href)
           .toBe("part1/map.png");
-        // A deleted picture keeps its path only while it is the sole image there;
-        // writing that path back binds the same asset (a save and restore round trip).
         const seal = scope.spellSource({ src: `asset:${SEAL}`, ref: null }).href;
         expect.soft(seal, "sole deleted image").toBe("seal.png");
         expect.soft(scope.assetFor(seal), "its path binds back").toBe(SEAL);
-        // Once another picture holds the path, the deleted one spells its own last
-        // address in full, as a gone link spells its stored address.
         expect
           .soft(scope.spellSource({ src: `asset:${OLD_CREST}`, ref: null }), "path reused")
           .toEqual({ href: "manuscript://crest.png", address: "manuscript://crest.png" });
         expect.soft(scope.assetFor("crest.png"), "the live picture holds the path").toBe(CREST);
-        // No address this project knows (no row, another project's id): an empty
-        // destination, which names nothing and carries no id.
         for (const [asset, what] of [
           [MISSING_ASSET, "missing asset"],
           [FOREIGN, "another project's id"],
@@ -303,12 +290,9 @@ if (!RUN) {
           expect
             .soft(scope.spellSource({ src: `asset:${asset}`, ref: null }), what)
             .toEqual({ href: "", address: null });
-        // Retiring a source keeps its documents and their addresses: an image there still
-        // spells where it was, so rewriting its holder never drops the `asset:` id (S-L1).
         expect
           .soft(scope.spellSource({ src: `asset:${RETIRED_IMAGE}`, ref: null }), "retired source")
           .toEqual({ href: "scratch://@c1/sketch.png", address: "scratch://@c1/sketch.png" });
-        // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
         expect.soft(scope.assetFor("wreck.png"), "a hidden tombstone holds no path").toBeNull();
@@ -349,7 +333,6 @@ if (!RUN) {
               "manuscript://part1/map.png",
             ]),
           );
-        // The live view it did load still answers.
         misses.length = 0;
         const live = recorded.holder({ documentId: HOLDER, view: LIVE });
         expect
@@ -358,8 +341,6 @@ if (!RUN) {
         expect.soft(live.assetFor("seal.png")).toBe(SEAL);
         expect.soft(misses).toEqual([]);
       });
-      // A key that names no project (a non-UUID grant) still mints under the holder
-      // row's own project, and registration keeps the project the mint recorded.
       const registered: string[] = [];
       const port = createScopedDocumentLinks({
         scopes,
@@ -395,7 +376,6 @@ if (!RUN) {
       ];
       const chapter = await s.seedLive("chapter");
       await s.seedLive("notes");
-      // Atlas's draft made Kael: a draft's document belongs to the one draft that created it.
       const kael = await s.seedHidden(atlas, "lore/kael");
       const atlasDraft = await s.draftOf(atlas);
       await s.draftOf(beacon);
@@ -418,8 +398,6 @@ if (!RUN) {
         expect.soft(await named(view), "a view that does not show it names nothing").toBe("gone");
       }
 
-      // An ahead ref reads by address in the reader's view until a live document binds it:
-      // a draft's own document there reads "in a draft" in that draft's view only.
       const draftShip = await s.seedHidden(atlas, "ship");
       const unbound = await s.seedAhead("ship");
       const liveAnchor = await s.seedLive("anchor");
@@ -465,7 +443,6 @@ if (!RUN) {
         .soft(await read("live", unbound, SHIP, null), "chat: live shows no draft")
         .toEqual({ id: "missing" });
 
-      // A stale base: the id still pins the holder, and the answer names where it is now.
       expect
         .soft(
           await read("live", bound, ANCHOR, "manuscript://old-chapter", chapter),
@@ -473,8 +450,6 @@ if (!RUN) {
         )
         .toEqual({ id: liveAnchor, holderUri: CHAPTER });
 
-      // Another account's document is no holder here: knowing its id names nothing, so its
-      // location never reaches this reader.
       const stranger = await draftTreeScenario(db);
       const foreign = await stranger.seedLive("unannounced-private-book-title");
       expect
@@ -501,15 +476,12 @@ if (!RUN) {
           refs: [`doc:${TARGET}`],
         });
         await rename("moved");
-        // A nested door for the same project joins the open snapshot: no reload.
         expect(await scopes.within({ documentId: HOLDER }, async () => spellTarget())).toBe(
           "target",
         );
-        // One whose project can't be found has nothing of its own: it keeps the enclosing one.
         expect
           .soft(await scopes.within({ threadId: UNKNOWN_THREAD }, async () => spellTarget()))
           .toBe("target");
-        // A door read in a thread never joins one read in none: it loads its own.
         expect
           .soft(
             await scopes.within({ documentId: HOLDER, viewer: { threadId: THREAD } }, async () => {
@@ -521,7 +493,6 @@ if (!RUN) {
             }),
           )
           .toBe("moved");
-        // Work scheduled here outlives the operation and must not read its settled snapshot.
         inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>
           scopes.within({ documentId: HOLDER }, async () => {
             await scopes.prepare({
@@ -531,7 +502,6 @@ if (!RUN) {
             return spellTarget();
           }),
         );
-        // A new holder needs an open snapshot; an inherited settled one answers for nobody.
         stray = new Promise((resolve) => setTimeout(resolve, 20)).then(() => {
           try {
             return spellTarget();

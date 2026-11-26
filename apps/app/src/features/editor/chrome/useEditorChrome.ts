@@ -23,11 +23,6 @@ export function useEditorChrome(editor: Editor | null): EditorChrome | null {
   return useMemo(() => getEditorChrome(editor), [editor]);
 }
 
-/**
- * The deepest context owning chrome right now (law 4). A persistent consumer —
- * the toolbar — reads this to grey; a transient one reads it to decide whether
- * it is the owner at all.
- */
 export function useChromeContext(editor: Editor | null): ChromeContext {
   const chrome = useEditorChrome(editor);
   return useSyncExternalStore(
@@ -37,11 +32,6 @@ export function useChromeContext(editor: Editor | null): ChromeContext {
   );
 }
 
-/**
- * True while the writer is dragging or sweeping. Every surface that can be on
- * screen reads it and stands down; nothing tries to be clever about which
- * gesture it was.
- */
 export function useChromeSuppressed(editor: Editor | null): boolean {
   const chrome = useEditorChrome(editor);
   return useSyncExternalStore(
@@ -51,13 +41,6 @@ export function useChromeSuppressed(editor: Editor | null): boolean {
   );
 }
 
-/**
- * True when the writer's last input device was a finger or a pen.
- *
- * A tap has no approach to settle, so the surfaces that can follow the
- * selection instead read this rather than sniffing the device themselves —
- * one answer, from the one listener that sees every pointer in the editor.
- */
 export function useChromeCoarsePointer(editor: Editor | null): boolean {
   const chrome = useEditorChrome(editor);
   return useSyncExternalStore(
@@ -67,19 +50,6 @@ export function useChromeCoarsePointer(editor: Editor | null): boolean {
   );
 }
 
-/**
- * Re-render on every editor change, and answer which change this is.
- *
- * The bluntest possible subscription, and the right one for chrome that reads
- * the document directly — a toolbar's lit states, a chip cluster's language
- * label. Surfaces that only need the resolved context or suppression should
- * read those stores instead: they notify when their answer changes, not when
- * the document does.
- *
- * The revision is for an effect that has to re-read the document rather than
- * only re-render with it: an effect depending on a value the document supplies
- * cannot see a change the document made underneath that value.
- */
 export function useEditorRevision(editor: Editor | null): number {
   const store = useMemo(() => editorRevisionStore(editor), [editor]);
   return useSyncExternalStore(store.subscribe, store.getSnapshot, ZERO_REVISION);

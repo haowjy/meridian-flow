@@ -1,8 +1,3 @@
-/**
- * Context scheme presentation contract: lists the server-supported context tree
- * schemes in sidebar display order and maps wire values to localized labels
- * and identity icons.
- */
 import { t } from "@lingui/core/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import {
@@ -15,10 +10,8 @@ import type { LucideIcon } from "lucide-react";
 
 import { familyIcon } from "@/components/app/link-chip/family-icons";
 
-/** Complete vocabulary for references and tools, including chat resources. */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
-/** Ordinary Editor surfaces hold project-scoped documents: the project's areas and the writer's User. */
 export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 
 /**
@@ -32,10 +25,6 @@ export function schemeAllowsCreation(scheme: ProjectContextTreeScheme): boolean 
   return scheme !== "uploads" && scheme !== "scratch";
 }
 
-/**
- * The area a path is in, and the path inside it. The writer's Agents level is a folder of Your
- * files, but every screen names it as the Agents tab does: `~/.agents`.
- */
 export function areaOf(
   scheme: ProjectContextTreeScheme,
   path: string,
@@ -47,18 +36,15 @@ export function areaOf(
   return { area: schemeLabel(scheme), rest: trimmed };
 }
 
-/** Where something lives, for a row's second line: the source, then the folders down to it. */
 export function schemeLocation(scheme: ProjectContextTreeScheme, folders: readonly string[]) {
   const { area, rest } = areaOf(scheme, folders.join("/"));
   return [area, ...rest.split("/").filter(Boolean)].join(" / ");
 }
 
-/** Where the document at `path` lives (or lived, for one in Trash): its source and folders. */
 export function documentPlace(scheme: ProjectContextTreeScheme, path: string) {
   return schemeLocation(scheme, path.split("/").filter(Boolean).slice(0, -1));
 }
 
-/** The area's name, as the sidebar shows it; null for a source that is unknown. */
 export function schemeLabel(scheme: ProjectContextTreeScheme): string;
 export function schemeLabel(scheme: ProjectContextTreeScheme | null | undefined): string | null;
 export function schemeLabel(scheme: ProjectContextTreeScheme | null | undefined): string | null {
@@ -83,20 +69,12 @@ export function schemeLabel(scheme: ProjectContextTreeScheme | null | undefined)
   }
 }
 
-/**
- * Where a document lives, as the `@` menu says it: its folder, after the area
- * unless that is the manuscript. Empty for a manuscript document at the root.
- */
 export function documentLocation(scheme: ProjectContextTreeScheme, folderPath: string): string {
   if (scheme === "manuscript") return folderPath;
   const { area, rest } = areaOf(scheme, folderPath);
   return rest ? `${area}/${rest}` : area;
 }
 
-/**
- * Icons distinguish the current project-context resource families. The same
- * shapes mark a link chip's family; both read `family-icons.ts`.
- */
 export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
   return familyIcon(scheme);
 }

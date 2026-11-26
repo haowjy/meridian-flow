@@ -13,21 +13,12 @@ import { useSideItem } from "../side/SideView";
 
 type MainMode = "write" | "chat";
 
-/**
- * The Write | Chat switch: main's mode, read from main's item (a chat is Chat, anything else is
- * Write) and never stored apart from it. Pressing a mode swaps the panes: main opens what the side
- * holds of that kind, else that lane's selected tab, else the lane's empty page (Recently opened,
- * a new chat). The side then shows what main left, by the slot rule, and the grid glides the
- * hosts (`layout/SlotGrid.tsx`), with no code of its own. The pressed side shows at once, while
- * main's navigation settles.
- */
 export function MainModeSwitch({
   projectId,
   onSwitched,
   className,
 }: {
   projectId: string;
-  /** After main has moved (the phone drawer closes). */
   onSwitched?: () => void;
   className?: string;
 }) {
@@ -40,8 +31,6 @@ export function MainModeSwitch({
   const side = useSideItem();
   const beside = side.item;
   const mode: MainMode = chat.display ? "chat" : "write";
-  // The mode last pressed, shown until its navigation settles (whatever the settlement); a newer
-  // press takes over.
   const [pressed, setPressed] = useState<MainMode | null>(null);
   const latestPress = useRef(0);
 

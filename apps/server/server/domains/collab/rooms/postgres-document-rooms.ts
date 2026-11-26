@@ -130,7 +130,6 @@ interface Loaded {
 }
 
 type Row = { docKey: string; snapshot: Uint8Array; frontiers: StoredFrontiers };
-/** What a write of a room's rows stored: each doc's version as its row now holds it. */
 type Written = { bytes: number; docs: number; stored: RoomVersion };
 const NOTHING_WRITTEN: Written = { bytes: 0, docs: 0, stored: new Map() };
 type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;

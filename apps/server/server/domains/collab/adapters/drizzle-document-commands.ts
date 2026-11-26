@@ -1,5 +1,3 @@
-/** The document commands' door to the shared command record. */
-
 import type { StoredDocumentCommandResult } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
@@ -22,7 +20,6 @@ export function createDrizzleDocumentCommands(db: Database): DocumentCommands {
   };
 }
 
-/** `runCommand` for a document kind: its edits bind to the command id before the claim. */
 export function runDocumentCommand<R extends StoredDocumentCommandResult>(
   db: Database,
   envelope: CommandEnvelope,

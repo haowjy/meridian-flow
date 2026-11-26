@@ -1,9 +1,3 @@
-/**
- * A paragraph someone deleted while the caret was in it, kept while the caret stays (the
- * binding's `kept`, design §1, "The caret rule"), shows in muted ink and nothing else: no words,
- * and no mark once it goes. A screen reader hears it once, as the caret's block enters the state,
- * in the editor that has focus.
- */
 import { t } from "@lingui/core/macro";
 import { loroSyncKey } from "@meridian/loro-prosemirror";
 import { Extension } from "@tiptap/core";

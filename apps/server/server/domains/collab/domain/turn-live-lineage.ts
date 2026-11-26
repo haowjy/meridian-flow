@@ -1,5 +1,3 @@
-/** Server-owned read-model for documents edited by one transcript turn. */
-
 import type { DraftId } from "@meridian/contracts";
 import type { TurnReceiptChip, TurnTreeLine } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -29,10 +27,6 @@ export type TurnEditedDocument = TurnEditedDocumentId & {
   removed?: true;
 };
 
-/**
- * One of a turn's own creates, moves, deletes or restores of a node (a document, or a `folder`),
- * in `seq` order: live, or in `draft` (a drafted entry).
- */
 export type TurnTreeEntry = {
   documentId: DocumentId;
   folder: boolean;
@@ -55,11 +49,6 @@ export type TurnTreeEntry = {
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
 
-/**
- * A folder a turn changed, in the destination (live, or a draft) the change went to: it has no
- * document, so it is named where the change left it (`at`: a clash's " (2)" included), with its
- * tree line.
- */
 export type TurnTreeFolder = {
   nodeId: string;
   draft: DraftId | null;
@@ -68,7 +57,6 @@ export type TurnTreeFolder = {
   placement?: TreePlacement;
 };
 
-/** A folder the turn changed, by the path the model gave, and the draft it was drafted in. */
 export type TurnFolderTarget = { nodeId: string; draft: DraftId | null; shownAt: string };
 
 /**
@@ -79,10 +67,8 @@ export type TurnFolderTarget = { nodeId: string; draft: DraftId | null; shownAt:
  */
 export type TreePlacement = readonly string[];
 
-/** A node's placement in a view, and a folder's address there. */
 export type TreePlace = { placement: TreePlacement; uri?: string };
 
-/** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
   return target.scope === "draft"
     ? { kind: "draft", draftId: target.draft, ownerHandle: target.ownerHandle }
@@ -93,11 +79,9 @@ export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
   listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnFolderTarget[]>;
-  /** Each node's place in the view `draftId` names (null: live), keyed `node:draft`. */
   placesOf(
     nodes: readonly { nodeId: string; draftId: string | null }[],
   ): Promise<Map<string, TreePlace>>;
-  /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
 
@@ -112,7 +96,6 @@ export function createTurnLiveLineageReadModel(deps: {
   store: TurnLiveLineageDocumentStore;
   receiptStore?: TurnReceiptStateStore;
   resolveDocumentUri(documentId: DocumentId): Promise<string | null>;
-  /** The address a document holds or was deleted at: a surviving draft's location. */
   resolveLastDocumentUri(documentId: DocumentId, draftId?: DraftId): Promise<string | null>;
 }): TurnLiveLineageReadModel {
   return {
@@ -171,7 +154,6 @@ export function createTurnLiveLineageReadModel(deps: {
         const key = treeLineKey({ documentId: folder.nodeId, draft: folder.draft });
         const tree = lines.get(key);
         const place = places.get(`${folder.nodeId}:${folder.draft}`);
-        // Where the folder is now; the turn's own words only for one its view no longer places.
         const at =
           place?.uri ??
           (tree ? (tree.op === "delete" ? tree.from : tree.to) : (made.get(key) ?? shownAt));
@@ -189,7 +171,6 @@ export function createTurnLiveLineageReadModel(deps: {
     },
   };
 
-  /** A removed live document keeps its row at its last address, including an undone create. */
   async function resolveDocuments(
     documentIds: readonly TurnEditedDocumentId[],
     lines: ReadonlyMap<string, TurnTreeLine> = new Map(),
@@ -220,7 +201,6 @@ export function createTurnLiveLineageReadModel(deps: {
   }
 }
 
-/** A create's recorded address survives even when it was drafted and never became live, or undone. */
 function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string, string> {
   return new Map(
     entries.flatMap((entry) =>
@@ -229,7 +209,6 @@ function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string,
   );
 }
 
-/** A document's tree line is per destination: live, or one draft. */
 function treeLineKey(
   target: TurnEditedDocumentId | { documentId: string; draft: DraftId | null },
 ): string {
@@ -237,12 +216,6 @@ function treeLineKey(
   return draft ? `${target.documentId}:${draft}` : target.documentId;
 }
 
-/**
- * Each node's net tree line, per destination: deleted when the turn left it deleted, copied
- * when the turn created it from another document, moved when it left it living somewhere other
- * than where the turn found it, or moved in place when it only changed position (`to` equals
- * `from`). A destination the entry didn't record (a restore's) leaves the location as it was.
- */
 function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine> {
   const folded = new Map<
     string,

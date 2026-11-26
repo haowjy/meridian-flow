@@ -97,8 +97,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await seedChapterWithMap(collab);
       const secondDocumentId = "00000000-0000-4000-8000-000000000713";
       await seeder.document(SOURCE_ID, "chapter-two", { id: secondDocumentId });
-      // Two uploads no path spells: a deleted cover whose path a new cover took,
-      // and an id with no document behind it.
       const OLD_COVER = "00000000-0000-4000-8000-000000000718";
       const LOST = "00000000-0000-4000-8000-000000000719";
       await seeder.file(SOURCE_ID, "cover.png", png, { id: OLD_COVER });

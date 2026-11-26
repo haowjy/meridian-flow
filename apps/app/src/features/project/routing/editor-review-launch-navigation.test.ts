@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** Navigate first: an explicit review launch commits its destination without waiting on anything. */
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";

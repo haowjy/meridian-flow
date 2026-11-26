@@ -20,10 +20,8 @@ import { runWithInversePrincipal } from "./inverse-principal.js";
 import { runInLockedWrite } from "./locked-write.js";
 import type { ModelEdits, ModelEditWriteContext } from "./model-edit.js";
 
-/** A write's context without its grant, which the router takes apart. */
 type GivenContext = Omit<ModelEditWriteContext, "grant">;
 
-/** What a model edit's write needs from the rest of collab; the seams here are the adapters'. */
 export type ModelEditWriteDeps = {
   core: AgentEditCore;
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
@@ -31,10 +29,6 @@ export type ModelEditWriteDeps = {
   enterSeam(documentId: DocumentId): Promise<void>;
 };
 
-/**
- * A write lands at its grant's destination: Live, or the chat's draft, whose fork room the host
- * picks (`agentRoomFor`). Links spell in that destination's tree.
- */
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
   async function write(
     command: WriteCommand,
@@ -80,7 +74,6 @@ function documentIdFromCommand(command: { file: string; documentId?: string }): 
   return address.ok ? (address.documentId as DocumentId) : null;
 }
 
-/** A read inside a model edit's command: the locked section's rules, so it pulls nothing. */
 export function createModelEditRead(read: AgentEditRouter["read"]): ModelEdits["read"] {
   return (command, context) => runInLockedWrite(() => read(command, context));
 }

@@ -4,7 +4,6 @@ import { i18n } from "./i18n";
 
 const DEFAULT_THREAD_TITLE_MSG = msg`Untitled chat`;
 
-/** Localized "Untitled chat" label, looked up from the active Lingui catalog. */
 export function defaultThreadTitle(): string {
   return i18n._(DEFAULT_THREAD_TITLE_MSG);
 }

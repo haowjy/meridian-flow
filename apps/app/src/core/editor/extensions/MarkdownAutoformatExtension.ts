@@ -1,47 +1,10 @@
-/**
- * Markdown that transforms as the writer types.
- *
- * Most of the surface is inherited rather than written: TipTap's node and mark
- * extensions already ship GFM input rules, its engine already refuses to run
- * them inside anything whose spec is `code`, and because the Meridian wrappers
- * only rename types those rules resolve the server-parity names (`strong`,
- * `em`, `code_block`). Reimplementing them here would be a
- * second set of rules competing for the same keystrokes. Inherited unchanged:
- * `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `---` divider, and completion
- * on Enter as well as on space. The `- ` / `* ` / `+ `, `1. ` list and `> `
- * quote rules are `NestingExtension`'s. The `# `…`###### ` heading rule is
- * `MeridianParagraph`'s: a heading is a paragraph with a level.
- *
- * What this extension owns is the remaining autoformat behavior: the code
- * fence's info string, and Backspace. Typed `[[name]]` is text: `@` is how a
- * writer links a document. The truth table
- * beside it pins the whole surface, inherited rules included, so an upgrade
- * that drops a trigger fails loudly instead of quietly.
- */
 import { Extension } from "@tiptap/core";
 
 import { blockTypeInputRule } from "./block-type";
 
-/**
- * A fence is an opening run of at least three fence characters and an info
- * string running to the first space. Capturing the run separately from the
- * info token is what lets the two differ: GFM forbids backticks inside a
- * backtick fence's info string and forbids nothing inside a tilde fence's, so
- * ` ~~~aa~bb ` is a language and ` ~~~~ ` is a longer fence with none. The run
- * is greedy for the same reason GFM's own parser is.
- *
- * TipTap's rule captures `[a-z]+` and no run at all, so ` ```Python `,
- * ` ```c++ ` and ` ```ts-node ` matched nothing and left the writer holding
- * literal backticks.
- */
 const BACKTICK_FENCE = /^(`{3,})([^\s`]*)[\s\n]$/;
 const TILDE_FENCE = /^(~{3,})([^\s]*)[\s\n]$/;
 
-/**
- * The language attr is lowercased: it is a lookup key, for highlighting and for
- * the plain-editable `mermaid` block, and GFM info strings are conventionally
- * case-blind, so ` ```Mermaid ` must land on the same block as ` ```mermaid `.
- */
 function fenceAttributes(match: RegExpMatchArray) {
   const info = (match[2] ?? "").toLowerCase();
   return { language: info === "" ? null : info };

@@ -1,4 +1,3 @@
-/** Resolve browser bookmarks through current namespace occupancy and stable document identity. */
 import type { DocumentAddressResolver, DocumentAddressStore } from "./ports/document-address.js";
 import type { ProjectContextAvailabilityPort } from "./ports/project-context-availability.js";
 

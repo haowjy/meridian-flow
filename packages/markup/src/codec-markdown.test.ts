@@ -22,10 +22,6 @@ import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 describe("markdown codec round-trip corpus", () => {
   const codec = markdownCodec({ schema });
 
-  // Tab is a key a writer presses in prose (the editor inserts one), so the
-  // wire has to carry it. A tab in the middle of a line is literal; a LEADING
-  // tab would parse back as an indented code block, so it goes out as a
-  // character reference and comes back a tab.
   it("carries a tab through prose, wherever in the line it falls", () => {
     const withTabs = [
       paragraph(t("mid\tsentence tab")),
@@ -39,8 +35,6 @@ describe("markdown codec round-trip corpus", () => {
     expectStable(codec, wire);
   });
 
-  // `_[]()\na_` parses to an emphasised "\na". `*\na*` does not open the mark,
-  // so serializing threw and every read and export of the document failed.
   it("carries a line ending that starts marked text", () => {
     for (const mark of ["em", "strong", "strike"] as const) {
       const doc = [paragraph(t("\na", [m(mark)]))];
@@ -177,10 +171,6 @@ describe("markdown codec round-trip corpus", () => {
   });
 
   it("carries empty auto-paired brackets through the wire unchanged", () => {
-    // Auto-pairing in the editor writes real characters, so an empty pair the
-    // writer opened and never filled is ordinary prose the wire has to carry.
-    // The opener escapes so it cannot be read back as a link; the text the
-    // writer sees comes back byte for byte.
     const prose = 'Brackets [] and [[]], parens (), and "quotes".';
     const wire = codec.serialize([paragraph(t(prose))], UNSCOPED_DOCUMENT_LINKS);
 

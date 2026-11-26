@@ -77,8 +77,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .where(
           and(
             current(ids),
-            // The stored blocks are Live's: a reader whose draft has a fork of the document reads
-            // the fork instead.
             draft
               ? sql`not exists (select 1 from ${documentForks} where ${documentForks.documentId} = ${documents.id}
                   and ${documentForks.draftId} = ${draft})`

@@ -1,11 +1,8 @@
-/** Groups project threads by Work and activity date for chat navigation. */
 import type { ThreadListItem, Work } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
-
-/* ── Types ────────────────────────────────────────────────────────── */
 
 export type WorkItem = {
   id: string;
@@ -38,22 +35,9 @@ const DATE_BUCKET_IDS: readonly DateThreadBucketId[] = [
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/* ── Thread grouping (real data) ───────────────────────────────────── */
-
-/**
- * Group a project's real threads under their real work items.
- *
- * Writer lists are primaries only. Primary threads are grouped by
- * `thread.workId` against the project's works. Threads without a resolved work
- * fall through to `ungroupedThreads` only after works have loaded; while works
- * are `null`, grouping waits.
- *
- * This is the single source of grouping for project chat navigation.
- */
 export function groupProjectThreads(
   realThreads: ThreadListItem[] | null,
   works: Work[] | null,
-  /** A Work's name with its handle where it repeats (`useWorks().nameOf`). */
   nameOf: (work: Work) => string,
 ): ProjectThreadGroups {
   const baseThreads: ThreadListItem[] = realThreads ?? [];
@@ -103,12 +87,6 @@ export function useProjectThreadGroups(projectId: string): ProjectThreadGroups {
   );
 }
 
-/**
- * Bucket primary threads by `updatedAt` recency for the sidebar's Date grouping.
- *
- * Buckets are calendar-day based in the browser's local timezone, ordered from
- * newest to oldest, and each bucket keeps newest-first thread ordering.
- */
 export function groupThreadsByDate(
   threads: readonly ThreadListItem[],
   nowMs = Date.now(),

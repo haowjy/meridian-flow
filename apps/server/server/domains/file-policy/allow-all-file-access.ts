@@ -1,8 +1,3 @@
-/**
- * A file-access service with no database behind it: every target belongs to
- * the person asking, nothing is archived or deleted. For the in-memory app
- * and tests where access isn't the subject.
- */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { type FileFacts, ownerNode } from "./domain/types.js";
 import { createFileAccess, type FileAccess } from "./file-access.js";

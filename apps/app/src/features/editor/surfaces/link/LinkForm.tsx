@@ -1,5 +1,3 @@
-/** Destination and display-text editing over the anchored link commands. */
-
 import { t } from "@lingui/core/macro";
 import {
   type DocumentRef,
@@ -225,7 +223,6 @@ function LinkFields({
   }, [query]);
 
   useEffect(() => {
-    // The first empty field is where the writer has something to say.
     const textInput = textInputRef.current;
     const input = hrefInputRef.current ?? textInput;
     input?.focus();

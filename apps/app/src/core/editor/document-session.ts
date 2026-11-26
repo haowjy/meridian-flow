@@ -1,32 +1,3 @@
-/**
- * document-session — owns the lifecycle of one document room's copy in this tab: the document's
- * Live room, or a draft's fork room of it (design §6, "The session lifecycle").
- *
- * A fork session is built over the Live session of its document, which its holder keeps alive
- * longer: its docs are a draft copy of the Live copy (`RoomDocs.draftOf`), and it registers them
- * with the binding so every batch the Live session imports or writes forwards them, editor or
- * not. It has its own socket, store, presence and Undo.
- *
- * A copy is a `RoomDocs` (the structure doc and a text doc per block, design §1), its IndexedDB
- * store (`local-copy-store.ts`), the room transport (`loro-room-transport.ts`), presence on
- * the room's ephemeral store, and the writer's Undo. Every local write reaches the copy through
- * one path, `publish`: stored, sent to the other tabs of this browser, then to the server.
- * Every peer's batch reaches it through `importRemote`, which goes through the binding's
- * composition guard.
- *
- * Status, derived from local persistence and the transport together:
- *   - `detached`  — no server transport attached yet.
- *   - `syncing`   — the local load or the first Join is not done, or the socket is reconnecting.
- *   - `synced`    — loaded, connected, and the copy was handed what the server held at the first
- *                   Join. Not that the server holds the latest edits: `serverHasLocalChanges`
- *                   says that.
- *   - `offline`   — loaded, socket down; edits wait in IndexedDB and go with the next Join.
- *   - `access-lost` — the server ended this room for good; local edits will not upload.
- *   - `destroyed` — torn down.
- *
- * `access` is the server's scope for the room. A `read` room still receives peers' changes and
- * sends nothing.
- */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { loroRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
@@ -73,11 +44,8 @@ import { wordsBeyond } from "./unsent-words";
 
 export type { SchemaFence } from "./schema-fence";
 
-/** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
-/** How long the server's mark waits for typing to pause before it is stored. */
 const NOTE_SERVER_MS = 1_000;
-/** The log is folded into snapshots after this many appended batches. */
 const COMPACT_EVERY = 200;
 
 export type DocumentSessionStatus =
@@ -99,34 +67,21 @@ export function sessionRoomKey(room: DocumentRoom): string {
 
 export type DocumentSessionSnapshot = {
   documentId: string;
-  /** `sessionRoomKey` of the room. */
   roomKey: string;
   room: DocumentRoom;
   status: DocumentSessionStatus;
-  /** Server acknowledged every local change on this connection (see file header). */
   serverHasLocalChanges: boolean;
   connectionState: RoomConnectionState | null;
-  /**
-   * The scope the server last named for this room, kept across reconnects and transport
-   * restarts; `null` until it names one. An unnamed room is writable (local-first).
-   */
   access: DocumentSessionAccess | null;
-  /** Why a read-only room is read-only, when its owner is closed. */
   closedWhy: ClosedOwnerWhy | null;
   localPersistenceSynced: boolean;
-  /** The document has reached this session from the server once; stays true offline. */
   contentHeld: boolean;
   schemaFence: SchemaFence | null;
-  /**
-   * The room holds edits the server lacks and can never take: it was admitted read-only with
-   * them, or the server ended it for history below its cutoff.
-   */
   holdsUndeliverableEdits: boolean;
 };
 
 export type DocumentSessionAccess = "edit" | "read";
 
-/** The server ended the room: its update depends on history below the room's cutoff. */
 export function historyCutOff(state: RoomConnectionState | null | undefined): boolean {
   return state?.kind === "terminal" && state.reason === "history-cutoff";
 }
@@ -146,14 +101,10 @@ export type DocumentSessionTransportFactory = (opts: {
 
 export type DocumentSessionOptions = {
   room: DocumentRoom;
-  /** A fork room's Live session, which outlives this one. */
   live?: DocumentSession;
-  /** The copy's IndexedDB database, by its exact name. */
   persistence: { kind: "indexeddb"; key: string } | { kind: "none" };
   transportFactory?: DocumentSessionTransportFactory;
-  /** Registry-owned persistence hook for the first fence transition. */
   persistSchemaFence?: (fence: SchemaFence) => void;
-  /** The scope of a room this session replaces: the editor is read-only from its first frame. */
   access?: DocumentSessionAccess | null;
 };
 
@@ -161,17 +112,14 @@ const noop = () => {};
 
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
 
-/** A batch between this browser's tabs: the copy's name and the envelope. */
 type TabMessage = { batch: Uint8Array };
 
 export class DocumentSession {
   readonly roomKey: string;
   readonly room: DocumentRoom;
   readonly documentId: string;
-  /** This copy's peer id, across all its docs. */
   readonly peer = freshPeerId();
   readonly docs: RoomDocs;
-  /** The writer's undo, kept with the copy: editors attach to it while mounted. */
   readonly history: DocumentHistory;
 
   private store: LocalCopyStore | null = null;
@@ -202,10 +150,8 @@ export class DocumentSession {
   private transportState: RoomConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
   private closedWhy: ClosedOwnerWhy | null = null;
-  /** What the server is known to hold, across connections: the copy's `server` meta. */
   private readonly server = new Map<DocKey, DocVersion>();
   private holdsUndeliverable = false;
-  /** Replaced by another session: nothing more goes to the server or to other tabs. */
   private inert = false;
   /** Inside a peer's batch: its writes are the import's, which forwards drafts itself. */
   private importing = false;
@@ -272,8 +218,6 @@ export class DocumentSession {
     this.emit();
   }
 
-  // --- the copy -------------------------------------------------------------------------------
-
   /**
    * Every local write, from any writer in this tab (the editor, Undo, a command run here): store
    * it, tell the other tabs, send it. A read room sends nothing; its writes stay in the copy and
@@ -289,11 +233,6 @@ export class DocumentSession {
       );
   }
 
-  /**
-   * Write a whole document into the copy as a writer outside any editor would (a just-made file's
-   * first text): only what differs is written, published like typing, and shown in every editor
-   * of the copy. No Ctrl+Z takes it back.
-   */
   writeDocument(doc: Node): void {
     if (this.destroyed || this.docs.isFreed) return;
     const changes = writeProseMirror(this.docs, doc, { origin: UNTRACKED_ORIGIN });
@@ -319,7 +258,6 @@ export class DocumentSession {
     this.recomputeStatus();
   }
 
-  /** A peer's batch: imported through the composition guard, then stored. */
   private importRemote(batch: Uint8Array, store = true): void {
     if (this.destroyed || this.docs.isFreed) return;
     this.importing = true;
@@ -335,10 +273,6 @@ export class DocumentSession {
     this.contentChanged();
   }
 
-  /**
-   * Called after the copy's content changes, by anyone: for a reader of the text that is not an
-   * editor (a trashed document's preview, a name suggested from its first line).
-   */
   subscribeContent(listener: () => void): () => void {
     this.contentListeners.add(listener);
     return () => this.contentListeners.delete(listener);
@@ -388,7 +322,6 @@ export class DocumentSession {
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
       this.store = store;
       store.db.onversionchange = () => {
-        // Another tab is deleting this copy (a purge): stop writing to it.
         this.store = null;
         void store.close();
       };
@@ -426,7 +359,6 @@ export class DocumentSession {
     const tabs = new BroadcastChannel(`meridian:copy:${this.storeName}`);
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
       if (!(event.data?.batch instanceof Uint8Array)) return;
-      // Another tab's batch: that tab sends it, and this copy can't tell when the server has it.
       this.unsent = null;
       this.importRemote(event.data.batch, false);
     };
@@ -438,12 +370,9 @@ export class DocumentSession {
     this.tabs = null;
   }
 
-  /** The room version of this copy, for a command that waits on the server holding it. */
   roomVersion(): Uint8Array {
     return encodeRoomVersion(this.docs.version());
   }
-
-  // --- the transport --------------------------------------------------------------------------
 
   /** Attach the session's only server transport after the local load. */
   attachTransport(transportFactory: DocumentSessionTransportFactory): void {
@@ -503,7 +432,6 @@ export class DocumentSession {
       }),
       provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
-        // Joined, with everything this connection sent acknowledged: the Join sent all the copy held.
         if (acknowledged) {
           this.unsent = false;
           this.noteServerSoon();
@@ -516,10 +444,6 @@ export class DocumentSession {
     this.emit();
   }
 
-  /**
-   * Record what the server holds in the copy, for a later tab or reload, once typing pauses: a
-   * mark that trails the server only offers words it has, never loses one.
-   */
   private noteServerSoon(): void {
     if (this.noteServerTimer !== undefined) return;
     this.noteServerTimer = setTimeout(() => this.noteServer(), NOTE_SERVER_MS);
@@ -536,7 +460,6 @@ export class DocumentSession {
     void this.store?.putMeta(SERVER_META, encodeRoomVersion(this.server)).catch(noop);
   }
 
-  /** Whether the copy holds words the server lacks (see `unsent-words.ts`). */
   private computeUndeliverable(): boolean {
     const server = this.transportProvider?.serverVersion() ?? this.server;
     return wordsBeyond(this.docs, server);
@@ -554,10 +477,6 @@ export class DocumentSession {
     this.markContentInitialized();
   }
 
-  /**
-   * Close the server transport and keep the copy, its store and its history. Edits made after
-   * this wait in the copy until `attachTransport`'s Join sends them.
-   */
   detachTransport(): Promise<void> {
     this.transportAttachmentPending = false;
     const previous = this.transportProvider;
@@ -582,7 +501,6 @@ export class DocumentSession {
     return Promise.resolve();
   }
 
-  /** Replace a terminal transport while keeping the copy. */
   async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
     if (this.destroyed)
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
@@ -613,7 +531,6 @@ export class DocumentSession {
     await this.transportProvider?.whenSentAcknowledged();
   }
 
-  /** Captured now; later typing does not move this barrier. */
   whenCurrentChangesAcknowledged(): Promise<void> {
     const provider = this.transportProvider;
     if (!provider) return Promise.reject(new Error("Document session has no transport"));
@@ -621,7 +538,6 @@ export class DocumentSession {
     return provider.whenCurrentChangesAcknowledged();
   }
 
-  /** Whether this copy holds words a read-admitting server will never take. */
   undeliverableWords(): boolean {
     return this.holdsUndeliverable && this.computeUndeliverable();
   }
@@ -630,7 +546,6 @@ export class DocumentSession {
     return this.inert;
   }
 
-  /** Another session replaces this room: nothing more goes to the server or to other tabs. */
   makeInert(): Promise<void> {
     this.inert = true;
     this.transportAttachmentPending = false;
@@ -639,7 +554,6 @@ export class DocumentSession {
     return this.detachTransport();
   }
 
-  /** Whether the copy holds ops the server is not known to have. */
   hasUnacknowledgedEdits(): boolean {
     if (this.unsent === null) {
       const server = this.transportProvider?.serverVersion() ?? this.server;
@@ -648,15 +562,10 @@ export class DocumentSession {
     return this.unsent;
   }
 
-  /**
-   * Whether this room can still take the unsent edits: false once it is reset, unauthorized,
-   * terminal, destroyed or admitted read-only.
-   */
   canDeliverUnsentEdits(): boolean {
     return !this.isRoomEnded() && this.access !== "read";
   }
 
-  /** The room itself is over, whatever its access: reset, unauthorized, terminal or destroyed. */
   isRoomEnded(): boolean {
     return (
       this.destroyed || this.status === "access-lost" || this.transportState?.kind === "terminal"
@@ -689,8 +598,6 @@ export class DocumentSession {
       holdsUndeliverableEdits: this.holdsUndeliverable,
     };
   }
-
-  // --- editors --------------------------------------------------------------------------------
 
   bindEditor(construct: () => Editor): { editor: Editor; release: () => void } {
     if (this.destroyed) throw new Error("Cannot bind an editor to a destroyed session");
@@ -778,7 +685,6 @@ export class DocumentSession {
     return this.storeName;
   }
 
-  /** Whether the copy has held the server's content: a reopen paints it without waiting for the room. */
   async hasInitializedLocalContent(): Promise<boolean> {
     await this.whenLocalPersistenceSynced();
     const store = this.store;

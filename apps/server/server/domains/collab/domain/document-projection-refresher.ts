@@ -1,4 +1,3 @@
-/** Post-durability activity and document-derivation hook with failure diagnostics. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentWriteHook } from "../contracts.js";
 import type { DocumentProjectionEffects } from "./ports/document-projection-effects.js";

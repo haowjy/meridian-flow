@@ -1,4 +1,3 @@
-/** Pure planned-binding contracts, including occurrence identity and capability isolation. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";

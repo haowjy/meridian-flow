@@ -36,10 +36,6 @@ function item(id: SlashCommandId): SlashCommandItem {
   return { id, group: "text", label: id, aliases: [] };
 }
 
-/**
- * Mounts arbitrary structure and finds the `/x` a writer typed inside it, so a
- * nested case reads as the document it is rather than as position arithmetic.
- */
 const TRIGGER = "/x";
 
 function mountAround(content: JSONContent[]) {
@@ -72,7 +68,6 @@ const cell = (text: string): JSONContent => ({
 
 const row = (...cells: JSONContent[]): JSONContent => ({ type: "table_row", content: cells });
 
-/** The table role of the node holding the caret's paragraph, so "still in the cell" reads as itself. */
 function cellAroundCaret(instance: Editor): unknown {
   return instance.state.selection.$from.node(-1).type.spec.tableRole;
 }

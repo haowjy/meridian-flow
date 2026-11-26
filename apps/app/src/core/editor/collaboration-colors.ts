@@ -1,4 +1,3 @@
-/** Shared token-valued palette for live cursors and settled peer marks. */
 export const COLLABORATION_CURSOR_COLORS = [
   "var(--color-collab-cursor-1)",
   "var(--color-collab-cursor-2)",
@@ -10,7 +9,6 @@ export const COLLABORATION_CURSOR_COLORS = [
   "var(--color-collab-cursor-8)",
 ] as const;
 
-/** Resolve a theme token before it crosses the presence JSON boundary. */
 export function resolveCollaborationColor(token: string): string {
   if (typeof document === "undefined") return token;
   const match = /^var\((--[^)]+)\)$/.exec(token);

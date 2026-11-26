@@ -1,4 +1,3 @@
-/** Translation from scheme-adapter results into canonical ContextPort results. */
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { TreeOwnersMoved } from "../../../shared/tree-owners.js";

@@ -1,9 +1,3 @@
-/**
- * Writer-facing copy for the toolbar's controls and, more importantly, for the
- * reasons they grey out. Law 5 is only satisfied when the reason reads as an
- * answer ("select text to format it"), so the copy lives in one place where
- * the whole matrix can be read at once.
- */
 import { t } from "@lingui/core/macro";
 
 import {
@@ -14,14 +8,6 @@ import {
   type ToolbarControlId,
 } from "./toolbar-commands";
 
-/**
- * Who the reason is being said about. The toolbar names a control; a surface
- * whose controls are not toolbar rows — the formatting menu's marks row and
- * its Turn into list — names the family instead, because the copy only ever
- * branches on family and a menu item is not a toolbar button. `document` is
- * for controls whose only reasons are the document's own (still opening, read
- * only), where naming a family would claim a distinction the copy never makes.
- */
 export type BlockedSubject = ToolbarControlId | "block-type" | "mark" | "document";
 
 export function toolbarControlLabel(control: ToolbarControlId): string {
@@ -49,11 +35,6 @@ export function toolbarControlLabel(control: ToolbarControlId): string {
   }
 }
 
-/**
- * What a block type is called, wherever "Turn into" is offered — the block
- * menu's submenu and the formatting menu's alike. One writer-facing name per
- * type, beside the table the surfaces read their state from.
- */
 export function blockTypeLabel(id: BlockTypeId): string {
   switch (id) {
     case "paragraph":
@@ -73,7 +54,6 @@ export function blockTypeLabel(id: BlockTypeId): string {
   }
 }
 
-/** Heading, code block, and bullet list all rewrite the block they sit on. */
 function isBlockTypeControl(control: BlockedSubject): boolean {
   return (
     control === "heading" ||
@@ -83,18 +63,6 @@ function isBlockTypeControl(control: BlockedSubject): boolean {
   );
 }
 
-/**
- * Why a whole-block conversion cannot run on this target. Shared with every
- * surface carrying the same verbs — the block menu's Turn into — so one
- * refusal reads the same wherever the writer meets it.
- *
- * The first three name what the writer is standing in, because the fence asks
- * the chrome kernel's deepest-context read before it looks at the span. Only
- * `mixed-selection` is about the span, and it covers two shapes: a selection
- * that is part convertible, and one whose blocks all refuse but not alike (a
- * table and a fence caught in the same Ctrl+A). "Holds" is true of both;
- * "part of" would be a lie about the second.
- */
 export function blockTypeReasonMessage(reason: BlockTypeRefusalReason): string {
   switch (reason) {
     case "object-selection":
@@ -130,8 +98,6 @@ export function blockedReasonMessage(
       if (isBlockTypeControl(control)) return blockTypeReasonMessage(reason);
       if (control === "link") return t`Embedded blocks take no links.`;
       return t`Embedded blocks take no formatting.`;
-    // Never reaches a mark: a mark lands on the prose a mixed selection
-    // holds rather than refusing it.
     case "mixed-selection":
       return blockTypeReasonMessage(reason);
     case "inline-code":

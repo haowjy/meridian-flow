@@ -1,16 +1,3 @@
-/**
- * SlotGrid renders the desktop project as one flat CSS grid.
- *
- * Every host is a direct child of one grid container for as long as it is mounted, keyed by what
- * it holds. Moving a host between slots changes only its wrapper's grid-area (or parks it
- * offscreen), so a host is never portaled, reparented or remounted by a move. A host wraps its
- * children unconditionally: a wrapper that comes and goes with a condition remounts them. Slot chrome
- * (background, rounding, shadows, borders) is owned by the slot's `className`; this wrapper
- * handles only base layout and the parked state.
- *
- * A host that moves from one slot to another (the panes swapping kinds, by any route) glides from
- * its old rect to its new one (`useGlide`).
- */
 import {
   type CSSProperties,
   type ReactNode,
@@ -25,11 +12,6 @@ import { cn } from "@/lib/utils";
 
 import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 
-/**
- * A parked host keeps the size of the slot it left and skips its subtree's layout and paint
- * (`content-visibility: hidden` keeps the rendering state, so the reveal lays out once). At zero
- * width a kept document or chat would re-lay out every word on each edit or streamed token.
- */
 const PARKED_SURFACE_STYLE: CSSProperties = {
   position: "absolute",
   overflow: "hidden",
@@ -40,9 +22,7 @@ const PARKED_SURFACE_STYLE: CSSProperties = {
 };
 
 export type SlotGridHost = {
-  /** What the host holds: its identity across moves. */
   key: string;
-  /** Null parks the host: mounted, off screen. */
   slot: DesktopProjectSlotId | null;
   children: ReactNode;
 };
@@ -74,9 +54,6 @@ export function SlotGrid({
   const sizes = useGlide(gridRef, hosts.map((host) => `${host.key}:${host.slot}`).join());
 
   return (
-    // Hosts are in key order, not place order (see DesktopProject), so Tab would follow ids.
-    // reading-flow makes it follow the columns. Chromium only; it also keeps a stale order after an
-    // edit inside a host until the grid lays out again. Elsewhere Tab follows key order.
     <div
       ref={gridRef}
       className={cn("grid min-h-0 min-w-0 [reading-flow:grid-rows]", className)}
@@ -114,7 +91,6 @@ function HostWrapper({
 }: {
   hostKey: string;
   slot: SlotDefinition | undefined;
-  /** The box the host had in its last slot. */
   parkedSize: Size | undefined;
   children: ReactNode;
 }) {
@@ -139,13 +115,8 @@ function HostWrapper({
 }
 
 const GLIDE: KeyframeAnimationOptions = { duration: 200, easing: "ease-out" };
-/**
- * A document moving between main and the side waits off screen while main's address loads
- * (`DesktopProject`'s kept host): it still glides from where it was if it is back within this.
- */
 const PARKED_GLIDE_MS = 1000;
 
-/** A host's layout box in the grid, without the transform a running glide adds. */
 type Box = { left: number; top: number; width: number; height: number };
 type Size = { width: number; height: number };
 type Placed = { slot: string; box: Box; leftAt?: number };
@@ -157,14 +128,8 @@ const boxOf = (host: HTMLElement): Box => ({
   height: host.offsetHeight,
 });
 
-/**
- * Glides each host whose slot changed from where it was. Only position moves; the host is laid
- * out at its new size from the start and clipped to its old size, so its text never scales. Rects
- * stay current through resizes (a panel drag sets the grid's columns without a render).
- */
 function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
   const placed = useRef(new Map<string, Placed>());
-  /** Each host's last slotted size, kept after it parks (`placed` forgets a host after a second). */
   const sizes = useRef(new Map<string, Size>());
   const hostsOf = (node: HTMLDivElement) =>
     node.querySelectorAll<HTMLElement>(":scope > [data-project-host][data-project-slot]");
@@ -211,7 +176,6 @@ function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
 }
 
 function glide(host: HTMLElement, from: Box, to: Box) {
-  // The side's slide-in would fade the arriving page; the glide is its entrance.
   for (const running of host.getAnimations()) if (running instanceof CSSAnimation) running.finish();
   const right = Math.max(0, to.width - from.width);
   const bottom = Math.max(0, to.height - from.height);

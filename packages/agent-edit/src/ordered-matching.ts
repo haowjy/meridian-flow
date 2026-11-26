@@ -1,5 +1,3 @@
-// Bounded weighted ordered matching shared by block alignment and echo attribution.
-
 /**
  * The in-order pairs with the largest total weight (weight 0 never pairs).
  * Weights are nonnegative integers; ties prefer a match, then skipping old.
@@ -50,7 +48,6 @@ export function weightedOrderedMatches(
   return matches;
 }
 
-/** Most table cells an equality match may allocate (one cell is four bytes, twice over). */
 export const MAX_EQUAL_MATCH_CELLS = 250_000;
 
 /**
@@ -97,7 +94,6 @@ export function equalOrderedMatches(
     const j = countA.get(a[i]) === 1 ? positionInB.get(a[i]) : undefined;
     if (j !== undefined) candidates.push([i, j]);
   }
-  // Longest increasing subsequence of the B positions (patience sorting).
   const tails: number[] = [];
   const previous: number[] = [];
   for (let c = 0; c < candidates.length; c++) {

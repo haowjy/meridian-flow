@@ -72,10 +72,6 @@ export const keptDrafts = (db: DrizzleDb, list: TreeList) => activeDrafts(db, li
  */
 export const openDrafts = (db: DrizzleDb, list: TreeList) => activeDrafts(db, list, true);
 
-/**
- * The facts admission needs: open drafts and whether each source is closed or gone.
- * Null when the list is not the account's (the project or account is gone or another's).
- */
 export async function readConnection(
   db: DrizzleDb,
   list: TreeList,

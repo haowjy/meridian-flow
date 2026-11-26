@@ -21,24 +21,14 @@ export type Point = { x: number; y: number };
 type Rect = { left: number; right: number; top: number; bottom: number };
 
 export type Geometry = {
-  /** The box of the node starting at `pos`. */
   rectOf(pos: number): Rect;
-  /** Does the editor have focus? A blurred editor draws every diagram as a picture. */
   focused(): boolean;
-  /** `posAtCoords` for a point already inside a textblock's box. */
   inlineAt(x: number, y: number): number | null;
 };
 
 export type Landing =
-  /** In a writer textblock. */
   | { kind: "inline"; pos: number }
-  /** Between blocks, where a textblock fits. */
   | { kind: "seam"; pos: number }
-  /**
-   * Inside a real code block's text (or clamped to one where no textblock
-   * fits). Another source block, such as a component, is an object here: a
-   * point over it lands at the seam beside it.
-   */
   | { kind: "source"; pos: number };
 
 export type Child = { node: PMNode; pos: number };
@@ -52,10 +42,6 @@ export function isTableCell(node: PMNode): boolean {
   return role === "cell" || role === "header_cell";
 }
 
-/**
- * `start` is the container to walk from (a pressed cell); the default is the
- * document.
- */
 export function landingAt(
   state: EditorState,
   origin: Point,
@@ -81,11 +67,9 @@ export function landingAt(
       : findByY(children, point.y, geometry);
 
     if (!hit) {
-      // Below the document's last child.
       if (!below && container.pos === -1 && above) {
         return seamBefore(container, children, children.length, point, geometry);
       }
-      // Between two children, where the container allows a seam.
       if (above && below) {
         const index = children.indexOf(below);
         if (allowsSeam(container.node, parent, index, above.node, below.node))
@@ -120,7 +104,6 @@ export function landingAt(
           kind: "inline",
           pos: point.y >= (rect.top + rect.bottom) / 2 ? end : child.pos + 1,
         };
-      // A pointer over a chip lands on its nearer side.
       const pos = snapOutOfAtom(state.doc, clamp(at, child.pos + 1, end), point, geometry.rectOf);
       return { kind: "inline", pos };
     }
@@ -129,7 +112,6 @@ export function landingAt(
   }
 }
 
-/** A table lists its cells, not its rows: a `rowspan` cell is found from the row it reaches into. */
 export function childrenOf({ node, pos }: Child): Child[] {
   const start = pos + 1;
   const children: Child[] = [];
@@ -148,10 +130,6 @@ export function childrenOf({ node, pos }: Child): Child[] {
   return children;
 }
 
-/**
- * Binary search over the children's boxes: the child holding `y`, else the
- * children just above and below it.
- */
 function findByY(children: readonly Child[], y: number, geometry: Geometry) {
   let low = 0;
   let high = children.length - 1;
@@ -222,12 +200,6 @@ function allowsSeam(
   return true;
 }
 
-/**
- * The seam before `children[index]` (the end when `index` is past the last).
- * An empty paragraph beside it takes the landing, so a seam never makes a
- * second blank line; where no textblock fits, the landing is the nearest
- * source block's text.
- */
 function seamBefore(
   container: Child,
   children: readonly Child[],
@@ -256,7 +228,6 @@ function seamBefore(
   return { kind: "source", pos: clampInto(pos, source) };
 }
 
-/** A position clamped into the block's own text range; no answer takes its start. */
 function clampInto(at: number | null, { node, pos }: Child): number {
   const start = pos + 1;
   const end = Math.max(start, pos + node.nodeSize - 1);

@@ -1,8 +1,6 @@
-/** Port for durable ahead-ref identities (contract §9.2). */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
 export type AheadRegistration = AheadHolder & {
-  /** The bare UUID of the `ahead:<uuid>` ref; the table key. */
   aheadId: string;
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;

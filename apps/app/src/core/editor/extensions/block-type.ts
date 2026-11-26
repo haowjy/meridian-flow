@@ -2,12 +2,6 @@ import { InputRule } from "@tiptap/core";
 import type { Attrs, NodeType, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
-/**
- * What `node` keeps when it becomes `type`, with `attrs` on top: its id, its place in quotes and
- * lists and every other attribute `type` also has. Every door that
- * changes a block's type goes through here; ProseMirror's `setBlockType` and TipTap's `setNode`
- * start from defaults.
- */
 function retypedAttrs(node: ProseMirrorNode, type: NodeType, attrs: Attrs = {}): Attrs {
   const kept: Record<string, unknown> = {};
   for (const name of Object.keys(type.spec.attrs ?? {})) {
@@ -16,10 +10,6 @@ function retypedAttrs(node: ProseMirrorNode, type: NodeType, attrs: Attrs = {}):
   return { ...kept, ...attrs };
 }
 
-/**
- * Makes every textblock from `from` to `to` a `type`. False when none could change. A block that
- * keeps its type takes the attributes in place.
- */
 export function setBlockType(
   tr: Transaction,
   from: number,
@@ -43,7 +33,6 @@ export function setBlockType(
   return tr.steps.length > before;
 }
 
-/** Replaces the block at `pos` with `made`'s type and content, keeping what `retypedAttrs` keeps. */
 export function replaceBlock(tr: Transaction, pos: number, made: ProseMirrorNode, attrs: Attrs) {
   const current = tr.doc.nodeAt(pos);
   if (!current) return;
@@ -56,7 +45,6 @@ export function replaceBlock(tr: Transaction, pos: number, made: ProseMirrorNode
   }
 }
 
-/** TipTap's `textblockTypeInputRule`, retyping through `setBlockType`. */
 export function blockTypeInputRule(config: {
   find: RegExp;
   type: NodeType;

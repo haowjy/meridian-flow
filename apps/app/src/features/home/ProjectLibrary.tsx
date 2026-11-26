@@ -1,5 +1,3 @@
-/** Authenticated project library: select an existing body of work or begin another. */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
@@ -114,8 +112,6 @@ export function ProjectLibrary() {
                         >
                           {title}
                         </h3>
-                        {/* The account locale reconciles while streamed route chunks hydrate.
-                            This timestamp can differ from the server's English snapshot. */}
                         <p
                           suppressHydrationWarning
                           className="shrink-0 cursor-text select-text text-xs text-muted-foreground"

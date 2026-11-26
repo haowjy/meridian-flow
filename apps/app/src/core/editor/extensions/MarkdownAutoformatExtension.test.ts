@@ -21,7 +21,6 @@ function openEditor(content = "<p></p>"): Editor {
   return editor;
 }
 
-/** Type character by character the way a browser reports composition-free input. */
 function type(editor: Editor, text: string) {
   for (const character of text) {
     const { from, to } = editor.state.selection;
@@ -41,7 +40,6 @@ function press(editor: Editor, key: string): boolean {
   );
 }
 
-/** A compact block outline: `paragraph:2("Chapter")` for a level-2 heading, `code_block:mermaid()`. */
 function outline(editor: Editor): string {
   const blocks: string[] = [];
   editor.state.doc.forEach((node) => {
@@ -61,7 +59,6 @@ describe("block rules fire at their trigger", () => {
     const editor = openEditor();
     type(editor, "7. seventh");
 
-    // The list's first number is stored on the block that opens it.
     expect(editor.state.doc.firstChild?.attrs).toMatchObject({
       path: "-",
       kind: "ordered",
@@ -87,9 +84,6 @@ describe("code fences capture their language", () => {
 });
 
 describe("Backspace reverts the transform it just made", () => {
-  // Enter is a key, not a character: the engine restores it as a literal
-  // newline, which is invisible in a paragraph and would ship in the writer's
-  // prose.
   it("restores the source of a fence closed by Enter, with no newline in it", () => {
     const editor = openEditor();
     type(editor, "```mermaid");
@@ -101,8 +95,6 @@ describe("Backspace reverts the transform it just made", () => {
   it("leaves Backspace alone when the last keystroke transformed nothing", () => {
     const editor = openEditor();
     type(editor, "prose");
-    // Refusing is what keeps the rest of the Backspace chain reachable; an
-    // ordinary character delete is the browser's own, and no keymap claims it.
     expect(press(editor, "Backspace")).toBe(false);
     expect(outline(editor)).toBe('paragraph("prose")');
   });

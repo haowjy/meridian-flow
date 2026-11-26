@@ -1,4 +1,3 @@
-/** Writer receipt and failed-response policies over the stored edit parts. */
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
@@ -30,10 +29,8 @@ import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
 type EditKind = "write" | "undo" | "revert";
-/** A part an undo or revert part takes back. */
 export type EditTarget = { editId: string; ordinal: number };
 
-/** A stored edit part, without its update bytes. */
 export type StoredInversePart = {
   id: number;
   editId: string;
@@ -49,11 +46,8 @@ export type StoredInversePart = {
   actor: "agent" | "human" | "system";
   wId: number | null;
   origin: EditOrigin;
-  /** The room the part was written in (`origin`'s): Live, or a draft's fork. Its Undo runs there. */
   room: DocumentRoom;
-  /** The edit's recorded delta (an AI write only): the card's and the model's list's words. */
   delta: StoredDelta | null;
-  /** An AI write as an edit of design §2's Undo rule: what an inverse tests and takes back. */
   edit: StoredEdit | null;
 };
 export type TurnInverseQuery = {
@@ -62,11 +56,8 @@ export type TurnInverseQuery = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
-  /** The documents to reverse; the turn's every document when absent (a model's undo names its own). */
   documentIds?: DocumentId[];
-  /** The path the model named, for a document no visible path holds (a deleted one). */
   path?: string;
-  /** Caller identity for destination admission; the incoming content grant never routes it. */
   principal?: Principal;
   /**
    * Documents the caller writes after the inverse, in the same transaction: a commit takes their
@@ -78,42 +69,28 @@ export type TurnInverseQuery = {
    * throws `TreeOwnersMoved` before taking a lock.
    */
   declared?: OwnerLocks;
-  /** What the caller's earlier attempts found they needed: sources whose owners to lock and judge. */
   learned?: Learned;
 };
-/** A room an inverse's parts were written in, as the capture read it. */
 export type CapturedRoom = {
   room: DocumentRoom;
-  /** A private copy, freed when the attempt ends. */
   docs: RoomDocs;
-  /** Why the room's owner (an archived or deleted Work, or its draft) takes no write, else null. */
   closed: ClosedOwnerWhy | null;
 };
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
-  /** The room the chat writes the document in now: Live, or a Draft chat's fork. */
   room: DocumentRoom;
-  /** Each room the chat's parts were written in, and `room`, by room name: each part goes back in its own. */
   rooms: ReadonlyMap<string, CapturedRoom>;
-  /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
-  /** The card's Undo deletes this created document, leaving its text intact. */
   createdInTurn: boolean;
   history: StoredInversePart[];
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
-  /** The document's steps, in the order they plan and run. */
   steps: InverseStep[];
-  /** The turn's parts whose history the room cut, which the steps leave as they are. */
   compacted?: number;
 };
 export interface TurnInverseStore {
-  /**
-   * `run` plans on a lock-free capture and commits through `commit`, whose steps resolve
-   * against the committed text under their locks.
-   */
   withCapturedDocuments<T>(
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
@@ -125,26 +102,15 @@ export interface TurnInverseStore {
    * Throws `TreeOwnersMoved` when the documents move under the read.
    */
   ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
-  /**
-   * How many of the reply's tree receipts the card's Undo would take back (`acting`), and how
-   * many are already taken back (`taken`: by an earlier card Undo, or their opposite stands).
-   */
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
-  /**
-   * For the turn's restore (its card's `Undo turn`): the drafts where pressing it would change something, and the
-   * restore press in force for each draft the turn wrote in.
-   */
   restoreStates(
     query: TurnInverseQuery,
   ): Promise<{ offered: DraftId[]; restored: { draft: DraftId; press: CommandId }[] }>;
-  /** What became of each node's tree change the reply drafted, by node id. */
   treeDraftStates(
     query: TurnInverseQuery,
     restored: readonly { draft: DraftId; press: CommandId }[],
   ): Promise<Record<string, TurnDraftState>>;
-  /** A document's stored edit parts a chat's inverse reads, in order: its Undo stack is chosen from them. */
   readHistory(documentId: DocumentId, threadId: string): Promise<StoredInversePart[]>;
-  /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
   commit(input: {
     plans: PreparedDocumentInverse[];
     sequence: { plan: PreparedDocumentInverse; step: InverseStep }[];
@@ -153,25 +119,15 @@ export interface TurnInverseStore {
     query: TurnInverseQuery;
   }): Promise<{
     handles: string[];
-    /** Parts each step of `sequence` took, in order: a step the committed text left nothing for took none. */
     taken: number[];
-    /** The batches the steps committed, in order. */
     updates: Uint8Array[];
-    /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
     treeReversed: number;
-    /** Text parts committed, by document. */
     reversed: ReadonlyMap<DocumentId, number>;
-    /** Text parts a step planned whose history the room cut before the commit, by document. */
     compacted?: ReadonlyMap<DocumentId, number>;
-    /** A step took text out of a draft that Live still holds (an Apply put it there). */
     inManuscript?: boolean;
   }>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId" | "origin">;
-/**
- * The card's Undo takes back the turn's Live writes; a write made in a draft is `Undo
- * turn`'s (design §5), so one action, a press with its own Undo, takes a draft's writes back.
- */
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   (part.kind === "write" || part.kind === "revert") &&
   part.threadId === query.threadId &&
@@ -193,7 +149,6 @@ async function prepare(
 ): Promise<{ plans: PreparedDocumentInverse[]; undoneByWriter: boolean }> {
   let undoneByWriter = false;
   const planOf = async (document: InverseDocument): Promise<PreparedDocumentInverse> => {
-    // The server answers its other requests between documents.
     await setImmediate();
     const entryPlanner = createCapturedReversalPlanner(document, query);
     try {
@@ -208,7 +163,6 @@ async function prepare(
         }
         return !document.createdInTurn;
       });
-      // The originals in step order: one edit's targeted parts each.
       const byEdit = new Map<string, StoredInversePart[]>();
       for (const part of targets)
         byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
@@ -220,7 +174,6 @@ async function prepare(
         .sort((a, b) => b.at - a.at);
       const steps: InverseStep[] = [];
       let compacted = 0;
-      // Each step is judged on what the steps before it leave, as its commit will find it.
       for (const { at, parts } of originals) {
         const entry = {
           id: parts[0]?.editId ?? "",
@@ -266,7 +219,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
-        // A reply that only changed the tree has no text to capture, and its card still takes it back.
         const tree = await store.treeSteps(query);
         const { offered, restored } = await store.restoreStates(query);
         const treeStates = await store.treeDraftStates(query, restored);
@@ -287,7 +239,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
         };
       });
     },
-    /** What a card reversal of this query locks, for its caller to hold first (`ownersOf`). */
     reversalOwners(
       query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<OwnerLocks> {
@@ -327,7 +278,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
           (plan.compacted ?? 0) + (committed.compacted?.get(plan.document.documentId) ?? 0);
         const compacted = plans.some((plan) => compactedIn(plan) > 0);
         return {
-          // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
           status: accepted
             ? compacted
               ? "partial"
@@ -335,8 +285,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
             : undoneByWriter
               ? "reversed"
               : "expired",
-          // One row per document whose text the steps reversed or left; a document with no text
-          // to reverse (it left, or comes back, with its node) has none.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
             const reversed = committed.reversed.get(plan.document.documentId) ?? 0;
             const old = compactedIn(plan);

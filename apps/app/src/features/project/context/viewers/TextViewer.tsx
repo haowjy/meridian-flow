@@ -1,5 +1,3 @@
-/** TextViewer — constrained read-only text preview for text and Markdown files. */
-
 import { Trans } from "@lingui/react/macro";
 import { type TextPreviewSource, useTextPreview } from "@/client/query/useTextPreview";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";

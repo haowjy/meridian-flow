@@ -77,8 +77,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...collab,
           async writeDocument(input) {
             const result = await collab.writeDocument(input);
-            // Reproduce the old publisher boundary without claiming a socket race:
-            // the returned serialization must never overwrite a certified cut.
             return { ...result, markdown: "stale return value" };
           },
         },

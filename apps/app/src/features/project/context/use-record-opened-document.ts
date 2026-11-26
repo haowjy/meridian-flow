@@ -1,16 +1,3 @@
-/**
- * useRecordOpenedDocument — the one place an open is written to account recents.
- *
- * Main's document host is the recorder. The device record updates before the
- * POST, so the landing does not wait on the network. A failed or unchanged
- * record leaves that opening where the writer put it.
- *
- * A document the writer just made exists only in this device's copy of the list until the list
- * syncs, and the server answers a record for it 404. So the POST waits until the project's list
- * has synced; one that never gets there (the account closed, no access, or a copy that broke) is
- * never posted.
- */
-
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
@@ -23,7 +10,6 @@ import {
   useOptionalTreeLists,
 } from "./account-feature-context";
 
-/** Resolves true once the project's list holds the copy's records on the server; false when it will not. */
 function whenListSynced(
   lists: TreeListRegistry,
   projectId: string,

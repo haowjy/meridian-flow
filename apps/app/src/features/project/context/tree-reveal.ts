@@ -9,10 +9,8 @@
 import type { EntryRef } from "./entry-drag/entry";
 import { type EntrySelection, selectRows } from "./entry-drag/selection";
 
-/** The folder rows were placed in, or the id of their source at its top. */
 type Listener = (folderId: string) => void;
 
-/** As long as the selection waits for arriving rows to take focus. */
 const FRESH_MS = 2000;
 
 const listeners = new Set<Listener>();

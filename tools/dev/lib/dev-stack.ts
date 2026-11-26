@@ -19,7 +19,6 @@ export interface DevStackState {
   services: ProcessRef[];
   clientBuild: ClientBuild;
   www: boolean;
-  // Set while the stack is published on the tailnet (`pnpm dev --tailscale`).
   tailnetHost?: string;
   ports: DevPorts;
   generation: number;
@@ -46,7 +45,6 @@ function ps(args: string[]): string {
       stdio: ["ignore", "pipe", "ignore"],
     });
   } catch (error) {
-    // `ps -p` exits non-zero when the pid is gone; anything else means `ps` itself is broken.
     if (typeof (error as { status?: unknown }).status === "number") return "";
     throw error;
   }
@@ -93,7 +91,6 @@ export function runningStack(checkout: string): DevStackState | null {
   return state && isSameProcess({ pid: state.pid, start: state.processStart }) ? state : null;
 }
 
-// Every reader that talks to a stack finds it here, through its record.
 export function requireRunningStack(checkout: string): DevStackState {
   const stack = runningStack(checkout);
   if (stack) return stack;
@@ -116,13 +113,11 @@ export function retireStack(
       );
     }
   }
-  // Only this stack's record: a start that overlapped the stop has written its own.
   if (readStackState(checkout)?.pid === stack.pid) {
     fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
   }
 }
 
-// The ports a browser opens; the server is reached through the app's.
 export function browserPorts(stack: Pick<DevStackState, "ports" | "www">): number[] {
   return [stack.ports.app, ...(stack.www ? [stack.ports.www] : [])];
 }
@@ -243,13 +238,11 @@ export async function stopStack(checkout: string): Promise<boolean> {
   const stack = new Map<number, ProcessRef>();
   for (const root of roots) for (const info of processTree(root.pid)) stack.set(info.pid, info);
   if (supervisorAlive) {
-    // The supervisor stops its own services on SIGTERM; the rest of the tree is the fallback.
     signalProcesses([supervisor], "SIGTERM");
     const deadline = Date.now() + 15_000;
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
-  // A supervisor that stopped cleanly has retired its own record; one still here belongs to a supervisor that was killed or could not reach Tailscale.
   if (readStackState(checkout)?.pid === state.pid) retireStack(checkout, state);
   return stack.size > 0;
 }

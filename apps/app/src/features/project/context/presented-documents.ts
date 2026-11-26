@@ -17,7 +17,6 @@ type Mount = {
   projectId: string;
   document: OpenDocument;
   place: MountedPlace;
-  /** When it was last put on screen; null once forgotten. */
   shownAt: number | null;
 };
 
@@ -67,7 +66,6 @@ export class PresentedDocuments {
     this.changed(mount.projectId);
   }
 
-  /** The writer closed or Discarded these documents, or they were removed: none is picked again. */
   forget(projectId: string, documentIds: readonly string[]): void {
     let changed = false;
     for (const mount of this.mounts.values())
@@ -82,7 +80,6 @@ export class PresentedDocuments {
     if (changed) this.changed(projectId);
   }
 
-  /** One descriptor per presented document (main's and the side's), main's first. */
   documents(projectId: string): readonly OpenDocument[] {
     return this.cached(this.presentedLists, projectId, () =>
       [...this.mounts.values()]
@@ -91,7 +88,6 @@ export class PresentedDocuments {
     );
   }
 
-  /** The mounted documents not forgotten, newest on screen first, at their current descriptor. */
   shown(projectId: string): readonly OpenDocument[] {
     return this.cached(this.shownLists, projectId, () =>
       [...this.mounts.values()]
@@ -100,14 +96,12 @@ export class PresentedDocuments {
     );
   }
 
-  /** The document main presents, if any. */
   mainDocumentId(projectId: string): string | null {
     for (const mount of this.mounts.values())
       if (mount.projectId === projectId && mount.place === "main") return mount.document.documentId;
     return null;
   }
 
-  /** Whether any host here mounts it, the kept one included. */
   isMounted(projectId: string, documentId: string): boolean {
     for (const mount of this.mounts.values())
       if (mount.projectId === projectId && mount.document.documentId === documentId) return true;

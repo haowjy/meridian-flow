@@ -44,7 +44,6 @@ export interface PromotionService {
 }
 export interface PromotionServiceDeps {
   objectStore: Pick<ObjectStorePort, "put" | "delete">;
-  /** Deletes the stored object when the promotion fails after the put. */
   release: ObjectRelease;
   results: ResultRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;

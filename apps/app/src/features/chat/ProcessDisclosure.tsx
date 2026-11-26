@@ -1,26 +1,9 @@
-/**
- * ProcessDisclosure — default-collapsed shell for Thinking process history.
- *
- * Purpose: Owns only the disclosure chrome, animation, aria wiring, and sticky
- * user toggle state. Callers compose the fold body because the process history
- * can now contain mixed reasoning rows and completed activity runs. The key
- * decision is that this shell always starts closed; streaming status must not
- * auto-open or force-close it, so live and settled turns keep the same layout.
- * Do not mount it for an empty fold: there is no expand control for nothing.
- *
- * Body chrome is intentionally bare — no left border, no inset padding. Each
- * `ActivityRow` paints its own piece of the timeline rail inside its icon
- * column, so the gutter is already structurally connected; a competing
- * blockquote border around the fold body would just clutter it.
- */
 import { type ReactNode, useId, useState } from "react";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 
 type ProcessDisclosureProps = {
-  /** Also the button's accessible name: a screen reader hears what the fold shows. */
   label: ReactNode;
-  /** Tool calls folded inside, so a reveal can land on a fold it must leave closed. */
   toolCallIds?: readonly string[];
   children: ReactNode;
 };
@@ -46,8 +29,6 @@ export function ProcessDisclosure({ label, toolCallIds, children }: ProcessDiscl
         data-tool-call-ids={toolCallIds?.length ? toolCallIds.join(" ") : undefined}
         className="w-full text-sm font-medium"
       >
-        {/* The digest is short in English and not necessarily in translation;
-            truncate is the backstop that keeps the fold header one line. */}
         <span className="min-w-0 truncate">{label}</span>
       </FoldToggle>
 

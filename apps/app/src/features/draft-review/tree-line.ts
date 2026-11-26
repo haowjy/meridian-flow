@@ -1,8 +1,3 @@
-/**
- * A draft's pending move or delete of a document (its tree line), and the words for it in the Work
- * notice on the live document ("Ascension is renaming this to ch12-old."). Live doesn't show it
- * until Apply. Works are named, never by handle.
- */
 import { t } from "@lingui/core/macro";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentDraftHint, DraftItem } from "@meridian/contracts/drafts";
@@ -15,7 +10,6 @@ export type TreeLine =
 const nameOf = (location: ParsedContextLocation | null | undefined) =>
   (location && documentTitleFromUri(location.path)) || t`Untitled document`;
 
-/** The item's move or delete, if its draft has one; a creation has no tree line. */
 export function treeLineOf(
   item: Pick<DraftItem, "tree" | "contextLocation" | "documentName">,
 ): TreeLine | null {
@@ -27,7 +21,6 @@ export function treeLineOf(
   return { kind: move.kind, name: nameOf(tree.movedFrom), place: move.place };
 }
 
-/** Whether the item's rows include a move or delete line. */
 export function hasTreeLine(
   item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew">,
 ): boolean {
@@ -67,13 +60,11 @@ export function opensAsDocument(
   return item.pending || (item.isNew && !item.binary) || isTreeOnly(item);
 }
 
-/** One draft's tree change to the live document, in the words of its Work notice. */
 export type PendingTreeChange = {
   work: string | null;
   line: Exclude<DocumentDraftHint["tree"], null>;
 };
 
-/** "Ascension is renaming this to ch12-old." A chat with no Work is "A chat". */
 export function treeNoticeSentence(
   change: PendingTreeChange,
   from: ParsedContextLocation | null,
@@ -92,7 +83,6 @@ export function treeNoticeSentence(
   return work ? t`${work} is moving this to ${place}.` : t`A chat is moving this to ${place}.`;
 }
 
-/** The notice's short form, for a slot too narrow for the sentence. */
 export function treeNoticeLabel(
   changes: readonly PendingTreeChange[],
   from: ParsedContextLocation | null,

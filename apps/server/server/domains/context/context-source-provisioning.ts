@@ -1,12 +1,3 @@
-/**
- * Provision and resolve Drizzle-backed context_sources rows, producing
- * lazily-cached ContextDocumentStore instances for unified ContextFS schemes.
- *
- * A project's, account's and Work's sources are made in the transaction that makes the project,
- * account or Work, so every tree has its source from the first moment a client can write to it.
- * Only a chat's uploads and a lineage's notes are still made on first write.
- */
-
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts";
 import { contextRootUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
@@ -43,10 +34,6 @@ type SourceHints = Pick<ProjectHintPort, "publishSourcesHint">;
 
 const PROJECT_SOURCE_SCHEMES = ["manuscript", "kb", "unfiled", "agents"] as const;
 
-/**
- * Makes a new project's sources inside its creating transaction. The home folder (`user://`) is
- * the account's, made with the account. Returns the Manuscript source's id.
- */
 export async function provisionProjectSources(db: Database, projectId: string): Promise<string> {
   await currentDrizzleDb(db)
     .insert(contextSources)
@@ -62,7 +49,6 @@ export async function provisionProjectSources(db: Database, projectId: string): 
   return manuscript;
 }
 
-/** Makes a new Work's Scratch source inside its creating transaction. */
 export async function provisionWorkScratch(db: Database, workId: string): Promise<void> {
   await currentDrizzleDb(db).insert(contextSources).values({
     workId,
@@ -71,7 +57,6 @@ export async function provisionWorkScratch(db: Database, workId: string): Promis
   });
 }
 
-/** The reader of a source that provisioning guarantees: its absence is a bug, not a lazy write. */
 function required(find: () => Promise<string | null>, what: string): () => Promise<string> {
   return async () => {
     const id = await find();
@@ -91,7 +76,6 @@ async function findProjectContextSource(
     .from(contextSources)
     .where(
       and(
-        // The home folder is the account's, whichever project the reader is in.
         scheme === "user"
           ? and(eq(contextSources.scope, "account"), eq(contextSources.userId, userId as UserId))
           : and(
@@ -184,13 +168,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   async resolveFolderAt(view: TreeView, path: string) {
     const store = await this.readableSourceStore();
     if (store) return store.resolveFolderAt(view, path);
-    // The source root always exists.
     return path.split("/").every((segment) => segment === "")
       ? { kind: "found" as const, node: null }
       : { kind: "not_found" as const };
   }
 
-  /** A document by id is the project's, not this source's: it never waits on the source. */
   findDocumentById(view: TreeView, documentId: string) {
     return locateDocumentById(this.db, view, documentId);
   }
@@ -272,7 +254,6 @@ export function createWorkContextDocumentStore(
   );
 }
 
-/** Reads never provision lineage notes; the first AI write does. */
 export function createLineageContextDocumentStore(
   db: Database,
   projectId: string,
@@ -356,11 +337,6 @@ async function ensureChatContextSource(
   return raced;
 }
 
-/**
- * A chat's uploads store, keyed by the chat's thread id (no thread-row FK, so the chat may not
- * exist yet). Reads never provision; the first upload does. Which chat to pass is
- * `resolveTopPrimaryChat`'s answer, never `root_thread_id`.
- */
 export function createChatContextDocumentStore(
   db: Database,
   projectId: string,

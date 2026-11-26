@@ -30,13 +30,11 @@ export function routePlaceKey(
 
 type Remembered = { place: string; documentId: string };
 
-/** The document the entry's address last resolved to, if the entry is still at that place. */
 export function rememberedRouteDocument(state: object, place: string | null): string | null {
   const held = (state as { [ROUTE_DOCUMENT_STATE]?: Remembered })[ROUTE_DOCUMENT_STATE];
   return place !== null && held?.place === place ? held.documentId : null;
 }
 
-/** The history-state mark that remembers the entry's document. */
 export function routeDocumentMark(place: string, documentId: string): Record<string, unknown> {
   return { [ROUTE_DOCUMENT_STATE]: { place, documentId } satisfies Remembered };
 }

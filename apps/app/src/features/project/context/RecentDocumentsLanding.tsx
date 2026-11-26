@@ -1,17 +1,3 @@
-/**
- * RecentDocumentsLanding — the Editor pane's empty state.
- *
- * Replaces the old "New document / pick a file from the tree" dead end with the
- * documents the writer last opened in this project, so an empty editor answers
- * "where was I?" The list is scoped to the project it renders inside, so the
- * rows need no project label: path and time are what is left to disambiguate.
- *
- * Device-local history paints first. The network adds other devices and never
- * gates this writer's own openings. The top margin holds the notice of a
- * Discard that sent main here, then the notice for documents that closed under
- * the writer, so the list never moves for them.
- */
-
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
@@ -49,14 +35,9 @@ import { useDeleteContextEntries } from "./use-delete-context-entries";
 type RecentDocumentsLandingProps = {
   projectId: string;
   editorWorkId?: string | null;
-  /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
 };
 
-/**
- * Main's Recents. Once it has loaded it is main's surface, so the focus main gives lands on its
- * first control: the first row, or New document when nothing was opened yet.
- */
 export function RecentDocumentsLanding({
   projectId,
   editorWorkId = null,
@@ -67,7 +48,6 @@ export function RecentDocumentsLanding({
   const openDocument = useOpenProjectDocument(projectId);
   const now = useMinuteClock();
   const deleteEntries = useDeleteContextEntries(projectId, "main", LIVE_VERSION);
-  // Its Undo must stay reachable, so it shows here on the phone too, ahead of the removal's.
   const discarded = useDocumentNotice(projectId, null);
   const discardNotice = discarded ? <DraftNoticeLine notice={discarded} className="px-0" /> : null;
 
@@ -158,7 +138,6 @@ export function RecentDocumentsLanding({
   );
 }
 
-/** The list's own selection: rows select as in the sidebar, and its menu acts on all of them. */
 function RecentSelection({ children }: { children: ReactNode }) {
   const selection = useEntrySelection();
   return (
@@ -230,13 +209,11 @@ function RecentDocumentRow({
       title={item.name}
       suffix={address ? twinSuffix(address.path) : undefined}
       detail={address ? documentPlace(address.scheme, address.path) : null}
-      // The age is for the eye; the row's name is the document and where it lives.
       meta={<span aria-hidden>{relativeTime(item.openedAt, now)}</span>}
       revealActions
     />
   );
   return (
-    // The row's inset hangs outside the column, so names stay on the heading's edge.
     <div className="-mx-1.5">
       {address && projectId ? (
         <EntryDestinationPicker

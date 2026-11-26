@@ -1,5 +1,3 @@
-/** Canonical MDX plugin and convenience codec preset. */
-
 import type { Schema } from "prosemirror-model";
 import { createMarkupCodec } from "../codec.js";
 import type { ComponentRegistry } from "../components.js";
@@ -19,12 +17,6 @@ import {
 } from "./blocks/index.js";
 import { remarkMdxWithHtmlVoidElements } from "./syntax.js";
 
-/**
- * The MDX block chain. The codecs hoisted above the JSX ones own raw tags MDX
- * would otherwise hand to a component that does not exist: a `<table>` too
- * shaped for pipes, the `<img>` a picture with a display size escalates to, and
- * the `<br/>` a trailing hard break escalates to.
- */
 export function mdxBlockCodecs(components?: ComponentRegistry): readonly BlockCodec[] {
   const hoisted = new Set([tableCodec.name, imageCodec.name, hardBreakCodec.name]);
   return [

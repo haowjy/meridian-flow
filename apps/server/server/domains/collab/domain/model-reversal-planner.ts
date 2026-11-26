@@ -1,5 +1,3 @@
-/** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
-
 import { undoInRooms } from "@meridian/agent-edit/integration";
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import { freshServerPeerId, holdsEdit, type RoomDocs } from "@meridian/document-model";
@@ -13,14 +11,9 @@ import type {
 
 export type ModelInverseQuery = TurnInverseQuery & { model: true };
 
-/** A part an Undo can take: an AI write, which carries its Undo-rule edit. */
 export type UndoablePart = StoredInversePart & { edit: NonNullable<StoredInversePart["edit"]> };
 export const undoable = (part: StoredInversePart): part is UndoablePart => part.edit !== null;
 
-/**
- * One immutable capture's reversal policy. A retry creates a new planner from a new capture. The
- * caller frees it: it takes planned steps back on private copies of the captured rooms.
- */
 export function createCapturedReversalPlanner(document: InverseDocument, query: TurnInverseQuery) {
   const own = entries(document.history, query.threadId);
   const actions = inspectionActions(document.history, own);
@@ -30,7 +23,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     ordinal: number;
     cause: "already_removed" | "compacted" | "draft_archived";
   };
-  /** A part an Undo took (the writer's card, the writer's revert, or the model's own undo). */
   const takenBy = (part: StoredInversePart) => actions.actions.byPart.get(key(part));
   const taken = (part: StoredInversePart) => takenBy(part) !== undefined;
   const capturedRoom = (room: DocumentRoom) => {
@@ -39,7 +31,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     return captured;
   };
   const captured = (part: StoredInversePart) => capturedRoom(part.room);
-  /** Whether the part's room is held by a closed owner (an archived draft or Work). */
   const closed = (part: StoredInversePart) => captured(part).closed !== null;
   /**
    * Each room after the steps planned so far, so a later step of one command is judged on what
@@ -48,17 +39,12 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   const planned = new Map<string, RoomDocs>();
   const docsNow = (part: StoredInversePart) =>
     planned.get(loroRoomName(part.room)) ?? captured(part).docs;
-  /**
-   * Why a part can't go back now, or null when it goes back (design §2, "An Undo always runs"): an
-   * Undo took it already, or its room cut the history it needs.
-   */
   const unavailable = (part: StoredInversePart) =>
     taken(part)
       ? ("already_removed" as const)
       : !part.edit || !holdsEdit(docsNow(part), part.edit)
         ? ("compacted" as const)
         : null;
-  /** Takes `parts` back on the planned copies, each in its room; returns those that went, and those whose history was cut. */
   const planTakeOut = (parts: readonly StoredInversePart[]) => {
     const held = parts.filter(undoable);
     const { compacted } = undoInRooms(held, (room) => {
@@ -96,7 +82,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     };
   }
   function turnTextPlan(entry: Entry, turn: TurnInverseQuery) {
-    // A deleted document, or a part a closed owner holds, has nothing the card's Undo can take.
     if (document.removal) return null;
     const actionKind = poppableForTurn(turn).has(entry.id)
       ? ("undo" as const)

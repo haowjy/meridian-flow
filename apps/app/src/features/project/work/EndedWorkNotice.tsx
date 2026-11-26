@@ -1,10 +1,3 @@
-/**
- * The one line an archived or deleted Work shows wherever the writer meets it, with the way
- * back (Unarchive, Restore): a bordered box on the Work page and over one of its files in the
- * Editor, and a strip on the top edge of a chat's composer (the chat supplies the strip's frame;
- * the composer below it stays live). The way back shows at once; a refusal returns the Work and,
- * off the Work's own page (which shows its failures under its title), the failure appears here.
- */
 import { Trans } from "@lingui/react/macro";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { Archive, Trash2 } from "lucide-react";
@@ -17,7 +10,6 @@ import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 
 const WAYS_BACK = ["unarchive", "restore"] as const;
 
-/** Unarchive or Restore, whichever brings this ended Work back. */
 export function useBringWorkBack(projectId: string) {
   const { unarchive, restore } = useWorkMutations(projectId);
   return (work: Work) =>
@@ -35,9 +27,7 @@ export function EndedWorkNotice({
 }: {
   projectId: string;
   work: Work;
-  /** `strip` sits inside the frame a chat puts on its composer's top edge. */
   variant?: "box" | "strip";
-  /** The Work's own page shows a refused Unarchive itself. */
   showFailure?: boolean;
   className?: string;
 }) {

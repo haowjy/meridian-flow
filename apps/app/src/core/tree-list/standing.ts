@@ -1,8 +1,3 @@
-/**
- * Where a document stands in a list, read from the replay: the one answer to "is it still there".
- * Nothing is polled and nothing is stamped: the replay is the copy the tree is drawn from, so it
- * cannot disagree with the tree.
- */
 import {
   deleteCovering,
   isSourceRoot,
@@ -12,15 +7,9 @@ import {
 import type { TreeListSnapshot } from "./tree-list-session";
 
 export type DocumentStanding =
-  /** The list has not been read in this session: an absence now proves nothing. */
   | { kind: "waiting" }
   | { kind: "in-tree"; node: TreeNode }
-  /**
-   * Deleted: `folders` the names of the folders above it, and `entry` the node its Trash entry
-   * names (it, or the deleted folder that took it).
-   */
   | { kind: "in-trash"; node: TreeNode; folders: readonly string[]; entry: string }
-  /** Its content is gone. */
   | { kind: "purged" }
   | { kind: "not-in-list" };
 
@@ -31,7 +20,6 @@ const ANSWERS: ReadonlySet<TreeListSnapshot["status"]> = new Set([
   "unauthenticated",
 ]);
 
-/** A list whose absences can be believed. */
 export const listIsReadable = (status: TreeListSnapshot["status"]) => ANSWERS.has(status);
 
 export function standingIn(
@@ -55,11 +43,6 @@ export function standingIn(
   };
 }
 
-/**
- * The document's standing in the project's list, or in the account's own (`user://`) when the
- * project's doesn't have it: a document moved there is still the writer's. An account list not yet
- * read cannot say the document is nowhere.
- */
 export function standingAcross(
   project: { snapshot: TreeListSnapshot; projection: TreeProjection },
   account: { snapshot: TreeListSnapshot; projection: TreeProjection },
@@ -72,7 +55,6 @@ export function standingAcross(
   return there.kind === "not-in-list" ? answer : there;
 }
 
-/** The names of the folders above a node, top first, as the replay shows them. */
 export function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
   const names: string[] = [];
   for (

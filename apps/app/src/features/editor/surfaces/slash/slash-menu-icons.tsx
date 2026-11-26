@@ -1,12 +1,3 @@
-/**
- * One glyph per catalog entry.
- *
- * Icons are not copy, so they live with the surface rather than in the host's
- * catalog, and they come from the one family the toolbar already uses: the
- * writer should recognize the bullet list in this menu as the same verb as the
- * bullet list in the row above the manuscript.
- */
-
 import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import {
   Code,

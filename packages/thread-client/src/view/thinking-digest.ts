@@ -1,8 +1,3 @@
-/**
- * What one process fold's visible tools did, as counts. The app words them
- * (`thinkingDigest`, with Lingui) and `./mf` prints them plainly; the counting
- * rule lives here once and never describes visible text or artifacts.
- */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import type { ToolView } from "./group-delivery-segments";

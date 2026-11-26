@@ -1,9 +1,3 @@
-/**
- * Schema-fence state and local quarantine persistence.
- *
- * A fence is orthogonal to connection status: it records why this client must
- * not bind an editable schema to a room whose content it cannot preserve.
- */
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
 
@@ -38,7 +32,6 @@ export function readSchemaFenceQuarantine(roomKey: string): SchemaFence | null {
   }
 }
 
-/** Returns false when browser storage cannot make the fence durable. */
 export function writeSchemaFenceQuarantine(roomKey: string, fence: SchemaFence): boolean {
   const storage = fenceStorage();
   if (!storage) return false;

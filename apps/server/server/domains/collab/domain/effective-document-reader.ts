@@ -1,4 +1,3 @@
-/** Effective document reads for non-tool callers: the same view a model call would read. */
 import {
   type AgentEditCodecFactory,
   isDocumentNotFoundError,
@@ -41,7 +40,6 @@ export function createEffectiveDocumentReader(input: {
 }): Omit<EffectiveDocumentReader, "writeWorkCreatedContent"> {
   const model = loroModel(input.schema);
 
-  /** The view a read spells in: the version it reads. */
   function viewOf(command: EffectiveReadInput): LinkView {
     return command.destination === "draft"
       ? { kind: "draft", draftId: command.draft }
@@ -55,11 +53,6 @@ export function createEffectiveDocumentReader(input: {
     return input.links.holder(holder);
   }
 
-  /**
-   * Reads `draft`'s fork of the document (Live where the draft wrote nothing), or Live. Choosing
-   * the content never chooses the link view: every source renders through the same `read`,
-   * which spells in the command's own view.
-   */
   async function readEffective<T>(
     command: EffectiveReadInput,
     read: (doc: LoroDocument, draft: string | null) => Promise<T>,

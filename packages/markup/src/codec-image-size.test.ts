@@ -117,10 +117,6 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     });
   });
 
-  // A slot reserved but not uploaded yet carries `src: ""`, the one source that
-  // names nothing: the wire holds it without inventing an address. The token
-  // naming which browser fills it is a live-session fact
-  // (`apps/app/src/core/editor/images/pending-images.ts`), never written.
   it("round-trips a picture whose slot has no source yet, sized or not, without its upload token", () => {
     for (const width of [null, 240]) {
       const wire = width ? `<img src="" alt="cover art" width="${width}" />` : "![cover art]()";
@@ -140,10 +136,6 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
   });
 });
 
-// A width this package could not write back the same way is not a width. The
-// tag stays the text it already was rather than becoming a picture at a size
-// the document never said. Both dialects hand their attributes to one shared
-// reader, so the refusals run once, through the Markdown raw-HTML parser.
 describe("image attribute refusals", () => {
   const codec = markdownCodec({ schema });
   it.each(['width="12.5"', 'width="0"', 'loading="lazy"'])(

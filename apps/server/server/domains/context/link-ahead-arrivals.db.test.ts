@@ -1,5 +1,3 @@
-/** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
-
 import { randomUUID } from "node:crypto";
 import { aheadAddress } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -23,7 +21,6 @@ import { createNoopEventSink } from "../observability/index.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
-  // Registration and uploads commit in their own root transactions: committed-data isolation.
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
   afterAll(async () => {
     await deleteDrizzleRows(db, [users]);
@@ -88,7 +85,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         return created.value.documentId;
       };
 
-      // Tracked create, then delete and recreate at the same path: the second never captures.
       const chapterAddress = aheadAddress("manuscript://ch1.md", "link");
       expect(chapterAddress).toBe("manuscript://ch1");
       const chapter = await register(chapterAddress ?? "");
@@ -103,7 +99,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(second).not.toBe(first);
       expect(await settlement(chapter)).toBe(first);
 
-      // A manuscript image: live membership is published after the upload commits.
       const image = await register("manuscript://art/map.png");
       const upload = await port.writeBinary("manuscript://art/map.png", {
         fileType: "image",
@@ -118,7 +113,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         .where(and(eq(treeNodes.name, "map.png")));
       expect(await settlement(image)).toBe(map?.id);
 
-      // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
       const moved = await create("manuscript://branches/ch2.toml");
       const vacated = await register("manuscript://branches/ch2.toml");
       expect(await settlement(vacated)).toBe(moved);
@@ -133,8 +127,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(destination)).toBe(moved);
       expect(await settlement(vacated)).toBe(moved);
 
-      // A deleted Work keeps its identity and its files until the purge: a ref registered
-      // while it is deleted binds at once, and a restore leaves it bound.
       const notes = await create("scratch://@w1/notes.toml");
       await ports.workRepo.softDelete(workId as WorkId);
       const waiting = await register("scratch://@w1/notes.toml");

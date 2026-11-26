@@ -19,17 +19,8 @@ import { useAccountId } from "./account-feature-context";
 import { useEntryActions } from "./entry-drag/entry-actions";
 
 export type TreeNoticeWords = {
-  /**
-   * The word a drawn row shows now, or null. On a row the writer's delete or restore just took
-   * (`gone`), its Undo takes the focus the row had.
-   */
   word: (node: string, gone?: boolean) => ReactNode;
-  /**
-   * The rows gone from under `parent` (a folder's or a source's id) that still say something: the
-   * latest delete's, and the creates the server bounced, where the writer made them.
-   */
   deleted: (parent: string) => GoneRow<Was>[];
-  /** The node was restored out of Trash by the latest gesture: its Trash row stays, struck through. */
   restored: (node: string) => boolean;
   /** What has no row drawn to say it on, for the list's heading. */
   header: ReactNode;
@@ -102,8 +93,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
       notice.kind === "step" ? [{ step: notice.step, list }] : [],
     );
     const bounced = [project, account].flatMap((session) => treeBounces(session));
-    // A row the latest delete took, or a create the server bounced, stays drawn, struck through,
-    // where it was.
     const gone = new Map<string, Was>();
     for (const { step } of steps)
       if (step.gesture === "delete")

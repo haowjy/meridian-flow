@@ -1,10 +1,3 @@
-/**
- * The address a chat door's document is filed under in its tree: the resolved
- * owner's handle spelled out (`scratch://@c2/x`, `scratch://@w3/x`), whatever
- * shorthand the door was written with. A bare `scratch://x` in a chat means that
- * chat's lineage or its Work, and the tree only knows the explicit spelling. Null
- * when the owner's handle is not known yet. No door names an upload.
- */
 import {
   canonicalContextUri,
   formatParsedContextUri,
@@ -15,7 +8,6 @@ import {
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { decodeWorkHandle } from "@meridian/contracts/works";
 
-/** What an owned scheme's address spells for its owner, or null while a handle is unknown. */
 function doorAuthority(
   target: { rootThreadId?: string },
   handles: { ownerRef?: string | null; workHandle?: string | null },
@@ -34,9 +26,7 @@ export function canonicalDoorUri(
     rootThreadId?: string;
   },
   handles: {
-    /** The first chat's handle, for its lineage's Scratch. */
     ownerRef?: string | null;
-    /** The Work's handle: null for No Work, undefined while unknown. */
     workHandle?: string | null;
   },
 ): string | null {

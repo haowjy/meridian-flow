@@ -1,13 +1,5 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 
-/**
- * Myers' greedy diff of two key sequences as `[op, count]` runs, exact while the edit distance
- * stays within `maxEdits`. `maxEdits` counts edit operations: a replaced word is a delete and an
- * insert, so it costs 2. Its cost is bounded by that distance, not by how dissimilar the inputs
- * are. Past the budget the middle ends as one delete and one insert of what the two share at
- * neither end (`exact: false`): it reconstructs both inputs but says nothing about where they
- * differ, so a caller that reads the ranges as evidence must check `exact`.
- */
 export function boundedDiff(
   a: readonly string[],
   b: readonly string[],
@@ -73,7 +65,6 @@ function myers(
   return null;
 }
 
-/** The runs of the shortest edit script, read back from each round's saved diagonals. */
 function backtrack(
   trace: readonly Int32Array[],
   offset: number,

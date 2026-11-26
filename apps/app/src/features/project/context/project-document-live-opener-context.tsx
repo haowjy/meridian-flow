@@ -1,4 +1,3 @@
-/** React injection boundary for the immutable account's document opener. */
 import { createContext, useContext } from "react";
 import type { ProjectDocumentLiveOpener } from "./open-project-document";
 

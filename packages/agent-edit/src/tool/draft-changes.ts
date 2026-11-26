@@ -15,17 +15,6 @@ import { toHashline } from "../model/hashline.js";
 import { LoroDocument, type LoroDocumentModel, toLoroHandle } from "../model/loro-model.js";
 import type { ProjectedBlock } from "../ports/model.js";
 
-/**
- * The draft's pending changes, one line each:
- * - each top-level block holding a change, in the draft's order with a block only Live shows after
- *   the Live block before it, as a `hash|body` line: Live's text to the draft's, word by word, as
- *   CriticMarkup (`{++added++}`, `{--removed--}`, `{~~old~>new~~}`). A block only one side shows
- *   is wrapped whole; one that moved starts `{>>moved<<}`.
- * - each comment whose body the draft changed, as `comment on <hashes>: ` and its body's change.
- *
- * The model reads Markdown, so a closing delimiter in the text is escaped (`++\}`). `docs` is a
- * draft copy, forwarded (a room's read is).
- */
 export function draftChangeLines(
   docs: RoomDocs,
   schema: Schema,
@@ -148,5 +137,4 @@ function critic(was: string, now: string): string {
   return out;
 }
 
-/** Text with no CriticMarkup delimiter left whole in it: each closing one and `~>` escaped. */
 const escaped = (text: string) => text.replace(/([+\-~<=])\}/g, "$1\\}").replace(/~>/g, "~\\>");

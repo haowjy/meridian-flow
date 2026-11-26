@@ -1,4 +1,3 @@
-/** The command journal in IndexedDB, one database per account (`openIndexedDbDatabase`). */
 import type { CommandRecord, Journal, JournalChange } from "@meridian/command-driver";
 import { openIndexedDbDatabase, settled } from "@/core/indexeddb-database";
 

@@ -78,8 +78,6 @@ it("shows a sent chat in main from the new-chat composer and keeps it beside a d
   render({ kind: "new" });
   act(() => navigation.acceptCreatedChat("sent"));
   expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "sent" });
-  // The route settles the URL onto the new chat; re-rendering with it reflects
-  // the thread variant (the hook alone cannot observe the navigation completing).
   render({ kind: "thread", threadId: "sent" });
   expect(navigation.display).toEqual({ kind: "thread", threadId: "sent" });
 

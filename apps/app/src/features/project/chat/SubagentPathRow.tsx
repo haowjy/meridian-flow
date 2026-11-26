@@ -37,7 +37,6 @@ export function SubagentPathRow({
             >
               {index === 0 ? <ChevronLeft className="size-3.5 shrink-0" aria-hidden /> : null}
               <span className="truncate">
-                {/* The root is the writer's own chat, named by its title, not its agent. */}
                 {index === 0
                   ? ancestor.title?.trim() || resolveSubagentName(ancestor)
                   : resolveSubagentName(ancestor)}

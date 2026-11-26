@@ -1,4 +1,3 @@
-/** Trash entries: which exist is the lists' replay; the server adds when, by whom and how long. */
 import type { ProjectContextTreeScheme, TrashEntryFacts } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
@@ -10,17 +9,11 @@ import { projectReadEnabled } from "./project-read-gate";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 
-/**
- * One Trash entry: a document deleted on its own, or a deleted folder with what its delete took.
- * `kept` is the server's answer (when, by whom, how long it stays), null until it has come.
- */
 export type TrashEntry = {
-  /** The deleted document's or folder's id: what a restore names. */
   nodeId: string;
   kind: "document" | "folder";
   name: string;
   scheme: ProjectContextTreeScheme;
-  /** The names of the folders it was deleted from, top first. */
   folders: readonly string[];
   /** The documents a folder's delete took with it; 0 for a document. */
   documents: number;
@@ -98,7 +91,6 @@ export function useDocumentTrash(projectId: string) {
     [query.data],
   );
   const { refetch } = query;
-  // `rows` changes with the lists, not with the facts: an unanswered row asks again per change.
   useEffect(() => {
     if (rows?.some((row) => !kept.has(row.nodeId))) void refetch({ cancelRefetch: false });
   }, [rows, refetch]);

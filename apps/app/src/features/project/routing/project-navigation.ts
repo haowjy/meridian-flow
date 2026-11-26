@@ -80,8 +80,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
   });
   function claimIntent(restoreNative: boolean) {
     revision += 1;
-    // Retire the old POP before cancelling its decision: its asynchronous
-    // blocker callback must not cancel the replacement writer intent.
     const restoration = restoreNative ? port.settlePendingTraversal() : undefined;
     cancelDecision?.();
     pending?.finish({ kind: "superseded" });
@@ -152,9 +150,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
             current.kind === "valid" && !address.settings
               ? { ...address, settings: current.address.settings }
               : address;
-          // A replacement of the entry by itself: another writer (address admission following a
-          // rename) already put this address there. Writing it again only repeats the history
-          // write, so the destination is reached without one.
           if (options.replace && !options.state && sameEntryAddress(port.read(), next)) {
             try {
               prepared?.commit();
@@ -272,8 +267,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
       if (parsed.kind !== "valid") return;
       const pathOf = (href: string) => href.split(/[?#]/, 1)[0];
       if (pathOf(parsed.href) === pathOf(entry.href)) return;
-      // The destination does not change. Do not queue a destination blocker
-      // that could later compete with the writer's pending navigation.
       revision += 1;
       port.replaceEntry(parsed.href, entry.state);
     },
@@ -283,8 +276,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
       /** Marks the replaced entry, for what reads its history state. */
       mark?: Record<string, unknown>,
     ): Promise<ProjectAddressReplacement> {
-      // Address ownership effects may race a writer's destination command. A
-      // delayed repair must never retire that command or ask its leave guard.
       if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
       if (sameEntryAddress(entry, address) && !mark) return { kind: "replaced" };

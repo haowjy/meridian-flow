@@ -1,14 +1,3 @@
-/**
- * http-client — shared fetch helpers for the app's API calls.
- *
- * Response payload parsing, error-message extraction, and typed
- * `getJson`/`postJson`/`deleteRequest` wrappers (proxy to `apps/server`). The
- * single low-level HTTP surface the other `*-api.ts` modules build on.
- *
- * Key decision: every HTTP failure preserves its status. Structured envelopes
- * additionally remain `MeridianApiError` instances so the HTTP and WS paths
- * share the same domain error fields.
- */
 import { deserializeTransport } from "@meridian/contracts/protocol";
 
 import { isMeridianApiError, meridianApiErrorFromPayload } from "./meridian-error";
@@ -28,7 +17,6 @@ export class HttpResponseError extends Error {
   }
 }
 
-/** A successful HTTP exchange whose body cannot prove the requested result. */
 export class InvalidResponseError extends HttpResponseError {
   readonly code = "malformed_response";
   constructor(response: Response) {
@@ -50,16 +38,11 @@ function decodeResponse<T>(payload: unknown, response: Response, schema?: JsonSc
   return parsed.data;
 }
 
-/** The headers of the response a request failed with; undefined when it got none. */
 export function httpErrorHeaders(error: unknown): Headers | undefined {
   if (error instanceof HttpResponseError) return error.headers;
   return isMeridianApiError(error) ? error.headers : undefined;
 }
 
-/**
- * The response's `Retry-After` in milliseconds (delta-seconds or an HTTP date),
- * or null when it sent none or an unreadable one.
- */
 export function retryAfterMs(error: unknown, now = Date.now()): number | null {
   const value = httpErrorHeaders(error)?.get("Retry-After")?.trim();
   if (!value) return null;
@@ -68,18 +51,11 @@ export function retryAfterMs(error: unknown, now = Date.now()): number | null {
   return Number.isNaN(at) ? null : Math.max(0, at - now);
 }
 
-/** The status a request failed with; undefined when it got no HTTP answer (a lost request). */
 export function httpErrorStatus(error: unknown): number | undefined {
   if (error instanceof HttpResponseError) return error.status;
   return isMeridianApiError(error) ? error.status : undefined;
 }
 
-/**
- * Build the error thrown for a non-OK response. Prefers the structured
- * `MeridianError` envelope when the server sends one (top-level or wrapped as
- * `{ kind: "error", error }`), so consumers can read `code`/`retryable`/
- * `source`. Plain Nitro error bodies still become a typed status-bearing error.
- */
 function errorFromResponse(payload: unknown, response: Response): Error {
   const { status, headers } = response;
   const structured = meridianApiErrorFromPayload(payload, status, headers);
@@ -126,11 +102,9 @@ export async function getJson<T>(url: string, init?: JsonOptions<T>): Promise<T>
 }
 
 export type PostJsonOptions<T = unknown> = JsonOptions<T> & {
-  /** Extra headers to merge with the default Content-Type. */
   headers?: HeadersInit;
   /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;
-  /** Drop the request when the caller that wanted it is gone. */
   signal?: AbortSignal;
 };
 

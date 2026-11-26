@@ -1,10 +1,3 @@
-/**
- * A document's text, read and written the way an editor does: join the document's `live:` room on
- * `/ws/loro` (and for a draft's fork its `fork:` room, over Live's, as a Draft page does), wait for the
- * room's state, overwrite the copy with the parsed blocks (blocks left as they were keep their
- * ids) and send what changed as one batch, as the writer's typing: a client's peer, no message.
- * The tree list makes the document; its content is the room's.
- */
 import {
   createAgentEditCodecFactory,
   LoroDocument,
@@ -37,7 +30,6 @@ const SYNC_TIMEOUT_MS = 15_000;
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
 
-/** A synced copy of the document's room: Live's, or a draft's fork over Live's. Close it. */
 async function openDocument(session: Session, documentRoom: DocumentRoom) {
   const live = RoomDocs.create(shapeSchemaOf(schema), freshPeerId());
   const docs = documentRoom.kind === "fork" ? RoomDocs.draftOf(live, freshPeerId()) : live;
@@ -79,7 +71,6 @@ async function openDocument(session: Session, documentRoom: DocumentRoom) {
   }
 }
 
-/** The document's Markdown as its room reads it: Live's, or a draft's fork. */
 export async function readMarkdown(session: Session, room: DocumentRoom): Promise<string> {
   const opened = await openDocument(session, room);
   try {
@@ -91,16 +82,10 @@ export async function readMarkdown(session: Session, room: DocumentRoom): Promis
   }
 }
 
-/**
- * Writes `markdown` over the document's Live text, or `edit` of the text it reads, as the writer's
- * typing. Resolves once the room acknowledges the batch: the room has imported
- * it, and readers see it.
- */
 export async function writeMarkdown(
   session: Session,
   documentId: string,
   markdown: string | ((current: string) => string),
-  /** A `source` document holds its text as one code block, byte for byte; prose is parsed. */
   filetype?: string,
 ): Promise<void> {
   const { docs, room, socket, close } = await openDocument(session, {
@@ -138,11 +123,6 @@ export async function writeMarkdown(
   }
 }
 
-/**
- * Types `replace` over the one occurrence of `find` in a block's text, as the writer selects it in
- * a tab's editor and types: the selection's characters are deleted and the new ones inserted into
- * that block's text doc, in the document's room, sent as one batch.
- */
 export async function typeOver(
   session: Session,
   documentRoom: DocumentRoom,
@@ -181,7 +161,6 @@ export async function typeOver(
   }
 }
 
-/** Waits until the copy holds every op of the room version the Join answered with. */
 async function caughtUp(docs: RoomDocs, server: RoomVersion) {
   const deadline = Date.now() + SYNC_TIMEOUT_MS;
   while (!versionCovers(docs.version(), server)) {

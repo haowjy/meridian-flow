@@ -1,13 +1,3 @@
-/**
- * thread-query-keys — the canonical React Query key factory for thread-scoped
- * data (snapshot, recent-documents rail, live lineage).
- * Single source of key shapes for thread reads/invalidations.
- *
- * All thread-scoped keys share a `["threads", threadId, ...]` prefix derived
- * from `thread(threadId)` so `queryClient.invalidateQueries({ queryKey:
- * threadQueryKeys.thread(id) })` cleanly invalidates every cache rooted at
- * that thread.
- */
 export const threadQueryKeys = {
   all: ["threads"] as const,
   thread: (threadId: string) => ["threads", threadId] as const,

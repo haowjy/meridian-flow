@@ -1,7 +1,3 @@
-/**
- * Drizzle adapter for drafts. A Work's default draft is minted with the Work and a No Work
- * lineage's with its root chat (`mint_named_draft`); the Work's others by `Drafts.create`.
- */
 import type { DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { drafts, threads } from "@meridian/database/schema";
@@ -92,7 +88,6 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
 
 export function createDrizzleDraftWriteBoundary(
   db: Database,
-  /** Owner-first order's one owner. */
   works: Pick<WorkProjectionMutation, "lockWorks">,
 ): DraftWriteBoundary {
   return {

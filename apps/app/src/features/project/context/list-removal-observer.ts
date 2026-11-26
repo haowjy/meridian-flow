@@ -16,7 +16,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
 import type { ContextRemovalCoordinator, RemovalCommand } from "./context-removal-coordinator";
 import type { ProjectStandings } from "./project-standings";
 
-/** The sources that ended and can still be restored: a deleted Work's or chat's. */
 export type EndedSources = ReadonlySet<string>;
 
 export type ListRemovalObserver = {
@@ -35,17 +34,13 @@ export function observeListRemovals(input: {
     LiveDocumentSessionRegistry,
     "observeLocalCopies" | "observeRetainedLiveDocuments"
   >;
-  /** The sign-in lapsed: the writer signs in again. Called once each time it begins. */
   signInRequired(): void;
-  /** The list joined again after a lapse: the writer signed in, in this tab or another. */
   signInRestored(): void;
 }): ListRemovalObserver {
   const { projectId, standings, removal, registry } = input;
   const cleared = new Set<string>();
   let ended: EndedSources | null = null;
-  /** Sessions kept open for unsent edits after their view went: a purge ends them too. */
   let retained: string[] = [];
-  /** Every document this browser holds a copy of: a purge arrives whether or not a view remains. */
   let copies: ReadonlySet<string> = new Set();
   let askedToSignIn = false;
   let stopped = false;

@@ -1,5 +1,3 @@
-/** One authenticated account's feature owners and retryable staged teardown. */
-
 import { t } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
@@ -20,7 +18,6 @@ import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
 
-/** Why a sign-out stopped: edits the server did not acknowledge, or a copy another tab still held open. */
 export class SignOutIncomplete extends Error {
   constructor(readonly left: "unsent" | "copies") {
     super(`Sign-out left ${left} behind`);
@@ -28,25 +25,20 @@ export class SignOutIncomplete extends Error {
 }
 
 const UNSENT_EDITS_WAIT_MS = 8_000;
-/** One account's tabs hear that another is signing out. */
 const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 
 export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
   readonly draftCommands;
-  /** What this browser tab's hosts mount: main's document and the side's (presented), the kept one. */
   readonly presented = new PresentedDocuments((projectId, tab) =>
     this.removal.reconcileInstalledTab(projectId, tab),
   );
   readonly removal;
-  /** Where each document stands in its project's list: the one answer to "is it still there". */
   readonly standings;
-  /** The project tree's lists this account has open; step 6's tree screens read them. */
   readonly treeLists: TreeListRegistry;
   private readonly stopTreeListDebugHook: () => void;
   readonly opener;
-  /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
@@ -72,12 +64,10 @@ export class AccountFeatureLifetime {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
     });
-    // Typing with nowhere to go is dropped: one pill says so, with nothing to copy or return.
     this.registry.observeDroppedTyping(() =>
       notifyFailure({ key: "unsent-typing", title: t`Couldn't save` }),
     );
     dropRetiredTabSession(accountId);
-    // The browser last held someone else's documents: nothing of theirs stays for this account.
     if (typeof window !== "undefined")
       void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
         reportError(error),
@@ -97,7 +87,6 @@ export class AccountFeatureLifetime {
       };
   }
 
-  /** Another tab is signing this account out: send what can be sent, let go of every copy, and leave. */
   private async signedOutElsewhere(): Promise<void> {
     if (this.state === "open") await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
     await this.finishClose();
@@ -162,7 +151,6 @@ export class AccountFeatureLifetime {
   }
 }
 
-/** The retired document-tab session holds tab names and paths nothing reads: the writer's own. */
 function dropRetiredTabSession(accountId: string): void {
   browserRecord(
     "session",

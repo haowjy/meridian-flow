@@ -102,7 +102,6 @@ describe("durable document derivations", () => {
   const store = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), readLive);
   const seeder = treeSeeder(db);
   let fail = false;
-  /** A live edit of the tree (move, rename, delete) through the list store, as a person's would be. */
   async function liveEdit(edit: (writer: TreeWriter) => unknown) {
     await seeder.store.submit({
       lists: [await treeListOfSource(db, sourceId)],
@@ -141,7 +140,6 @@ describe("durable document derivations", () => {
       scope: "project",
     });
     await seeder.document(sourceId, "chapter", { id: documentId });
-    // A room from an older cut: what a failed derive leaves standing.
     const [room] = await db
       .insert(documentBlockRooms)
       .values({
@@ -167,7 +165,6 @@ describe("durable document derivations", () => {
     await db.close();
   });
 
-  /** A command's write: `blocks` appended to the Live room, saved in its transaction. */
   async function appendBlocks(blocks: PMNode[]) {
     const docs = await rooms.read(live);
     try {
@@ -184,7 +181,6 @@ describe("durable document derivations", () => {
   }
   const append = (text: string, marks?: readonly Mark[]) =>
     appendBlocks([schema.nodes.paragraph.create(null, schema.text(text, marks))]);
-  /** The certified text, its blocks in document order. */
   async function projection() {
     const [room] = await db
       .select({ order: documentBlockRooms.blockOrder, roomId: documentBlockRooms.roomId })
@@ -243,8 +239,6 @@ describe("durable document derivations", () => {
     expect(await store.certify(oldCut, outputsOf("old"), new Date())).toBe(false);
     oldCut.doc.docs.free();
     expect(await links()).toEqual(expected);
-    // A write and its derive in one transaction that rolls back: neither the room nor the
-    // projection keeps anything of it.
     await expect(
       runInDrizzleTransaction(db, async () => {
         await append("rolled back", link("manuscript://wrong", `doc:${randomUUID()}`));
@@ -268,7 +262,6 @@ describe("durable document derivations", () => {
       .from(documentBlockRooms)
       .where(eq(documentBlockRooms.documentId, documentId));
     expect(await projection()).toBe("[next]() new");
-    // The holder moved; its ref-keyed rows did not change, and nothing was written into it.
     expect(await links()).toEqual(expected);
     expect(watermark?.cutLocationVersion).toBe(1n);
     expect(watermark?.extractorVersion).toBe(DOCUMENT_EXTRACTOR_VERSION);
@@ -276,7 +269,6 @@ describe("durable document derivations", () => {
       .update(documentBlockRooms)
       .set({ extractorVersion: 1 })
       .where(eq(documentBlockRooms.documentId, documentId));
-    // Same content hash, stale text: only the version says the text is out of date.
     await db
       .update(documentBlocks)
       .set({ text: "STALE" })
@@ -293,7 +285,6 @@ describe("durable document derivations", () => {
     await service.derive(documentId);
     expect(await store.stale()).toEqual([]);
     expect(await projection()).toBe("[next]() new");
-    // A live document under a deleted folder holds no address there (deleted-ancestor rule).
     await liveEdit((writer) => writer.delete(LIVE, "system", folderId));
     const deleted = await store.capture(documentId);
     expect(deleted?.holderUri).toBeNull();
@@ -334,7 +325,6 @@ describe("durable document derivations", () => {
       expect.objectContaining({ aheadId, address: "manuscript://later" }),
     ]);
     expect(await registered()).toEqual([]);
-    // Certified and unchanged: only the anti-join recovery can still find the ref.
     expect(await aheadStore.stale()).toEqual([]);
     failRegistration = false;
     await aheadService.sweep();
@@ -342,7 +332,6 @@ describe("durable document derivations", () => {
       expect.objectContaining({ scheme: "manuscript", path: "later", settledDocumentId: null }),
     ]);
 
-    // More refs than one page: the holder's registration drains them all before a move locks.
     const bulk = Array.from({ length: 150 }, (_, i) =>
       schema.text(
         `bulk ${i} `,
@@ -363,8 +352,6 @@ describe("durable document derivations", () => {
     };
     expect(await unregistered()).toBe(0);
 
-    // A full page of refs that can never register (no such Work) ahead of a valid one: the
-    // sweep advances past what it attempted, so the valid ref registers on the next pass.
     const poison = Array.from({ length: 100 }, (_, i) => {
       const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
       return {

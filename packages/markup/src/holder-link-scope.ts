@@ -1,12 +1,3 @@
-/**
- * The link rules over one holder's catalog, for every host: the server's
- * prepared scope, agent-edit's in-memory port and the client's document index.
- *
- * Rules live in `@meridian/contracts` (`resolveStoredLink`, `spellStoredLink`,
- * `classifyWrittenLink`); this applies them over any `HolderCatalog`, and owns
- * pass 3 of ref assignment (`assignFreshLink`), so no host can disagree about
- * what a stored link names, how it is spelled, or what a written one binds to.
- */
 import {
   type AheadRef,
   aheadAddress,

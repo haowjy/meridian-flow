@@ -1,8 +1,3 @@
-/**
- * EntryNameField — the in-place name field for creating or renaming a context
- * entry (tree rows, phone listing, Work Files). The inline-edit field plus its
- * floating validation note, which never shifts the rows beneath it.
- */
 import { InlineEditInput } from "@/components/ui/inline-edit";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
 import { cn } from "@/lib/utils";

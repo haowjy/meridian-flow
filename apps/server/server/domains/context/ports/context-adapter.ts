@@ -1,10 +1,3 @@
-/**
- * Scheme-adapter port: the contract each context scheme implements for router
- * dispatch. Adapters own scheme-local reads/writes/searches; durable ContextFS
- * tree mutation is exposed only through an optional atomic capability.
- * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
- */
-
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type { InvalidOperationReason, ParsedDocumentFilename } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
@@ -28,7 +21,6 @@ import type {
   WriteProvenance,
 } from "./context-port.js";
 
-/** The router resolves destination inheritance once; direct adapter callers may supply raw input. */
 export type ContextEnsureTrackedOptions = ContextWriteOptions & {
   parsedFilename?: ParsedDocumentFilename;
   /**
@@ -46,18 +38,13 @@ export type ContextEnsureTrackedOptions = ContextWriteOptions & {
   recordCreate?: (created: CreatedDocument & { path: string }) => Promise<void>;
 };
 
-/** A document an ensure created, for its receipt. */
 export type CreatedDocument = {
   documentId: import("@meridian/contracts").DocumentId;
-  /** The create record, which the receipt names for Undo. */
   record: string;
-  /** The folders the create made on the way, outermost first; its Undo takes them back too. */
   folders: readonly { record: string; node: string }[];
-  /** The Work's draft it was drafted in; absent for a live create. */
   draftId?: import("@meridian/contracts").DraftId;
 };
 
-/** The port's ensure options: the receipt hears the URI the document landed at. */
 export type ContextEnsureTrackedPortOptions = Omit<
   ContextEnsureTrackedOptions,
   "recordCreate" | "parsedFilename"
@@ -65,7 +52,6 @@ export type ContextEnsureTrackedPortOptions = Omit<
   recordCreate?: (created: CreatedDocument & { uri: string }) => Promise<void>;
 };
 
-/** What a scheme adapter supports. Checked by the router before dispatch. */
 export type SchemeCapabilities = ContextSchemeCapabilities;
 
 export const CONTEXT_SCHEME_CAPABILITIES = {
@@ -104,21 +90,18 @@ export type AdapterFault =
     }
   | { code: "io_error"; message: string };
 
-/** A listing entry as produced by an adapter: `uri` is a scheme-relative path. */
 export type AdapterFileEntry = ContextListEntry extends infer T
   ? T extends ContextListEntry
     ? Omit<T, "uri" | "readonly"> & { path: string }
     : never
   : never;
 
-/** A single-file ref as produced by an adapter: `uri` is a scheme-relative path. */
 export type AdapterFileRef = FileRef extends infer T
   ? T extends FileRef
     ? Omit<T, "uri" | "readonly"> & { path: string }
     : never
   : never;
 
-/** A grep hit as produced by an adapter: `uri` is a scheme-relative path. */
 export type AdapterGrepFile = Omit<GrepFile, "uri"> & { path: string };
 export type AdapterGrepResult = {
   files: AdapterGrepFile[];
@@ -137,7 +120,6 @@ export type Landed<T> = Omit<T, "uri"> & { path: string };
 
 export type AdapterLocatedDocument = { documentId: string; path: string; name: string };
 
-/** One list's copy handed to a tree command: the writer on it, the view it acts in, and the source's top. */
 export type TreeScope = {
   writer: import("@meridian/project-tree").TreeWriter;
   view: import("@meridian/project-tree").View;
@@ -148,11 +130,6 @@ export type TreeScope = {
 export type TreeCommandInput<T> = {
   origin?: WriteProvenance;
   drafted?: boolean;
-  /**
-   * The owners of the sources `make` may change, whose locks come with the caller's grants
-   * (`runWithEditGrants`): `make` is given the judge of them, read under those locks, and
-   * throws `TreeOwnersMoved` from `assertLocked` when it met a source they did not cover.
-   */
   owners?: TreeOwners;
   /** A refused result stores nothing of what `make` wrote. */
   make: (
@@ -167,12 +144,7 @@ export type TreeReadInput<T> = {
   read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T;
 };
 
-/**
- * Tree writes in one source: records of the source's list. `afterWrite` runs inside the
- * command's transaction once the records are made, so a caller's own entry commits with them.
- */
 export interface ContextTreeAdapter {
-  /** This adapter's source, provisioned. */
   sourceId(): Promise<string>;
   /**
    * One command on this source's tree, in the command transaction: live, or (`drafted`) in the
@@ -182,20 +154,13 @@ export interface ContextTreeAdapter {
    * at a live address, which settle ahead links.
    */
   command<T>(input: TreeCommandInput<T>): Promise<Result<T, AdapterFault>>;
-  /** The tree this adapter's source shows the reader: the Work's draft, else live (or live when asked). */
   read<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>>;
 }
 
-/**
- * The reduced surface each scheme is backed by. The adapter never parses URIs
- * or validates schemes — it receives pre-parsed, normalized paths from the
- * router. It returns scheme-relative paths; the router re-attaches the scheme.
- */
 export interface ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
   readonly tree?: ContextTreeAdapter;
-  /** Copy's source read and destination insert (`context/copy/` orchestrates a drop). */
   readonly copy?: ContextCopyAdapter;
 
   stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>>;
@@ -205,7 +170,6 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
-  /** Bind content for a document about to be created at `path`, outside any transaction. */
   bindTrackedDocument(path: string, content: string): Promise<Result<BoundWrite, AdapterFault>>;
   createTrackedDocument(
     path: string,
@@ -217,7 +181,6 @@ export interface ContextSchemeAdapter {
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<Landed<ContextCreateTrackedDocumentResult>, AdapterFault>>;
-  /** Find an active document owned by this adapter's source. */
   locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   ensureTrackedDocument(
     path: string,

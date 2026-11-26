@@ -9,8 +9,6 @@ export function parentSourcePath(sourcePath: string): string {
   return idx <= 0 ? "." : normalized.slice(0, idx);
 }
 
-/** Maps a source path to canonical Scratch results under its factual owner. */
-
 export function resultsUriForSourcePath(
   authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }>,
   rootThreadId: string,

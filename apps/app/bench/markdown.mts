@@ -1,12 +1,3 @@
-/**
- * Browser Markdown bench. Run from the repo: pnpm --filter @meridian/app bench:markdown
- * Builds the actual production renderer, serves its files through Playwright
- * routing so module workers run, and opens it in headless Chrome. One 5,071-word
- * text block streams at 30 tokens/s; mounts use ten cold roots.
- * Save stdout to compare checkouts. BENCH_INTERVAL_MS=0 is a quick diagnostic,
- * not comparable to the default streaming run. BENCH_MOUNTS_ONLY=1 skips token
- * streaming for alternating mount comparisons. Build artifacts are temporary.
- */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";

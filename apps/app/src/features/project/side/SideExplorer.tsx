@@ -11,18 +11,12 @@ import { useProjectMenuSource } from "../context/use-project-menu-source";
 
 const NO_TRAIL: readonly DrillNode[] = [];
 
-/**
- * The file explorer the side offers beside a chat: the project's areas (manuscript://, the KB,
- * ...) as the drill-in menu lists them (`useDrill`), stepping into folders in place. Picking a
- * file hands its document to `onPick`.
- */
 export function SideExplorer({
   projectId,
   current,
   onPick,
 }: {
   projectId: string;
-  /** The document the side shows, marked in its folder. */
   current: string | null;
   onPick: (documentId: string) => void;
 }) {
@@ -38,7 +32,6 @@ export function SideExplorer({
     tree,
     hereIds: [],
     openAt: NO_TRAIL,
-    // Leaves the editor can't open can't sit beside.
     isDisabled: (node) => !node.folder && node.editable === false,
     rowSelector: "[data-list-item]:not(:disabled)",
   });

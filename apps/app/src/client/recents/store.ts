@@ -1,8 +1,3 @@
-/**
- * Device-local account recents. This record is the writer's own opening
- * history. A server list may add other devices and a newer openedAt. It does
- * not delete, overwrite a known locator, or clear a removal.
- */
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -16,7 +11,6 @@ export type RecentsStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
 export type RecentAddress = {
   kind: "document";
   scheme: ProjectContextTreeScheme;
-  /** Leading-slash locator. Empty paths are not a document address. */
   path: string;
 };
 
@@ -148,7 +142,6 @@ function parsePersisted(raw: string | null): PersistedRecents | null {
 
 export class DeviceAccountRecentsStore {
   private state: PersistedRecents | null = null;
-  /** Session fence for a cached list. Not durable, and not an item revision. */
   private bindEpoch = 0;
 
   constructor(private readonly storage: RecentsStorage) {}

@@ -1,4 +1,3 @@
-/** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
@@ -103,7 +102,6 @@ function ProjectRoute() {
   );
 }
 
-/** Fence the previous live project synchronously, before the next loader settles. */
 export function ProjectIdentityBoundary({
   projectId,
   children,

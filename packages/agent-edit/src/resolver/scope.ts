@@ -34,7 +34,6 @@ export type ScopeFailure =
       ok: false;
       code: "not_found" | "invalid_write";
       message: string;
-      /** Set when a block number ran past the end, so the reply gives the size, not a re-read. */
       documentBlocks?: number;
     }
   | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
@@ -94,7 +93,6 @@ export function resolveFragment(
   const bySlug = resolveSlug(ctx, fragment);
   if (bySlug.ok) return bySlug;
   const byHash = resolveHashAsBlockOrSection(ctx, fragment);
-  // A slug-shaped fragment that matches nothing was meant as a slug.
   return byHash.ok || byHash.code !== "not_found" ? byHash : bySlug;
 }
 
@@ -223,10 +221,6 @@ function headingSlugEntries(
   return headings.map((heading, position) => ({ ...heading, slug: slugs[position] as string }));
 }
 
-/**
- * The `#fragment` that reads each heading's section: its slug, or its hash when
- * the slug is hex-shaped, since `resolveFragment` tries such fragments as hashes first.
- */
 export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string | undefined> {
   return new Map(
     headingSlugEntries(ctx).map(({ slug, block }) => [

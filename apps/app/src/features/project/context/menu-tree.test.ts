@@ -10,7 +10,6 @@ import { buildMenuTree, crumbTrailFor, type MenuArea, menuEntryFor } from "./men
 
 type Entry = { entryId: string; kind: "dir" | "file"; name: string; path: string; parent: string };
 
-/** A tree with just what the menu reads: children, ids, files and path lookup. */
 function tree(root: string, entries: Entry[]): TreeView {
   const shown = entries.map((entry) => ({ ...entry, documentId: `doc-${entry.entryId}` }));
   return {

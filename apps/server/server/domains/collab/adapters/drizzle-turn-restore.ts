@@ -1,25 +1,3 @@
-/**
- * What a Draft chat turn's restore (its card's `Undo turn`) takes back in one draft (design §2),
- * read once for the card's offer and the press: the turn's writes into the draft's text, newest
- * first, each in the room it landed in, and the turn's tree records the draft still holds pending
- * (its creates, moves, renames and deletes), which the press discards, a created node to Trash.
- * The draft's text is its fork of each document, or the Live room of a document only the draft
- * holds (a part's `origin` names its draft either way, design §5). A document the turn wrote while
- * only the draft held it, and the writer has since applied, is the manuscript's now: it stays, and
- * so does a tree change of the turn the writer applied.
- *
- * The writes go back by the one Undo rule (`undoInRooms`), whatever was written since; a write an
- * Undo from outside the turn or the writer's revert already took back is no part of the plan, and
- * one whose history the room cut (design §4's cutoff) stays as it is. The turn's own undos are its
- * writes too: they go back with the writes they took, newest first.
- *
- * What a restore took back is in the one ledger every Undo reads, `document_edits`: the restore
- * records an `undo` receipt naming the parts it took, as the card's Undo does, so a second restore,
- * the card and the model's undo find them taken. Its Undo takes the restore's own parts back and
- * records an `undo` receipt of the turn, carrying its edit: the text that is the turn's again, which
- * pressing the restore again (the Redo) takes back. A restore never takes back a part whose text an
- * Undo already put elsewhere, so the old words never show twice.
- */
 import type { RoomPart } from "@meridian/agent-edit/integration";
 import type { CommandId, DocumentId, DraftId, EditOrigin, TurnId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
@@ -39,7 +17,6 @@ import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
-/** A part a restore or its Undo takes back, in the room it landed in, as its receipt names it. */
 export type RestorePart = RoomPart & {
   documentId: DocumentId;
   editId: string;
@@ -48,11 +25,8 @@ export type RestorePart = RoomPart & {
 };
 
 export type RestorePlan = {
-  /** The turn's writes into the draft's text, newest first. */
   parts: RestorePart[];
-  /** The turn's tree records the draft holds pending: the newest copy of each, by record id. */
   records: string[];
-  /** The nodes those records name. */
   nodes: DocumentId[];
 };
 
@@ -97,7 +71,6 @@ export async function restorePlan(
   return { parts, records: tree.records, nodes: tree.nodes };
 }
 
-/** What a restore press took back that no Undo has brought back since: what its Undo takes back. */
 export function restoredParts(tx: DrizzleDb, press: CommandId): Promise<RestorePart[]> {
   return standingParts(
     tx,
@@ -110,7 +83,6 @@ export function restoredParts(tx: DrizzleDb, press: CommandId): Promise<RestoreP
   );
 }
 
-/** The parts `where` names that carry an edit and stand (`notTakenBack`), newest first, each in its room. */
 async function standingParts(
   tx: DrizzleDb,
   where: SQL | undefined,
@@ -138,10 +110,6 @@ async function standingParts(
   });
 }
 
-/**
- * The turn's tree records in `draft` that still wait there: the newest copy of each (a restored
- * Discard's copy stands for its original, `newestDrafted`), and the nodes they name and create.
- */
 async function pendingOfTurn(
   tx: DrizzleDb,
   treeLists: TreeReader,
@@ -180,10 +148,6 @@ async function pendingOfTurn(
   });
 }
 
-/**
- * Each room of `parts` read once, by room name: the caller judges or takes the parts back on them,
- * and frees them.
- */
 export async function readRooms(
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
   parts: readonly RoomPart[],
@@ -237,7 +201,6 @@ export async function restoreStates(
   return { offered, restored };
 }
 
-/** Whether some write of `plan` still stands with the history its Undo needs (`holdsEdit`). */
 async function someStands(
   rooms: Pick<DocumentRooms<DrizzleDb>, "read">,
   plan: RestorePlan,
@@ -253,7 +216,6 @@ async function someStands(
   }
 }
 
-/** The latest restore of `turn` in `draft` that changed something and was not undone. */
 async function pressInForce(
   tx: DrizzleDb,
   turn: TurnId,

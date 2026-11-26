@@ -1,5 +1,3 @@
-/** Deletes tree entries: a `delete` record each, at once; a refusal by the server lands on the row. */
-
 import { useCallback } from "react";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
 import { useShellTreeVersion } from "../tree-version";

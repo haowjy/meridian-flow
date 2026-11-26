@@ -1,7 +1,6 @@
 import type { Schema } from "prosemirror-model";
 import type { MarkupCodec, PMNode } from "./types.js";
 
-/** A code file's content: one code block holding its text byte for byte, in its filetype. */
 export function codeFileBlock(schema: Schema, filetype: string, text: string): PMNode {
   return schema.nodes.code_block.create(
     { language: filetype },

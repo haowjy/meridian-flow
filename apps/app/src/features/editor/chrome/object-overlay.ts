@@ -30,32 +30,16 @@ import { manuscriptOverlay } from "./manuscript-overlay";
 import { useAnchorRect } from "./useAnchorRect";
 import "./object-overlay.css";
 
-/** Which corner an overlay is asking for. */
-export type ObjectOverlayCorner =
-  /** The object's own node-view element; the overlay is rendered in it. */
-  | { inside: HTMLElement }
-  /** An element ProseMirror owns; the overlay is measured onto the page. */
-  | { over: HTMLElement };
+export type ObjectOverlayCorner = { inside: HTMLElement } | { over: HTMLElement };
 
 export type ObjectOverlayPlacement = {
-  /** Where the overlay is portalled. */
   container: Element;
-  /** How the overlay is placed, and which half of `object-overlay.css` styles it. */
   placement: "inside" | "over";
-  /** Only a measured overlay carries geometry; CSS holds the attached corner. */
   style: CSSProperties | undefined;
 };
 
-/** Matches mockup 03b: the overlay sits inside the bounds, not on the edge. */
 const OVERLAY_INSET_PX = 10;
 
-/**
- * Resolve a corner, or null when there is nothing to draw against.
- *
- * Null once the anchor has left the document: a node view that remounts leaves
- * the old element detached, and chrome rendered into a detached element is
- * chrome nobody can see or reach.
- */
 export function useObjectOverlayCorner(
   editor: Editor | null,
   corner: ObjectOverlayCorner | null,

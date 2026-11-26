@@ -1,11 +1,3 @@
-/**
- * The project's one live subscription to the server's wake hints. A hint carries no state: it says
- * a read is stale, and the read comes again. The tree itself is not read this way (the project's
- * list arrives as Loro updates), so the hints left are the chat list, a draft's list (and, for a
- * Work's draft, its row in the Works list: its count and its lifecycle), the project's sources, and
- * what Mars reads of the Agent files, and the writer's connections.
- * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
- */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -79,7 +71,6 @@ export function useProjectWake(projectId: string): void {
     const unsubscribe = transport.subscribeCatalog(projectId, (hint) => {
       if (hint.type === "project-chats-hint") {
         refreshChats();
-        // Hints were lost (a reconnect) or a Work went: every read a hint covers is stale.
         if (hint.recheckTabs) {
           refreshDrafts();
           refreshSources();
@@ -89,13 +80,10 @@ export function useProjectWake(projectId: string): void {
       } else if (hint.type === "draft-hint") {
         refreshDrafts(hint.draft);
       } else if (hint.type === "context-sources-hint") {
-        // A chat or a lineage gained or lost a source (Scratch, uploads): which trees exist changed.
         refreshSources();
       } else if (hint.type === "agent-files-hint") {
-        // An Agent file's text changed elsewhere (another tab, the AI): its verdict is read again.
         void invalidateAgentReads(queryClient, projectId, accountId);
       } else if (hint.type === "mcp-connections-hint") {
-        // A connection was checked, edited or removed: its status and tools are read again.
         void invalidateMcpConnections(queryClient, accountId);
       }
     });

@@ -1,8 +1,3 @@
-/**
- * Enter, Backspace and Mod-Enter in a block with nesting. Each reads the block's place from
- * `nest` and writes attributes on the blocks it names; a binding declines (returns false)
- * wherever ProseMirror's own key does the right thing, so the base chain runs there.
- */
 import { innermostListStep, isNested, pathOf, readPath } from "@meridian/prosemirror-schema";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
@@ -12,9 +7,6 @@ import { freshMarker } from "./nesting-landing";
 
 type Dispatch = ((tr: Transaction) => void) | undefined;
 
-/**
- * The text block at `$from`, when it carries a path, with its place among its siblings.
- */
 function nestedBlockAt($from: ResolvedPos) {
   const block = $from.parent;
   if (!block.isTextblock || !isNested(block.attrs.path)) return null;
@@ -26,10 +18,6 @@ function caretBlock(state: EditorState) {
   return state.selection instanceof TextSelection ? nestedBlockAt(state.selection.$from) : null;
 }
 
-/**
- * Removes the innermost step of the caret's block. An item takes what is under it along, as
- * Shift-Tab does; any other block goes alone.
- */
 function lift(tr: Transaction): boolean {
   const { $from } = tr.selection;
   const block = $from.parent;
@@ -48,11 +36,6 @@ function lift(tr: Transaction): boolean {
   return true;
 }
 
-/**
- * Enter in a block with a path. In an empty block it lifts. Elsewhere it splits, and the new
- * block sits where the old one does: same path, kind and looseness, a task marker copied open.
- * Only the block that comes first keeps what opens a list (`|`, `start`).
- */
 export function enterInNesting(state: EditorState, dispatch: Dispatch): boolean {
   if (!caretBlock(state)) return false;
   const tr = state.tr;
@@ -77,11 +60,9 @@ export function enterInNesting(state: EditorState, dispatch: Dispatch): boolean 
   const atEnd = $from.parentOffset === $from.parent.content.size;
   const marks = state.storedMarks ?? ($from.parentOffset > 0 ? $from.marks() : null);
   if (atStart) {
-    // The words stay in their block, which keeps its marker; the empty block above takes its place in the list.
     tr.split($from.pos, 1, [{ type: block.type, attrs: continuing }]);
     tr.setNodeMarkup($from.before(), undefined, { ...attrs, marker: freshMarker(attrs.marker) });
   } else {
-    // A heading's level stays with its words: a split at its end starts body text.
     const level = atEnd && "level" in attrs ? { level: null } : {};
     tr.split($from.pos, 1, [
       { type: block.type, attrs: { ...continuing, ...level, marker: freshMarker(attrs.marker) } },
@@ -92,11 +73,6 @@ export function enterInNesting(state: EditorState, dispatch: Dispatch): boolean 
   return true;
 }
 
-/**
- * Backspace at the start of a block with a path. An item with an item before it in its list
- * joins that item as a further paragraph; a block that opens its innermost container lifts.
- * Anything else is ProseMirror's join with the block before.
- */
 export function backspaceInNesting(state: EditorState, dispatch: Dispatch): boolean {
   const caret = caretBlock(state);
   if (!caret || !state.selection.empty || caret.$from.parentOffset !== 0) return false;
@@ -114,7 +90,6 @@ export function backspaceInNesting(state: EditorState, dispatch: Dispatch): bool
   return true;
 }
 
-/** Flips the task item at `pos` between open and done. False when `nest` draws no box there. */
 export function toggleTaskAt(tr: Transaction, pos: number): boolean {
   const node = tr.doc.nodeAt(pos);
   if (!node) return false;
@@ -125,7 +100,6 @@ export function toggleTaskAt(tr: Transaction, pos: number): boolean {
   return true;
 }
 
-/** Mod-Enter: checks or unchecks the task item the caret is in. */
 export function toggleTaskAtCaret(state: EditorState, dispatch: Dispatch): boolean {
   const caret = caretBlock(state);
   if (!caret) return false;

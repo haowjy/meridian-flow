@@ -4,7 +4,6 @@ import { messages as enMessages } from "@/locales/en/messages";
 import { messages as zhMessages } from "@/locales/zh/messages";
 import { readAccountSettingsCache } from "./account-settings-cache";
 
-/** The Lingui catalogs supported by the app. */
 const CATALOGS = {
   en: enMessages,
   zh: zhMessages,

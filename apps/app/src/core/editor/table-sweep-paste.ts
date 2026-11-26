@@ -44,11 +44,6 @@ export function tableSweepPastePlugin(): Plugin {
   });
 }
 
-/**
- * Replace a swept `CellSelection` with the pasted slice. False whenever this
- * paste is not that: no sweep, an empty clipboard, or table content — each
- * falls through to the handler that owns it.
- */
 function sweepPasteReplace(view: EditorView, slice: Slice): boolean {
   const { state } = view;
   if (!(state.selection instanceof CellSelection)) return false;
@@ -61,7 +56,6 @@ function sweepPasteReplace(view: EditorView, slice: Slice): boolean {
   return true;
 }
 
-/** A sweep-replace, built but not dispatched: the landed content's range too. */
 export type SweepLanding = { transaction: Transaction; from: number; to: number };
 
 /**
@@ -101,14 +95,12 @@ export function sweepReplaceLanding(
   return { transaction, ...landed };
 }
 
-/** The clipboard as this cell can hold it, however open the slice arrived. */
 function fitIntoCell(cell: PMNode, slice: Slice): Fragment {
   const seed = cell.type.createAndFill();
   if (!seed) return Fragment.empty;
   return new Transform(seed).replace(0, seed.content.size, slice).doc.content;
 }
 
-/** What an emptied cell holds: the least content its type requires. */
 function emptiedCell(cell: PMNode): Fragment {
   return Fragment.from(cell.type.contentMatch.fillBefore(Fragment.empty, true));
 }

@@ -1,12 +1,6 @@
-/**
- * Type-based auto-promotion policy for generated artifacts into canonical Scratch results.
- * Single table — extend here when new pilot output types land.
- */
-
 export type PromotionDecision = "promote" | "skip";
 export interface PromotionPolicyMatch {
   decision: PromotionDecision;
-  /** MIME persisted on the object store row when decision is promote. */
   mimeType?: string;
 }
 
@@ -25,10 +19,6 @@ const EXTENSION_MIME: ReadonlyArray<{ suffix: string; mimeType: string }> = [
   { suffix: ".json", mimeType: "application/json" },
 ];
 
-/**
- * Ordered policy rows (first match wins). Suffix rules cover pilot binary outputs;
- * everything else is skipped so scratch logs and text intermediates stay ephemeral.
- */
 export const PROMOTION_POLICY_TABLE: ReadonlyArray<{
   label: string;
   match: (sourcePath: string) => boolean;

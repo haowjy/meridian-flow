@@ -11,10 +11,8 @@
 import { Worker } from "node:worker_threads";
 import type { MatchReply, MatchRequest, MatchValue } from "./match-worker.js";
 
-/** Matching threads alive at once. Each costs memory, and the cap bounds the CPU that grep may take. */
 const MAX_WORKERS = 4;
 
-/** The signal aborted before matching finished. */
 export class GrepStopped extends Error {
   constructor() {
     super("grep stopped");
@@ -61,7 +59,6 @@ function release(worker: Worker): void {
   idle.push(worker);
 }
 
-/** Ends a thread that timed out or failed; a waiting caller gets a fresh one. */
 function discard(worker: Worker): void {
   void worker.terminate();
   live -= 1;
@@ -69,7 +66,6 @@ function discard(worker: Worker): void {
   if (next) next(spawn());
 }
 
-/** One request on a free thread. Rejects with {@link GrepStopped} when `signal` aborts first. */
 export async function runMatch<Op extends MatchRequest["op"]>(
   request: Extract<MatchRequest, { op: Op }>,
   signal: AbortSignal,
@@ -99,7 +95,6 @@ export async function runMatch<Op extends MatchRequest["op"]>(
       worker.on("error", onError);
       worker.on("exit", onExit);
       signal.addEventListener("abort", onAbort, { once: true });
-      // An abort between the entry check and this listener never fires the listener.
       if (signal.aborted) return onAbort();
       worker.postMessage(request);
     });

@@ -1,8 +1,3 @@
-/**
- * Paragraph order for the content merge. Takes each side's block correspondence with the base
- * (equal, edited in place, or moved), decides one paragraph order for the three documents, and lays
- * each out in it, so the token merge afterwards sees edits and no moves.
- */
 import type { Node as PMNode } from "prosemirror-model";
 import type { Correspondence } from "../diff/correspond.js";
 import type { Side } from "../diff/tokens.js";
@@ -32,7 +27,6 @@ function movedBlocks(blocks: number[], partner: Int32Array, favored: Set<number>
   return new Set(seq.filter((x) => !inRun.has(x)));
 }
 
-/** The base block that comes before `block` in the side, among `blocks`; -1 for none. */
 function predecessorOf(block: number, blocks: number[], partner: Int32Array): number {
   let pred = -1;
   for (const y of blocks)
@@ -52,9 +46,7 @@ export type OrderMerge =
       reordered: true;
       cyclic: boolean;
       contested: number[];
-      /** Base block indices in the merged order. */
       baseOrder: number[];
-      /** Live's and the draft's blocks laid out in `baseOrder`. */
       live: PMNode[];
       liveOrder: number[];
       draftOrder: number[];
@@ -99,7 +91,6 @@ function placeBlocks(kept: number[], inLive: Int32Array, inDraft: Int32Array): P
   const scored = both
     .map((x) => [x, both.reduce((n, y) => n + (y !== x && before(y, x) ? 1 : 0), 0)] as const)
     .sort((a, b) => a[1] - b[1]);
-  // Every score distinct and consecutive means the pairwise orders form one consistent sequence.
   const cyclic = scored.some(([, score], k) => score !== k);
   const order = cyclic ? [...both].sort((a, b) => inDraft[a] - inDraft[b]) : scored.map(([x]) => x);
 
@@ -113,7 +104,6 @@ function placeBlocks(kept: number[], inLive: Int32Array, inDraft: Int32Array): P
       )
         prev = x;
     let at = prev < 0 ? 0 : order.indexOf(prev) + 1;
-    // Skip blocks this side doesn't have that come before it in the base.
     while (at < order.length && partner[order[at]] < 0 && order[at] < block) at++;
     order.splice(at, 0, block);
   };
@@ -139,15 +129,11 @@ function withRemovedBlocks(
   return out;
 }
 
-/**
- * Lay a side's blocks out in `order`. A piece stays with its unit; any other new block stays behind
- * the block before it.
- */
 function layOut(side: Side, c: Correspondence, order: number[]): number[] {
   const owner = new Int32Array(side.blocks.length).fill(-1);
   for (const i of order) if (c.partner[i] >= 0) owner[c.partner[i]] = i;
 
-  const attachedAfter = new Map<number, number[]>(); // base block -> side blocks placed after it
+  const attachedAfter = new Map<number, number[]>();
   const leading: number[] = [];
   let prev = -1;
   for (let j = 0; j < side.blocks.length; j++) {

@@ -1,9 +1,3 @@
-/**
- * Manage Works: every Work function the Work page had, in one dialog the Work picker opens.
- * A list (Active, Archived, Deleted; new, rename, archive, restore, delete with Undo) and one
- * Work's detail (goal and changes to review). The dialog never changes the Work scope or the
- * main view; "Show this Work" is the picker's own pick.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
@@ -42,15 +36,10 @@ const ManageWorksContext = createContext<{
   close: () => void;
 } | null>(null);
 
-/** Opens the Manage Works dialog; null outside a project. */
 export function useManageWorks(): { open: () => void } | null {
   return useContext(ManageWorksContext);
 }
 
-/**
- * The dialog itself. It mounts below the review handoff (a change row opens its review), so it
- * is separate from the provider the picker reaches.
- */
 export function ManageWorksDialogHost({ projectId }: { projectId: string }) {
   const manage = useContext(ManageWorksContext);
   return manage?.isOpen ? <ManageWorksDialog projectId={projectId} onClose={manage.close} /> : null;
@@ -168,7 +157,6 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             <Trans>Manage Works and review their changes</Trans>
           </DialogDescription>
         </DialogHeader>
-        {/* The bleed is the room the Work list's rows reach into (-mx-2), so it never scrolls sideways. */}
         <div ref={body} className="-mx-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2">
           {view.kind === "list" ? (
             <WorkCollection

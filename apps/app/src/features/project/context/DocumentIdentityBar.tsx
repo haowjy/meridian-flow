@@ -1,10 +1,3 @@
-/**
- * DocumentIdentityBar — an open document's identity and state: the chips about it
- * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, "Review N changes" or Close). They portal into the document's state slot in the toolbar
- * row; Review changes' controls take the formatting controls' place in that row, and the page's
- * notice floats at its foot.
- */
 import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useState } from "react";
@@ -34,7 +27,6 @@ export type DocumentIdentityBarProps = {
   projectId: string;
   editorWorkId: string | null;
   document: OpenDocument;
-  /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
   onCommitted: (
     documentId: string,
@@ -52,7 +44,6 @@ export function DocumentIdentityBar({
   onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
-  // On Draft of a deleted Work the placement field is not offered: its tree takes no change.
   const workDeleted = useTreeVersion().ended === "deleted";
   const readOnly = readOnlyDocument || workDeleted;
   const location = tabLocation(document);
@@ -116,7 +107,6 @@ export function DocumentIdentityBar({
   );
 }
 
-/** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
   document,
@@ -140,10 +130,6 @@ function IdentityChipSlot({
 
 const DEVICE_ONLY_GRACE_MS = 2_000;
 
-/**
- * Device-only once the project's list has been unreachable for 2 seconds: what the writer typed
- * is on this device and the list's records wait to be sent. A short drop never flashes the warning.
- */
 function useDeviceOnly(projectId: string, tab: OpenDocument): boolean {
   const accountId = useAccountId();
   const list = useTreeList(
@@ -164,7 +150,6 @@ function useDeviceOnly(projectId: string, tab: OpenDocument): boolean {
   return sustained;
 }
 
-/** The document's live prose; a warm copy kept out of sight is inert. */
 const editorProse = (documentId: string) =>
   [
     ...document.querySelectorAll<HTMLElement>(
@@ -172,7 +157,6 @@ const editorProse = (documentId: string) =>
     ),
   ].find((prose) => !prose.closest("[inert]")) ?? null;
 
-/** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
   editorProse(documentId)?.focus();
 }

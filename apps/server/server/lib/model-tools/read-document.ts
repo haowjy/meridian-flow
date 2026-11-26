@@ -1,8 +1,3 @@
-/**
- * The one server read path: the `read` tool, a copy's source read and
- * reference loading all call `readDocument`. Tool and reference reads share
- * the tracked-document adapter; private copy-source reads supply their own grant.
- */
 import type {
   DocumentVersion,
   FrontierLookup,
@@ -14,13 +9,8 @@ import type { FileGrant } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import type { ResolvedDocumentAddress, ToolWiringDeps } from "./tool-context.js";
 
-/** Which blocks a read renders, as the `read` tool's selector fields. */
 export type ReadSelection = Pick<ReadToolInput, "in" | "around" | "before">;
 
-/**
- * Omitted `version` reads where this thread's writes go; `live` never touches
- * a draft.
- */
 export async function readDocument(
   deps: Pick<ToolWiringDeps, "documentSync">,
   grant: FileGrant,
@@ -29,14 +19,8 @@ export async function readDocument(
     selection?: ReadSelection;
     format?: ReadToolInput["format"];
     version?: DocumentVersion;
-    /** A copy's source read also returns the selected blocks as nodes. */
     includeNodes?: boolean;
-    /**
-     * A read whose text goes to the model records its frontier, chained from
-     * this lookup; a copy's private source read passes none.
-     */
     recordingFrontier?: FrontierLookup;
-    /** Inside a model edit's command: the read joins its transaction and pulls nothing. */
     inCommand?: boolean;
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,

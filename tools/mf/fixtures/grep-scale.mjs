@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-/**
- * Generates the target-scale project the grep recipe seeds (apps/server/server/domains/context/.context/qa/grep.md):
- * 150 chapters of 7,000 words and 300 KB entries of 800 words, 450 documents and about
- * 8.2M characters of synthetic xianxia prose. Deterministic. The output is large, so it is
- * generated, not committed:
- *
- *   node tools/mf/fixtures/grep-scale.mjs > tools/mf/fixtures/grep-scale.json
- *
- * Known frequencies the recipe's expected counts rest on: "Lin Feng" is in every document;
- * "Azure Dragon Seal" in exactly 9 (chapters 7, 19, 31, 43, 55, 67, 79, 91, 103); "Qi
- * Condensation 3" and "Qi Foundation 7" in every 10th chapter; "LIVE_ONLY" (escaped as
- * LIVE\_ONLY) only in chapter-001.
- */
 const VOCABULARY = (
   "mountain gate river sword mist cloud dawn dusk temple elder disciple cultivation breath " +
   "pavilion lantern jade ember frost thunder valley bridge scroll formation array talisman " +

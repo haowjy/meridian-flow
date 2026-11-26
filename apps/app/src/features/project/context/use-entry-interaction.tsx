@@ -1,4 +1,3 @@
-/** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,7 +17,6 @@ export type EntryCapabilities = readonly Exclude<
 >[];
 export type EntryCreation = (kind: ContextCreateKind, parentPath: string) => void;
 
-/** Starts an import into a folder; `folders` is false where the browser cannot pick one. */
 export type ImportHere = { start: (kind: "folder" | "files") => void; folders: boolean };
 
 export function entryActions(
@@ -54,15 +52,11 @@ export function useEntryInteraction({
   owner: ContextOwner;
   scheme: ProjectContextTreeScheme;
   capabilities: EntryCapabilities;
-  /** Deletes entries in one gesture: this row, or the selection its menu acted on. */
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   create?: EntryCreation;
-  /** A row creation just made: it takes focus once it is on screen. */
   arriving?: boolean;
   onArrived?: () => void;
-  /** Opens the OS picker for an import into this folder; only folders offer it. */
   importHere?: ImportHere;
-  /** Sends a file whose import failed again; a failed file's menu leads with it. */
 }) {
   const [renaming, setRenaming] = useState(false);
   const control = useRef<HTMLElement | null>(null);
@@ -157,7 +151,6 @@ export function useEntryInteraction({
   return {
     renaming: renaming && actions.includes("rename"),
     rename,
-    /** The row's main control, which takes focus back when its name field closes. */
     controlRef,
     actions,
     onAction,

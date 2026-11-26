@@ -1,4 +1,3 @@
-/** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
   type AgentEditCodecFactory,
   type AgentEditRooms,
@@ -27,7 +26,6 @@ type AgentEditObservability = Pick<
 >;
 
 export function createAgentEditRuntime<Tx>(input: {
-  /** The model's reads and writes: agent-edit's Loro core on the server's rooms. */
   loro: {
     rooms: AgentEditRooms;
     ordinals: WriteOrdinals;
@@ -38,11 +36,8 @@ export function createAgentEditRuntime<Tx>(input: {
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
-  /** How links and image sources spell, loaded per operation (contract §4.4). */
   links: DocumentLinkScopes;
-  /** Durable ahead-ref registration for refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
-  /** The server's one door to document rooms: the Markdown engine reads and writes through it. */
   rooms: DocumentRooms<Tx>;
   /** Runs work in the caller's transaction, or in one of its own outside any. */
   transaction<T>(work: (tx: Tx) => Promise<T>): Promise<T>;

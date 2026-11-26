@@ -1,11 +1,3 @@
-/**
- * Editor chrome primitives — what every surface lane builds from.
- *
- * Anchoring, dismissal, focus return, and the object row live here once. A
- * lane that re-implements one of them will drift from the rest of the toolkit
- * on the first Radix upgrade.
- */
-
 export {
   type ChromeLayerBinding,
   type UseChromeLayerOptions,

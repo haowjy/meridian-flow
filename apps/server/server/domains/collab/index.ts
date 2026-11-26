@@ -1,5 +1,3 @@
-/** Public barrel for collab domain contracts and composition factories. */
-
 export {
   createLinkScopeObserver,
   type LinkScopeObserver,

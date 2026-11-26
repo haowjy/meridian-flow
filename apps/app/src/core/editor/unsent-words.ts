@@ -1,9 +1,3 @@
-/**
- * Whether a copy holds words the server lacks: what decides the one "Couldn't save" pill when
- * typing has nowhere to go (a read admission, a room ended below the history cutoff, a copy
- * deleted on a final fact). A change with no words (a deletion, a format change, a structure
- * edit) is dropped silently.
- */
 import {
   type DocVersion,
   decodeEnvelope,
@@ -41,11 +35,6 @@ export function wordsBeyond(docs: RoomDocs, server: RoomVersion): boolean {
   return false;
 }
 
-/**
- * Whether a stored copy holds words beyond `server`, or, without it, beyond the copy's own record
- * of what the server holds. A copy with no record offers everything it holds. A copy that won't
- * load holds nothing anyone can read.
- */
 export function storedWordsBeyond(loaded: LoadedCopy, server?: RoomVersion): boolean {
   const docs = RoomDocs.create(documentShape(), freshPeerId());
   try {

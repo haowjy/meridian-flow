@@ -1,5 +1,3 @@
-// Resolves agent-visible block hashes to document positions with structured ambiguity.
-
 import type { BlockRef } from "../handles.js";
 import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 
@@ -11,7 +9,6 @@ import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 export interface HashLocateContext {
   model: DocumentModel;
   projected: readonly ProjectedBlock[];
-  /** `projected`'s refs, in order. */
   blocks: readonly BlockRef[];
 }
 

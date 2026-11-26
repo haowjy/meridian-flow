@@ -66,7 +66,6 @@ import {
 } from "./block-targets";
 import "./block-movement.css";
 
-/** Names this surface in `EDITOR_CHROME_SURFACES` and in probes. */
 export const BLOCK_MOVEMENT_SURFACE_ID = "block-movement";
 
 type BlockTransactionBuilder = (state: Editor["state"], source: BlockTarget) => Transaction | null;
@@ -102,17 +101,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   });
   useBlockMovementKeymap(editor, BLOCK_MOVEMENT_SURFACE_ID);
 
-  /**
-   * The approach (§5.8). The pointer spends most of it in the margin, where
-   * `posAtCoords` has nothing to say, so `blockUnderPointer` pulls x into the
-   * column before asking.
-   *
-   * The kernel decides WHEN the pointer is believed and WHICH block owns
-   * chrome; this only answers "which block is under this point". That is what
-   * keeps the handle and an object's own controls on one block rather than on
-   * two, and it is what re-aims the handle when the pane scrolls under a hand
-   * that never moved.
-   */
   useEffect(() => {
     if (!chrome || !editable) return;
     return chrome.registerHoverAnchor<number>({
@@ -146,14 +134,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     return () => window.clearTimeout(timer);
   }, [anchorHold, hovered, menuHold, gesture.active, coarse]);
 
-  /**
-   * Both holds travel with the document.
-   *
-   * A block a peer deleted takes its handle and its menu with it: `followBlock`
-   * answers null once the node is gone, and null is this surface's dismissal.
-   * The kernel re-asks what is under the pointer on the same transaction, so
-   * nothing here has to tell the approach that its target has changed.
-   */
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
       const follow = (hold: NodeHold) => followBlock(editor.state, hold, transaction.mapping);
@@ -166,11 +146,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     };
   }, [editor]);
 
-  /**
-   * The touch path (§5.8, law 8). A tap has no hover to settle, so on coarse
-   * input the handle belongs to whatever the tap landed on — the writer's own
-   * caret is the approach.
-   */
   useEffect(() => {
     if (!editable) return;
     const onSelection = () => {
@@ -311,27 +286,11 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   );
 }
 
-/**
- * The handle's top-left in the pointer's own space, which is where Radix hangs
- * a menu from.
- *
- * Read off the element rather than passed down from the placement, because the
- * two are in different coordinate spaces on purpose: the handle is drawn in the
- * manuscript pane's, and the pane is what carries it through a scroll.
- */
 function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
   const box = handle.getBoundingClientRect();
   return { x: box.left, y: box.top };
 }
 
-/**
- * Open the menu for a block, standing the writer on it first.
- *
- * Law 1: pressing a block's handle READS that block — a caret in prose, a
- * selection on an object. The menu's verbs then run against the same selection
- * the toolbar's fence reads, which is what keeps one refusal rule behind both
- * surfaces.
- */
 function openBlockMenuAt(editor: Editor, pos: number, open: (hold: NodeHold) => void): void {
   const target = blockAt(editor.state.doc, pos);
   if (!target) return;

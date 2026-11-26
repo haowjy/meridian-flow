@@ -1,11 +1,8 @@
-// Aligns a scope's current blocks with their replacement so equal blocks stay untouched.
-
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
 
 export type BlockAlignmentStep = {
   structuralBoundary?: object;
-  /** For a removed or added block that is a piece of a join or a split: the old block it belongs to. */
   pieceOf?: number;
 } & (
   | { kind: "keep"; old: number; next: number }

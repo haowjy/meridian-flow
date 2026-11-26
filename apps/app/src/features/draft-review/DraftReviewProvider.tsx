@@ -1,5 +1,3 @@
-/** A document host's draft scope: the draft's list and its Apply and Discard, for every surface the host renders. */
-
 import type { Work } from "@meridian/contracts/works";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
@@ -30,11 +28,8 @@ export function useDraftReviewScopeValue({
   threadId = null,
 }: {
   projectId: string | null;
-  /** The Work the draft belongs to, if any. */
   work: Work | null;
-  /** The draft this scope reviews; "" scopes nothing. */
   draftId: string;
-  /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
 }): DraftReviewContextValue {
   const { fileForDocument } = useOwnerDrafts(projectId, draftId || null);
@@ -57,7 +52,6 @@ export function useDraftReview(): DraftReviewContextValue {
   return value;
 }
 
-/** The host's review, or null outside a document host (an editor that is not a page). */
 export function useOptionalDraftReview(): DraftReviewContextValue | null {
   return useContext(DraftReviewContext);
 }

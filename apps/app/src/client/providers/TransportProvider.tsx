@@ -1,11 +1,3 @@
-/**
- * TransportProvider — creates and lifecycle-manages the singleton
- * `ThreadSocketClient` and exposes it via context (`useThreadTransport`).
- *
- * Connects on mount, disconnects on unmount. The single place the production
- * transport is instantiated; consumers depend on the `ThreadTransport` contract.
- */
-
 import { t } from "@lingui/core/macro";
 import type { ConnectionState, ThreadTransport } from "@meridian/thread-client";
 import { ThreadSocketClient } from "@meridian/thread-client";
@@ -78,7 +70,6 @@ export function TransportProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** The words for a connection in trouble, shown in each composer and announced; null while it isn't. */
 export function connectionTrouble(state: ConnectionState): string | null {
   if (state.kind === "reconnecting") return t`Reconnecting…`;
   if (state.kind === "degraded") return t`Offline`;

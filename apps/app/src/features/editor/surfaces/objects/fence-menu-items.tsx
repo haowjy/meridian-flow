@@ -1,19 +1,3 @@
-/**
- * What a code fence offers, in one place for its two doors.
- *
- * The chip cluster spreads the same verbs across three controls — a labeled
- * language button, a copy icon, and a ⋯ — because a fence's language is worth
- * a label of its own in the corner. A right-click has one list to
- * put them in, so it nests the language and keeps the rest flat. Same verbs,
- * same wording, same commands: a second copy of them would be two answers
- * within a week.
- *
- * Line wrapping is view state on the element rather than an attribute in the
- * document: how a writer chooses to read one fence on one screen is nobody
- * else's business, least of all a collaborator's. It lives exactly as long as
- * the rendered block does.
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Code2, Copy, CopyPlus, Trash2, WrapText } from "lucide-react";
@@ -36,18 +20,6 @@ import type { RunVerb } from "./verb-feedback";
 
 const PLAIN_LANGUAGE = "plain";
 
-/**
- * The languages a fiction writer's manuscript actually carries, plus every
- * registered diagram dialect as the door into a picture. A full lowlight roster
- * would be a scrolling list of grammars nobody in this product writes.
- *
- * The diagram half comes from the provider catalog, so a new diagram kind is
- * reachable from this menu the moment its row exists — that is the writer's way
- * to turn a fence into one.
- *
- * Only `plain` is translated: the rest are the names of the languages
- * themselves, which do not change with the reader.
- */
 const CODE_LANGUAGE_NAMES: Record<string, string> = {
   bash: "Bash",
   css: "CSS",
@@ -72,7 +44,6 @@ export function fenceLanguageLabel(language: unknown): string {
   return diagramProviderForLanguage(id)?.name ?? CODE_LANGUAGE_NAMES[id] ?? id;
 }
 
-/** The language the fence carries now, spelled the way the menu spells it. */
 export function fenceLanguage(target: ObjectSurfaceTarget): string {
   const attribute = target.node.attrs.language;
   return typeof attribute === "string" && attribute ? attribute : PLAIN_LANGUAGE;
@@ -83,7 +54,6 @@ type FenceMenuProps = {
   target: ObjectSurfaceTarget;
 };
 
-/** The language list, radio-grouped: a fence has exactly one. */
 export function FenceLanguageItems({ editor, target }: FenceMenuProps) {
   return (
     <EditorMenuRadioGroup
@@ -101,7 +71,6 @@ export function FenceLanguageItems({ editor, target }: FenceMenuProps) {
   );
 }
 
-/** What the ⋯ holds: how the fence reads, and what becomes of it. */
 export function FenceShapeItems({ editor, target }: FenceMenuProps) {
   const wrapped = useWrappedLines(target.element);
 
@@ -127,17 +96,11 @@ export function FenceShapeItems({ editor, target }: FenceMenuProps) {
   );
 }
 
-/**
- * The whole fence in one list, for the right-click at a caret inside it. The
- * language nests because it is eleven rows; everything else stays flat, in the
- * order the cluster reads left to right.
- */
 export function FenceMenuItems({
   editor,
   target,
   run,
 }: FenceMenuProps & {
-  /** Copy reaches a clipboard the browser can refuse; the answer comes back. */
   run: RunVerb;
 }) {
   const [languageOpen, setLanguageOpen] = useState(false);

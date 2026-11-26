@@ -1,21 +1,12 @@
-/**
- * Hunk-level rules of the content merge: when a live hunk and a draft hunk touch the same text,
- * how a window of base tokens is rebuilt from one side's hunks, and the special cases where two
- * overlapping changes are really one (a shared insertion, the same edit made twice, a mark merge, a
- * cut-and-paste that the other side edited at its source). Tokens, hunks and base positions only;
- * no blocks and no CRDT.
- */
 import { Mark } from "prosemirror-model";
 import type { Hunk } from "../diff/hunks.js";
 import { coreKey, isBlockTok, isWordTok, type Tok } from "../diff/tokens.js";
 
-/** Which document a merged token came from. */
 export const BASE = 0;
 export const LIVE = 1;
 export const DRAFT = 2;
 export type Origin = typeof BASE | typeof LIVE | typeof DRAFT;
 
-/** A token of the merge result, with where it came from and its index in that document's tokens. */
 export interface MergedTok {
   tok: Tok;
   origin: Origin;
@@ -24,10 +15,8 @@ export interface MergedTok {
 
 type TextTok = Extract<Tok, { kind: "text" }>;
 
-/** Why two hunks touch: the same base tokens, or the rule that makes neighbours touch. */
 export type Touch = "overlap" | "typed-at-end-of-deleted";
 
-/** Whether two hunks from different sides touch the same text, and which rule says so. Null: they do not. */
 export function touch(x: Hunk, y: Hunk, baseToks: Tok[]): Touch | null {
   const xIsInsert = x.from === x.to;
   const yIsInsert = y.from === y.to;
@@ -40,7 +29,6 @@ export function touch(x: Hunk, y: Hunk, baseToks: Tok[]): Touch | null {
   return null;
 }
 
-/** `typed-at-end-of-deleted`: words typed at the end of a paragraph the other side deleted whole have nowhere to stand. */
 function typedAtEndOfDeleted(insert: Hunk, deletion: Hunk, baseToks: Tok[]): boolean {
   if (
     insert.from !== insert.to ||
@@ -55,7 +43,6 @@ function typedAtEndOfDeleted(insert: Hunk, deletion: Hunk, baseToks: Tok[]): boo
   return deletion.from <= host && !deletion.ins.some(isBlockTok);
 }
 
-/** Base tokens `from..to` with `hunks` (all inside the window) applied, tagged with their origin. */
 export function applyWithin(
   baseToks: Tok[],
   from: number,
@@ -84,11 +71,6 @@ export function isSubsequence(a: readonly MergedTok[], b: readonly MergedTok[]):
   return i === a.length;
 }
 
-/**
- * Whether `version` already contains everything the other side's hunks did: each base token they
- * deleted is gone from it and not re-inserted with other marks, and each token they inserted appears
- * in it (in order) as new text.
- */
 function absorbs(version: MergedTok[], hunks: Hunk[], baseToks: Tok[]): boolean {
   const keptBase = new Set(version.filter((o) => o.origin === BASE).map((o) => o.index));
   const deleted = new Set<string>();
@@ -151,7 +133,6 @@ export function draftAbsorbsLive(
  */
 export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
   let peeled = 0;
-  // The two halves partition the hunk's side range; a filtered hunk is cut at its kept token's own index.
   const part = (h: Hunk, a: number, b: number, from: number, to: number): Hunk => ({
     ...h,
     from,
@@ -168,7 +149,6 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
   ] as const) {
     for (let i = 0; i < own.length; i++) {
       const hunk = own[i];
-      // A shared edge is one text only inside one block: two paragraphs that end in the same word do not share it.
       if (hunk.from === hunk.to || !withinBlock(hunk)) continue;
       const insertion = other.find(
         (y) => y.from === hunk.from && y.to === hunk.from && withinBlock(y),
@@ -192,7 +172,6 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
           continue;
         }
       }
-      // An adjacent replacement can absorb an insertion at its end too ("The" → "A big black").
       const suffix = other.find((y) => y.from === hunk.to && y.to === hunk.to && withinBlock(y));
       if (!suffix || own.some((x) => x !== hunk && x.from === hunk.to && x.to === hunk.to))
         continue;
@@ -219,11 +198,6 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
   return peeled;
 }
 
-/**
- * Both sides only reformatted the same word: merge its marks one mark at a time (each mark as the
- * side that changed it has it; the draft's if both did), so bold on one side and italic on the
- * other don't conflict.
- */
 export function mergeMarks(
   baseToks: Tok[],
   liveHunks: Hunk[],
@@ -263,7 +237,7 @@ export function mergeMarks(
     ];
     if (inLive === inBase ? inDraft : inDraft === inBase ? inLive : inDraft) merged.push(mark);
   }
-  const sorted = Mark.setFrom(merged) as Mark[]; // schema order, as ProseMirror keeps them
+  const sorted = Mark.setFrom(merged) as Mark[];
   const marksKey = sorted.length ? JSON.stringify(sorted.map((m) => m.toJSON())) : "";
   const tok: TextTok = {
     kind: "text",
@@ -277,11 +251,9 @@ export function mergeMarks(
 }
 
 export interface MovedText {
-  /** Base token indices the text was cut from. */
   source: number[];
-  /** The pasted tokens. */
   dropped: Tok[];
-  destination: number[]; // side token indices of the dropped paste
+  destination: number[];
 }
 
 /**
@@ -315,7 +287,6 @@ export function dropMovedText(
   for (const h of liveHunks) {
     const inserted = h.ins.map((t, k) => [t, k] as const).filter(([t]) => isContent(t));
     if (!inserted.length) continue;
-    // Longest run of inserted content equal to a run of deleted content.
     let best = { len: 0, insAt: 0, delAt: 0 };
     for (let insAt = 0; insAt < inserted.length - best.len; insAt++)
       for (const delAt of positions.get(inserted[insAt][0].key) ?? []) {
@@ -343,7 +314,6 @@ export function dropMovedText(
     const wholeInsert = best.len === inserted.length;
     if (words < 3 && !(wholeInsert && words >= 1)) continue;
     const source = deleted.slice(best.delAt, best.delAt + best.len);
-    // Text typed inside the moved run changes it too.
     const typedInside = draftHunks.some(
       (g) =>
         g.from === g.to &&
@@ -352,7 +322,6 @@ export function dropMovedText(
         g.from <= source[source.length - 1],
     );
     if (!source.some(draftTouches) && !typedInside) continue;
-    // The draft pasted the same text too: that's one move made on both sides, not a conflict.
     const runKeys = run.map(([t]) => t.key).join("\u0002");
     const draftPastedIt = draftHunks.some((g) =>
       g.ins

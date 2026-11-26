@@ -11,11 +11,8 @@ const UNIT =
   /\\[!-/:-@[-`{-~]|&#[xX]([0-9a-fA-F]{1,6});|&#([0-9]{1,7});|\P{Mark}\p{Mark}*|\p{Mark}+/gu;
 
 interface MarkdownTextView {
-  /** The text the writer sees, NFC-normalized. */
   text: string;
-  /** Markdown offset where the unit behind each `text` code unit starts. */
   start: number[];
-  /** Markdown offset where the unit behind each `text` code unit ends. */
   end: number[];
 }
 
@@ -33,7 +30,6 @@ export function markdownTextView(markdown: string): MarkdownTextView {
   return { text, start, end };
 }
 
-/** The writer's text for a query, so escaped and unescaped queries compare alike. */
 export function markdownPlainText(markdown: string): string {
   let text = "";
   for (const { decoded } of units(markdown)) text += decoded;

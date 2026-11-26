@@ -1,19 +1,3 @@
-/**
- * DraftSwitcher — the version chip with its menu: which version the view shows. A document's
- * header uses it for that document, and the sidebar for its trees (`TreeVersionChip`), so the
- * writer meets one Live/Draft control that names the version on screen. The versions are the live
- * document and its drafts: the picked Work's (a Work has several), then other owners' (another
- * Work, or a chat with no Work). It makes a Work's drafts too: `+ New draft`, and `Delete draft`
- * for the one on screen. The same chip and menu show on the
- * live document (picking a draft shows it) and on a draft (picking Live leaves
- * it, picking another draft switches), so the control the writer used to get in
- * is the one they use to get out. Moving between files is not here: it belongs
- * to the sidebar's Changes tab (`ChangesSource`), which also
- * holds the Work-wide Apply all and Discard all.
- *
- * Presentational: it is handed the versions and the commands (`DocumentVersionMenu` for a
- * document, `TreeVersionChip` for the sidebar).
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Plus, Trash2 } from "lucide-react";
@@ -33,38 +17,24 @@ import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
 
-/** One owner's draft of the document, as the menu lists it. */
 export type DraftVersion = {
   key: string;
-  /** The owner's name: its Work's, or the chat's for a draft with no Work. */
   name: ReactNode;
-  /** What the draft does to the document besides its text (a move or delete). */
   detail?: ReactNode;
-  /** How much it changes, at the row's end ("2 files"). */
   note?: ReactNode;
-  /** The draft on screen. */
   current: boolean;
-  /** The scope's own draft (the picked Work's, or the chat's): listed first, outside the fold. */
   scope: boolean;
   onSelect: () => void;
 };
 
 export type DraftSwitcherProps = {
-  /** What the chip chooses the version of, read before the version it names. */
   label?: string;
-  /** The version on screen; its menu item is checked and the chip names it. */
   showing: "live" | "draft";
-  /** Every owner's draft of the document. */
   drafts: readonly DraftVersion[];
-  /** The chip names the draft: its owner's when it is not the picked Work's, or its own name among several. */
   owner?: ReactNode;
-  /** Absent on a page only a draft holds: Live has no version of it to show. */
   onShowLive?: () => void;
-  /** `+ New draft` in the picked Work: makes one and shows it. */
   onNewDraft?: () => void;
-  /** `Delete draft`: deletes the draft on screen. */
   onDeleteDraft?: () => void;
-  /** A phone's header: the trigger is a 44px target and its menu fits the screen. */
   touch?: boolean;
 };
 
@@ -133,10 +103,6 @@ export function DraftSwitcher({
   );
 }
 
-/**
- * The other owners' drafts, folded behind the scope's own unless one of them is on screen. The
- * menu remounts it on each open, so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
- */
 function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; folded: boolean }) {
   const [open, setOpen] = useState(() => !folded || drafts.some((draft) => draft.current));
   return (
@@ -157,12 +123,6 @@ function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; fold
   );
 }
 
-/**
- * The picked Work's drafts and `+ New draft`: one list, the same rows in a version chip's menu and
- * in a chat's `Writes into` panel, so picking a draft reads and behaves alike in both. Only the
- * presentation differs: menu items in the chip (`as: "menu"`), and in the panel, whose toolbar
- * owns the popover, the drafts as a radio group with `New draft` after it.
- */
 export function WorkDraftRows({
   as,
   drafts,
@@ -173,9 +133,7 @@ export function WorkDraftRows({
   as: "menu" | "radio";
   drafts: readonly DraftVersion[];
   onNewDraft?: () => void;
-  /** A panel's focus targets (`as: "radio"`). */
   rowRef?: (draft: DraftVersion, index: number) => Ref<HTMLButtonElement> | undefined;
-  /** The radio group's accessible name. */
   label?: string;
 }) {
   const Row = as === "menu" ? MenuRow : PanelRow;
@@ -212,7 +170,6 @@ export function WorkDraftRows({
   );
 }
 
-/** One row of a draft list: a draft (`checked` on the one in use) or `New draft`. */
 type RowProps = {
   checked?: boolean;
   onSelect: () => void;
@@ -233,7 +190,6 @@ function MenuRow({ checked, onSelect, className, children }: RowProps) {
   );
 }
 
-/** A panel's row: a draft is a radio of the group, `New draft` a button after it. */
 function PanelRow({ checked, onSelect, rowRef, className, children }: RowProps) {
   return (
     <Button

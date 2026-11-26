@@ -27,17 +27,7 @@ import type { Editor } from "@tiptap/core";
 
 import { readClipboardText, writeClipboardRichText } from "../../clipboard";
 
-export type ClipboardResult =
-  /** The clipboard and the document both did their part. */
-  | "done"
-  /** The clipboard held nothing this editor can take. */
-  | "empty"
-  /** This browser does not expose the direction to the page at all. */
-  | "unavailable"
-  /** It exposes it and refused this one (permission, or a hostile context). */
-  | "denied"
-  /** The document would not take the content (read-only, schema). */
-  | "refused";
+export type ClipboardResult = "done" | "empty" | "unavailable" | "denied" | "refused";
 
 export async function copySelection(editor: Editor): Promise<ClipboardResult> {
   if (editor.isDestroyed || editor.state.selection.empty) return "refused";

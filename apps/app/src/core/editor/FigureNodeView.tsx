@@ -1,28 +1,3 @@
-/**
- * FigureNodeView — what a captioned figure looks like in the manuscript.
- *
- * Presentation and status, and nothing else: the picture, the caption and label
- * the document holds, and whether the signed URL behind the picture is loading
- * or failed. It refreshes object-store signed URLs before they expire. A
- * figure whose ref names an address nothing has been uploaded to, or a
- * document that is gone, says so, with no Retry.
- *
- * **No form.** Alt text, the caption, the label, and Replace are VERBS on the
- * registered object surface — the ⋮ over the figure, with the words themselves
- * edited in a small popover (§5.6, `features/editor/surfaces/objects`). A figure
- * is the captioned block form of an image, not a second editing system: a
- * permanent form under every figure is manuscript height the chapter pays for at
- * rest, and a second owner for attributes the object surface already writes.
- *
- * **No selection paint either.** The jade ring is one decoration for every
- * object (`objects/ObjectPhysicsExtension.ts`), and it exists because
- * `NodeViewProps.selected` does not survive the node-view rebuild a peer's write
- * causes — a border derived from it drops or arrives a frame late while the
- * selection never changed.
- *
- * The inline `image` node view lives in `images/`, and both are served by that
- * one surface.
- */
 import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewWrapper } from "@tiptap/react";
@@ -128,9 +103,6 @@ export function FigureNodeView(props: NodeViewProps) {
         ) : null}
       </div>
 
-      {/* Absent while there is nothing to say, rather than a prompt in the
-          chapter: an empty caption is an empty caption, and the verb that fills
-          it is in the ⋮. */}
       {label || caption ? (
         <figcaption className="meridian-figure-node__caption">
           {label ? <span className="meridian-figure-node__label">{label}</span> : null}

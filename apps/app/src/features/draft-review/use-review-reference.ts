@@ -6,13 +6,11 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useOptionalLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import type { ReviewMode } from "./review-mode";
 
-/** What Review changes compares against, as its address names it. */
 export type ReviewAgainst =
   | { kind: "live" }
   | { kind: "draft"; draftId: string }
   | { kind: "file"; documentId: string };
 
-/** The target with the room it reads, null until the room is open. */
 export type ReviewReference =
   | { kind: "live" }
   | (Exclude<ReviewAgainst, { kind: "live" }> & { docs: RoomDocs | null });
@@ -41,7 +39,6 @@ export function useReviewReference(mode: ReviewMode | null): ReviewReference | n
         ? { documentId: mode.documentId, draftId: target.draftId }
         : {
             documentId: target.documentId,
-            // A document the draft made has no fork: the draft shows its Live room.
             draftId: files?.some((file) => file.documentId === target.documentId && file.item.isNew)
               ? undefined
               : mode.draftId,

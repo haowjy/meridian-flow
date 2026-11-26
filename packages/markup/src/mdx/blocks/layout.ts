@@ -1,5 +1,3 @@
-/** Maps the reserved Layout wire wrapper to layout attrs on ordinary block nodes. */
-
 import type { Node as PMNode } from "prosemirror-model";
 
 import { builtInComponents } from "../../components.js";
@@ -127,7 +125,6 @@ function parseWidths(value: string, columnCount: number): Array<number | null> |
   return widths;
 }
 
-/** A cell's colspan, defaulting the way the schema does. */
 function colspanOf(cell: PMNode): number {
   const value = cell.attrs.colspan;
   return typeof value === "number" && value > 0 ? value : 1;

@@ -1,12 +1,9 @@
-/** The browser's side of the command driver: Web Lock, BroadcastChannel and fetch. */
-
 import type { ChangeChannel, DeliveryLock, Transport } from "@meridian/command-driver";
 import { EXPECTED_ACCOUNT_HEADER } from "@meridian/contracts/commands";
 import { deserializeTransport } from "@meridian/contracts/protocol";
 import { readResponsePayload } from "@/client/api/http-client";
 import { meridianApiErrorFromPayload } from "@/client/api/meridian-error";
 
-/** One tab at a time delivers for an account. Holding the lock is pending on a promise. */
 export function createWebLock(accountId: string): DeliveryLock {
   return {
     acquire: (signal) =>
@@ -47,7 +44,6 @@ export function createBroadcastChannel(accountId: string): ChangeChannel {
   };
 }
 
-/** Every request names the account this tab believes it is, so a sign-in switch elsewhere cannot make it act for another. */
 export function createFetchTransport(accountId: string): Transport {
   return async ({ method, path, body }, signal) => {
     const response = await fetch(path, {

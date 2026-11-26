@@ -149,8 +149,6 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
   const changeId = review ? query.get("change") || undefined : undefined;
   const ownerParam = query.get("owner");
   const parsedOwner = ownerParam === null ? null : parseScratchOwner(ownerParam);
-  // The owner is part of the address only where the path alone does not name the resource:
-  // Scratch. Anywhere else a stray one is dropped from the canonical href.
   const needsOwner = document && destination.scheme === "scratch";
   if (needsOwner && !parsedOwner) return { kind: "invalid", reason: "owner" };
   const owner: ScratchOwnerKey | undefined =

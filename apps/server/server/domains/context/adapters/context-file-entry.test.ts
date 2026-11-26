@@ -1,4 +1,3 @@
-/** A file entry grows exactly one boolean for properties; their content never rides along. */
 import { describe, expect, it } from "vitest";
 import { type CatalogFileRow, mapAuthoritativeFile } from "./context-file-entry.js";
 

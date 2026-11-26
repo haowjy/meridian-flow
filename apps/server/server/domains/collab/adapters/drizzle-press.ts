@@ -1,18 +1,3 @@
-/**
- * The press: Apply or Discard on one change, a document, a draft or every draft of a Work, as one
- * recorded command, and its one Undo (design §2). Each draft in scope is pressed in draft id order,
- * each on Live as the one before left it. Its tree half is the Apply's (`drizzle-apply-tree.ts`)
- * or the Discard's (`discardTreeRecords`); its text half runs `applyBlocks` or `discardBlocks` on
- * a command copy of each document's fork room, commits Live's room then the fork's under
- * the press (`CommitAuthor`), and stores each change's edit in `press_changes`. The Undo goes draft by draft,
- * newest first: `undoPress` from those rows, then `undoApply` or `restoreDiscard`. Pressing again
- * is the Redo.
- *
- * Lock order (`.context/CONTEXT.md`), after the command's claim: the drafts' owners and the owners
- * the tree effect changes, the drafts in id order, the lists' keys, the documents' keys in id
- * order, then writes.
- */
-
 import { undoInRooms } from "@meridian/agent-edit/integration";
 import type {
   CommandId,
@@ -78,7 +63,6 @@ import type { UsageEvents } from "./usage-events.js";
 
 export type PressCommand = {
   envelope: CommandEnvelope;
-  /** `liveVersions` decoded: the Live version each document's tab showed. */
   request: PressAction & {
     saw?: TreeCut;
     liveVersions?: ReadonlyMap<DocumentId, RoomVersion>;
@@ -92,16 +76,11 @@ export type PressStore = {
   undo(command: PressUndoCommand): Promise<PressUndoResult>;
 };
 
-/** One draft's part of a press: which documents' text and which tree records it takes. */
 type DraftPart = {
   draft: DraftId;
-  /** The documents whose text it presses; "all" is every fork the draft has pending. */
   documents: DocumentId[] | "all";
-  /** The change a `change` press names; null presses every change in those documents. */
   change: string | null;
-  /** The tree records it settles: one document's, every pending one, or none (a change, a turn). */
   tree: DocumentId[] | "all";
-  /** A restore's turn, whose writes and pending tree records in the draft it takes back. */
   turn?: TurnId;
 };
 
@@ -127,13 +106,11 @@ export function createDrizzlePress(
     onCommitted: deps.onCommitted,
   });
 
-  /** The lists a Work's tree can span: its project's and the account's. */
   const listsOf = (envelope: CommandEnvelope): TreeList[] => [
     ...(envelope.projectId ? [{ kind: "project" as const, projectId: envelope.projectId }] : []),
     { kind: "account", userId: envelope.accountId },
   ];
 
-  /** The drafts a scope presses, in draft id order, each with what it takes. */
   async function partsOf(scope: PressAction["scope"]): Promise<DraftPart[]> {
     if (scope.kind === "turn")
       return [{ draft: scope.draft, documents: [], change: null, tree: [], turn: scope.turn }];
@@ -168,7 +145,6 @@ export function createDrizzlePress(
     return ids.map((draft) => ({ draft, documents: "all", change: null, tree: "all" }));
   }
 
-  /** The documents whose forks the part presses: those named, or every fork the draft has pending. */
   async function textDocuments(part: DraftPart): Promise<DocumentId[]> {
     const rows = await tx()
       .select({ documentId: documentForks.documentId })
@@ -184,7 +160,6 @@ export function createDrizzlePress(
     return rows.map((row) => row.documentId as DocumentId).sort();
   }
 
-  /** The nodes whose tree records the part settles, read under the lists' keys. */
   async function treeNodes(lists: TreeList[], part: DraftPart): Promise<string[]> {
     if (part.tree !== "all") return part.tree;
     return deps.treeLists.read({
@@ -216,7 +191,6 @@ export function createDrizzlePress(
       await lockDocumentMutation(tx(), id as DocumentId);
   }
 
-  /** Commits a press copy's changes: Live's room first, then the fork's. */
   async function commitCopy(
     room: Extract<DocumentRoom, { kind: "fork" }>,
     changes: { live: DocChange[]; fork: DocChange[] },
@@ -233,10 +207,6 @@ export function createDrizzlePress(
     return changes.live.length + changes.fork.length > 0;
   }
 
-  /**
-   * A draft's fork of one document, pressed on a command copy (its own peer, so the press's
-   * writes are its own) and committed. Its changes' edits go in `press_changes`.
-   */
   async function pressText(
     envelope: CommandEnvelope,
     request: PressCommand["request"],
@@ -256,7 +226,6 @@ export function createDrizzlePress(
             })
           : discardBlocks(copy, selection, { by });
       const committed = await commitCopy(room, pressed);
-      // An Apply writes Live and may leave the fork no write: its pending flag is read here.
       await markFork(tx(), room, copy);
       if (pressed.pressed.length)
         await tx()
@@ -273,15 +242,6 @@ export function createDrizzlePress(
     }
   }
 
-  /**
-   * The text half of a Draft chat turn's restore, and of its Undo (design §2): `parts` go back by the
-   * one Undo rule, newest first, each in the room it landed in, a fork carried forward to today's
-   * Live first (`undoInRooms`); Live's manuscript is untouched. A part whose history the room cut
-   * stays as it is. Each document's take-back is one `undo` receipt in `document_edits`, naming the
-   * parts it took and carrying each room's edit, the ledger every Undo reads
-   * (`drizzle-turn-restore.ts`). The Undo's receipt names `turn`: its text is the turn's again.
-   * Returns the documents whose text it changed.
-   */
   async function takeBack(
     envelope: CommandEnvelope,
     parts: readonly RestorePart[],
@@ -343,7 +303,6 @@ export function createDrizzlePress(
     }
   }
 
-  /** A press this account made in this project, as it answered: null for an unknown or purged id. */
   async function storedPress(
     envelope: CommandEnvelope,
     id: string,
@@ -385,7 +344,6 @@ export function createDrizzlePress(
         deps.workProjection.mutate(
           { drafts: draftIds, works: owners.works, lineages: owners.lineages },
           async (locked): Promise<PressResult> => {
-            // A purged draft has nothing left to press.
             const living: DraftPart[] = [];
             for (const part of parts) if (await deps.drafts.lock(part.draft)) living.push(part);
             const judge = await owners.judge(locked);
@@ -411,7 +369,6 @@ export function createDrizzlePress(
             const tree = new Set<string>();
             const trashed: string[] = [];
             for (const { part, restore, nodes, texts } of plan) {
-              // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
               if (restore)
                 for (const documentId of await takeBack(envelope, restore.parts, null))
@@ -460,7 +417,6 @@ export function createDrizzlePress(
         ),
       );
 
-    // A Discard and a restore change no Live tree record: no owner to judge.
     if (request.verdict !== "apply") return run(NO_OWNERS);
     // The sources the drafts' pending records change, and where Live has the nodes they name:
     // their owners are locked with the drafts' and judged under the locks. A guess read before
@@ -487,7 +443,6 @@ export function createDrizzlePress(
     return withTreeOwners(db, sources, run);
   }
 
-  /** Of a Discard's Trash deletes, those of one draft's part: each takes a node its creates made. */
   function trashedBy(doc: LoroDoc, discarded: string, trashed: readonly string[]): string[] {
     const made = new Set(
       discardedBy(doc, discarded).records.flatMap((record) =>
@@ -513,7 +468,6 @@ export function createDrizzlePress(
       documents: [...documents].sort() as DocumentId[],
       tree: [...tree].sort(),
     });
-    // Another account's press, an unknown id, or one the day-30 purge took: nothing to take back.
     if (!stored || !pressed)
       return runDocumentCommand(db, envelope, async () => answer(new Set(), new Set()));
     const lists = listsOf(envelope);
@@ -522,7 +476,6 @@ export function createDrizzlePress(
       .from(applyCommandTrees)
       .where(eq(applyCommandTrees.commandId, pressId));
     const texts = await tx().select().from(pressChanges).where(eq(pressChanges.commandId, pressId));
-    // Newest first: the press went in draft id order.
     const draftIds = [
       ...new Set([
         ...trees.map((one) => one.draftId as DraftId),
@@ -563,7 +516,6 @@ export function createDrizzlePress(
               for (const documentId of await takeBack(envelope, restored, scope.turn))
                 documents.add(documentId);
             for (const draft of draftIds) {
-              // A purged draft's forks went with it: its text has nothing to come back to.
               if (living.has(draft))
                 for (const row of texts.filter((one) => one.draftId === draft)) {
                   const documentId = row.documentId as DocumentId;
@@ -628,7 +580,6 @@ export function createDrizzlePress(
       );
 
     if (pressed.verdict !== "apply") return run(NO_OWNERS);
-    // The sources the press's copies changed and where Live has their nodes and its documents.
     const sources = () =>
       deps.treeLists.read({
         lists,

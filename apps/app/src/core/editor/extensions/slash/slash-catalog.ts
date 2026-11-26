@@ -28,7 +28,6 @@ export type SlashCommandId =
   | "code"
   | "image";
 
-/** The menu's two halves (§5.7): retype this block, or make a new object. */
 export type SlashCommandGroupId = "text" | "insert";
 
 export type SlashCommandItem = {
@@ -36,9 +35,7 @@ export type SlashCommandItem = {
   group: SlashCommandGroupId;
   label: string;
   aliases: readonly string[];
-  /** A second line of answer for entries whose result is not obvious. */
   hint?: string;
-  /** Left out of the unfiltered menu, so rarer rows don't push the rest past its fold. */
   onlyWhenSearched?: boolean;
 };
 
@@ -75,7 +72,6 @@ function fuzzyScore(value: string, query: string): number | null {
   return null;
 }
 
-/** Fuzzy label + alias filtering; stable ties preserve the writer-first catalog order. */
 export function filterSlashCommandItems(
   items: readonly SlashCommandItem[],
   query: string,

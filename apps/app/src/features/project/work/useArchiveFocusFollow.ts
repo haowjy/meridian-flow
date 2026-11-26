@@ -28,7 +28,6 @@ export function useArchiveFocusFollow(works: readonly Work[] | null) {
     return () => tabList?.removeEventListener("focusout", releaseFocus);
   }, []);
 
-  // The move is optimistic, so this fires as soon as the command starts.
   useEffect(() => {
     const target = intent.current;
     if (!target || works === null) return;

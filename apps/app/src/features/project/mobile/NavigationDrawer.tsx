@@ -1,6 +1,3 @@
-/**
- * NavigationDrawer — the phone project drawer: the Write | Chat switch, the sources, and the account.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -16,7 +13,6 @@ import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 import { useWorkScope } from "../use-work-scope";
 import { useManageWorks } from "../work/ManageWorksDialog";
 
-/** The drawer is the sidebar: there is nothing to expand. */
 const keepOpen = () => {};
 
 export type NavigationDrawerProps = {
@@ -28,9 +24,7 @@ export type NavigationDrawerProps = {
   editorWorkId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
-  /** Who owns main's document when it is a Work's Scratch note. */
   activeContextWork: string | null;
-  /** The chat on screen: its row reads as current. */
   chatThreadId: string | null;
 };
 
@@ -49,11 +43,7 @@ export function NavigationDrawer({
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
   const manageWorks = useManageWorks();
-  const dismissal = useDismissalFocus(
-    onOpenChange,
-    // iOS Safari paints :focus-visible on Radix's programmatic focus of the first nav item.
-    focusContentOnOpen,
-  );
+  const dismissal = useDismissalFocus(onOpenChange, focusContentOnOpen);
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -89,11 +79,6 @@ export function NavigationDrawer({
         <SheetDescription className="visually-hidden">
           <Trans>Switch screens or manage your account.</Trans>
         </SheetDescription>
-        {/* Chrome wrapper — rounded-r-xl + shadow-modal carry the desktop
-            rail chrome (desktop-layout.ts) instead of a hairline border. It is
-            NOT the animated element (see WebKit note above), so it can safely
-            clip; safe-area paddings live here so the drawer background still
-            fills under the notch/home-indicator regions. */}
         <div
           className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-chrome shadow-modal"
           style={{
@@ -113,7 +98,6 @@ export function NavigationDrawer({
               />
             </div>
 
-            {/* The switch moves main and closes the drawer onto it, as a pick in a list does. */}
             <WorkspaceNavBody projectId={projectId} onSwitched={() => onOpenChange(false)}>
               {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
               <TreeCreationProvider expandSidebar={keepOpen}>

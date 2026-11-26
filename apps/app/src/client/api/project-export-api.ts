@@ -1,4 +1,3 @@
-/** Current-state preview and stateless native browser export downloads. */
 import type { ProjectExportOptions, ProjectExportPreview } from "@meridian/contracts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import { getJson } from "./http-client";

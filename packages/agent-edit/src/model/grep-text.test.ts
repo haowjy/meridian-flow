@@ -33,7 +33,6 @@ describe("bodyRange", () => {
     const body = codec.serializeBlocks(blocks, UNSCOPED_DOCUMENT_LINKS)[0]?.body as string;
     const free = destinationFreeBlocks(codec, blocks)[0] as string;
     const view = markdownTextView(free);
-    // The last occurrence, so a link comes before it.
     const at = view.text.lastIndexOf(target);
     const range = bodyRange(codec, free, body, {
       start: view.start[at] as number,

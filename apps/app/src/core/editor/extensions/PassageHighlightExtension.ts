@@ -1,17 +1,3 @@
-/**
- * The landing a search-match door promises: a transient mark on the words that
- * matched, and a scroll only when the writer cannot already see them.
- *
- * **Never a selection.** A selection would move the writer's cursor, and the
- * writer may be mid-sentence somewhere else. This marks; it does not take.
- *
- * The mark is short-lived by contract. It fades on its own, and it clears the
- * moment the writer does anything — types, moves the caret, or undoes — because
- * from then on the document is their business again. A peer's edit is not the
- * writer moving: those arrive constantly and would otherwise wipe the mark
- * before it was read.
- */
-
 import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
@@ -30,9 +16,7 @@ declare module "@tiptap/core" {
 
 const passageKey = new PluginKey<DecorationSet>("passage-highlight");
 const PASSAGE_META = "passage-highlight";
-/** Matches the CSS fade, so the mark is removed once it has finished going. */
 const HIGHLIGHT_DURATION_MS = 3_400;
-/** Below this the passage counts as visible and the writer keeps their scroll. */
 const EDGE_MARGIN_PX = 24;
 
 const clearTimers = new WeakMap<Editor, ReturnType<typeof setTimeout>>();
@@ -93,19 +77,11 @@ export const PassageHighlightExtension = Extension.create({
   },
 });
 
-/**
- * Whether this transaction is the writer's own: a peer's edit arrives as a remote transaction. An
- * Undo lands as one too, then puts the writer's caret back in a transaction of its own.
- */
 function writerMoved(tr: Transaction): boolean {
   if (!tr.docChanged && !tr.selectionSet) return false;
   return tr.getMeta(loroSyncKey) !== REMOTE_META;
 }
 
-/**
- * Center the passage only when it is off-screen or crowding an edge. A writer
- * who can already see the sentence did not ask to have their page moved.
- */
 function revealIfNeeded(editor: Editor): void {
   requestAnimationFrame(() => {
     if (editor.isDestroyed) return;
@@ -123,7 +99,6 @@ function revealIfNeeded(editor: Editor): void {
   });
 }
 
-/** The nearest scrolling ancestor's viewport, falling back to the window's. */
 function scrollViewportRect(element: HTMLElement): { top: number; bottom: number } {
   for (let node = element.parentElement; node; node = node.parentElement) {
     const overflow = getComputedStyle(node).overflowY;

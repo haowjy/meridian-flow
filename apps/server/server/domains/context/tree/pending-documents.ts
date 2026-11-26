@@ -20,7 +20,6 @@
 import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
 
-/** The rows of a Work's differing nodes of `kind` that count, as `(draft_id, node_id)`. */
 function treeChanges(drafts: SQL, kind: "document" | "folder"): SQL {
   return sql`SELECT b.draft_id, b.id AS document_id
     FROM draft_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
@@ -30,10 +29,6 @@ function treeChanges(drafts: SQL, kind: "document" | "folder"): SQL {
       OR (NOT b.exists_only_in_draft AND NOT b.deleted))`;
 }
 
-/**
- * Every `(draft_id, document_id)` the predicate holds for, among the drafts `drafts`
- * selects (a SQL list of draft ids), narrowed to one document when given.
- */
 export function pendingDocuments(drafts: SQL, documentId?: DocumentId): SQL {
   const one = documentId ? sql` AND candidate.document_id = ${documentId}::uuid` : sql``;
   return sql`SELECT candidate.draft_id, candidate.document_id FROM (
@@ -51,20 +46,11 @@ export function pendingDocuments(drafts: SQL, documentId?: DocumentId): SQL {
     WHERE true${one}`;
 }
 
-/**
- * The documents a Work has text changes in, as `(draft_id, document_id)`: its forks flagged
- * pending (`document_forks.pending`, set by every save of the fork's room).
- */
 export function pendingText(drafts: SQL): SQL {
   return sql`SELECT f.draft_id, f.document_id FROM document_forks f
       WHERE f.draft_id IN (${drafts}) AND f.pending`;
 }
 
-/**
- * The folders a Work's tree changes (created, moved, renamed, deleted, or unable to land), as
- * `(draft_id, folder_id)`: every changed folder is one item of the Changes list and one of the
- * count.
- */
 export function pendingFolders(drafts: SQL): SQL {
   return sql`SELECT c.draft_id, c.document_id AS folder_id FROM (${treeChanges(drafts, "folder")}) c`;
 }

@@ -24,7 +24,6 @@ export type LiveTabs = {
 
 const LiveTabsContext = createContext<LiveTabs | null>(null);
 
-/** The one projection every reader of the tabs shares: it re-projects once per change, not per reader. */
 export function LiveTabsProvider({
   projectId,
   children,
@@ -45,7 +44,6 @@ export function useLiveTabs(): LiveTabs {
   return live;
 }
 
-/** The tab for a document as the project's list shows it now; null while the list does not hold it. */
 function currentTab(trees: ProjectTrees, tab: OpenDocument): OpenDocument | null {
   const place = trees.find(tab.documentId);
   if (!place) return null;

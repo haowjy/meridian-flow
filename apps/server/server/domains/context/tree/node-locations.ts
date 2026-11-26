@@ -1,16 +1,9 @@
-/**
- * The previous locations of documents: a relocation records the addresses it vacates and
- * consumes the aliases at the addresses it claims. Runs in the caller's transaction (the
- * list's replay writes `location_version` itself).
- */
 import type { Database } from "@meridian/database";
 import { documentPreviousLocations } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
-/** A visible document's address it left: written as a previous location. */
 export type VacatedLocation = { contextSourceId: string; path: string; documentId: string };
-/** A visible node's final address: previous-location claims there are consumed. */
 export type ClaimedLocation = { contextSourceId: string; path: string };
 
 /**
@@ -23,7 +16,6 @@ export async function recordLocationHistory(
   history: { vacated: readonly VacatedLocation[]; claimed: readonly ClaimedLocation[] },
 ): Promise<void> {
   const tx = currentDrizzleDb(db);
-  // Bound statement parameter counts, not the atomic operation. Every batch joins the same transaction.
   for (const [sourceId, entries] of bySource(history.vacated)) {
     for (let offset = 0; offset < entries.length; offset += 500) {
       const batch = entries.slice(offset, offset + 500);

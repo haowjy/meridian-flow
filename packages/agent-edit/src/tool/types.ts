@@ -1,11 +1,8 @@
-import type { ResponseAuthorship } from "@meridian/contracts";
-import type { SpliceFallback } from "../links/find-splice.js";
-// Engine-facing read and write contract types for the agent editing core.
-
-import type { LinkView } from "@meridian/contracts";
+import type { LinkView, ResponseAuthorship } from "@meridian/contracts";
 import type { Block } from "../codec-types.js";
 import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
+import type { SpliceFallback } from "../links/find-splice.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
@@ -23,21 +20,15 @@ export type {
   WriteStatus,
 } from "./model-result.js";
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
-/** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase & { status: WriteStatus };
 
 interface WriteOutcomeBase {
-  /** Host-only identity; never included in the model result. */
   revision: string | null;
   command: AgentEditResultCommand;
   isError: boolean;
-  /** Stable model-facing write handle for successful mutating writes, e.g. e3. */
   writeId?: string;
-  /** The typed result; `renderAgentEditResult` makes the model's text from it. */
   result: AgentEditResultV1;
-  /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
   nodes?: readonly Block[];
-  /** Host-only: where each settled `ahead:` ref in `nodes` points, read with `nodes` (`includeNodes`). */
   aheadSettlements?: ReadonlyMap<string, string>;
   /**
    * Host-only: a `create` without overwrite found text in its document and wrote nothing. The
@@ -60,7 +51,6 @@ interface WriteOutcomeBase {
   frontier?: ObservationFrontier;
 }
 
-/** Host-only evidence for a dispatch failure collapsed to the stable internal-error outcome. */
 export interface UnexpectedWriteErrorDetail {
   cause: unknown;
   command: DocumentCommandName;
@@ -72,32 +62,17 @@ export interface UnexpectedWriteErrorDetail {
   toolUseId?: string;
 }
 
-/** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
-  /** Attribution and safety policy for mutating commands. */
   actor?: MutationActor;
-  /** Stable session supplied directly by embedded callers. */
   session?: ActorSession;
-  /** External identity resolved through ActorSessionStore when configured. */
   externalId?: string;
-  /** Convenience identity for server-local callers that do not need an ActorSessionStore. */
   sessionId?: string;
-  /** Convenience thread override for server-local callers. */
   threadId?: string;
-  /** Host turn id for undo metadata; cross-call turn grouping is completed above this API later. */
   turnId?: string;
-  /** The tool call's id: it scopes the write's durable id within its turn. */
   tool_use_id?: string;
-  /** The response the write is authored in. */
   responseIdentity?: ResponseAuthorship;
-  /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
-  /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */
   includeNodes?: boolean;
-  /**
-   * The blocks a `from` or `copy` write copies, read by the host from the
-   * source. They become the command's content as nodes.
-   */
   copiedNodes?: readonly Block[];
   /**
    * A host's whole-document write, bound outside its transaction (§6.2): the
@@ -120,11 +95,6 @@ export interface WriteContext {
    * callers that record no frontier.
    */
   frontiers?: FrontierLookups;
-  /**
-   * The link view the host routed this command to: the Work draft or live
-   * version its destination names. A host that routes between versions sets
-   * it on every command; links, sources and the revision spell in it.
-   */
   linkView?: LinkView;
 }
 
@@ -144,7 +114,6 @@ export interface LinkSpliceFallbackDetail {
   reason: SpliceFallback;
 }
 
-/** An observation frontier could not be computed; the result goes out without it. */
 export interface ObservationFailedDetail {
   documentId: string;
   cause: unknown;

@@ -37,19 +37,6 @@ import type { PluggableList } from "unified";
 
 import { clipboardLinkScope } from "./links";
 
-/**
- * Does this parse carry anything plain-text paste would have thrown away?
- *
- * Anything that is not a bare paragraph does: headings, lists, quotes, fences,
- * tables, dividers. So does a paragraph holding a mark or a non-text inline
- * node, because a link, an emphasis or an image is the structure those literal
- * characters were spelling.
- *
- * What deliberately does not: paragraphs of plain text, however many. That is
- * the false-positive guard. A soft-wrapped line, a `#` inside a sentence, an
- * asterisk used as punctuation — each parses to plain paragraphs, so the codec
- * and the default paste agree and the default wins.
- */
 export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
   return blocks.some((block) => !isBodyText(block) || carriesInlineStructure(block));
 }
@@ -61,7 +48,6 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
  */
 export function markdownClipboardParser(
   schema?: Schema,
-  /** Parse extensions other editor extensions contribute, read per paste. */
   remarkPlugins: () => PluggableList = () => [],
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
@@ -92,7 +78,6 @@ export function markdownClipboardParser(
   };
 }
 
-/** A link, an emphasis, an image: structure the literal characters spelled. */
 function carriesInlineStructure(block: PMNode): boolean {
   let found = false;
   block.descendants((node) => {
@@ -127,12 +112,6 @@ function defaultPlainTextPaste(): Slice {
   return undefined as unknown as Slice;
 }
 
-/**
- * Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor
- * structure. Internal links go out as full current addresses, so the text
- * means the same thing wherever it lands, holder or not. Pasted back, the
- * editor's paste door binds them fresh (`links/link-clipboard.ts`).
- */
 export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
   copied,
   view,

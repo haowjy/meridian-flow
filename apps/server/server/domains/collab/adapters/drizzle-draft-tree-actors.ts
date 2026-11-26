@@ -1,4 +1,3 @@
-/** The chats behind a Work's pending tree records, for the review list's `actorThreadIds`. */
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -7,11 +6,6 @@ import { parseActor } from "../../context/adapters/context-fs/tree-writes.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
-/**
- * A document's chats, the latest record's first: a record's actor is `agent:<chat>/<turn>` for a
- * chat's tool call and `user:<id>` for a writer, who names no chat. A document's records are its
- * item in the Work's view (`recordsOfItem`), in every list the Work spans.
- */
 export function createDrizzleDraftTreeActors(db: Database, treeLists: Pick<TreeListStore, "read">) {
   return async function treeActors(
     draftId: DraftId,

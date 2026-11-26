@@ -3,29 +3,18 @@ import type { ThreadListItem } from "@meridian/contracts/protocol";
 export type RowState = "needs-you" | "running" | "idle";
 
 export type ChatGroups = {
-  /** The scoped Work's pinned chats, most urgent first. */
   pinned: ThreadListItem[];
-  /** The scoped Work's unpinned chats, most urgent first. */
   scoped: ThreadListItem[];
-  /** The other Works' pinned chats, most urgent first. */
   othersPinned: ThreadListItem[];
-  /** Every other chat unpinned, newest first. */
   others: ThreadListItem[];
-  /** The most urgent state among the other Works' chats, pinned or not, for the folded heading. */
   othersState: RowState;
   helpers: Map<string, ThreadListItem[]>;
-  /** Every chat's state, for a row in any list: the lists, find results. */
   states: Map<string, RowState>;
-  /** The chats with a reply running: deleting one stops it. */
   replying: Set<string>;
 };
 
 const URGENCY: Record<RowState, number> = { "needs-you": 0, running: 1, idle: 2 };
 
-/**
- * Each chat once, in its own Work's list: the scoped Work's (pinned first) or the others' (pinned
- * first); the working helpers under their parent. Opening a chat never moves it.
- */
 export function groupChats(
   threads: readonly ThreadListItem[],
   scopeWorkId: string | null,

@@ -7,7 +7,6 @@ import {
   undoEdits,
 } from "@meridian/document-model";
 
-/** An AI write as an Undo takes it back: its edit, in the room it landed in. */
 export interface RoomPart {
   room: DocumentRoom;
   edit: StoredEdit;

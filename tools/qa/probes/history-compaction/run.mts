@@ -1,10 +1,3 @@
-/**
- * History compaction of a Live room and its fork, on a scratch database (recipe:
- * `apps/server/server/domains/collab/rooms/.context/qa/history-compaction.md`). Bounds are lowered
- * so a small room compacts and a mark ripens in under a second.
- *
- *   pnpm test:probes history-compaction
- */
 import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
@@ -76,7 +69,6 @@ try {
   await raw`insert into drafts(id,project_id,created_by) values (${draftId},${project},${user})`;
   const live = { kind: "live", documentId } as const;
   const fork = { kind: "fork", draftId, documentId } as const;
-  /** The writer retypes the first and the last paragraph `rounds` times: long histories. */
   const type = async (rounds: number, label: string) => {
     for (let i = 0; i < rounds; i++)
       await writerEdit(rooms, documentId, (current) => [
@@ -107,10 +99,7 @@ try {
 
   await writeLiveMarkdown(rooms, documentId, "Opening.\n\nFirst.");
   await rooms.flush(live);
-  // A tab that joins now and goes offline: its base will fall below the second cut.
   const staleTab = await rooms.read(live, { peer: freshPeerId() });
-  // The fork's own paragraph, written into the fork room as a Draft-mode tab would.
-  // It also rewords the opening, whose Live history then grows: the fork holds ops Live lacks.
   const forkTab = await rooms.read(fork, { peer: freshPeerId() });
   const before = forkTab.shownVersion();
   const [opening, ...rest] = readDocument(forkTab).map((block) => nodeOf(schema, block));
@@ -135,7 +124,6 @@ try {
     "the fork's first save writes its row, pending",
   );
 
-  // Cut 1: the marks set when the rows were made ripen; history before them goes.
   await type(150, "second");
   await sleep(HISTORY_MS + 200);
   await rooms.unload(live);
@@ -143,7 +131,6 @@ try {
     events.some((event) => event.name === "history.compacted"),
     "an unload past the bounds compacts",
   );
-  // Cut 2: the marks cut 1 left are where the second typing ended.
   await type(150, "third");
   const text = await liveMarkdown(rooms, documentId);
   const seqBefore = await seq();
@@ -159,8 +146,6 @@ try {
   check(sizeAfter < sizeBefore, "the second cut shrinks the Live rows");
   check((await liveMarkdown(rooms, documentId)) === text, "the text is the same after the cut");
   check((await seq()) === seqBefore, "a cut does not move content_seq");
-  // A row the cut would not shrink keeps its history; the retyped last paragraph's is cut. The
-  // retyped opening's is held back: the fork holds ops of it that depend on Live's cut history.
   const liveRows = await rows(`live:${documentId}`);
   const shallow = (key: string) => {
     const doc = LoroDoc.fromSnapshot(
@@ -177,7 +162,6 @@ try {
   check(!shallow(openingId), "a paragraph a fork wrote ahead of Live keeps Live's history");
   await rooms.unload(live);
 
-  // An old draft change applies after its Live room compacted (design §4, probe q11).
   const press = await rooms.read(fork);
   try {
     const pressLive = press.live;
@@ -205,7 +189,6 @@ try {
   await rooms.flush(fork);
   await rooms.unload(live);
 
-  // The fork was cut at Live's marks: it keeps its paragraph and still imports Live.
   await writeLiveMarkdown(rooms, documentId, "Opening.\n\nAfter the cut.");
   await rooms.flush(live);
   const forkCopy = await rooms.read(fork);
@@ -217,7 +200,6 @@ try {
   check(forkText.includes("Only in the fork."), "the fork keeps its own paragraph");
   check(forkText.includes("After the cut."), "the fork imports Live's typing after the cut");
 
-  // The tab offline since before the cuts types, and is refused; a fresh tab is not.
   const staleBefore = staleTab.version();
   const staleBlock = readDocument(staleTab).at(-1);
   if (staleBlock?.kind === "text")
@@ -239,9 +221,6 @@ try {
     "a tab joined after the cut writes",
   );
 
-  // The room's copy answers removals (design §1, "Removed blocks", rule 1), on rows cut above: the
-  // AI's text lands in the room while the only tab, which has not received it, deletes the
-  // paragraph. Only the room holds a write the removal did not read, so the room brings it back.
   const origins: string[] = [];
   const stop = rooms.subscribe(live, (batch) => origins.push(batch.origin));
   const tab = await rooms.read(live, { peer: freshPeerId() });
@@ -287,7 +266,6 @@ try {
     "a removal that read the AI's text stands",
   );
 
-  // Retention (design §2): a fork empty for 30 days goes with its rows; a pending one stays.
   const emptyDraft = "probe0000002";
   await raw`insert into drafts(id,project_id,created_by) values (${emptyDraft},${project},${user})`;
   const emptyFork = { kind: "fork", draftId: emptyDraft, documentId } as const;

@@ -1,10 +1,3 @@
-// Hand-run probe: a live model reads and writes a chapter through agent-edit on Loro, over the
-// in-memory rooms (no database, no dev stack), while a scripted writer edits it. From apps/server:
-//   LIVE_TEST_MODEL=deepseek-flash pnpm exec tsx --env-file=<.env> scripts/probe-loro-agent-edit-live.ts
-// Passes when the writer's sentence survives the model's rewrite of the other, the result names
-// `the user`, turn Undo leaves the writer's words, `format: "edits"` lists e1, and after the chat
-// switches to Draft its write lands in the draft only and `format: "changes"` shows it. It prints the
-// tool calls, then `ok: live scenarios pass on <model>`, or the transcript and the failed step.
 import {
   createAgentEditCodecFactory,
   createLoroEditCore,

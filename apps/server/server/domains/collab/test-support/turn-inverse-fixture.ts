@@ -1,4 +1,3 @@
-// Shared admission fixture for durable inverse boundaries.
 import { randomUUID } from "node:crypto";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
@@ -31,7 +30,6 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { modelResponseId: responseId },
-    // A Live chat: the card's Undo takes back Live writes.
     grant: testFileGrant({ kind: "live" }, ALPHA_ID),
   };
   const target = {

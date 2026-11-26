@@ -1,18 +1,8 @@
-/**
- * Stable actor identity for external distribution modes (MCP, Pi, embedded library).
- * Survives transport reconnects; the core library operates on ActorSession only.
- */
 export interface ActorSession {
-  /** Stable session ID — survives reconnects. */
   id: string;
-  /** Which thread/agent this session represents. */
   threadId: string;
 }
 
-/**
- * Maps external caller identity to stable ActorSession instances.
- * Transport adapters (MCP token, Pi conversation ID) bind onto this store.
- */
 export interface ActorSessionStore {
   /**
    * Get or create a session for an external caller.

@@ -30,19 +30,14 @@ import type {
   WriteProvenance,
 } from "./ports/context-port.js";
 
-/** A duplicated destination object, unreferenced until the row that names it commits. */
 export interface PreparedBinaryCopy {
-  /** The `object://` URL the destination row stores. */
   storageUrl: string;
-  /** The put object's key, for releasing it if no row commits. */
   key: string;
   mimeType: string;
   sizeBytes: number;
-  /** The destination has its own copy of the source's preview. */
   hasPreview: boolean;
 }
 
-/** Duplicate a binary's stored bytes for a destination that does not exist yet. */
 export async function prepareBinaryCopy(input: {
   objectStore: ObjectStorePort;
   source: Pick<BinaryFileRef, "uri" | "hasPreview"> & {
@@ -58,8 +53,6 @@ export async function prepareBinaryCopy(input: {
   const key = `copies/${crypto.randomUUID()}`;
   const copy = await input.objectStore.copy(sourceKey, key);
   if (!copy.ok) return ioError(input.source.uri, copy.error.message);
-  // Derived files (a preview, extracted text) are remade on demand, so a copy that can't carry
-  // one just shows the file card or converts again; most files have none.
   const sources = derivedObjectKeys(sourceKey);
   const copied = await Promise.all(
     derivedObjectKeys(key).map((to, index) => input.objectStore.copy(sources[index], to)),
@@ -79,20 +72,16 @@ export async function prepareBinaryCopy(input: {
 }
 
 interface BinaryCopyInput {
-  /** The copier's own port: where the destination path must be free and the file is created. */
   port: ContextPort;
   objectStore: ObjectStorePort;
-  /** Deletes the duplicated object, and its derived files, when the destination write fails. */
   release: ObjectRelease;
   source: BinaryFileRef;
-  /** Proof the copier may read the source (file-access §2); a copy can't skip it. */
   sourceGrant: FileGrant<"read">;
   destinationUri: string;
   copiedFrom: CopiedFrom;
   origin?: WriteProvenance;
 }
 
-/** Copies a binary file to a destination; beside a file of that name it lands as a twin. */
 export async function copyBinaryDocument(
   input: BinaryCopyInput,
 ): Promise<Result<ContextBinaryWriteResult, ContextError>> {
@@ -101,8 +90,6 @@ export async function copyBinaryDocument(
     throw new Error("A binary copy's grant must name its source document");
   }
   const slash = input.destinationUri.lastIndexOf("/");
-  // The name is decided here once and handed to `writeBinary`, which does not parse it again. A
-  // file of that name already there gets a twin; a leaf's `~id` picks no file to land on.
   const copied = copiedFilename(readSegment(input.destinationUri.slice(slash + 1)).name, {
     extension: input.source.extension,
     editable: false,

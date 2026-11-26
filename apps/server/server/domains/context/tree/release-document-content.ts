@@ -33,11 +33,8 @@ const liveRoomKey = (documentId: DocumentId) => loroRoomName({ kind: "live", doc
 
 export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
-/** What collab ends with a document's content, beyond the rows this deletes. */
 export type DocumentContentEnd = {
-  /** Collab's `endDocumentRooms`, run after the commit: the loaded rooms end unsaved. */
   endRooms(documentIds: readonly DocumentId[]): Promise<void>;
-  /** What the model was shown of the documents, in every room: deleted in the caller's transaction. */
   evidence: {
     forgetFrontiers(rooms: { accountId: UserId; documentIds: readonly string[] }): Promise<void>;
   };
@@ -63,7 +60,6 @@ export async function releaseDocumentContent(
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
   deferUntilDrizzleCommit(() => collab.endRooms(list));
-  // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
   await tx
     .delete(documentSnapshots)

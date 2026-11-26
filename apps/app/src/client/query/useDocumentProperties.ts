@@ -1,4 +1,3 @@
-/** A document's imported properties, read-only, cached by document id. */
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchDocumentProperties } from "../api/document-properties-api";

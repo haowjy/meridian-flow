@@ -64,22 +64,10 @@ import {
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
 export const LINK_REF_ATTRIBUTE = "data-meridian-ref";
 export const LINK_PROJECT_ATTRIBUTE = "data-meridian-project";
-/**
- * What the paste transform leaves for the link mark's parser: a ref it chose
- * to keep. Never copied and never allowed through the paste sanitizer, so
- * clipboard HTML cannot set it.
- */
 export const LINK_KEPT_REF_ATTRIBUTE = "data-meridian-kept-ref";
 
 const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipboard");
 
-/**
- * The full address an internal href names from its holder, spelled as an href
- * (`%`, `#` and `?` in a filename encoded) with its fragment or query, or null
- * for an external link or one that cannot be resolved (a relative path with no
- * holder). Contextual owned links carry the holder's authority when copied;
- * lineage Scratch keeps its chat handle while Uploads keep No Work ownership.
- */
 function linkHrefAddress(href: string, holderUri: string | null): string | null {
   const resolved = resolveStoredLinkAddress({ href }, holderUri);
   if (!resolved) return null;
@@ -89,11 +77,6 @@ function linkHrefAddress(href: string, holderUri: string | null): string | null 
   );
 }
 
-/**
- * Where a stored link points now, as a full address: the document or folder its
- * ref resolved to, at its current address, else the address its href names.
- * Null for an external or unresolvable link.
- */
 function currentLinkAddress(link: LinkKey, resolution: LinkAnswerCache | null): string | null {
   const entry = link.ref && resolution ? resolution.read(link) : null;
   const { suffix } = splitDocumentHrefSuffix(link.href);
@@ -104,38 +87,27 @@ function currentLinkAddress(link: LinkKey, resolution: LinkAnswerCache | null): 
   return linkHrefAddress(link.href, resolution?.baseUri ?? null);
 }
 
-/**
- * A recorded address read back from untrusted clipboard HTML, or null: only a
- * full address in exactly the spelling `linkHrefAddress` writes.
- */
 export function clipboardLinkAddress(value: string | null): string | null {
   if (!value) return null;
   const resolved = resolveDocumentHref(value, null);
   return resolved && storedHref(resolved, resolved.suffix) === value ? value : null;
 }
 
-/** A recorded ref read back from untrusted clipboard HTML, or null. */
 export function clipboardLinkRef(value: string | null): string | null {
   return value && parseLinkRef(value) ? value : null;
 }
 
 const UPLOAD_PREFIX = "asset:";
 
-/**
- * A recorded upload ref read back from untrusted clipboard HTML, or null: an
- * `asset:<id>` with an id a `doc:` ref could name.
- */
 export function clipboardUploadRef(value: string | null): string | null {
   if (!value?.startsWith(UPLOAD_PREFIX)) return null;
   return parseLinkRef(`doc:${value.slice(UPLOAD_PREFIX.length)}`)?.kind === "doc" ? value : null;
 }
 
-/** A recorded picture ref read back from untrusted clipboard HTML, or null. */
 export function clipboardPictureRef(value: string | null): string | null {
   return value?.startsWith(UPLOAD_PREFIX) ? clipboardUploadRef(value) : clipboardLinkRef(value);
 }
 
-/** The catalog's document an `asset:<id>` upload source names, or null. */
 function uploadDocument(
   src: string,
   resolution: LinkAnswerCache | null,
@@ -146,12 +118,10 @@ function uploadDocument(
   return documents.find((document) => document.documentId === documentId) ?? null;
 }
 
-/** A recorded project id read back from untrusted clipboard HTML, or null. */
 export function clipboardLinkProject(value: string | null): string | null {
   return value && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
 }
 
-/** Copy, HTML flavour: what one rendered link mark or picture names, beside its href. */
 function recordLinkMetadata(
   element: Element,
   { ref, address }: { ref: string | null; address: string | null },
@@ -165,17 +135,11 @@ function recordLinkMetadata(
   }
 }
 
-/** What a stored link (or ref-bearing picture) records: its ref and current address. */
 function linkMetadata(stored: LinkKey, resolution: LinkAnswerCache) {
   const ref = clipboardLinkRef(stored.ref);
   return { ref, address: currentLinkAddress({ ref, href: stored.href }, resolution) };
 }
 
-/**
- * What a picture records, or null for one that names nothing the project
- * holds. An upload always records its identity; its address only once the
- * catalog holds it.
- */
 function pictureMetadata(attrs: PMNode["attrs"], resolution: LinkAnswerCache) {
   const src = String(attrs.src ?? "");
   const uploadRef = clipboardUploadRef(src);
@@ -190,11 +154,6 @@ function pictureMetadata(attrs: PMNode["attrs"], resolution: LinkAnswerCache) {
   return picture ? linkMetadata(picture, resolution) : null;
 }
 
-/**
- * Paste into an Editor: a same-project link or picture keeps its ref at its
- * recorded address (an upload its `asset:` source); every other recorded one
- * pastes its address with no ref, for the paste door to assign fresh.
- */
 function keepPastedRefs(html: string, projectId: string | null): string {
   if (!html.includes("data-meridian-")) return html;
   const container = document.createElement("template");
@@ -233,16 +192,6 @@ function keepPastedRefs(html: string, projectId: string | null): string {
   return container.innerHTML;
 }
 
-/**
- * Copy, text/plain flavour: the Markdown codec's link scope for this editor.
- * Every internal link is spelled as its full current address (a resolved ref
- * at its document's address now, otherwise the address its href names), so
- * the text means the same thing wherever it lands, holder or not. A picture
- * whose ref answers a document, or an upload the catalog holds, is spelled at
- * that document's current address under the manuscript-root grammar, as rich
- * copy records it; an upload the catalog does not hold has no source, since
- * its id is never text; any other source (gone, missing, ref-less) as stored.
- */
 export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
   const resolution = linkClipboardPluginKey.getState(state) ?? null;
   return {
@@ -274,10 +223,6 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
   };
 }
 
-/**
- * What is known of a picture's document, as the speller reads it. Anything not
- * yet answered spells as stored, as it does with no tree loaded.
- */
 function sourceResolution(
   document: LinkAssignmentDocument | null,
   gone: boolean,
@@ -306,14 +251,6 @@ function sourceResolution(
   return ref === null ? { kind: "address" } : { kind: "unknown" };
 }
 
-/**
- * The plugin that owns both directions on an Editor: the clipboard serializer
- * that records what each link and picture names, the HTML transform that keeps
- * a same-project ref, and the paste transform that assigns every link and
- * picture source still without one. Its state is the editor's resolution, whose assignment scope is the
- * holder's address, project and local index. Its HTML transform runs after
- * the paste sanitizer, which keeps well-formed metadata only.
- */
 export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache): Plugin {
   const base = DOMSerializer.fromSchema(schema);
   const renderLink = base.marks.link;
@@ -356,7 +293,6 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
       clipboardSerializer: new NestingDOMSerializer(nodes, marks),
       transformPastedHTML: (html) => keepPastedRefs(html, resolution.assignment?.projectId ?? null),
       transformPasted: (slice, view) =>
-        // A drag inside the editor moves links it already holds, as stored.
         view.dragging
           ? slice
           : assignPastedSlice(

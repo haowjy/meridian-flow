@@ -1,16 +1,3 @@
-/**
- * JsonTree — token-styled pretty-printed JSON renderer for the debug overlay.
- *
- * Key decisions:
- * - Renders via a single `<pre>` with `JSON.stringify(value, replacer, 2)`.
- *   A real lazy/collapsible tree was considered and rejected: the overlay is
- *   short-lived per-render, dev-only, and the snapshots inspected are bounded
- *   (one turn, one block, one event). The simpler renderer is much smaller and
- *   has no accidental coupling to the rendered data shape.
- * - Cycles, BigInt, and functions are handled so `JSON.stringify` cannot throw
- *   on store state that incidentally contains them.
- * - i18n exception: dev-only; intentionally bypasses Lingui.
- */
 import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";

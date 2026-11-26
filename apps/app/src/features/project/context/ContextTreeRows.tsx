@@ -1,5 +1,3 @@
-/** Direct-child rows and inline actions for one source's tree. */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -43,32 +41,21 @@ export type TreeEnv = {
   owner: ContextOwner;
   capabilities: EntryCapabilities;
   scheme: ProjectContextTreeScheme;
-  /** Main's document, marked current wherever this tree puts it. */
   activeDocumentId: string | null;
-  /** On Live, what the Work's draft changes: each gets a jade dot. */
   changed?: ReadonlySet<string> | null;
-  /** A note on a file's row, after its name. */
   meta?: (file: TreeFile) => ReactNode;
-  /** A file left out of use that still opens: its name is struck through. */
   crossedOut?: (file: TreeFile) => boolean;
-  /**
-   * What a folder's row says at its end, beside its control: a state with its action, or, while
-   * closed, what it holds out of sight.
-   */
   folderEnd?: (dir: TreeDirectory, open: boolean) => ReactNode;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
     done: () => void;
     createdFile: (node: string) => void;
-    /** The id of the folder creation just made, until its row takes focus. */
     createdFolder: string | null;
     setCreatedFolder: (node: string | null) => void;
-    /** The writer opened or closed a folder: the header's New file and New folder go there. */
     placeAt: (folderPath: string) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: TreeFile) => void;
-  /** What the lists say on their rows: the latest gesture's Undo, or what a press skipped. */
   notices: TreeNoticeWords;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   importHere?: {
@@ -81,7 +68,6 @@ export type TreeEnv = {
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
   tree: TreeView;
-  /** The tree's rows with the imports still being built; the tree's own when none is. */
   rows?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
 };
@@ -98,23 +84,19 @@ function useTreeEnv(): TreeEnv {
   return env;
 }
 
-/** A visible child group, which may span more than one tree. */
 export function TreeGroup({ depth, children }: { depth: number; children: ReactNode }) {
   return (
     <div className="relative isolate">
       {children}
-      {/* An empty folder draws no guide stub: alone in the group, it hides. */}
       <span
         aria-hidden
         className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle only:hidden"
-        // Under the parent row's icon.
         style={{ left: contentInset(depth - 1) + 8 }}
       />
     </div>
   );
 }
 
-/** The sole child renderer; standalone lists start at depth zero. */
 export function TreeChildren({
   parentId,
   parentPath,
@@ -124,7 +106,6 @@ export function TreeChildren({
   parentId: string;
   parentPath: string;
   depth: number;
-  /** The folder these rows sit in; null at the area root. File rows drop into it. */
   parent?: DropFolder | null;
 }) {
   const env = useTreeEnv();
@@ -158,7 +139,6 @@ export function TreeChildren({
           <FileRow key={item.key} file={child.node} depth={depth} parent={parent} />
         );
       })}
-      {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
       {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
           kind={env.creation?.creating.kind}
@@ -230,13 +210,11 @@ function DirRow({
 
   return (
     <DropRegion state={drop.dropState} flush>
-      {/* The region spans the subtree, so "after" lands below everything shown inside. */}
       <InsertionLine edge={drop.edge} inset={contentInset(depth)} />
       <EntryDestinationPicker {...interaction.picker}>
         <ListRow
           ref={interaction.controlRef}
           depth={depth}
-          // The open or closed folder is the twistie: rows need no chevron column.
           icon={isOpen ? FolderOpen : Folder}
           title={dir.name}
           suffix={dir.suffix}
@@ -268,7 +246,6 @@ function DirRow({
   );
 }
 
-/** A folder root shown while its import is still being built out of sight. */
 function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
   const reveal = useRevealImport();
   const element = useRef<HTMLButtonElement>(null);
@@ -348,7 +325,6 @@ function FileRow({
   );
 }
 
-/** A row the Work's draft changes, seen on Live: the page and Changes say what. */
 function DraftChangeMark() {
   return (
     <span className="mx-1 size-1.5 shrink-0 rounded-full bg-primary">

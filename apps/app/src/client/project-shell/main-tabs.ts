@@ -1,14 +1,3 @@
-/**
- * Main's tabs: the items open in main, one lane per kind (documents, chats), per (account, project)
- * in this browser tab's sessionStorage, so a reload keeps them and two windows keep their own. This
- * is the one record of what is open in main. The address names main's item; arriving at it is the
- * one command that writes here (`arriveMainTab`, called only by `useMainArrival`), and selecting or
- * closing a tab writes the address from here. A lane's `selected` is the pane-state page's
- * "current" item of that kind: the tab main showed last.
- *
- * Placement follows `apps/app/src/features/project/.context/pane-state-machine.md`: change that page's rules and
- * diagrams with any change here.
- */
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
 import { browserRecord, isRecord } from "../storage/browser-record";
@@ -20,12 +9,10 @@ export type MainTab =
 
 export type MainTabKind = MainTab["kind"];
 
-/** One kind's tab, so a lane's reader never re-checks the kind it already named. */
 export type TabOf<K extends MainTabKind> = Extract<MainTab, { kind: K }>;
 
 export type Lane<K extends MainTabKind = MainTabKind> = Readonly<{
   tabs: readonly TabOf<K>[];
-  /** The tab main showed last, kept while main shows the other kind: a new tab opens to its right. */
   selected: string | null;
 }>;
 
@@ -42,7 +29,6 @@ function parseDocument(value: unknown): OpenDocument | undefined {
   if (!isRecord(value)) return undefined;
   const { kind, documentId, name } = value;
   if (typeof documentId !== "string" || typeof name !== "string") return undefined;
-  // A tab stored before a node's handle became its document id carries `resourceHandle`: dropped.
   const { resourceHandle: _handle, ...stored } = value;
   if (kind === "new") return stored as OpenDocument;
   if (kind !== "tracked" && kind !== "viewer") return undefined;
@@ -199,7 +185,6 @@ export function closeAllMainTabs(accountId: string, projectId: string, kind: Mai
     writeLane(accountId, projectId, kind, EMPTY_LANE);
 }
 
-/** These tabs' items are gone (documents deleted or Discarded, chats deleted): their tabs close. */
 function dropTabs<K extends MainTabKind>(
   accountId: string,
   projectId: string,

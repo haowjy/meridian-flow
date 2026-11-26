@@ -1,4 +1,3 @@
-/** Available skill listings for composer `/`: bound thread, or the Project before a chat exists. */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { ThreadAvailableSkill } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";

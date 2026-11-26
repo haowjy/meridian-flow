@@ -1,41 +1,3 @@
-/**
- * L-B: the object controls surface.
- *
- * One component owns every verb a diagram, an image, or a code block offers in
- * the page, because all three answer the same question — what is the writer
- * approaching — and a second answer is how two surfaces end up on screen at
- * once. Hover reveals, selection makes persistent, and the ⋯ holds what the row
- * has no room for.
- *
- * Diagram and image rows are `OverlayIconRow`s. A code block gets the chip
- * cluster instead: same inside-corner physics, different shape,
- * because its language is a labeled control.
- *
- * **Nothing here names an object type.** Which objects this surface serves, what
- * their ⋯ offers, and which keys they answer are all reads of
- * `EDITOR_OBJECT_TYPES`: the surfaces are registered per registration id, the
- * verbs come from `object-menu-items.tsx`, and the fields a ⋯ can edit come from
- * the row's `surfaceFields`. A new object kind — a new diagram provider included
- * — reaches this file as data.
- *
- * Two of the claim ladder's rungs land here. `object` is a right-click on a
- * diagram or an image, which opens the ⋯ it already has. `caret` is a
- * right-click INSIDE a plain fence, which used to reach the browser and now
- * opens the fence's own verbs as one list.
- *
- * **Approach is not identity.** Hover decides what the row hangs off; a menu
- * decides what its items act on. They are usually the same object and must not
- * be the same state: a right-click claims an object before hover intent has
- * settled on it, so a menu reading hover state would run Delete on whatever the
- * pointer passed over last.
- *
- * **Elements are geometry, holds are identity.** Every surface here — two menus,
- * the field popover, and the lightbox — remembers a `NodeHold` and resolves it
- * to the current node and the current DOM on every render. The element a
- * right-click landed on is gone as soon as a peer writes, and the writer is
- * still looking at the same diagram.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -59,14 +21,8 @@ import { useApproachedObject } from "./useApproachedObject";
 import { ObjectVerbNotice, useVerbFeedback } from "./verb-feedback";
 import "./object-controls.css";
 
-/** Where a right-click landed. Geometry, so the menu opens under the pointer. */
 type MenuPoint = { x: number; y: number };
 
-/**
- * The registrations whose surface this lane owns: every object whose Enter opens
- * something and whose chrome is a row rather than a caret. A registration that
- * ships later is served the moment its row exists.
- */
 const SURFACE_SPECS = EDITOR_OBJECT_TYPES.filter(
   (spec) => spec.engage === "surface" && spec.surfaceKind !== undefined,
 );
@@ -205,7 +161,6 @@ export function ObjectControls({ editor }: { editor: Editor }) {
 
   return (
     <>
-      {/* Every verb answers in one place, whichever door opened it. */}
       <ObjectVerbNotice editor={editor} anchor={target?.element ?? null} notice={notice} />
 
       {target?.kind === "code" ? (

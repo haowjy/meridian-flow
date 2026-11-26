@@ -1,32 +1,14 @@
-/**
- * Block structure settles before words merge. Where one side removed a block the other changed, or
- * both changed which blocks there are at one place, the token merge cannot be trusted to compose the
- * two (it combined, doubled or dropped words), so the draft's blocks stand and one clash is
- * counted: `draft-wins-stretch`. The token merge afterwards sees only stretches where at most one
- * side changed the structure.
- */
 import type { Node as PMNode } from "prosemirror-model";
 import { type Correspondence, emptyCorrespondence } from "../diff/correspond.js";
 import { Dsu } from "../diff/dsu.js";
 import { blockKey } from "../diff/tokens.js";
 
-/**
- * One side's changes laid over the base. Slot 2g is the gap before base block g, slot 2i+1 is base
- * block i. A change is a set of nodes: slots, and the side's blocks that sit in a gap (node S+j for
- * side block j), joined where one decision covers them.
- */
 interface View {
-  /** The side's blocks that sit in each slot. */
   image: number[][];
-  /** Per slot: 0 unchanged, 1 text changed, 2 split, joined, moved or added, 3 removed. */
   kind: Uint8Array;
-  /** By side block: it is a base block moved, whose place the order merge settles. */
   moved: Uint8Array;
-  /** Per slot: a base block cut apart or joined to a neighbour (a split or a join, not a move). */
   cut: Uint8Array;
-  /** A gap inside one change (between the blocks of a join). */
   interior: Uint8Array;
-  /** The change a node belongs to. */
   item: (node: number) => number;
 }
 
@@ -46,7 +28,6 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
   const link = (a: number, b: number) => changes.union(a, b);
   const inPlace = (i: number) => c.partner[i] >= 0 && !c.moved.has(i);
 
-  // Every block of the side sits in a base block's place (its pair in order, with its pieces) or in a gap.
   let gap = 0;
   for (let j = 0; j < side.length; j++) {
     const first = c.nextPiece[j] >= 0 ? c.nextPiece[j] : j;
@@ -91,13 +72,10 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
   return { image, kind, moved, cut, interior, item };
 }
 
-/** A side's block (second) and the slot it sits in (first; -1 for a moved base block, placed by the order merge). */
 type Placed = [slot: number, block: number];
 
 export interface Stretch {
-  /** The base blocks the clash covers. */
   baseIds: number[];
-  /** Live's blocks that were dropped, and the draft's that stand. */
   live: PMNode[];
   draft: PMNode[];
 }
@@ -162,7 +140,6 @@ export function settleStretches(
     return clash[r] ? r : -1;
   };
 
-  // Per clash: the base blocks it covers and each side's blocks there.
   const parts = new Map<number, { slots: number[]; l: Placed[]; d: Placed[] }>();
   const part = (r: number) => {
     let p = parts.get(r);
@@ -192,7 +169,6 @@ export function settleStretches(
   const dropped = new Uint8Array(live.length);
   const stretches: Stretch[] = [];
   for (const p of parts.values()) {
-    // The same blocks in the same places on both sides is no clash.
     if (
       p.l.length === p.d.length &&
       p.l.every(([s, j], x) => s === p.d[x][0] && blockKey(live[j]) === blockKey(draft[p.d[x][1]]))

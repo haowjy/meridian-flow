@@ -1,13 +1,3 @@
-/**
- * ManuscriptStateNotice — what a Work's pending move or delete will do to the document, which
- * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
- *
- * It lives in the free end of a header row the document already has (the identity row, the
- * phone's review row), never in a strip of its own: a delete lands while the writer reads, and
- * a line pushed in above the toolbar would move the page under them. The slot takes only what
- * the row leaves and adds nothing to the row's size, so its arrival never wraps or grows the
- * row. A narrow slot shows the short label; a state with a longer sentence opens it from a button.
- */
 import { useLingui } from "@lingui/react";
 import { Info } from "lucide-react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
@@ -25,11 +15,9 @@ import { cn } from "@/lib/utils";
 export type ManuscriptState = {
   kind: "pending-tree";
   label: string;
-  /** What the chip's button opens when the label doesn't say it all. */
   sentence?: string;
 };
 
-/** The document's manuscript state, or null when no other Work moves or deletes it. */
 export function useManuscriptState(projectId: string, tab: OpenDocument): ManuscriptState | null {
   useLingui();
   const { documentId } = tab;
@@ -77,7 +65,6 @@ export function ManuscriptStateSlot({
 }
 
 function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: boolean }) {
-  // The popover button carries the name; a chip with none is read as it is drawn.
   const hidden = state.sentence ? true : undefined;
   const content = (
     <>

@@ -13,8 +13,6 @@ import { caretHomeFromObjectTransaction, typeBesideObjectTransaction } from "./o
 
 let fixture: StandaloneEditor | null = null;
 
-// Arrow keys reach gapcursor, which measures the line to decide whether Down
-// leaves the block. jsdom cannot measure.
 installJsdomLayout();
 
 afterEach(() => {
@@ -36,12 +34,6 @@ function positionOf(instance: Editor, type: string): number {
   return requireNode(instance, type).pos;
 }
 
-/**
- * A cell is isolating, and every landing these transactions compute has to
- * respect that (§5a of the cell addendum): the position after a block that
- * ends a cell exists, but the nearest text FORWARD of it is the neighbouring
- * cell's — which is never the answer.
- */
 describe("leaving a block that ends its cell", () => {
   const fenceTs: JSONContent = {
     type: "code_block",
@@ -90,9 +82,6 @@ describe("leaving a block that ends its cell", () => {
     expect(transaction).not.toBeNull();
     if (transaction) instance.view.dispatch(transaction);
 
-    // No prose either side inside the cell: one paragraph is made there, the
-    // same answer a lone fence gets at the top level — and the neighbouring
-    // cell is untouched.
     const cell = firstCellRange(instance);
     expect(instance.state.selection.from).toBeGreaterThanOrEqual(cell.start);
     expect(instance.state.selection.from).toBeLessThanOrEqual(cell.end);

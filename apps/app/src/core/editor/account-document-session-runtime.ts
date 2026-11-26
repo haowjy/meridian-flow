@@ -1,4 +1,3 @@
-/** The account's document sessions: one registry per signed-in account, closed on sign-out. */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
@@ -13,7 +12,6 @@ export interface AccountDocumentSessionRuntime {
   finishClose(): Promise<void>;
 }
 
-/** Test substitution: the registry and its two lifecycle phases travel together. */
 export interface AccountDocumentSessionCore {
   readonly accountId: AccountId;
   readonly registry: LiveDocumentSessionRegistry;

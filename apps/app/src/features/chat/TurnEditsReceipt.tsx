@@ -1,4 +1,3 @@
-/** Renders durable document and Work change receipts. */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DraftId, TurnId } from "@meridian/contracts";
@@ -37,17 +36,14 @@ import { useTurnCardDrafts } from "./turn-card-drafts";
 import { UndoCell } from "./UndoCell";
 import { workReceiptLine } from "./work-receipt-copy";
 
-/** The answers that mean the press failed; every other answer is a press that took what it could. */
 const UNDO_FAILED: ReadonlySet<string> = new Set([
   "partial_failure",
   "permission_denied",
   "internal_error",
 ]);
 
-/** One document a turn edited: where the edit landed (a draft names its Work), and what it did to the document's place. */
 export type TurnEditDocument = TurnLiveLineageDocumentItem;
 
-/** Whether this turn has a receipt to show at all: document edits, or a reversible Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
   workReceipts: readonly WorkReceipt[],
@@ -60,9 +56,7 @@ export type TurnEditsReceiptProps = {
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
-  /** When `receipt` was read. */
   receiptReadAt?: number;
-  /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
 };
 
@@ -94,7 +88,6 @@ export function TurnEditsReceipt({
 
   if (!hasTurnEditsReceiptContent(documents, workReceipts)) return null;
 
-  /** One press, one command: it takes what it can and says nothing. Only a failure shows, as a toast. */
   async function reverseTurn() {
     if (pending || !reversible) return;
     setPending(true);
@@ -112,9 +105,6 @@ export function TurnEditsReceipt({
       className="overflow-hidden rounded-lg border border-border bg-card text-xs text-muted-foreground"
       data-turn-receipt
     >
-      {/* The WHOLE header row is the expand/collapse target, around the Undo chip, which
-            fences its own click. No hover fill, as on every fold. A strip row with the box's
-            border, whether Undo or "Can't undo" shows. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
@@ -139,7 +129,6 @@ export function TurnEditsReceipt({
           </span>
         </FoldToggle>
         {restores.drafts.length === 1 ? restores.slot(restores.drafts[0] as DraftId, false) : null}
-        {/* What the turn did in a draft is its restore's: the card's Undo is for the rest, when there is any. */}
         {reversible || receipt?.undone || restores.drafts.length === 0 ? (
           <UndoCell
             offer={
@@ -193,12 +182,6 @@ export function TurnEditsReceipt({
   );
 }
 
-/**
- * The turn's restores (`Undo turn`), one per draft the card's read offers it in or names a press
- * in force for, or this tab pressed it in: with one, in the header; with several, each heads its
- * draft's rows, named. `groups` are the rows to list: the turn's Live rows, then each such draft's
- * under its name (one group, unnamed, with fewer than two).
- */
 function useTurnRestores(
   turn: Turn,
   documents: readonly TurnEditDocument[],
@@ -269,11 +252,6 @@ function useTurnRestores(
 const noSubscription = () => () => {};
 const noSnapshot = () => 0;
 
-/**
- * The Save state of each Agent package the turn's writes landed in (a live write, an applied
- * draft), on its own line under the header while it has one: the same chip and Save the Agents
- * tab shows.
- */
 function AgentPackagesSaveLines({
   projectId,
   documents,
@@ -314,10 +292,6 @@ function AgentPackagesSaveLines({
   ));
 }
 
-/**
- * Full-width document row: hover washes the row, click opens the file. A document the turn
- * deleted is not a door: its old address may hold another document now.
- */
 function DocumentRow({
   document,
   state,
@@ -325,7 +299,6 @@ function DocumentRow({
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
-  /** What became of the change the turn drafted to this row. */
   state: TurnDraftState | undefined;
   onOpenContextUri: OpenContextUri | null;
   canOpenContextUri: CanOpenContextUri | null;
@@ -341,7 +314,6 @@ function DocumentRow({
     if (draftId && drafted?.item.pending) openReviewFile(drafted, draftId, document.block);
     else onOpenContextUri?.(document.uri);
   };
-  // A folder has no document to open or drag: its row names where it is.
   if (document.folder && !document.tree)
     return (
       <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
@@ -380,11 +352,6 @@ function DocumentRow({
   );
 }
 
-/**
- * Dragging a row drags the document it represents, never the receipt or the pathname the turn
- * wrote. A draft row copies the draft of the Work the turn wrote in, even after the chat moved
- * to another Work; a document the turn deleted names nothing a drop could act on.
- */
 function useDocumentRowDrag(document: TurnEditDocument) {
   return useReferenceDrag(
     document.tree?.op !== "delete" && !document.folder
@@ -400,7 +367,6 @@ function useDocumentRowDrag(document: TurnEditDocument) {
   );
 }
 
-/** What became of a row's drafted change, when the turn drafted it. */
 function draftStateOf(
   document: TurnEditDocument,
   drafts: TurnReceiptChip["drafts"],
@@ -408,7 +374,6 @@ function draftStateOf(
   return document.scope === "draft" ? drafts?.[document.documentId] : undefined;
 }
 
-/** One word for a row's drafted change; one still waiting needs none, the header says Drafted. */
 function DraftStateWord({ state }: { state: TurnDraftState | undefined }) {
   const word = stateWord(state);
   if (!word) return null;
@@ -426,7 +391,6 @@ function stateWord(state: TurnDraftState | undefined): string | null {
   return null;
 }
 
-/** A row's words: the node's name (a folder's where the turn left it), or what the turn did to where it is. */
 function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   const names = useOwnerNames();
   const tree = document.tree;
@@ -469,18 +433,9 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   }
   if (document.folder)
     return <span className="min-w-0 truncate text-foreground">{nameOf(document.uri)}</span>;
-  // The whole row is the door here, so the name inside it stays inert.
   return <DocumentName path={document.uri} insideDoor />;
 }
 
-/**
- * "Applied", "Undone" or "Discarded" once every drafted change has had that outcome, else
- * "Drafted" while any waits or they differ (each row says its own). Else "Edited" while the turn
- * only changed text, "Changed" once it moved, deleted or made something or wrote both drafts and
- * the manuscript. Documents and folders are counted apart, so a reorganisation says it touched
- * folders too. It counts, never names: a name inside the toggle would compete for the click with
- * the expanded rows, which already open each document.
- */
 function documentCountLabel(
   documents: readonly TurnEditDocument[],
   drafts: TurnReceiptChip["drafts"],
@@ -509,8 +464,6 @@ function documentCountLabel(
   return t`Edited ${what}`;
 }
 
-/** The Work-only header: same counting grammar as documents, wearing the
- * writer's own word for the entity the turn changed. */
 function workCountLabel(count: number) {
   return count === 1 ? <Trans>Changed 1 Work</Trans> : <Trans>Changed {count} Work</Trans>;
 }

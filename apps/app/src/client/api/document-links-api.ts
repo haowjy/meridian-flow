@@ -1,11 +1,3 @@
-/**
- * document-links-api — HTTP client for stored-link resolution.
- *
- * One batched call: hand the server up to 200 links, each its ref (or null)
- * and its href, and get back one answer per link in request order. `missing`
- * and `gone` are normal answers, not errors.
- */
-
 import type {
   ResolveDocumentLinksRequest,
   ResolveDocumentLinksResponse,

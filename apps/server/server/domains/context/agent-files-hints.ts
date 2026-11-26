@@ -13,18 +13,14 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import type { ProjectWakeHub } from "./project-wake-hub.js";
 import { loadDocumentAddresses } from "./tree/tree-addresses.js";
 
-/** Writes to one document within this window wake its clients once. */
 const SETTLE_MS = 250;
-/** A document rarely moves in or out of an Agents level, so where it is is kept for a while. */
 const PLACE_TTL_MS = 60_000;
 const PLACES = 5000;
 
 type Place = { project: ProjectId } | { user: string } | null;
 
 export interface AgentFilesHints {
-  /** Schedules a wake for the document's clients. Ignored once stopped. */
   hint(documentId: string): void;
-  /** Cancels pending wakes; the ones already reading are tracked in `backgroundTasks`. */
   stop(): void;
 }
 
@@ -58,7 +54,6 @@ export function createAgentFilesHints(deps: {
     if ("project" in place) {
       deps.wake.publish({ type: "agent-files-hint", projectId: place.project });
     } else {
-      // `~/.agents/` is the writer's in every project they have open.
       deps.wake.publishToUser(place.user, (projectId) => ({
         type: "agent-files-hint",
         projectId: projectId as ProjectId,

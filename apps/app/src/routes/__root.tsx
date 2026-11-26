@@ -1,10 +1,3 @@
-/**
- * __root route — Meridian app document shell.
- *
- * Renders the global CSS link, the link chip's icon rules, head/meta, i18n
- * provider, tooltip provider, AuthKit client provider, global announcement
- * region, and router Outlet.
- */
 import { I18nProvider } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { createRootRoute, HeadContent, Outlet, Scripts, useMatches } from "@tanstack/react-router";

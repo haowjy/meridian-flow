@@ -1,10 +1,3 @@
-/**
- * relative-time — one shared "Nm / Nh / Nd" formatter for the project
- * workspace. Callers pass `nowMs` to keep the value deterministic; the "now"
- * tick policy lives at the call site.
- */
-
-/** Format an ISO timestamp as a compact relative age: `now` / `Nm` / `Nh` / `Nd`. */
 export function relativeTime(iso: string, nowMs: number): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return "";

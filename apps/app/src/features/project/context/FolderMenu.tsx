@@ -1,14 +1,3 @@
-/**
- * The menu a folder chip opens: the path crumbs' drill-in menu, opened inside
- * the folder. Subfolders drill, Back climbs, and a document opens the way the
- * chip's surface opens documents.
- *
- * Opened by identity. The project's replay says where the folder lives now (it may be
- * another Work's Scratch), a rename or move made a moment ago included. That is read
- * only while the menu is open, so a transcript full of folder chips costs nothing
- * until one is clicked.
- */
-
 import { t } from "@lingui/core/macro";
 import {
   type ComponentPropsWithoutRef,
@@ -26,20 +15,17 @@ import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { useOnScreenChatScratchSource } from "../chat/use-chat-scratch-source";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
-/** What a surface's folder chips need: the project, and how that surface opens a document. */
 export type FolderMenuHost = {
   projectId: string;
   openDocument: (documentId: string) => void;
 };
 
-/** Provided by each surface that shows folder chips; without one a folder chip opens nothing. */
 export const FolderMenuContext = createContext<FolderMenuHost | null>(null);
 
 export function useFolderMenuHost(): FolderMenuHost | null {
   return useContext(FolderMenuContext);
 }
 
-/** Wraps a folder chip: pressing it opens the menu inside the folder. */
 type FolderMenuProps = {
   host: FolderMenuHost;
   folderId: string;
@@ -66,7 +52,6 @@ type MenuContentHandlers = {
   onEscapeKeyDown?: (event: KeyboardEvent) => void;
 };
 
-/** The open menu's content, for a host that owns its own `DropdownMenu` (the Editor's pointer anchor). */
 export function FolderMenuBody({
   host,
   folderId,
@@ -89,7 +74,6 @@ export function FolderMenuBody({
     scratch,
     own: own ? { ...own, heading } : null,
   });
-  // A catalog already on hand opens the menu at once; the lookup only has to answer for the rest.
   const openAt = source.tree.trailInside(folderId);
   if (openAt) {
     const onPick = (node: DrillNode) => host.openDocument(node.documentId ?? node.id);

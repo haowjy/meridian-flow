@@ -25,21 +25,12 @@ import { selectedObject } from "@/core/editor/objects";
 
 export type BlockTarget = {
   node: PMNode;
-  /** Position immediately before the block. */
   pos: number;
-  /** Index among the document's top-level children. */
   index: number;
 };
 
-/** Which way a keyboard move goes: toward the top of the document, or the end. */
 export type BlockMoveDirection = "up" | "down";
 
-/**
- * Seam positions between top-level blocks, from the very top of the document
- * to the very end. `seams[i]` is the position before block `i`, so a document
- * with n blocks has n + 1 seams and every one of them is a legal insertion
- * point for a block.
- */
 export function blockSeams(doc: PMNode): number[] {
   const seams = [0];
   let pos = 0;
@@ -50,7 +41,6 @@ export function blockSeams(doc: PMNode): number[] {
   return seams;
 }
 
-/** The top-level block at `index`, or null when the index is off the document. */
 export function blockAtIndex(doc: PMNode, index: number): BlockTarget | null {
   if (index < 0 || index >= doc.childCount) return null;
   let pos = 0;
@@ -58,11 +48,6 @@ export function blockAtIndex(doc: PMNode, index: number): BlockTarget | null {
   return { node: doc.child(index), pos, index };
 }
 
-/**
- * The top-level block containing `pos`, however deep inside it that position
- * sits. A caret in a table cell answers with the table; a pointer resolved
- * into a list item answers with the list.
- */
 export function blockAt(doc: PMNode, pos: number): BlockTarget | null {
   const clamped = Math.max(0, Math.min(pos, doc.content.size));
   const $pos = doc.resolve(clamped);
@@ -73,25 +58,6 @@ export function blockAt(doc: PMNode, pos: number): BlockTarget | null {
   return blockAtIndex(doc, index);
 }
 
-/**
- * True when the node at `pos` is the whole of the top-level block that would
- * move with it (§5.8).
- *
- * A block drag moves the object's BLOCK, so the two have to be the same thing
- * for the gesture to mean what it looks like. A figure standing on its own is:
- * moving its block is moving the figure. A figure in a list item beside a
- * paragraph is not, and grabbing it would carry the whole list nobody took
- * hold of; the margin handle is still there for "move this whole line".
- *
- * Structural, and about this occurrence rather than this kind: the same rule is
- * grabbable in the manuscript and only decoration inside a quote that also
- * holds prose. Every wrapper between the node and the document has to hold
- * nothing else, so an object in a table cell answers no rather than offering
- * the whole table.
- *
- * Objects that land inline never ask: they travel by ProseMirror's own drag,
- * which carries the node itself and leaves the block where it stands.
- */
 export function objectIsWholeBlock(doc: PMNode, pos: number): boolean {
   if (pos < 0 || pos > doc.content.size) return false;
   const $pos = doc.resolve(pos);
@@ -101,23 +67,12 @@ export function objectIsWholeBlock(doc: PMNode, pos: number): boolean {
   return true;
 }
 
-/**
- * The block the writer is standing on: the one holding the caret, or the one
- * holding the selected object. An inline image answers with its paragraph —
- * the paragraph is what moves.
- */
 export function blockForSelection(state: EditorState): BlockTarget | null {
   const object = selectedObject(state);
   if (object) return blockAt(state.doc, object.pos);
   return blockAt(state.doc, state.selection.$from.pos);
 }
 
-/**
- * True when the selection is inside a table's cells rather than on the table
- * itself. Alt+Arrows there move rows and columns, which belong to the table
- * surface (§4, deepest owner) — this surface declines rather than moving the
- * whole table out from under a caret that was editing one cell.
- */
 export function selectionIsInsideTable(state: EditorState): boolean {
   if (selectedObject(state)) return false;
   const $pos = state.selection.$from;
@@ -128,12 +83,9 @@ export function selectionIsInsideTable(state: EditorState): boolean {
   return false;
 }
 
-/** The blocks that move with a block: the item it starts with what is under it, or the block alone. */
 export type BlockRun = {
-  /** Position before the run's first block, and after its last. */
   pos: number;
   end: number;
-  /** Index range among the document's top-level children, end exclusive. */
   index: number;
   endIndex: number;
   nodes: PMNode[];
@@ -150,12 +102,6 @@ export function blockRun(doc: PMNode, source: BlockTarget): BlockRun {
   return { pos: source.pos, end: source.pos + size, index, endIndex, nodes };
 }
 
-/**
- * Move the block's run to seam `seamIndex`. Null when the move would not move
- * anything: the seams on either side of the run, and those inside it, are
- * where it already is, and a writer who drops a paragraph back onto its own
- * edge has asked for nothing rather than for an undo entry.
- */
 export function moveBlockToSeamTransaction(
   state: EditorState,
   source: BlockTarget,
@@ -184,18 +130,11 @@ function listDepth(facts: BlockFacts): number {
   return facts.steps.filter((step) => step.type === "list").length;
 }
 
-/** The block continues an item at this list step, rather than starting one or standing outside it. */
 function continuesAt(facts: BlockFacts | undefined, level: number): boolean {
   const step = facts?.steps[level];
   return Boolean(step && step.type === "list" && !step.opens && !step.startsItem);
 }
 
-/**
- * One step up or down: over the neighbouring item with what is under it, not
- * merely past this run's own edge, so a move never takes another item's
- * children. Null at the ends of the document, which is the no-op the boundary
- * asks for — the key is left unconsumed and nothing errors.
- */
 export function moveBlockStepTransaction(
   state: EditorState,
   source: BlockTarget,
@@ -217,10 +156,6 @@ export function moveBlockStepTransaction(
   return moveBlockToSeamTransaction(state, source, end);
 }
 
-/**
- * A copy of the block's run, immediately after it. A writer standing in the
- * block lands in the copy, because the copy is the one they are about to rewrite.
- */
 export function duplicateBlockTransaction(
   state: EditorState,
   source: BlockTarget,
@@ -231,11 +166,6 @@ export function duplicateBlockTransaction(
   return carrySelection(state, tr, run, run.end).scrollIntoView();
 }
 
-/**
- * Remove the block's run. A document left with nothing becomes an empty
- * paragraph rather than nothing: the schema needs a block, and a writer who
- * deleted their only paragraph still expects somewhere to type.
- */
 export function deleteBlockTransaction(
   state: EditorState,
   source: BlockTarget,

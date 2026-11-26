@@ -1,13 +1,3 @@
-/* Image ingress: the slot a picture holds while it travels, and the two things
-   ingress says outside the document (a drag in the air, a refusal).
-
-   The frame is sized by the node view from the file's own dimensions, so these
-   rules never set a width: they only make sure the box the wrapper reserves is
-   the box the picture will fill. */
-
-/* The placeholder itself: quiet, dimmed, and legible at any size. Its own
-   proportions come from the wrapper, so an unmeasured picture still has a frame
-   worth reading. */
 .meridian-image-pending {
   position: relative;
   display: flex;
@@ -25,11 +15,6 @@
   font-size: var(--text-sm);
 }
 
-/* The fallback box, and only for a slot with no measured frame. A file the
-   browser declined to measure (`measure-image.ts`) reserved nothing, so the
-   placeholder brings a readable box of its own. A measured frame already IS the
-   picture's box, and a minimum here would make a small picture reserve more than
-   it will ever occupy and then collapse when the bytes land. */
 .meridian-image-node:not(.meridian-image-node--framed) > .meridian-image-pending {
   min-width: 8rem;
   min-height: 4.5rem;
@@ -49,8 +34,6 @@
   white-space: nowrap;
 }
 
-/* The thin progress line, along the frame's own bottom edge: the picture's
-   arrival is reported where the picture is, not in a corner of the pane. */
 .meridian-image-pending__progress {
   position: absolute;
   right: 0;
@@ -69,8 +52,6 @@
   transition: width 160ms linear;
 }
 
-/* No total to count against (the browser cannot always say), so the line
-   travels instead of filling. */
 .meridian-image-pending--indeterminate .meridian-image-pending__progress::after {
   width: 35%;
   animation: meridian-upload-drift 1400ms ease-in-out infinite;
@@ -109,8 +90,6 @@
   }
 }
 
-/* The wrapper's reserved box IS the picture's box: whatever is inside it fills
-   it, so the swap from frame to picture moves nothing. */
 /* The frame carries an explicit width (the picture's own), so `max-width: 100%`
    on it alone would resolve against a shrink-to-fit wrapper that has already
    grown to that width — a picture wider than the column would hang out of the
@@ -132,34 +111,21 @@
   overflow: hidden;
 }
 
-/* Measured pictures come as small as a 32px icon, and the frame holds that size
-   exactly — so the placeholder has to answer to a box with no room to speak in.
-   The frame is the container the box is asked about, because the rendered frame
-   is the honest question: a picture wider than the prose column has already been
-   narrowed by `max-width`, and its measured numbers no longer describe it. */
 .meridian-editor .ProseMirror .meridian-image-node--framed {
   container: meridian-image-frame / size;
 }
 
-/* Too small for a padded line of text. The name goes and the dimmed slot keeps
-   its progress line, which is all a 32px picture has room to say; the frame
-   still says the name to a screen reader. */
 @container meridian-image-frame ((width < 4.5rem) or (height < 3rem)) {
   .meridian-image-pending__label {
     display: none;
   }
 }
 
-/* A link whose picture is being fetched. It stays a link, because that is the
-   honest end state when the site refuses. */
 .meridian-editor .ProseMirror .meridian-image-importing {
   border-radius: var(--radius-sm);
   background: color-mix(in oklab, var(--color-primary) 12%, transparent);
 }
 
-/* The drop hint: the pane's own box, inset, while a drag carries files. Drawn
-   by the ingress chrome surface, which portals it into the scroll pane so this
-   inset answers against the manuscript rather than the shell. */
 .meridian-editor-drop-overlay {
   position: absolute;
   inset: 0.75rem;
@@ -177,16 +143,10 @@
   pointer-events: none;
 }
 
-/* The prose dims behind the hint. Keyed off the hint's own presence rather than
-   a class the shell would have to set: the drag belongs to this lane, and the
-   shell sets no class for it. */
 .meridian-editor:has(> .meridian-editor-drop-overlay) .ProseMirror {
   background: color-mix(in oklab, var(--color-card) 65%, transparent);
 }
 
-/* The refusal: one pill, over the manuscript, blocking nothing. Top-centre
-   like `PassageNotice`, because it is news about the document rather than an
-   answer to something the writer pressed. */
 .meridian-image-refusal {
   position: absolute;
   top: 0.75rem;

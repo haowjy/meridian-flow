@@ -1,8 +1,3 @@
-/**
- * The file-access service (file-access §1, §3): the only place a `FileGrant`
- * is minted. `authorize` is the preflight; `confirmEdit` is the authoritative
- * re-check a write seam runs inside its transaction.
- */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { mergeOwnerLocks } from "../../shared/draft-owner.js";
@@ -29,28 +24,19 @@ import type { FileGrantsPort } from "./ports/file-grants.js";
 interface FileAccessDeps {
   facts: FileFactsPort;
   grants: FileGrantsPort;
-  /** Each link's binding and Work, read fresh (runtime's `readAgentChain`). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
 }
 
 export interface FileAccess {
-  /** Captured destination lifecycle without caller-specific grants. */
   destinationAvailability(
     target: FileTarget,
     destination: FileDestination,
   ): Promise<{ closed: ClosedOwnerWhy | null }>;
-  /** Preflight: fast errors and UI state. Advisory for writes. */
   authorize<N extends FileNeed>(
     principal: Principal,
     target: FileTarget,
     need: N,
   ): Promise<FileGrant<N> | FileAccessDenied>;
-  /**
-   * Access at an explicit destination instead of the one the principal's mode
-   * picks: an undo reverses a write where it landed, which a mode switch since
-   * may have moved new writes away from. Review previews use a read grant
-   * at the item's destination so archived drafts remain readable, not editable.
-   */
   authorizeAt<N extends FileNeed = "edit">(
     principal: Principal,
     target: FileTarget,
@@ -70,12 +56,6 @@ export interface FileAccess {
     grants: readonly FileGrant<"edit" | "command">[],
     locked: LockedOwners,
   ): Promise<FileAccessDenied[]>;
-  /**
-   * The list path (§6): each listed document's decision from one facts query,
-   * with an agent's drafted documents decided in its draft. A document the principal
-   * can't read is absent, so callers drop it. `destination` decides every document
-   * there instead of where the principal's access sends it (`ls version:"live"`).
-   */
   listAccess(
     principal: Principal,
     documentIds: readonly DocumentId[],
@@ -84,11 +64,6 @@ export interface FileAccess {
       destination?: FileDestination;
     },
   ): Promise<Map<DocumentId, FileDecision>>;
-  /**
-   * History reads keep a deleted document's captured
-   * evidence: the person term alone decides whether they may see it, and the
-   * answer says whether the document is still there. Null when they may not.
-   */
   historyAccess(
     principal: Principal,
     documentId: DocumentId,
@@ -205,14 +180,6 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
   };
 
-  /**
-   * An agent's facts, decided where its write would land. A chat in draft mode loads its
-   * draft's view. Any other chat loads the live tree, and only a place that sends the write to
-   * a draft loads the draft: the draft's lifecycle and locks apply to a draft, never to a live
-   * write. Once live says draft, the draft's facts are the answer, null included. A document
-   * only the draft holds (one an earlier write of this chat created there) counts when its
-   * place drafts.
-   */
   async function loadFor(principal: Principal, target: FileTarget): Promise<FileFacts | null> {
     const agent = principal.agent;
     if (!agent || target.kind === "draft" || target.kind === "restore")
@@ -226,7 +193,6 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     return drafted && destinationFor(principal, drafted).kind === "draft" ? drafted : null;
   }
 
-  /** `loadFor` for a list: one live query, then one query in the draft's view for the documents it drafts. */
   async function loadListFor(
     principal: Principal,
     documentIds: readonly DocumentId[],
@@ -268,7 +234,6 @@ async function refreshPrincipal(
   return { ...principal, agent: { ...principal.agent, chain: await readChain(caller.threadId) } };
 }
 
-/** `confirmEdit` re-checks a grant against the need it was minted for. */
 function allows(result: FileDecision, need: FileNeed): boolean {
   return need === "command" ? result.command : atLeast(result.level, need);
 }

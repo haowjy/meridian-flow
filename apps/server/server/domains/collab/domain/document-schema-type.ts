@@ -1,4 +1,3 @@
-/** Whether a document stores a code file (one code node) rather than prose blocks. */
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 
@@ -18,7 +17,6 @@ export async function codeFiletypeOf(
   throw new Error(`Document ${documentId} has untracked filetype ${filetype} and no text`);
 }
 
-/** A code file's grep text is its code node's text, not markdown. */
 export async function isCodeDocument(
   resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
   documentId: DocumentId,

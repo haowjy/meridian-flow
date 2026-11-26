@@ -17,9 +17,7 @@ export function useReferenceBrowserCatalog(
   projectId: string | null | undefined,
   workId: string | null | undefined,
   label: string,
-  /** A No Work chat's lineage: its Scratch joins the Work's in the browser. */
   rootThreadId?: string | null,
-  /** The chat whose uploads the picker offers: a subagent's top chat. */
   chatThreadId?: string | null,
 ): ReferenceBrowserCatalog | null {
   const accountId = useAccountId();
@@ -55,7 +53,6 @@ export function useReferenceBrowserCatalog(
 
   const latest = useRef({ trees, workNames, warmSources, workRows });
   const listeners = useRef(new Set<() => void>());
-  // The open menu reads through the port, so a change to the trees is its cue to read again.
   useEffect(() => {
     latest.current = { trees, workNames, warmSources, workRows };
     for (const listener of [...listeners.current]) listener();

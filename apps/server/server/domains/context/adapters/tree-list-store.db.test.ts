@@ -66,9 +66,7 @@ const list = { kind: "project", projectId: PROJECT } as const;
 describe("the tree list store (postgres)", () => {
   const db = createTestDatabase();
   const newStore = () => createDrizzleTreeListStore({ db });
-  /** The project's list id: its own, made with the project. */
   let LIST = "";
-  /** The account's list id. */
   let ACCOUNT_LIST = "";
 
   beforeEach(async () => {
@@ -106,7 +104,6 @@ describe("the tree list store (postgres)", () => {
   });
   afterAll(() => closeDatabase(db));
 
-  /** A browser's copy of the list: its own peer id, and what it has not yet sent. */
   function client(who = actor) {
     const doc = new LoroDoc();
     doc.setPeerId(freshPeerId());
@@ -116,7 +113,6 @@ describe("the tree list store (postgres)", () => {
       doc,
       writer,
       actor: who,
-      /** Everything made since the last call, as one update. */
       send() {
         const update = doc.export(sent ? { mode: "update", from: sent } : { mode: "update" });
         sent = doc.oplogVersion();
@@ -125,7 +121,6 @@ describe("the tree list store (postgres)", () => {
     };
   }
 
-  /** The list as its stored row holds it; null when nothing was stored. */
   async function storedList(listId = LIST): Promise<LoroDoc | null> {
     const [row] = await db
       .select({ snapshot: documentSnapshots.snapshot })
@@ -139,7 +134,6 @@ describe("the tree list store (postgres)", () => {
     return doc;
   }
 
-  /** The stored list's version, as JSON, for "nothing was stored" comparisons. */
   const storedVersion = async () => {
     const doc = await storedList();
     const version = doc ? JSON.stringify([...doc.oplogVersion().toJSON()]) : null;
@@ -147,7 +141,6 @@ describe("the tree list store (postgres)", () => {
     return version;
   };
 
-  /** The live view of a fresh replay of the stored list. */
   async function storedReplay() {
     const doc = await storedList();
     if (!doc) throw new Error("the list was never stored");
@@ -158,7 +151,6 @@ describe("the tree list store (postgres)", () => {
     }
   }
 
-  /** The rows a fresh replay of the stored list gives, for live and the Work. */
   async function replayedRows() {
     const doc = (await storedList()) ?? new LoroDoc();
     const shown = (view: { draft: string | null }) => {
@@ -237,7 +229,6 @@ describe("the tree list store (postgres)", () => {
     );
   }
 
-  /** One browser's session: a folder with two chapters, a rename, a move, and a draft. */
   async function session(store: ReturnType<typeof newStore>, tag: string) {
     const c = client();
     const send = async () => {
@@ -277,7 +268,6 @@ describe("the tree list store (postgres)", () => {
   }
 
   it("keeps the rows equal to a fresh replay of the stored list while several connections admit at once", async () => {
-    // Two stores stand for two server processes: each holds its own copy of the list.
     const stores = [newStore(), newStore()];
     await Promise.all(
       ["a", "b", "c", "d", "e", "f"].map((tag, at) => session(stores[at % 2], tag)),
@@ -288,7 +278,6 @@ describe("the tree list store (postgres)", () => {
     expect(live.filter((row) => row.kind === "document")).toHaveLength(12);
     expect(draft.some((row) => row.existsOnlyInDraft)).toBe(true);
     await expectRowsEqualReplay();
-    // Each created document has its documents row, from the same transaction.
     expect(await db.select().from(documents)).toHaveLength(18);
   });
 
@@ -311,14 +300,11 @@ describe("the tree list store (postgres)", () => {
       await expect(
         store.admit({ list, accountId: ACCOUNT, update: new Uint8Array([1, 2, 3]) }),
       ).rejects.toThrow();
-      // An account that does not own the list has nothing to admit to.
       await expect(
         store.admit({ list, accountId: STRANGER, update: honest.send() }),
       ).rejects.toThrow();
       expect({ version: await storedVersion(), rows: await storedRows() }).toEqual(before);
 
-      // A deletion from the list is no edit an honest copy makes, and it is stored as sent: the
-      // replay reads the list as it stands.
       const deleting = client();
       deleting.doc.import(honest.doc.export({ mode: "snapshot" }));
       const seen = deleting.doc.oplogVersion();
@@ -388,7 +374,6 @@ describe("the tree list store (postgres)", () => {
       await admit(behind);
       await expectRowsEqualReplay();
 
-      // A transaction that fails after it changed the copy leaves a copy ahead of the stored list.
       const remove = setTestHook("treeList.afterRows", async () => {
         remove();
         throw new Error("the connection dropped");
@@ -401,7 +386,6 @@ describe("the tree list store (postgres)", () => {
         "C",
       ]);
       c.writer.create(LIVE, actor, { kind: "folder", name: "E", parent: sourceRoot(MANUSCRIPT) });
-      // The client's copy holds D, which the failed transaction did not store: it sends all.
       await behind.admit({ list, accountId: ACCOUNT, update: c.doc.export({ mode: "update" }) });
       expect((await storedRows()).live.map((row) => row.name).sort()).toEqual([
         "A",
@@ -427,7 +411,6 @@ describe("the tree list store (postgres)", () => {
       await expect(
         runInDrizzleTransaction(db, async () => {
           await runInDrizzleSavepoint(db, () => create("Phantom"));
-          // A read that changes nothing, after a change its parent has not committed.
           await store.submit({ lists: [list], make: () => {} });
           throw new Error("refused");
         }),
@@ -446,7 +429,6 @@ describe("the tree list store (postgres)", () => {
     const root = path.resolve(import.meta.dirname, "../../../../../..");
 
     async function killAt(step: string) {
-      // Live rows and a Work's rows in one transaction.
       const c = client();
       const folder = c.writer.create(LIVE, actor, {
         kind: "folder",
@@ -462,7 +444,6 @@ describe("the tree list store (postgres)", () => {
       const dir = mkdtempSync(path.join(tmpdir(), "tree-list-kill-"));
       const ready = path.join(dir, "ready");
       const child = spawn(
-        // Node itself, not the `tsx` wrapper: SIGKILL on the wrapper would leave the writer alive.
         process.execPath,
         [
           "--import",
@@ -487,7 +468,6 @@ describe("the tree list store (postgres)", () => {
       child.kill("SIGKILL");
       await exited;
       rmSync(dir, { recursive: true, force: true });
-      // The server drops the dead connection's transaction.
       await expect
         .poll(async () => {
           const [row] = await db.execute<{ n: number }>(
@@ -511,7 +491,6 @@ describe("the tree list store (postgres)", () => {
       expect(await db.select().from(documents)).toEqual([]);
       expect(await db.select().from(treeNodeIds)).toEqual([]);
 
-      // And the list admits as before.
       const c = client();
       c.writer.create(LIVE, actor, {
         kind: "folder",
@@ -545,14 +524,12 @@ describe("the tree list store (postgres)", () => {
           filetype: "markdown",
           node: taken,
         });
-        // The record is in the list (a ghost its writer sees), with no row and no claim.
         await newStore().admit({ list, accountId: ACCOUNT, update: c.send() });
       }
       expect(await db.select().from(documents)).toEqual([]);
       expect(await db.select().from(treeNodeIds)).toEqual([]);
       expect(await db.select().from(treeNodes)).toEqual([]);
 
-      // An id that is no uuid gets no row, and a sync after a record of one still writes the rest.
       const store = newStore();
       const c = client();
       for (const node of ["not-a-uuid"])
@@ -605,7 +582,6 @@ describe("the tree list store (postgres)", () => {
           parent: sourceRoot(manuscript2),
           node,
         });
-        // Both see the id unused before either has claimed it.
         let reached = 0;
         let release = () => {};
         const gate = new Promise<void>((resolve) => {
@@ -659,11 +635,9 @@ describe("the tree list store (postgres)", () => {
     const held = new Promise<void>((resolve) => {
       holding = resolve;
     });
-    // B holds the Work, then wants the list; A, bound to the same Work, wants both.
     const b = runInDrizzleTransaction(db, async () => {
       await lockSeamWorks(currentDrizzleDb(db), [WORK]);
       holding();
-      // Until A is waiting on a lock, with the Work in B's hand.
       await expect
         .poll(async () => {
           const [row] = await db.execute<{ n: number }>(
@@ -715,8 +689,6 @@ describe("the tree list store (postgres)", () => {
       await store.admit({ list, accountId: ACCOUNT, update: c.send() });
       const before = { version: await storedVersion(), rows: await storedRows() };
 
-      // Rows written after the body leave the child under a parent no row has: the constraint
-      // that says so is deferred, so only COMMIT refuses.
       const remove = setTestHook("treeList.afterRows", async () => {
         await currentDrizzleDb(db).execute(
           sql`UPDATE tree_nodes SET parent_id = gen_random_uuid() WHERE id = ${child.node}::uuid`,

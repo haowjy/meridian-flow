@@ -1,18 +1,3 @@
-/**
- * MobileTopBar — status-bar-aware project header for the phone shell.
- *
- * Owns only mobile navigation chrome. The drawer trigger (hamburger) is
- * unconditional — there is no back chevron anywhere; up-navigation happens
- * through breadcrumb ancestors, and OS/browser back pops levels because
- * drill-in is route-driven. Screens with a location trail (Files, and Chats ›
- * chat on the Chat screen) supply a breadcrumb, which sits left-aligned right
- * after the hamburger and takes the remaining row width. Screens without one
- * (Work) get a centered title: the
- * leading side reserves as many 44px slots as the trailing side, so the title
- * stays truly centered even with the chat door beside the actions. The bar is the
- * positioned ancestor for a refused title rename, which floats under it.
- * Desktop pane headers stay separate.
- */
 import { t } from "@lingui/core/macro";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
@@ -22,14 +7,11 @@ import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 export type MobileTopBarProps = {
-  /** Main shows a chat (or a new chat's composer), not a document. */
   onChat: boolean;
   projectTitle: string;
   onOpenDrawer: () => void;
-  /** Left-aligned location trail; replaces the centered title when set. */
   breadcrumb?: ReactNode;
   actions?: ReactNode;
-  /** Opens the chat sheet over a document. */
   chatAction?: ReactNode;
 };
 

@@ -71,7 +71,6 @@ export function createDrizzleDiscardPurge(
   }
 
   return {
-    /** Purges every entry older than the retention, batch by batch; the command rows it removed. */
     async purge(now: Date = new Date()): Promise<number> {
       let purged = 0;
       for (;;) {

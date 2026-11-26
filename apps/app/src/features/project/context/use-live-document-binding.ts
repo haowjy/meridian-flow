@@ -1,4 +1,3 @@
-/** One concrete desktop/mobile host's ordinary live-document binding, with retry. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentBinding, ProjectDocumentLiveOpenResult } from "./open-project-document";
@@ -32,11 +31,8 @@ export function useLiveDocumentBinding({
   projectId: string;
   documentId: string | null;
   owner: "desktop-document-host" | "mobile-project-document-host" | "trash-view";
-  /** The document is in Trash and is shown read-only. */
   trashed?: true;
-  /** The document exists only in the Work under review (`ProjectDocumentLiveOpener`). */
   workOnly?: true;
-  /** The draft whose fork room the host shows; absent for Live. */
   draftId?: string;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();

@@ -31,7 +31,6 @@ export function caretInsideNodeAt(state: EditorState, focused: boolean, pos: num
   return from > pos && to < pos + node.nodeSize;
 }
 
-/** The object the selection is standing on, or null in prose. */
 export function selectedObject(state: EditorState): ObjectAt | null {
   const { selection } = state;
 
@@ -80,7 +79,6 @@ export function objectBeside(
     if (vertical && parent.type.spec.tableRole === "row") {
       const cell = cellAcross($pos, depth, direction);
       if (cell) return entryObject(cell.node, cell.pos, direction);
-      // Past the first or last row: the table's own edge, so climb beside the table.
       depth -= 1;
       continue;
     }
@@ -140,7 +138,6 @@ export function verticalStepFrom(
   }
 }
 
-/** Walk into `cell` from above (`1`) or below (`-1`): onto its entry object, else to its nearest text. */
 export function enterCellTransaction(
   state: EditorState,
   cell: ObjectAt,
@@ -154,7 +151,6 @@ export function enterCellTransaction(
     .scrollIntoView();
 }
 
-/** The object the caret meets first when it walks into `node` from `direction` (`1` enters through the first block, `-1` through the last), or null when the entry is prose the caret may simply move into. */
 function entryObject(node: PMNode, pos: number, direction: 1 | -1): ObjectAt | null {
   if (isEditorObject(node)) return { node, pos };
   if (node.isTextblock || node.isAtom || !node.isBlock || node.childCount === 0) return null;
@@ -165,17 +161,14 @@ function entryObject(node: PMNode, pos: number, direction: 1 | -1): ObjectAt | n
   return entryObject(node.child(index), childPos, direction);
 }
 
-/** The object whose INTERIOR `$at` falls in, or null when the position stands in prose. */
 function objectAround($at: ResolvedPos, outsideOf?: number): ObjectAt | null {
   return objectAncestor($at, (object) => !encloses(object, outsideOf));
 }
 
-/** The same reading, restricted to bodies that stand in for text the page does not show (`isOpaqueObject`). */
 export function opaqueObjectAround($at: ResolvedPos): ObjectAt | null {
   return objectAncestor($at, (object) => isOpaqueObject(object.node));
 }
 
-/** The shallowest object ancestor of `$at` that `accept` takes. */
 function objectAncestor($at: ResolvedPos, accept: (object: ObjectAt) => boolean): ObjectAt | null {
   for (let depth = 1; depth <= $at.depth; depth += 1) {
     const node = $at.node(depth);
@@ -190,14 +183,12 @@ function encloses(object: ObjectAt, pos: number | undefined): boolean {
   return pos !== undefined && pos >= object.pos && pos < object.pos + object.node.nodeSize;
 }
 
-/** Select the object at `pos`. Null when the schema refuses a node selection. */
 export function selectObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
   if (!node || !isEditorObject(node) || !NodeSelection.isSelectable(node)) return null;
   return state.tr.setSelection(NodeSelection.create(state.doc, pos)).scrollIntoView();
 }
 
-/** The selection immediately beside the object at `pos` — the second arrow press, which passes beyond what the first press stepped onto. */
 export function caretBesideObjectTransaction(
   state: EditorState,
   pos: number,
@@ -248,7 +239,6 @@ export function caretHomeFromObjectTransaction(
   const forwardGap = gapPastFollowingNodes(state, $after);
   if (forwardGap) return state.tr.setSelection(forwardGap).scrollIntoView();
 
-  // Nothing ahead at all: in front of the object beats nowhere.
   const backward = Selection.findFrom(state.doc.resolve(pos), -1, true);
   if (backward && backward.from >= bound.start) {
     return state.tr.setSelection(backward).scrollIntoView();
@@ -257,7 +247,6 @@ export function caretHomeFromObjectTransaction(
   return paragraphAfterTransaction(state, $after)?.scrollIntoView() ?? null;
 }
 
-/** The interior of the nearest isolating ancestor of `$pos` — the cell, when the position is inside one — or the whole document outside every one. */
 function isolatingBoundAround($pos: ResolvedPos): { start: number; end: number } {
   for (let depth = $pos.depth; depth >= 1; depth -= 1) {
     if ($pos.node(depth).type.spec.isolating) {
@@ -267,7 +256,6 @@ function isolatingBoundAround($pos: ResolvedPos): { start: number; end: number }
   return { start: 0, end: $pos.doc.content.size };
 }
 
-/** A paragraph made after `$after`, with the caret in it. */
 function paragraphAfterTransaction(state: EditorState, $after: ResolvedPos): Transaction | null {
   const paragraph = state.schema.nodes.paragraph;
   if (!paragraph) return null;
@@ -279,7 +267,6 @@ function paragraphAfterTransaction(state: EditorState, $after: ResolvedPos): Tra
   return transaction.setSelection(TextSelection.near(transaction.doc.resolve($after.pos), 1));
 }
 
-/** Prepare writable text beside the object, making a paragraph when none follows. */
 export function typeBesideObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
   if (!node) return null;
@@ -327,14 +314,12 @@ export function objectTextSelectionTransaction(
   );
 }
 
-/** Remove the object at `pos` outright. */
 export function deleteObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
   if (!node) return null;
   return state.tr.delete(pos, pos + node.nodeSize).scrollIntoView();
 }
 
-/** Find visible text without crossing the caller's object or isolating boundary. */
 function writerText(
   state: EditorState,
   $from: ResolvedPos,
@@ -355,7 +340,6 @@ function writerText(
   }
 }
 
-/** The first gap cursor at or past the siblings following `from`. */
 function gapPastFollowingNodes(state: EditorState, from: ResolvedPos): Selection | null {
   const parent = from.parent;
   let pos = from.pos;
@@ -396,10 +380,6 @@ export function documentEndTransaction(state: EditorState): Transaction | null {
   return exitFence(transaction) ? transaction : null;
 }
 
-/**
- * A new line after the fence the caret is in, inside the same quotes and list item as the fence:
- * Enter on its closing blank line, ArrowDown off its end, and the document's end all make it here.
- */
 export function exitFence(tr: Transaction): boolean {
   const { $head } = tr.selection;
   const fence = $head.parent;
@@ -419,7 +399,6 @@ export function gapCursorFits($pos: ResolvedPos): boolean {
   return gapCursor.valid?.($pos) ?? false;
 }
 
-/** Enter's `caret-inside` engagement: the first text position within. */
 export function caretInsideObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
   if (!node || node.isAtom || node.content.size === 0) return null;

@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** The browser TipTap schema must keep the shared document type and attribute names. */
 
 import { documentMarks, documentNodes } from "@meridian/prosemirror-schema";
 import { Editor } from "@tiptap/core";

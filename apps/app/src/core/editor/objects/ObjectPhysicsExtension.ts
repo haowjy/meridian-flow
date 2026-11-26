@@ -37,20 +37,13 @@ export const objectPhysicsPluginKey = new PluginKey(OBJECT_PHYSICS_NAME);
 /** The class the jade ring paints on. */
 export const SELECTED_OBJECT_CLASS = "meridian-object-selected";
 
-/** The same fact in the same decoration, for a node view that has to DO something about being selected rather than only look different — an image's resize handles, which exist while the jade ring does and not otherwise. */
 export function objectSelectedInDecorations(decorations: readonly { spec?: unknown }[]): boolean {
   return decorations.some(
     (decoration) => (decoration.spec as { selectedObject?: unknown } | undefined)?.selectedObject,
   );
 }
 
-/** Opens the object's own surface. */
-/** Why an object's surface is opening. */
-export type ObjectOpening =
-  /** The writer asked to look at an object that already exists. */
-  | "engage"
-  /** Just created, with nothing to view yet ( sole exception). */
-  | "created";
+export type ObjectOpening = "engage" | "created";
 
 export type ObjectEngagement = (target: ObjectAt, opening: ObjectOpening) => void;
 
@@ -69,7 +62,6 @@ function physicsStorage(editor: Editor): ObjectPhysicsStorage | null {
   return editor.storage[OBJECT_PHYSICS_NAME] ?? null;
 }
 
-/** Supply what Enter opens for one object registration (its `surface` intent). */
 export function registerObjectEngagement(
   editor: Editor,
   specId: string,
@@ -83,7 +75,6 @@ export function registerObjectEngagement(
   };
 }
 
-/** Run an object type's registered engagement — the one way its surface opens. */
 export function engageObject(editor: Editor, target: ObjectAt, opening: ObjectOpening): boolean {
   const storage = physicsStorage(editor);
   const spec = objectTypeSpec(target.node);
@@ -94,7 +85,6 @@ export function engageObject(editor: Editor, target: ObjectAt, opening: ObjectOp
   return true;
 }
 
-/** Keys that apply only while an object of this registration is selected — Ctrl+Enter for a diagram's source hatch, Alt+Arrows for a move the type owns. */
 export function registerObjectKeymap(
   editor: Editor,
   specId: string,
@@ -106,13 +96,11 @@ export function registerObjectKeymap(
   return chrome.registerKeymap({
     id: `object:${specId}`,
     scope: "object",
-    // The scope already means "an object is selected"; this says which one.
     appliesTo: (context) => context.objectSpec === specId,
     bindings,
   });
 }
 
-/** The object whose body `element` is part of, or null outside every object. */
 function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
   let pos: number;
   try {
@@ -135,7 +123,6 @@ function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
   return null;
 }
 
-/** at PRESS time, for an object body the writer cannot type into. */
 function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
   // The primary button only: a right-click belongs to the context-claim
   // ladder, and the browser's own default is how it gets there.
@@ -193,7 +180,6 @@ export const ObjectPhysicsExtension = Extension.create({
           return newState.tr.setSelection(TextSelection.near(after.$from));
         },
 
-        /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
           // Walking ONTO an object starts from prose beside
@@ -236,7 +222,6 @@ export const ObjectPhysicsExtension = Extension.create({
               bindings: {
                 "Mod-Home": toDocumentStart,
                 "Mod-End": toDocumentEnd,
-                // The Mac's own keys for the document's ends.
                 ...(isMacOS()
                   ? { "Mod-ArrowUp": toDocumentStart, "Mod-ArrowDown": toDocumentEnd }
                   : {}),
@@ -273,7 +258,6 @@ export const ObjectPhysicsExtension = Extension.create({
         },
 
         props: {
-          /** The ring, derived rather than remembered. */
           decorations(state) {
             const range = selectedObjectRange(state);
             if (!range) return null;
@@ -291,7 +275,6 @@ export const ObjectPhysicsExtension = Extension.create({
           // Keep object selection in the model, but give native input a caret.
           selectionForDOM: (view) => (view.editable ? objectSelectionForDOM(view.state) : null),
 
-          /** Typing beside a selected object keeps the object intact. */
           handleTextInput(view, _from, _to, text) {
             const selected = selectedObject(view.state);
             if (!selected) return false;
@@ -301,14 +284,12 @@ export const ObjectPhysicsExtension = Extension.create({
             return true;
           },
 
-          /** A click reads: it selects, and on a picture the cap is holding back it opens the rest. */
           handleClickOn(view, _pos, node, nodePos, event, direct) {
             if (!direct || !isEditorObject(node)) return false;
             const transaction = selectObjectTransaction(view.state, nodePos);
             if (!transaction) return false;
             view.dispatch(transaction);
             view.focus();
-            // Selected first, as for a double-click: closing the surface lands here.
             if (objectTypeSpec(node)?.clickEngages?.(event.target)) {
               engage(editor, view.state, view.dispatch.bind(view));
             }
@@ -326,7 +307,6 @@ export const ObjectPhysicsExtension = Extension.create({
                 view.state,
                 at.pos < view.state.selection.from ? -1 : 1,
               );
-              // Run before PM starts delaying native selection updates for a drag.
               if (transaction) view.dispatch(transaction);
               return false;
             },
@@ -372,7 +352,6 @@ export const ObjectPhysicsExtension = Extension.create({
               return false;
             },
 
-            /** Whether a picture is capped depends on the pane, so it is asked on approach. */
             mouseover(_view, event) {
               if (event.target instanceof HTMLImageElement) {
                 event.target.style.cursor = pictureCapped(event.target) ? "zoom-in" : "";
@@ -381,7 +360,6 @@ export const ObjectPhysicsExtension = Extension.create({
             },
           },
 
-          /** The pointer's twin of Enter: a double-click on an object engages it, with no click-to-select step in between. */
           handleDoubleClickOn(view, _pos, node, nodePos, _event, direct) {
             if (!direct || !isEditorObject(node)) return false;
             const selected = selectObjectTransaction(view.state, nodePos);
@@ -397,7 +375,6 @@ export const ObjectPhysicsExtension = Extension.create({
   },
 });
 
-/** Enter on a selected plain fence puts the caret at its start. */
 function engageSourceBlock(
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
@@ -418,7 +395,6 @@ function reportMissingEngagement(specId: string): void {
   );
 }
 
-/** The node the ring goes around: any selected node, and a selected table. */
 function selectedObjectRange(
   state: Parameters<KeymapBinding>[0],
 ): { from: number; to: number } | null {
@@ -431,7 +407,6 @@ function selectedObjectRange(
 
 function objectSelectionExtensionBindings(): Record<string, KeymapBinding> {
   const mac = isMacOS();
-  // Native Shift-navigation must start from the model range, not the typing caret.
   const nativeSelectionKeys = {
     ArrowLeft: -1,
     ArrowUp: -1,
@@ -453,7 +428,6 @@ function objectSelectionExtensionBindings(): Record<string, KeymapBinding> {
     ),
   );
   if (mac) {
-    // macOS text controls also expose Emacs-style selection gestures.
     for (const [key, direction] of Object.entries({
       a: -1,
       b: -1,
@@ -472,12 +446,10 @@ function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
   return (state, dispatch) => {
     const transaction = objectTextSelectionTransaction(state, direction);
     if (transaction) dispatch?.(transaction);
-    // The browser extends this model range, not the native typing caret.
     return false;
   };
 }
 
-/** Delete and Backspace take the whole object, not the selection over it. */
 const removeSelected: KeymapBinding = (state, dispatch) => {
   const selected = selectedObject(state);
   if (!selected) return false;
@@ -498,14 +470,12 @@ function dispatchIfAny(
   return true;
 }
 
-/** `lines` is passed for the up and down arrows, which leave a block from its first or last line rather than its first or last character. */
 function walk(
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
   direction: 1 | -1,
   lines?: EditorView,
 ): boolean {
-  // Second press: pass beyond the object the first press selected.
   const selected = selectedObject(state);
   if (selected) {
     const step = lines ? verticalStepFrom(state, selected, direction) : { beside: selected };
@@ -523,7 +493,6 @@ function walk(
     );
   }
 
-  // First press: the caret is beside an object, so walk onto it.
   const inText = state.selection.$head.parent.isTextblock;
   const beside = objectBeside(
     state,
@@ -536,10 +505,8 @@ function walk(
   return dispatchIfAny(selectObjectTransaction(state, beside.pos), dispatch);
 }
 
-/** Registrations already reported as unengageable, so the warning fires once. */
 const warnedMissingEngagement = new Set<string>();
 
-/** Enter engages the selected object per its registered intent. */
 function engage(
   editor: Editor,
   state: Parameters<KeymapBinding>[0],

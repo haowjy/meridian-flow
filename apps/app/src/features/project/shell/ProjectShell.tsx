@@ -1,5 +1,3 @@
-/** ProjectShell — destination-agnostic desktop layout mechanics. */
-
 import { t } from "@lingui/core/macro";
 import { PanelLeft, PanelRight } from "lucide-react";
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
@@ -18,15 +16,10 @@ import {
 import { DESKTOP_PROJECT_SLOTS, getDesktopGridTemplate } from "../layout/desktop-layout";
 
 export type ProjectShellProps = {
-  /** Whether each panel is open, and its width. */
   panels: DesktopPanels;
-  /** Hosts keyed by what they hold, rendered as direct children of the grid container. */
   hosts: readonly SlotGridHost[];
-  /** Commit a panel slot's width. */
   onSetSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
-  /** Open or close a panel slot. */
   onSetSlotOpen: (slot: PanelSlotId, open: boolean) => void;
-  /** The window has no room for the sidebar beside main: the open sidebar lies over main. */
   sidebarOver?: boolean;
   children?: ReactNode;
 };
@@ -47,8 +40,6 @@ export function ProjectShell({
   const sideWidth = sideOpen ? panels.side.width : 0;
   const desktopGridTemplate = getDesktopGridTemplate();
 
-  // `[` toggles the sidebar, `]` the side. Read through a ref so the listener
-  // never re-binds while still seeing fresh layout state.
   const toggleRef = useRef({ railOpen, sideOpen, onSetSlotOpen });
   toggleRef.current = { railOpen, sideOpen, onSetSlotOpen };
   useEffect(() => {
@@ -75,21 +66,14 @@ export function ProjectShell({
       gridRef={gridRef}
       slots={sidebarOver ? sidebarOverSlots(railWidth) : DESKTOP_PROJECT_SLOTS}
       hosts={hosts}
-      // The grid shows only in the center field's rounded top-left notch.
       className="relative h-full w-full bg-chrome"
       gridTemplateAreas={desktopGridTemplate.areas}
       gridTemplateColumns={desktopGridTemplate.columns}
       gridTemplateRows={desktopGridTemplate.rows}
       style={
         {
-          // No rail, no curve: zero the chrome-field corner while no left rail
-          // sits beside main; when one does, leave the var unset so the utility's
-          // own fallback applies — globals.css is the single owner of the
-          // corner radius value.
           "--chrome-corner": leftWidth > 0 ? undefined : "0px",
           "--project-left-width": `${leftWidth}px`,
-          // Resize handles render as transparent absolute overlays centered on
-          // these grid seams; zero-width tracks remove the visible empty strip.
           "--project-left-handle-width": "0px",
           "--project-side-handle-width": "0px",
           "--project-side-width": `${sideWidth}px`,
@@ -129,9 +113,6 @@ export function ProjectShell({
           />
         </div>
       ) : null}
-      {/* The two panel toggles sit at the window's top corners whether their
-          panel is open or closed, so closing and reopening never moves the
-          pointer. Headers under them keep a PanelToggleSpacer in their place. */}
       <CornerToggle
         side="left"
         open={railOpen}

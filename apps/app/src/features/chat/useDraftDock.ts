@@ -1,8 +1,3 @@
-/**
- * The chat's draft above its composer: every file the draft changes, as the Changes tab lists
- * them, and one Discard · Apply pair for the whole draft. What else the Work holds is a link to
- * the Changes tab. No command navigates.
- */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useWorkDrafts } from "@/client/query/draft-commands";
@@ -32,7 +27,6 @@ export function useDraftDock({
     controller.owner.snapshot,
   );
   const { projectId, draftId, work } = controller;
-  // The owner's notice, if this chat's dock made it.
   const owned = useDraftNotice(draftId);
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
@@ -40,7 +34,6 @@ export function useDraftDock({
   const listed = useOwnerDrafts(projectId, draftId).files ?? [];
   const { setWorkId } = useWorkScope(projectId);
 
-  // A peer's Apply or Discard reaches this chat only as a change in what its draft holds.
   const queryClient = useQueryClient();
   const waiting = listed.map((file) => file.item.itemKey).join();
   const seenWaiting = useRef(waiting);
@@ -52,7 +45,6 @@ export function useDraftDock({
 
   const files = listed;
   const applicable = files.filter((file) => hasApply(file.item));
-  // What the Work's other drafts change, as their rows in the Changes tab count it.
   const workDrafts = useWorkDrafts(projectId, work && !work.isNoWork ? work.id : null).drafts;
   const more = (workDrafts ?? []).reduce(
     (sum, draft) =>
@@ -68,14 +60,12 @@ export function useDraftDock({
     notice,
     mounted: files.length > 0 || notice !== null,
     more,
-    /** Opens the sidebar's Changes list on this chat's Work, which lists all of its drafts. */
     showChanges: () => {
       if (work) setWorkId(work.id);
       useSidebarTabs.getState().reveal("changes");
     },
     canApply: applicable.length > 0,
     canCommand: files.length > 0 && !generating && !controller.dispositionLocked,
-    /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.item.tree?.deleted === true),
     apply: () => void controller.pressDraft("apply"),
     discard: () => void controller.pressDraft("discard"),

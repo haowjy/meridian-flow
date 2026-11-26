@@ -1,20 +1,7 @@
-/**
- * The toolbar's one button style, and the greying it does instead of
- * disabling.
- *
- * A `disabled` button leaves the hover and focus path, so the writer never
- * learns why it will not apply. A toolbar control that cannot run here stays
- * reachable, wears `aria-disabled`, drops its action, and carries the reason in
- * its tooltip (law 5: never absent, never dead). Controls that open a surface
- * compose their trigger around `ToolbarControlTooltip` and the shared class so
- * the whole row keeps one visual language.
- */
 import type { ComponentProps, ReactNode } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-// Straight at the primitive: the chrome barrel also carries the surface
-// registry this lane is listed in, and the round trip is a module cycle.
 import { ReasonLines, ReasonTooltip } from "../../chrome/ReasonTooltip";
 
 export type ToolbarButtonProps = Omit<
@@ -22,7 +9,6 @@ export type ToolbarButtonProps = Omit<
   "variant" | "size" | "label" | "tooltip" | "aria-pressed" | "aria-disabled"
 > & {
   label: string;
-  /** Writer-facing reason the control cannot apply; greys it when present. */
   blockedReason?: string | null;
   active?: boolean;
   onPress?: () => void;
@@ -37,13 +23,11 @@ export function toolbarControlClass({
   blocked?: boolean;
 }): string {
   return cn(
-    // The pressed fill comes from `aria-pressed` through the button's state layer.
     active && "text-foreground hover:text-foreground",
     blocked && "cursor-not-allowed opacity-50 hover:text-current active:scale-100",
   );
 }
 
-/** The row's tooltip: named below the button, since the toolbar sits on top. */
 export function ToolbarControlTooltip({
   label,
   blockedReason,

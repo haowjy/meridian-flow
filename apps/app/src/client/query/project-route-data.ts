@@ -70,7 +70,6 @@ export async function loadProjectRouteData(projectId: string): Promise<ProjectRo
   };
 }
 
-/** When the route's read of each project's threads began, by the clock. */
 const threadsReadAt = new WeakMap<QueryClient, Map<string, number>>();
 
 export function seedProjectRouteData(

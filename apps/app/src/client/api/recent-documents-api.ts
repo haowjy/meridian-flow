@@ -1,6 +1,3 @@
-/**
- * Account-global recently opened documents: list plus fire-and-forget record.
- */
 import {
   apiAccountRecentDocumentsPath,
   apiProjectRecentDocumentsPath,

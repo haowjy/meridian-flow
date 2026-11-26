@@ -1,5 +1,3 @@
-/** Hierarchical, renderer-neutral reference browser composed with the suggestion lifecycle. */
-
 import type { WorkHandle } from "@meridian/contracts";
 import { matchDocumentPath } from "@meridian/contracts";
 import {
@@ -37,19 +35,12 @@ import type {
   SuggestionChoiceAction,
 } from "./suggestion-menu-store";
 
-/** What the browser reads: each source's tree by the source's id. */
 export type ReferenceCatalogPort = {
   subscribe: (listener: () => void) => () => void;
-  /**
-   * `loading` while the source's list has not synced; `error` when the account has no access. An
-   * id no source has answers for the lists as a whole.
-   */
   status: (sourceId: string) => "loading" | "ready" | "error";
-  /** The source's tree as the list holds it now; null where the source is not known. */
   read: (sourceId: string) => ReferenceSourceView | null;
 };
 
-/** A Work whose Scratch the browser can open into: listed beside the sources, by name and handle. */
 export type ReferenceWork = { sourceId: string; name: string; handle: WorkHandle };
 
 export type ReferenceBrowserMeta = {
@@ -64,21 +55,13 @@ export type ReferenceBrowserMeta = {
   canBacktrack: boolean;
 };
 
-/**
- * A host's row beside the tree rows: a link to a document nobody has
- * written yet, at an address the host computed. Only a host that can hold
- * such a link (the Editor) offers one; identity-bearing references never do.
- */
 export type LinkAheadRow = {
   kind: "link-ahead";
   rowId: "link-ahead";
-  /** The name as typed: the inserted link's text. */
   label: string;
-  /** The canonical Context URI the link will address. */
   uri: string;
 };
 
-/** What the browser's menu lists: tree rows, then at most one link-ahead row. */
 export type ReferenceMenuRow = ReferenceRow | LinkAheadRow;
 
 export type ReferenceBrowserState =
@@ -98,7 +81,6 @@ export type ReferenceBrowserState =
     });
 
 export type ReferenceBrowserOpenContext = Readonly<{
-  /** The sources listed at the top, by id. */
   warmSources: readonly string[];
   works: readonly ReferenceWork[];
   referenceKinds?: readonly ReferenceKind[];
@@ -118,11 +100,6 @@ export type ReferenceBrowserOptions = {
   priors?: ReferenceRankingPriors;
   onSelect: (input: { row: ReferenceTerminalRow; triggerRange: SuggestionTriggerRange }) => void;
   onCompleteSegment: (input: { prefix: string; triggerRange: SuggestionTriggerRange }) => void;
-  /**
-   * Where a link to a not-yet-written document named `name` would point, or
-   * null when the host offers none for it. Asked only for a root search that
-   * names no existing document exactly.
-   */
   linkAhead?: (name: string) => { uri: string } | null;
   onLinkAhead?: (input: { row: LinkAheadRow; triggerRange: SuggestionTriggerRange }) => void;
 };
@@ -142,10 +119,6 @@ type DrilledLocation = {
 
 type Location = RootLocation | DrilledLocation;
 
-/**
- * The sole browser state machine. It projects the sources' trees and publishes through the
- * suggestion lifecycle; it owns neither the trees nor host insertion/rendering.
- */
 export function createReferenceBrowserController(
   options: ReferenceBrowserOptions,
 ): ReferenceBrowserController {
@@ -269,7 +242,6 @@ export function createReferenceBrowserController(
       options.linkAhead && location.kind === "root" && !parsed && !queriedContainer
         ? linkAheadRow(search, ranked, options.linkAhead)
         : null;
-    // A folder's own listing opens with the folder itself, for a host that takes folders.
     const listed = queriedContainer
       ? {
           sourceId: queriedContainer.action.sourceId,
@@ -515,7 +487,6 @@ function foldersMentionable(kinds: readonly ReferenceKind[] | undefined): boolea
   return !kinds || kinds.includes("folder");
 }
 
-/** The row that mentions the folder a level lists; sources (area roots) list no such row. */
 function folderMentionRow(
   listed: { sourceId: string; containerId?: string },
   catalog: ReferenceCatalogPort,
@@ -526,10 +497,6 @@ function folderMentionRow(
   return view && entry?.kind === "dir" ? referenceRowForFolder(entry, view.source) : null;
 }
 
-/**
- * The source an explicit address (`kb://`, `scratch://@w3/`) names among the ones listed, to say
- * whether its rows are still loading.
- */
 function namespaceSourceOf(
   parsed: ParsedContextUri,
   sourceIds: readonly string[],
@@ -549,17 +516,10 @@ function namespaceSourceOf(
     sameScheme.find(({ source }) => source.authority.kind === kind)?.source.id;
   if (named.kind === "lineage") return byKind("lineage");
   if (named.kind === "chat") return byKind("chat");
-  // A No Work chat's bare Scratch is its lineage's; the project's other schemes are its own.
   if (parsed.scheme === "scratch") return byKind("lineage") ?? byKind("work");
   return sameScheme[0]?.source.id;
 }
 
-/**
- * The containers worth browsing into: each holds something selectable here. A
- * mentionable folder is selectable itself, so where folders are taken an empty
- * folder and its ancestors stay reachable. A list that has not synced proves nothing
- * empty: every container stays reachable.
- */
 function populatedContainers(
   view: ReferenceSourceView,
   catalog: ReferenceCatalogPort,
@@ -594,7 +554,6 @@ function populatedContainers(
   return populated;
 }
 
-/** A Work's row in the browser: its Scratch opens beneath it. */
 function rowForWork(work: ReferenceWork): Extract<ReferenceRow, { kind: "authority" }> {
   return {
     kind: "authority",

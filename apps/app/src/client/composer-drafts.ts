@@ -1,4 +1,3 @@
-/** Tab-local authoring owner for pane continuity, journal hand-off, Edit and hand-backs. */
 import { type HandBackCommand, type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
@@ -8,10 +7,8 @@ import {
 } from "@/components/app/composer/composer-document";
 import { browserRecord, isRecord, type StorageSource } from "./storage/browser-record";
 
-/** `side-new-chat`: the side's new chat, kept apart so a chip it attaches never reaches `/chats`. */
 export type ComposerDraftScope = { kind: "chat" | "new-chat" | "side-new-chat"; id: string };
 
-/** `own`: the writer deleted the chat in this tab, so the note says so plainly. */
 export type DeletedChatCard = {
   threadId: string;
   title: string | null;
@@ -31,21 +28,17 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   received?: string[];
   notices?: DeletedChatCard[];
   handBacks?: PendingHandBack[];
-  /** A New chat's thread id, minted before its first attach so its uploads and Send share it. */
   chatId?: string;
   parked?: ParkedDraft[];
   about?: AttachedAbout;
-  /** A chat box's project, so its words can find the New chat box when no pane shows the chat. */
   project?: string;
 };
 
-/** A document chip the composer put in a new chat on its own: it may replace it, unlike the writer's. */
 export type AttachedAbout = { documentId: string; label: string };
 
 const isAttachedAbout = (value: unknown): value is AttachedAbout =>
   isRecord(value) && typeof value.documentId === "string" && typeof value.label === "string";
 
-/** An unsent New-chat draft with its own uploads, set aside while a recovered chat takes the box. */
 type ParkedDraft = { chatId: string; draft: ComposerDraftSnapshot };
 
 const isParkedDraft = (value: unknown): value is ParkedDraft =>
@@ -53,7 +46,6 @@ const isParkedDraft = (value: unknown): value is ParkedDraft =>
   typeof value.chatId === "string" &&
   parseRestorableComposerDraft(value.draft) !== null;
 
-/** The `received` entry a hand-back leaves: the checked write that carries the content records it. */
 export const handBackReceipt = (requestId: string) => `handBack:${requestId}`;
 
 function isPendingHandBack(value: unknown): value is PendingHandBack {
@@ -95,7 +87,6 @@ export class ComposerSessionDraft {
   private readonly mintsChat: boolean;
   private parked: ParkedDraft[] = [];
   private attached: AttachedAbout | null = null;
-  /** Set once a pane shows the chat; saved with the draft's next write. */
   project: string | null = null;
   setProject = (project: string): void => {
     if (this.mintsChat || this.project === project) return;
@@ -119,7 +110,6 @@ export class ComposerSessionDraft {
 
   attachedAbout = (): AttachedAbout | null => this.attached;
 
-  /** Saved with the draft's next write, which the chip's own change schedules. */
   setAttachedAbout = (about: AttachedAbout | null): void => {
     this.attached = about;
     this.dirty = true;
@@ -162,7 +152,6 @@ export class ComposerSessionDraft {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
   private version = 0;
-  /** The latest write that changes the document from outside the editor, numbered so a box applies each once. */
   private external: { seq: number; draft: ComposerDraftSnapshot | null } = { seq: 0, draft: null };
   private listeners = new Set<() => void>();
   getVersion = () => this.version;
@@ -178,7 +167,6 @@ export class ComposerSessionDraft {
     for (const listener of this.listeners) listener();
   }
 
-  /** One ordered transfer for a rejected cohort, followed by this destination's newer writing. */
   prependSnapshots(
     snapshots: ComposerDraftSnapshot[],
     recordIds: string[] = [],
@@ -210,18 +198,12 @@ export class ComposerSessionDraft {
     });
   }
 
-  /** The hand-back requests this tab pressed and has not written to the composer. */
   get handBacks(): readonly PendingHandBack[] {
     return this.handBacksPending;
   }
 
-  /** Whether a hand-back's content already went into this composer. */
   hasReceivedHandBack = (requestId: string) => this.received.has(handBackReceipt(requestId));
 
-  /**
-   * Keep a hand-back request with the draft before it is sent, so no press is lost to a reload.
-   * False when the write failed: the caller must not send.
-   */
   recordHandBack(command: PendingHandBack): boolean {
     const held = this.handBacksPending.some((known) => known.requestId === command.requestId);
     return this.commit(this.current, {
@@ -235,7 +217,6 @@ export class ComposerSessionDraft {
     });
   }
 
-  /** A request the server refused: nothing came back, so the command goes. */
   dropHandBack(requestId: string): boolean {
     if (!this.handBacksPending.some((known) => known.requestId === requestId)) return true;
     return this.commit(this.current, {
@@ -263,11 +244,6 @@ export class ComposerSessionDraft {
     });
   }
 
-  /**
-   * A sent message back above what is typed, for the writer to change and send again (Edit after
-   * Stop). It carries no receipt: each press puts the words back once more. False when the write
-   * failed or the merged document wouldn't restore.
-   */
   putBack(returned: MessageDoc): boolean {
     const edited = this.withReturned([sentWords(returned)]);
     if (!edited) return false;
@@ -278,16 +254,10 @@ export class ComposerSessionDraft {
     });
   }
 
-  /** What the writer has typed in this box, or null when it holds no words. */
   private typed(): ComposerDraftSnapshot | null {
     return this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
   }
 
-  /**
-   * The one way words come back into the box: each returned message above the next, then what is
-   * typed, one empty paragraph between, with every upload they own and the caret at the end of the
-   * returned words. Null when the result wouldn't restore after a reload.
-   */
   private withReturned(returned: readonly ComposerDraftSnapshot[]): ComposerDraftSnapshot | null {
     const typed = this.typed();
     const stack = (snapshots: readonly ComposerDraftSnapshot[]) =>
@@ -304,12 +274,10 @@ export class ComposerSessionDraft {
       doc: stack(all),
     };
     if (!parseRestorableComposerDraft(edited)) return null;
-    // The returned words open the document that just parsed, so they parse too.
     const end = composerDocEnd(stack(returned));
     return { ...edited, selection: { anchor: end, head: end } };
   }
 
-  /** One checked write of the draft with its receipts, notices and pending commands. */
   private commit(
     draft: ComposerDraftSnapshot | null,
     next: {
@@ -340,12 +308,10 @@ export class ComposerSessionDraft {
     return true;
   }
 
-  /** The chat Send created: a no-op when recording the Send already handed the draft off. */
   handoffCreated = (chatId: string): void => {
     if (this.chatId === chatId) this.handoff();
   };
 
-  /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
     if (this.holds(snapshot)) this.handoff();
   };
@@ -424,12 +390,10 @@ export class ComposerSessionDraft {
     this.current = change.snapshot;
     this.dirty = true;
     if (this.timer !== null) clearTimeout(this.timer);
-    // An empty draft (Send or explicit deletion) must never resurrect on reload.
     if (!change.text) this.flush();
     else this.timer = setTimeout(this.flush, 250);
   };
 
-  /** Call only after the submission journal has durably accepted ownership. */
   handoff = (): void => {
     const next = this.parked.at(-1);
     this.parked = this.parked.slice(0, -1);
@@ -470,7 +434,6 @@ export class ComposerSessionDraft {
   };
 }
 
-/** Words the server already holds, as a returned snapshot: their uploads were adopted at admission. */
 const sentWords = (doc: MessageDoc): ComposerDraftSnapshot => ({
   revision: 0,
   selection: { anchor: 1, head: 1 },
@@ -494,7 +457,6 @@ export function composerSessionDraft(
   return owner;
 }
 
-/** Enumerate this tab's saved chat boxes, not another account's drafts. */
 export function storedChatDraftIds(accountId: string): string[] {
   const ids = new Set<string>();
   try {

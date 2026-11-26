@@ -9,18 +9,14 @@ import type { RoomDocs } from "../room-docs.js";
  */
 export type RoomOrigin = string;
 
-/** A batch a room imported, as its subscribers receive it. */
 export interface RoomBatch {
   room: DocumentRoom;
-  /** The envelope as it arrived: forward it unchanged. */
   batch: Uint8Array;
   origin: RoomOrigin;
 }
 
-/** The room's current version and what a joining copy lacks, both envelopes. */
 export interface RoomSync {
   version: Uint8Array;
-  /** Null when the copy lacks nothing. */
   update: Uint8Array | null;
 }
 
@@ -83,10 +79,8 @@ export interface DocumentRooms<Tx> {
   /** Every batch the room imports from now on, from any origin, in import order. */
   subscribe(room: DocumentRoom, listener: (batch: RoomBatch) => void): () => void;
 
-  /** Save the room's unsaved docs now (an AI turn's end, a press). */
   flush(room: DocumentRoom): Promise<void>;
 
-  /** Room names loaded now. */
   loaded(): string[];
 
   /**

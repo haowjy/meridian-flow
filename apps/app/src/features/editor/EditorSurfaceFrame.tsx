@@ -1,4 +1,3 @@
-/** Shared docked-toolbar and scrolling layout for document editor surfaces. */
 import { type ReactNode, type Ref, type UIEventHandler, useRef } from "react";
 
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
@@ -6,16 +5,9 @@ import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
-  /** Notes about this document (a fenced session), prose-aligned above the toolbar. */
   notices?: ReactNode;
-  /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
-  /**
-   * Review changes' bar, holding the toolbar's place in the review tint, prose-aligned and never
-   * scrolled: it fits its own width.
-   */
   toolbarHeld?: ReactNode;
-  /** What follows the formatting controls on the toolbar row: the document's state. */
   toolbarTrailing?: ReactNode;
   children: ReactNode;
   /**
@@ -41,7 +33,6 @@ export function EditorSurfaceFrame({
   onScroll,
 }: EditorSurfaceFrameProps) {
   return (
-    // The container the column insets answer to: the pane, not the viewport.
     <div className="@container flex min-h-0 flex-1 flex-col">
       {notices ? (
         // empty:hidden: a notice that has nothing to say (none yet, or dismissed)
@@ -91,7 +82,6 @@ export function EditorSurfaceFrame({
   );
 }
 
-/** Scrolls a toolbar wider than its pane, fading the edge that has buttons behind it. */
 function ToolbarScroller({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(ref);

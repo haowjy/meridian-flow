@@ -12,16 +12,13 @@ import { useCommandDriver } from "@/client/commands/driver-context";
 import { useWorkDeleteWindows, type WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-mutations";
 
-/** Where a Work's row was when the writer deleted it: its list and the Works above it, nearest first. */
 export type WorkPlace = { list: string; after: readonly string[] };
 
 const places = new Map<string, WorkPlace>();
 const focusing = new Set<string>();
 
-/** Where the Work's row was when it was deleted from a list; none when deleted elsewhere. */
 export const workPlace = (workId: string) => places.get(workId) ?? null;
 
-/** Keeps where a Work's row is, for a row that stands in for it after the Work leaves the list. */
 export function rememberWorkPlace(workId: string, place: WorkPlace): void {
   places.set(workId, place);
 }
@@ -32,12 +29,9 @@ export function takeWorkFocus(workId: string): boolean {
 }
 
 export type WorkDeletion = {
-  /** Open Undo windows, oldest delete first. */
   windows: readonly WorkDeleteWindow[];
-  /** Deletes the Work; `place` keeps its row where it was while its Undo shows. */
   remove: (work: Work, place?: WorkPlace) => void;
   undo: (work: Work) => void;
-  /** Ends every Undo window: opening a Work, starting one, or closing the dialog. */
   dismissAll: () => void;
 };
 

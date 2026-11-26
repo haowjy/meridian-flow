@@ -274,7 +274,6 @@ export class RoomDocs {
     return this.texts.get(id) ?? this.live?.textOf(id);
   }
 
-  /** Every block whose text a reader reads (`textOf`): its own and, for a draft, Live's. */
   textKeys(): Set<BlockId> {
     this.alive();
     return new Set([...(this.live?.textKeys() ?? []), ...this.texts.keys()]);
@@ -310,40 +309,26 @@ export class RoomDocs {
     return () => this.textWriteListeners.delete(listener);
   }
 
-  /**
-   * Calls `listener` each time ops from elsewhere are about to go into this copy (`importBatch`,
-   * `forward`). Returns the stop.
-   */
   beforeImport(listener: () => void): () => void {
     this.importListeners.add(listener);
     return () => this.importListeners.delete(listener);
   }
 
-  /** The owned doc of `key`. */
   doc(key: DocKey): LoroDoc | undefined {
     return key === STRUCTURE_KEY ? this.structure : this.texts.get(key);
   }
 
-  /** Every doc this copy owns, by doc key. */
   *owned(): Iterable<[DocKey, LoroDoc]> {
     yield [STRUCTURE_KEY, this.structure];
     yield* this.texts;
   }
 
-  /** The room version: each owned doc's oplog version. */
   version(): Map<DocKey, DocVersion> {
     const out = new Map<DocKey, DocVersion>();
     for (const [key, doc] of this.owned()) out.set(key, docVersion(doc));
     return out;
   }
 
-  /**
-   * The version of every doc a read of this copy shows, as `frontiers()` names them: the room
-   * version plus, in a draft, Live's version of each text it has no fork of. A planning view's
-   * writes are exported from the room's `shownVersion()` (`view.exportSince(docs.shownVersion())`,
-   * design §5): a block the view forked from Live then ships only its new ops, which the draft
-   * room imports into its own fork of Live's doc (`importBatch`).
-   */
   shownVersion(): Map<DocKey, DocVersion> {
     const out = new Map<DocKey, DocVersion>();
     for (const [key, doc] of this.live?.texts ?? []) out.set(key, docVersion(doc));
@@ -351,7 +336,6 @@ export class RoomDocs {
     return out;
   }
 
-  /** The update of every owned doc that has ops beyond `since` (all of a doc it lacks). */
   exportSince(since: RoomVersion = new Map()): Map<DocKey, Uint8Array> {
     const out = new Map<DocKey, Uint8Array>();
     for (const [key, doc] of this.owned()) {
@@ -366,7 +350,6 @@ export class RoomDocs {
     return out;
   }
 
-  /** A snapshot per owned doc, for `document_snapshots` rows. */
   snapshots(
     keys: Iterable<DocKey> = [...this.owned()].map(([key]) => key),
   ): Map<DocKey, Uint8Array> {
@@ -418,11 +401,6 @@ export class RoomDocs {
     return { changed, pending, restore: this.answer(before, changed) };
   }
 
-  /**
-   * Bring a draft's fork up to Live (design §2, "Forwarding"): Live's structure into the structure
-   * fork, and each Live text into the fork's own fork of it. A block the fork reads from Live
-   * needs nothing. An import like any other (`importBatch`); it never waits on ops.
-   */
   forward(): Imported {
     const live = this.live;
     if (!live) return { changed: [], pending: false, restore: [] };
@@ -473,11 +451,9 @@ export class RoomDocs {
   }
 }
 
-/** A fresh peer in `peer`'s range (server or tab), for the Live copy a draft copy owns. */
 const peerBeside = (peer: PeerId): PeerId =>
   isServerPeer(peer) ? freshServerPeerId() : freshPeerId();
 
-/** Oplog frontiers move exactly when the oplog gains ops; comparing them needs no version handle. */
 function sameFrontiers(a: Frontiers, b: Frontiers): boolean {
   return (
     a.length === b.length &&

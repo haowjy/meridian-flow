@@ -1,4 +1,3 @@
-/** A draft's review list, its counts and the commands it is read under. */
 import type { DraftId } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DraftItem, TreeSaw } from "@meridian/contracts/drafts";
@@ -16,7 +15,6 @@ export function createWorkDraftReviewService(input: {
   purgeDiscards: CollabDrafts["draftReview"]["purgeDiscards"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   folderIds(draftId: DraftId): Promise<{ id: string }[]>;
-  /** The cut the draft's rows are read at: call it before reading them. */
   treeCut(draftId: DraftId): Promise<TreeSaw>;
   pending: Pick<WorkDraftPendingStore, "listDraftsChangingDocument" | "countPendingInProject">;
 }): Pick<CollabDrafts, "draftReview"> {

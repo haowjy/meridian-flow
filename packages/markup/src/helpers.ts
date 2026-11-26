@@ -1,5 +1,3 @@
-/** Shared helpers for block and mark codec authors. */
-
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
 import type {
@@ -57,7 +55,6 @@ export function stringifyBlock(ctx: SerializeContext, block: MdastBlock): string
   return getRuntime(ctx).stringifyMarkdown({ type: "root", children: [block] });
 }
 
-/** A container's children as the mdast their Markdown spelling parses to. */
 export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): MdastBlock[] {
   const runtime = getRuntime(ctx);
   const blocks: PMNode[] = [];
@@ -68,11 +65,6 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
     .children;
 }
 
-/**
- * Keep canonical HTML tables opaque while container codecs reparse their
- * serialized children into mdast. Interior `<p>`, `<thead>`, and nested table
- * tags otherwise split one raw-HTML block into several Markdown blocks.
- */
 function parseWithOpaqueHtmlTables(
   serialized: string,
   parseMarkdown: (content: string) => MdastRoot,
@@ -146,7 +138,6 @@ export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
   return rawTextParagraph(rawTextForAst(ast, ctx), ctx);
 }
 
-/** The mdast children as a tree of quotes, lists and leaves, for `flattenSources`. */
 export function mdastSources(children: readonly MdastBlock[]): Array<Source<MdastBlock>> {
   return children.map((child): Source<MdastBlock> => {
     if (child.type === "blockquote") {
@@ -171,7 +162,6 @@ export function flattenMdast(children: readonly MdastBlock[]): Array<FlatBlock<M
   return flattenSources(mdastSources(children));
 }
 
-/** One flat block parsed to a node, or null when its source parses to nothing. */
 export function parseFlatBlock(block: FlatBlock<MdastBlock>, ctx: ParseContext): PMNode | null {
   const node =
     block.value === null ? ctx.schema.node("paragraph") : parseBlockAst(block.value, ctx);
@@ -185,20 +175,10 @@ export function parseBlockChildren(children: readonly MdastBlock[], ctx: ParseCo
   return out.length > 0 ? out : [ctx.schema.node("paragraph")];
 }
 
-/**
- * A block parse yields a block, whatever its codec answered with.
- *
- * One node is both: a picture is inline by schema, and a picture alone on its
- * own line is a whole block of the document. The wrapping belongs here rather
- * than in the image codec because the codec has no way to tell which of the two
- * it is looking at — pure Markdown reports a raw tag as the same `html` node
- * either way.
- */
 function asBlockNode(node: PMNode, ctx: ParseContext): PMNode {
   return node.isInline ? ctx.schema.node("paragraph", null, [node]) : node;
 }
 
-/** Parse only through an explicitly registered codec, without raw-text recovery. */
 export function parseRecognizedBlockAst(
   ast: unknown,
   ctx: ParseContext,
@@ -226,8 +206,6 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
       case "image": {
         ensureBlockCodecRegistered("image", ctx);
         const image = imageWireAttributes(child, ctx);
-        // A picture the writer resized has a size Markdown cannot spell, so it
-        // escalates to the raw tag right here among the words it stands in.
         if (image.width !== null) {
           tokens.push({ type: "html", value: imageHtmlTag(image), marks: child.marks });
           break;
@@ -245,10 +223,6 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
   });
-  // A hard break ending the text has no Markdown spelling (`\` there is a
-  // literal backslash), so it escalates to the tag, as a sized picture does,
-  // and so does every break before it: remark writes a `\` break followed by
-  // raw HTML as a literal backslash.
   for (let index = tokens.length - 1; tokens[index]?.type === "break"; index--) {
     ensureBlockCodecRegistered("hard_break", ctx);
     tokens[index] = { type: "html", value: HARD_BREAK_TAG, marks: [] };
@@ -525,14 +499,12 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return false;
 }
 
-/** Bare GFM autolink literals stay prose; bracket and angle links are intentional. */
 export function demoteAutolinks(tree: MdastRoot, source: string): MdastRoot {
   visitChildren(tree, (node, idx, parent) => {
     const record = asRecord(node);
     if (record?.type !== "link" || idx === null || !parent) return;
     const position = asRecord(record.position);
     const offset = asRecord(position?.start)?.offset;
-    // Without source positions we cannot prove a link was implicit: retain it.
     if (
       typeof offset !== "number" ||
       !Number.isInteger(offset) ||
@@ -560,7 +532,6 @@ type InlineToken =
   | (MdastText & { marks: readonly Mark[] })
   | (MdastBreak & { marks: readonly Mark[] })
   | (MdastImage & { marks: readonly Mark[] })
-  /** A raw tag standing among the words: the escalated spelling of a sized picture. */
   | { type: "html"; value: string; marks: readonly Mark[] };
 
 function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeContext): MdastInline[] {
@@ -584,12 +555,10 @@ function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeConte
     const codec = getRuntime(ctx).markMap.get(mark.type.name);
     if (!codec) throw new Error(`pm->mdast: missing mark codec "${mark.type.name}"`);
 
-    // Inline code protects literal text; other marks wrap already-serialized child syntax.
     const inner =
       mark.type.name === "code"
         ? plainText(group)
         : encodeLineEndings(inlineMdastToMarkdown(group, ctx));
-    // Nothing to wrap (text that is only a line ending): bare delimiters would read as a rule.
     if (inner === "") out.push(...inlineTokensToMdast(group, ctx));
     else out.push(...inlineMarkdownToMdast(codec.serialize(inner, mark.attrs, ctx), ctx));
   }
@@ -597,11 +566,6 @@ function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeConte
   return out;
 }
 
-/**
- * A line ending at the start of a mark's text stops the delimiter opening, and
- * a blank line ends the paragraph; both lose or break the mark. A character
- * reference reads back as the same text.
- */
 function encodeLineEndings(markdown: string): string {
   return markdown.replace(/^\n+|\n(?=\n)/g, (run) => "&#xA;".repeat(run.length));
 }
@@ -677,15 +641,8 @@ function addRegisteredMark(
   return null;
 }
 
-/** Inline atoms whose codecs also read the raw tags they escalate to. */
 const INLINE_ATOM_CODECS = ["hard_break", "image"] as const;
 
-/**
- * The break or picture an inline AST node means, through the registered codec:
- * `![alt](src)`, the raw `<img>` tag a sized picture escalates to, or the
- * `<br/>` a trailing break escalates to, in whichever shape this dialect's
- * parser reports it.
- */
 function parseInlineAtom(ast: unknown, ctx: ParseContext): PMNode | null {
   const blockMap = getRuntime(ctx).blockMap;
   for (const name of INLINE_ATOM_CODECS) {

@@ -25,7 +25,6 @@
 
 import type { Editor } from "@tiptap/core";
 
-/** A box in the overlay's coordinates. Never mix one with a viewport rect. */
 export type OverlayBox = { left: number; top: number; right: number; bottom: number };
 
 /**
@@ -63,14 +62,6 @@ export function overlayRect(overlay: HTMLElement, element: Element): OverlayBox 
   };
 }
 
-/**
- * The part of the overlay the writer can see, in overlay coordinates.
- *
- * Not for placing anything — the pane's own clip does that, exactly and on the
- * frame the scroll lands. This answers the different question a surface asks
- * about its TARGET: is the thing I am aimed at still on screen, or has the
- * writer scrolled past it.
- */
 export function overlayViewport(overlay: HTMLElement): OverlayBox {
   return {
     left: overlay.scrollLeft,

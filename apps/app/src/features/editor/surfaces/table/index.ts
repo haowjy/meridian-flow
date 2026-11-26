@@ -1,13 +1,3 @@
-/**
- * The table surface: outside-frame grips, add tabs, row/column/table menus,
- * and the Alt+Arrow keymap that owns row and column movement inside a table.
- *
- * `TableChrome` is the whole mount; the command layer is exported beside it
- * because the verbs are the table's, not the chrome's — a slash command or a
- * future block menu that wants "insert row below" should run the same command
- * with the same refusal, not a second copy of it.
- */
-
 export { TableChrome } from "./TableChrome";
 export { TableCaretMenuItems } from "./TableVerbMenu";
 export {

@@ -23,7 +23,6 @@ export async function listMcpConnections(
   return (await getJson<McpConnectionsList>(`${CONNECTIONS}${query}`, { signal })).connections;
 }
 
-/** Saves the connection and lists its server's tools; a server that does not answer gives `tools: null`. */
 export function addMcpConnection(request: McpAddConnectionRequest) {
   return postJson<McpAddConnectionResponse>(CONNECTIONS, request);
 }
@@ -49,7 +48,6 @@ export async function undoRemoveMcpConnection(id: McpConnectionId) {
   return (await postJson<McpConnectionResponse>(`${connectionPath(id)}/undo`, {})).connection;
 }
 
-/** Try again: the server checks now and answers with what it learned. */
 export async function checkMcpConnection(id: McpConnectionId) {
   return (await postJson<McpConnectionResponse>(`${connectionPath(id)}/check`, {})).connection;
 }

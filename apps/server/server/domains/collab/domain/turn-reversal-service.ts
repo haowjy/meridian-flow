@@ -1,5 +1,3 @@
-/** Admits the user's whole turn-card inverse at its resolved destinations. */
-
 import type { ReverseTurnCommandResult } from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -51,7 +49,6 @@ export type TurnReversalServiceDeps = {
 export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
   const reverseTurn = input.turnInverse.reverseTurn;
 
-  /** The turn's documents, reversed under the caller's claim; a denial is a stored outcome. */
   async function reverseDocuments(
     query: Parameters<typeof reverseTurn>[0],
     targets: readonly TurnEditedDocumentId[],
@@ -120,7 +117,6 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     return { status: "reversed", outcome };
   }
 
-  /** One `reverse_turn` command: its stored outcome, or `effect` run under its claim. */
   async function settle(
     envelope: CommandEnvelope,
     effect: (learned: Learned) => Promise<ReverseTurnCommandResult>,

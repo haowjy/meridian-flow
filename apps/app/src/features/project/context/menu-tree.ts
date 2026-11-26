@@ -1,4 +1,3 @@
-/** Project areas, read from the replay, and opening trails for path and placement menus. */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
@@ -9,13 +8,10 @@ import { fileKindIcon } from "./context-file-icon";
 import { serverDocumentFromFile } from "./open-document-from-file";
 
 export type MenuArea = {
-  /** A stable folder id for the area itself, never a node id. */
   id: string;
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
-  /** The row at the root. */
   name: string;
-  /** What the back row says inside the area, when that differs from the row. */
   title?: string;
   icon: LucideIcon;
   tree: TreeView | null;

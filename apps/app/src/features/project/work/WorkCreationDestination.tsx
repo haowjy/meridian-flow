@@ -1,9 +1,7 @@
-/** Pending and failed UI for a Work still being created. */
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
 import { PlainWorkHeading } from "./WorkTitles";
 
-/** A Work still being created: its title, its state, and Retry or Discard on failure. */
 export function WorkCreationDestination({
   name,
   goal,
@@ -14,7 +12,6 @@ export function WorkCreationDestination({
   name: string;
   goal: string | null;
   failed: boolean;
-  /** Absent where a second try cannot succeed. */
   onRetry?: () => void;
   onDiscard: () => void;
 }) {

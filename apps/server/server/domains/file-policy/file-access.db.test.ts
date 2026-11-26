@@ -1,7 +1,3 @@
-/**
- * An agent write that reaches the journal is refused there unless a bound
- * grant covers the document it writes.
- */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, projects, threads, turns, users } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -118,7 +114,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const appendUnder = (grant: FileGrant<"edit">) =>
         runWithEditGrants(access(), [grant], () => requireAgentWriteGrant([probe]));
 
-      // A create's grant in the knowledge base doesn't reach a scratch file.
       const kb = await containerGrant({
         kind: "container",
         scheme: "kb",

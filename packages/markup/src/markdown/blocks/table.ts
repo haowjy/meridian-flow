@@ -1,5 +1,3 @@
-/** Liberal GFM-table ingress and the canonical HTML table serializer. */
-
 import {
   type MdastInline,
   type MdastTable,
@@ -14,17 +12,11 @@ import { parseHtmlTable, serializeHtmlTable } from "./table-html.js";
 
 const GFM_INGRESS_HARD_BREAK = "<br/>";
 
-/**
- * Remark cannot recognize a pipe-table row continued by a Markdown hard break.
- * Fold that ingress-only spelling before parsing; serialization never emits it.
- */
 export function normalizeGfmTableHardBreaks(source: string): string {
   return prepareGfmTableHardBreaks(source).value;
 }
 
 export function prepareGfmTableHardBreaks(source: string): PreparedSource {
-  // No table hard-break spelling can exist without a backslash immediately
-  // before a line ending. Avoid a second tokenization on the ordinary parse path.
   if (!source.includes("\\\n") && !source.includes("\\\r\n")) return originalSource(source);
   const lines = source.split("\n");
   const lineOffsets: number[] = [];

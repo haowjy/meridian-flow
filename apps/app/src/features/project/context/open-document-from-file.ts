@@ -27,7 +27,6 @@ function chatRefOf(file: TreeFile): string | undefined {
   return parsed.value.authority.chatRef;
 }
 
-/** The handle (`c12`) a chat's Scratch file's URI spells. */
 function lineageRefOf(file: TreeFile): string {
   const parsed = parseContextUri(file.uri);
   if (!parsed.ok || parsed.value.authority.kind !== "lineage")
@@ -78,7 +77,6 @@ export function openDocumentFromFile(
   };
 }
 
-/** The server's answer for a document the list does not show, in the shape the screens read. */
 export function treeFileFromCatalogEntry(entry: CatalogFileEntry): TreeFile {
   const base = {
     kind: "file" as const,
@@ -107,7 +105,6 @@ export function treeFileFromCatalogEntry(entry: CatalogFileEntry): TreeFile {
 
 export const serverDocumentFromFile = openDocumentFromFile;
 
-/** What a tab's document is in the list now: where it sits, or that it is gone. */
 export type TabPlacement =
   | { kind: "none" }
   | { kind: "removed" }

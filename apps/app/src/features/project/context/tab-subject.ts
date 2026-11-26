@@ -1,4 +1,3 @@
-/** What dragging a tab, or the leaf crumb of its path, names. */
 import type { CopyContextEntryView } from "@meridian/contracts/protocol";
 import type { OpenDocument } from "@/client/stores";
 import type { ReferenceSubject } from "./entry-drag/reference-source";

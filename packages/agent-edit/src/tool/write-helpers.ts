@@ -1,4 +1,3 @@
-// Shared parsing, identity, and error helpers for the write command pipeline.
 import { EDIT_FAILED_MESSAGE } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
@@ -28,7 +27,6 @@ export function parseFileAddress(command: {
   return parseDocumentAddress(command.file, command.documentId);
 }
 
-/** A failed command's result. A block number past the end is given the document's size. */
 export function errorResponse(
   code: WriteErrorStatus,
   message: string,
@@ -63,7 +61,6 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
   };
 }
 
-/** A write that threw, as the model's answer: a file gone under it is `document_not_found`. */
 export function writeError(cause: unknown, commandName: DocumentCommandName): InternalWriteResult {
   if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, cause);
   return status("internal_error", EDIT_FAILED_MESSAGE);

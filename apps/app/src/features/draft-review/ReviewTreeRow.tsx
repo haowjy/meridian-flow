@@ -1,9 +1,3 @@
-/**
- * Review changes' row for what the draft does to the document itself: a
- * create, a move or rename, or a delete, one row at the top of the page. Its Discard · Apply are
- * the bar's chapter pair, which take the document whole. A deleted document has no plain draft
- * page: Review changes shows Live's text read-only under this row.
- */
 import { Trans } from "@lingui/react/macro";
 import { FilePlus2, FolderInput, Trash2 } from "lucide-react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";

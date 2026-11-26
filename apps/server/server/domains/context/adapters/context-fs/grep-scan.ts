@@ -1,17 +1,3 @@
-/**
- * The scan behind `ContextFS.grep`: in path order, until `headLimit` files have matched.
- *
- * Each document's grep text comes first: the stored text when the caller has a current one,
- * else the effective read's blocks. One loop over that text decides whether the document
- * matches and how often. A literal prefilter (for case-insensitive patterns) skips a document
- * unread when no line can match. Documents past the limit are only checked for a match, and
- * counted: that costs no read when stored text answers, so a document that needs a read is not
- * read, and the total becomes a lower bound. `content` mode reads the document to find passages.
- *
- * The scan stops when `signal` aborts (the caller left, or the time budget ran out) and returns
- * what it found with `exact: false` and `stopped: true`. Matching runs in worker threads that
- * the abort terminates mid-match, so the event loop stays free and a slow pattern ends on time.
- */
 import {
   type DocumentMatch,
   type GrepBlock,
@@ -22,16 +8,12 @@ import {
 } from "../../grep/matcher.js";
 import type { GrepMode } from "../../ports/context-port.js";
 
-/** Documents whose stored text is fetched, and held, together. */
 const STORED_SLICE = 50;
 
-/** A document read through the effective reader. */
 export interface GrepRead<Shown> {
   blocks: readonly GrepBlock[];
   revision: string | null;
-  /** Places a range of a block's destination-free markdown in its body. */
   locate: GrepLocate;
-  /** The host-only link facts of the passages `match` returned. */
   shownOf(match: DocumentMatch): Shown | undefined;
 }
 
@@ -42,7 +24,6 @@ export interface ScanDocument {
 
 export interface ScanHit<Shown> {
   document: ScanDocument;
-  /** Null when the hit was answered from stored text without a read. */
   match: DocumentMatch | null;
   matchCount: number;
   revision: string | null;
@@ -51,11 +32,8 @@ export interface ScanHit<Shown> {
 
 export interface ScanResult<Shown> {
   hits: ScanHit<Shown>[];
-  /** Files that matched, past the limit too. */
   totalFiles: number;
-  /** False when documents that need a read went uncounted past the limit, or the scan stopped. */
   exact: boolean;
-  /** True when the signal aborted the scan before the last document. */
   stopped: boolean;
 }
 
@@ -63,7 +41,6 @@ export type ScanOutcome<Value, Fault> = { ok: true; value: Value } | { ok: false
 
 export async function scanDocuments<Shown, Fault>(input: {
   documents: readonly ScanDocument[];
-  /** Usable stored grep text by document id, asked for one slice of documents at a time. */
   stored(ids: string[]): Promise<ReadonlyMap<string, string>>;
   matcher: GrepMatcher;
   mode: GrepMode;
@@ -100,7 +77,6 @@ export async function scanDocuments<Shown, Fault>(input: {
       let text = stored.get(document.id);
       if (text === undefined) {
         if (full) {
-          // Counting it would take a read.
           exact = false;
           continue;
         }

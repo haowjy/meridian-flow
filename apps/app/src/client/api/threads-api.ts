@@ -279,7 +279,6 @@ export function updateThreadUserState(
   return patchJson(apiThreadUserStatePath(threadId), request);
 }
 
-/** PATCH /api/threads/:threadId/title — persists a writer-authored thread title. */
 export function renameThread(
   threadId: string,
   request: RenameThreadRequest,
@@ -313,7 +312,6 @@ export function deserializeThreadSnapshot(
   ) as ThreadSnapshotResponse;
 }
 
-/** GET /api/threads/:threadId/debug/model-requests — dev-only orchestrator capture. */
 export function getThreadModelRequestDebugRecords({
   data,
 }: {
@@ -327,7 +325,6 @@ export function getThreadModelRequestDebugRecords({
   );
 }
 
-/** GET /api/threads/:threadId/debug/turn-context-preview — dev-only next-turn model context. */
 export function getThreadTurnContextPreview({
   data,
 }: {

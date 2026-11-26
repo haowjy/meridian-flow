@@ -10,12 +10,6 @@ import {
   useCaptureProjectNavigation,
 } from "../routing/ProjectNavigationContext";
 
-/**
- * New document: an Untitled document in Unfiled, opened in main with the caret. The writer mints
- * the node's id and appends its `create` at once, so the document shows in the tree, and it opens
- * before the server has heard of it: on Live its text room, on Draft the Work's draft of it
- * (`useOpenCreatedDocument`), connects once the create is admitted.
- */
 export function useNewDocument(
   projectId: string,
   open: OpenContextRoute | null,

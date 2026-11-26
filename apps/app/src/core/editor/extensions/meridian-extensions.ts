@@ -1,11 +1,3 @@
-/**
- * meridian-extensions — the project's customized TipTap node/mark extensions.
- *
- * Subclasses the base TipTap nodes/marks (lists, code, link, image, hard
- * break, and the custom figure node with its React node view) to match the
- * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
- * surface; consumed by the editor `config`.
- */
 import { HEADING_LEVELS, type HeadingLevel, isNested } from "@meridian/prosemirror-schema";
 import {
   getAttributesFromExtensions,
@@ -108,7 +100,6 @@ function tableCellAttributes(parentAttrs: (() => Record<string, unknown>) | unde
   };
 }
 
-/** Block alignment attrs mirroring the shared schema's `Layout` wire wrapper. */
 function textLayoutAttributes() {
   return {
     align: {
@@ -153,10 +144,6 @@ export const MeridianHorizontalRule = HorizontalRule.extend({
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     headingLevel: {
-      /**
-       * Gives every paragraph under the selection this level, keeping each block and its
-       * text; a level they all already have, or null, returns them to body text.
-       */
       toggleHeadingLevel: (attributes: { level: HeadingLevel | null }) => ReturnType;
     };
   }
@@ -193,27 +180,19 @@ function shapeForDestination(slice: Slice, $dest: ResolvedPos): Slice {
   return closeShapedSlice(landSlice(slice, $dest), $dest);
 }
 
-/** A slice shaped for the block it will land in, whatever shaping the paste hook already gave it. */
 export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
   return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
-/** A level the binding read from the room may be anything; only a real one makes a heading. */
 const paragraphTag = (node: ProseMirrorNode) =>
   HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
 
-/**
- * A heading is a paragraph with a `level` (null is body text). One node name
- * means retyping a block edits its block in place instead of rebuilding
- * it, so a peer's concurrent typing, authorship and anchors in it survive.
- */
 export const MeridianParagraph = Paragraph.extend({
   addAttributes() {
     return {
       ...textLayoutAttributes(),
       level: {
         default: null,
-        // Enter at the end of a heading starts body text.
         keepOnSplit: false,
         parseHTML: (element: HTMLElement) =>
           HEADING_LEVELS.find((level) => element.tagName === `H${level}`) ?? null,
@@ -399,8 +378,6 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
         const { empty, $anchor } = editor.state.selection;
         if (!empty || $anchor.parent.type !== this.type) return false;
         if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
-        // A code document has no paragraph to turn the fence into, and the default
-        // Backspace would clear the fence's language and id: do nothing.
         if (!editor.schema.nodes.paragraph) return true;
         return editor.commands.setParagraph();
       },
@@ -436,7 +413,6 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
   },
 });
 
-/** Keeps block alignment live when the resize plugin takes over table rendering. */
 class MeridianTableView extends TableView {
   constructor(...args: ConstructorParameters<typeof TableView>) {
     super(...args);
@@ -539,12 +515,6 @@ export const MeridianTableCell = TableCell.extend({
 });
 
 /**
- * The stored link target (`doc:`/`ahead:`) on images and figures. Never
- * rendered; read back only from the attribute the link clipboard plugin leaves
- * on a same-project rich paste's `<img>` (a figure's own picture), which the
- * paste sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
- */
-/**
  * A picture's stored source. Rendered as `src` only when the browser may fetch it as written;
  * a web address goes in `data-remote-src`, which the browser never fetches and the parse rule
  * reads back; anything else is named by clipboard metadata (`links/link-clipboard.ts`).
@@ -591,14 +561,6 @@ const LINK_MARK_REF_ATTRIBUTE = {
     clipboardLinkRef(element.getAttribute(LINK_KEPT_REF_ATTRIBUTE)),
 };
 
-// ─── Customized extensions ──────────────────────────────────────────
-// Extensions that add behavior beyond what TipTap defaults provide.
-
-/**
- * A link mark's `<a>` attributes. Internal targets are semantic references,
- * not browser URLs: they keep their exact spelling in clipboard HTML, and only
- * external targets get a live href.
- */
 function linkElementAttributes(HTMLAttributes: Record<string, unknown>): Record<string, unknown> {
   const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
   const folder = target && isInternalLinkTarget(target) && target.addressKind === "folder";
@@ -615,8 +577,6 @@ function linkElementAttributes(HTMLAttributes: Record<string, unknown>): Record<
     : { ...HTMLAttributes, href: "" };
 }
 
-// What a link IS. What pressing one DOES belongs to the link surface
-// (`core/editor/links/`), which owns the click, the hover, and the menu.
 export const MeridianLink = Link.extend({
   inclusive: false,
 
@@ -775,10 +735,6 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; o
     });
   },
 }).configure({ inline: true, allowBase64: true });
-
-// ─── Meridian-only extensions ─────────────────────────────────────────
-// Node types not in TipTap's standard library.
-// TODO: figure — needs full MyST directive support, currently renders via FigureNodeView
 
 export const MeridianJsxLeaf = Node.create({
   name: "jsx_leaf",

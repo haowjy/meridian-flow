@@ -1,5 +1,3 @@
-/** Chat-only previous-location fallback, authorized against the reader's projects. */
-
 import type { UserId } from "@meridian/contracts";
 import { matchDocumentPath } from "@meridian/contracts";
 import type { Database } from "@meridian/database";

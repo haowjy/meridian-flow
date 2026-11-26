@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Dump observation_frontiers, with their source turn_blocks where the block is stored.
-# Run from the repo root of the checkout to read; queries go through `tools/dev/psql`.
-# Optional $1: a thread UUID, or a room_key prefix (`live:` / `draft:`).
 set -euo pipefail
 
 exec python3 - "${1:-}" <<'PY'

@@ -15,8 +15,6 @@ import {
   TextQuote,
 } from "lucide-react";
 
-// Straight at the primitive: the chrome barrel carries the surface registry the block menu,
-// a user of this row, is listed in.
 import { EditorMenuItem } from "../../chrome/EditorMenu";
 import { type BlockTypeId, headingLevelOf, turnIntoBlockType } from "./toolbar-commands";
 import { blockTypeLabel } from "./toolbar-copy";
@@ -47,7 +45,6 @@ function blockTypeIcon(id: BlockTypeId): LucideIcon {
   }
 }
 
-/** One block type to turn the selection into: the row every Turn into list and the toolbar's heading menu draw. */
 export function BlockTypeMenuItem({
   editor,
   id,
@@ -56,7 +53,6 @@ export function BlockTypeMenuItem({
 }: {
   editor: Editor;
   id: BlockTypeId;
-  /** The selection already is this type; choosing it again returns the blocks to body text. */
   active: boolean;
   blockedReason: string | null;
 }) {

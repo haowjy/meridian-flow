@@ -1,5 +1,3 @@
-/** A draft's items as tree-labelled files, and the stable file order. */
-
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { readSegment } from "@meridian/contracts/protocol";
@@ -7,18 +5,14 @@ import type { TreeView } from "@/core/project-tree/tree-view";
 import type { ContextUri } from "@/lib/context-uri";
 import { parseContextUri } from "@/lib/context-uri";
 
-/** One item of a draft, as a file in the draft's list of documents. */
 export type ReviewFileTarget = {
   documentId: string;
   documentName: string | null;
   contextLocation: Pick<ContextUri, "scheme" | "path"> | null;
-  /** The item the row's verbs act on. */
   item: DraftItem;
-  /** Absent from the live project until Apply: a document the draft created. */
   draftOnly: boolean;
 };
 
-/** Each item labelled by the tree, in the one file order; raw rows remain untouched. */
 export function projectWorkDraftFiles(
   items: readonly DraftItem[],
   tree: Pick<TreeView, "findDocument"> | null,
@@ -75,12 +69,6 @@ export function sortDraftFiles<
   );
 }
 
-/**
- * The basename of a document's context path (`manuscript://book/ch-3.md` → `ch-3.md`),
- * or `null` when there's no usable path. New documents are URI-addressed, so the
- * basename is the display name when the AI created the doc unnamed (spec §5.5,
- * product call 2026-07-05). Trailing slashes are ignored.
- */
 export function documentBasename(contextPath: string | null | undefined): string | null {
   if (!contextPath) return null;
   const trimmed = contextPath.replace(/\/+$/, "");
@@ -88,10 +76,6 @@ export function documentBasename(contextPath: string | null | undefined): string
   return base.length > 0 ? base : null;
 }
 
-/**
- * What a draft's document is called: its name, else (for a new document the AI created unnamed)
- * the basename of its path, then `untitled`.
- */
 export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
   return (
     row.documentName ??

@@ -1,10 +1,3 @@
-/**
- * MobileChatHost — phone chat wrapper that applies keyboard-aware composer clearance.
- *
- * ChatScreen and ChatView stay shared. The phone shell only adds the
- * visualViewport bridge around them so desktop chat behavior and subscriptions
- * remain unchanged.
- */
 import type { Work } from "@meridian/contracts/protocol";
 import { ChatScreen } from "../chat/ChatScreen";
 import type { ContextRouteRequest } from "../routing/project-route";

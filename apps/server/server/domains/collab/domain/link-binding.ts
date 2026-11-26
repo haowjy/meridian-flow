@@ -46,38 +46,23 @@ import {
 
 declare const boundBrand: unique symbol;
 
-/** The one document a bound write may be applied to. */
 export type BoundHolder =
   | { kind: "document"; documentId: DocumentId }
-  /** The document about to be created at this canonical address; its creator checks the address. */
   | { kind: "new"; uri: string }
-  /** Fixed, link-free content (`bindStatic`): seeds any new document. */
   | { kind: "static" };
 
-/** Written content with its links bound; only a `LinkBinder` makes one. */
 export interface BoundWrite {
   readonly holder: BoundHolder;
-  /**
-   * Bound without a current document (seed, import, create, upload): its
-   * links were assigned against nothing, so it applies only to an empty
-   * document. Otherwise it was bound against the holder's document and
-   * overwrites whatever that document holds when it applies.
-   */
   readonly fresh: boolean;
-  /** The desired blocks: refs assigned, minted ahead refs registered; never reparsed. */
   readonly blocks: readonly PMNode[];
-  /** Source Markdown, for provenance and diagnostics only; never reparsed. */
   readonly markdown: string;
-  /** Code files bind to one code block; the engine refuses content of the other shape. */
   readonly schemaType: TrackedSchemaType;
   readonly [boundBrand]: true;
 }
 
-/** The document the content is for: one that exists, or one about to be created. */
 export type BindHolder =
   | { documentId: DocumentId }
   | {
-      /** Canonical address it will have; written relative links resolve against it. */
       uri: string;
       projectId: string;
       filetype: string | null;
@@ -86,52 +71,22 @@ export type BindHolder =
 export interface BindMarkdownInput {
   holder: BindHolder;
   markdown: string;
-  /**
-   * `current`: bind against the holder's current document, so every link
-   * that stays corresponds to itself and keeps its ref, and unchanged content
-   * keeps its items (an actor's overwrite). Absent: fresh (seed, import, create).
-   */
   against?: "current";
-  /** The version the content is written into; whole-document doors write live. */
   view?: LinkView;
 }
 
-/**
- * A copy's content: one stored document's blocks for a document about to be created at
- * `uri`. The copy's remap has already rewritten the identities it copies and left every
- * other link naming its target, so binding spells no link freshly and mints nothing; it
- * only gives the blocks the holder and schema type the new document needs.
- */
 export interface BindCopiedBlocksInput {
-  /** The address the new document will have. */
   uri: string;
-  /** The new document's filetype, as its create resolved it. */
   filetype: string | null;
-  /** The source holder's address: a stored relative spelling was written against it. */
   sourceHolderUri: string | null;
   blocks: readonly PMNode[];
   map: CopyIdentityMap;
-  /** Where each `ahead:` ref settles now (`EffectiveBlocksRead.aheadSettlements`). */
   aheadSettlements?: ReadonlyMap<string, string>;
 }
 
 export interface LinkBinder {
-  /**
-   * Outside any transaction: open the holder's scope, parse, prepare, assign
-   * (fresh, or against the current document) and register minted ahead refs.
-   */
   bindMarkdown(input: BindMarkdownInput): Promise<BoundWrite>;
-  /**
-   * A copied document's blocks for a fresh holder (`copied-blocks.ts` owns the remap).
-   * Pure: it resolves no catalog and mints no ahead ref, so it may run inside a
-   * transaction. The result is a fresh write: it lands only in an empty document.
-   */
   bindCopiedBlocks(input: BindCopiedBlocksInput): BoundWrite;
-  /**
-   * Content fixed in code with no link or source in it (a project's first
-   * chapter): parsed without a scope, so it may be bound anywhere. Throws if
-   * the content names anything.
-   */
   bindStatic(markdown: string, filetype?: string | null): BoundWrite;
 }
 
@@ -145,7 +100,6 @@ export class LinkBindingInsideTransactionError extends Error {
 export interface LinkBinderDeps {
   codec: MarkupCodec;
   schema: Schema;
-  /** The holder's current blocks; null when it has no state yet, so a write binds fresh. */
   currentBlocks(documentId: DocumentId): Promise<PMNode[] | null>;
   links: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
@@ -153,11 +107,6 @@ export interface LinkBinderDeps {
   inTransaction(): boolean;
 }
 
-/**
- * Content parsed with every link unbound (`ref` null, href as written), in the shape its
- * filetype stores: one code block for a code file. Static seeds take it when nothing in it
- * is a link.
- */
 function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
   return (markdown: string, filetype: string | null) => {
     const schemaType = schemaTypeOf(filetype);
@@ -255,7 +204,6 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         sourceHolderUri: input.sourceHolderUri,
         ...(input.aheadSettlements ? { aheadSettlements: input.aheadSettlements } : {}),
       });
-      // Stored hrefs are already what the wire shows; the pass-through scope keeps them.
       const markdown = deps.codec.serialize(blocks, {
         spellLink: ({ href }) => ({ href, address: null }),
         spellSource: ({ src }) => ({ href: src, address: null }),
@@ -279,7 +227,6 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   };
 }
 
-/** Identity overrides are an import-only capability, never on the model/editor binder. */
 export interface ImportLinkBinder {
   bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
   bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;

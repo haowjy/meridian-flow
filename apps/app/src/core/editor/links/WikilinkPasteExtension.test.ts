@@ -25,7 +25,6 @@ afterEach(() => {
   for (const editor of live.splice(0)) editor.destroy();
 });
 
-/** An Editor whose link index holds `targets`, or is still loading (null). */
 function editor(
   targets: readonly { documentId: string; uri: string }[] | null,
   content = "<p></p>",
@@ -55,11 +54,6 @@ function links(target: Editor): [string, string, string | null][] {
   return out;
 }
 
-/**
- * The browser's paste: a paste event on the editor, carrying clipboard data,
- * through ProseMirror's own handler and every plugin's paste props. jsdom has
- * no ClipboardEvent, so the data rides on a plain event.
- */
 function paste(target: Editor, data: Record<string, string>) {
   const event = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", {
@@ -76,11 +70,6 @@ it("keeps the characters when pasted into a code block", () => {
   expect(target.state.doc.textContent).toBe("xsee [[Lin Feng]] here");
 });
 
-/**
- * The browser's drop from outside the editor, landing at `pos`. jsdom has no
- * layout (every box is empty at the origin, where the pointer is), so the
- * character the pointer is over is stubbed where ProseMirror asks for it.
- */
 function drop(target: Editor, pos: number, data: Record<string, string>) {
   target.view.posAtCoords = () => ({ pos, inside: -1 });
   const event = new Event("drop", { bubbles: true, cancelable: true });

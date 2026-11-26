@@ -1,5 +1,3 @@
-/** Drizzle lifecycle adapter for authoritative upload intake reservations. */
-
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { Filetype, UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -26,7 +24,6 @@ async function lockIntakeKey(db: Database, projectId: string, intakeId: string):
   );
 }
 
-/** An intake's owning chat never changes, so it is safe to read before any lock. A source upload has none. */
 async function readIntakeOwner(
   db: Database,
   where: ReturnType<typeof and>,
@@ -50,10 +47,6 @@ async function lockChat(db: Database, projectId: string, chatId: string | null):
   );
 }
 
-/**
- * An upload's address is derived from its chat's current handle, never frozen: a chat that has no
- * row yet has no handle, so its uploads read as the chat-relative `uploads://name` until it does.
- */
 function uploadUri(chatRef: string | null, path: string): string {
   return canonicalContextUri(
     "uploads",
@@ -111,7 +104,6 @@ async function projectOwnedBy(db: Database, projectId: string, actorUserId: stri
   return Boolean(project);
 }
 
-/** Runs in `reserve`, which already holds the owning chat's lock. */
 async function resolveOwner(
   db: Database,
   owner: Extract<UploadOwner, { kind: "chat" }>,
@@ -120,8 +112,6 @@ async function resolveOwner(
 ) {
   const activeDb = currentDrizzleDb(db);
   if (!(await projectOwnedBy(db, owner.projectId, actorUserId))) return null;
-  // No row yet is a New-chat upload. A row must be a primary thread of this project: a fork or
-  // handoff is its own chat, and a subagent's uploads belong to its top chat, never to itself.
   const [chat] = await activeDb
     .select({ ref: threads.ref, kind: threads.kind, projectId: threads.projectId })
     .from(threads)
@@ -169,7 +159,6 @@ export function createDrizzleUploadIntakeRepository(
             existing.sizeBytes !== input.sizeBytes
           )
             return { kind: "conflict" };
-          // A start again is the browser saying it is still uploading: the sweep leaves it be.
           if (existing.state === "reserved" || existing.state === "object_stored")
             await activeDb
               .update(uploadIntakes)
@@ -189,8 +178,6 @@ export function createDrizzleUploadIntakeRepository(
               ? { sourceId: null, chatRef: null }
               : null;
         if (!placement) return { kind: "owner_unavailable" };
-        // A source upload's id is the client's: the link to the file stands before the file does.
-        // An id a document already holds would make that link name someone else's file.
         const documentId = requester.kind === "source" ? input.intakeId : crypto.randomUUID();
         if (
           requester.kind === "source" &&

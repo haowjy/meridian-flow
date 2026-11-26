@@ -40,11 +40,6 @@ export interface BoundWritesDeps {
 export class BoundWrites {
   constructor(private readonly deps: BoundWritesDeps) {}
 
-  /**
-   * Bind outside the command transaction, apply inside it. The bound write
-   * names the holder it was bound for; if the path's occupant changed in
-   * between, `apply` answers `stale_target` and the caller decides again.
-   */
   async command<T>(
     bind: () => Promise<Result<BoundWrite, AdapterFault>>,
     apply: (bound: BoundWrite) => Promise<Result<T, AdapterFault>>,
@@ -54,7 +49,6 @@ export class BoundWrites {
     return this.deps.commandExecutor.run(() => apply(bound.value));
   }
 
-  /** Whether `bound` was bound for what occupies its path now (`null`: nothing). */
   boundFor(
     path: string,
     bound: BoundWrite,
@@ -74,10 +68,6 @@ export class BoundWrites {
     return false;
   }
 
-  /**
-   * The tracked document at `path`, read before any command transaction so
-   * content can be bound against it; the transaction looks it up again.
-   */
   async lookup(path: string): Promise<Result<ContextDocument | null, AdapterFault>> {
     const existing = await this.deps.findDocument(path);
     if (existing.ok && existing.value && existing.value.fileType !== null) {
@@ -86,10 +76,6 @@ export class BoundWrites {
     return existing;
   }
 
-  /**
-   * Bind written Markdown for `existing` (null: a document about to be
-   * created at `path`), fresh or `against` its current document.
-   */
   async bind(
     path: string,
     existing: ContextDocument | null,

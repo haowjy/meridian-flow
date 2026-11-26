@@ -1,4 +1,3 @@
-/** Classify command errors without copying response text into diagnostics. */
 import type { CommandFailureInput } from "@meridian/contracts/failures";
 import { httpErrorStatus, InvalidResponseError } from "../api/http-client";
 export function commandFailureInput(error: unknown): CommandFailureInput {

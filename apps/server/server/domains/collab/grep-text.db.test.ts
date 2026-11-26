@@ -23,8 +23,6 @@ import {
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-// One pipeline builds both texts (`grepBlocksOf`); these shapes guard what only the SQL side can
-// break: an empty paragraph keeps its line, and a code file stores its text with no fence.
 const SHAPES: Array<{ name: string; filetype?: string; markdown: string }> = [
   { name: "gaps", markdown: "one\n\n \n\ntwo" },
   { name: "code", filetype: "typescript", markdown: "const a = 1;\n\nconst b = [x, y];\n" },

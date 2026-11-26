@@ -1,5 +1,3 @@
-// Turns document blocks into agent-facing text and parses agent input.
-
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
@@ -23,9 +21,7 @@ export interface DocumentRenderAddress {
 export type ReadBlockSelection =
   | {
       ok: true;
-      /** The selected blocks, in document order. */
       selected: readonly ProjectedBlock[];
-      /** The one projection of the document, whole: its size and headings; never re-project. */
       projected: readonly ProjectedBlock[];
     }
   | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
@@ -45,11 +41,8 @@ interface DocumentRenderer {
 }
 
 export interface RenderedRead {
-  /** The format actually rendered: an outline of a document with no headings is full. */
   format: "full" | "outline";
-  /** An outline heading's `section` is the slug fragment that reads it, when one is safe. */
   blocks: AgentEditBlockItem[];
-  /** How many blocks the whole document has, so a narrowed read can say it is partial. */
   documentBlocks: number;
 }
 

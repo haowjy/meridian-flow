@@ -1,12 +1,3 @@
-/**
- * viewer-core — the pan/zoom seam.
- *
- * Library-grade and editor-free: nothing here imports TipTap, ProseMirror, or
- * React. It moves an element inside another element on PointerEvents, and that
- * is the whole contract. The diagram lightbox is its first caller; an image
- * viewer would be its second without a change.
- */
-
 export { intrinsicContentSize } from "./content-size";
 export {
   createPanZoomViewer,

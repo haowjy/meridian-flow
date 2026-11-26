@@ -1,4 +1,3 @@
-/** An authorized address, made canonical; the document host owns live-session binding. */
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
@@ -18,15 +17,9 @@ export type AddressAdmission = {
   issue: ProjectRouteIssue | undefined;
 };
 
-/**
- * The document an answered address names: built from the address's draft row when live lacks it
- * (a page a draft created), else from the server's answer at its canonical locator. Main's
- * resolver shows it when live lacks the document.
- */
 export function addressedDocument(
   address: ProjectAddress,
   result: DocumentAddressResult | undefined,
-  /** The replay's file for the address, when it resolved there. */
   localFile: TreeFile | undefined,
   draftOnly: ReviewFileTarget | undefined,
 ): AddressedDocument | null {
@@ -54,10 +47,6 @@ export function addressedDocument(
   return { document: tab, draftOnly: false };
 }
 
-/**
- * Takes an answered address to its canonical form and says when main may show its document.
- * Main's host paints the document the address names (`useMainDocument`); nothing is installed.
- */
 export function ProjectAddressDocument({
   href,
   entryKey,
@@ -72,7 +61,6 @@ export function ProjectAddressDocument({
   entryKey: string;
   address: ProjectAddress;
   result: DocumentAddressResult | undefined;
-  /** An explicit selector (or hidden create) never publishes a live representation. */
   draftItemKey?: string;
   workId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
@@ -80,8 +68,6 @@ export function ProjectAddressDocument({
 }) {
   const admissionInput = useRef({ address, result, draftItemKey });
   admissionInput.current = { address, result, draftItemKey };
-  // Address projections are rebuilt from JSON snapshots. Their object identity is not an
-  // admission event; only their serialized meaning is.
   const admissionFingerprint = JSON.stringify({ result, draftItemKey });
   useEffect(() => {
     const { address, result, draftItemKey } = admissionInput.current;
@@ -96,7 +82,6 @@ export function ProjectAddressDocument({
       return;
     }
     if (draftItemKey) {
-      // The link to a draft carries its item key, which names the draft.
       const next = { ...canonical, itemKey: draftItemKey };
       if (projectAddressHref(next) !== href) void navigation.replaceIfCurrent(ticket, next);
       return;

@@ -1,25 +1,4 @@
 #!/usr/bin/env bun
-/**
- * App dev-transform smoke — boots the @meridian/app dev server far enough to
- * SSR-render real routes, then asserts their exact public contract.
- *
- * `pnpm check` (lint + typecheck + unit tests) never boots the running app, so a
- * regression that only manifests at app runtime — a module that fails to
- * load/transform, a route that throws while server-rendering — passes green.
- * This smoke closes that gap cheaply: it starts `vite dev`, waits for the server
- * to listen, and requests `/` (auth redirect) and `/login` (a full SSR render
- * that pulls the document shell, its Lingui `Trans` macro, and the login page
- * through the dev transform pipeline). A broken module transform surfaces as a
- * 5xx on those routes even without authentication or a reachable database.
- *
- * Scope: this is the phase-1 boot check from issue #85 — it catches
- * transform/wiring-class breaks (e.g. the Babel-8 Lingui-macro regression that
- * 500'd the dev server). It does NOT log in or load an authenticated route, so
- * render crashes behind auth (the react-virtuoso-class regression) are out of
- * scope and would need a headless-browser phase gated on WorkOS dev secrets.
- *
- *   pnpm smoke:app-dev-transform
- */
 
 import { APP_BOOT_ROUTES } from "./lib/app-boot-contract";
 import { reserveEphemeralPort, runAppBootSmoke } from "./lib/app-boot-smoke";

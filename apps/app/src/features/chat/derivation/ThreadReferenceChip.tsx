@@ -1,11 +1,3 @@
-/**
- * The `from` source of a spawned child: a chip at the top of the child's chat
- * naming the conversation its parent pointed it at (`spawn.from`).
- *
- * The name opens that chat, and a trashed source says so. The block's title is
- * frozen at spawn, so the chat's current title wins.
- */
-
 import { Trans } from "@lingui/react/macro";
 import type { ThreadReference } from "@meridian/contracts/threads";
 import { MessagesSquare } from "lucide-react";
@@ -19,7 +11,6 @@ export function ThreadReferenceChip({ reference }: { reference: ThreadReference 
       className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border-subtle bg-background px-2.5 py-0.5 text-xs text-muted-foreground"
     >
       <MessagesSquare aria-hidden className="size-3.5 shrink-0" />
-      {/* One message, so a translation can put the source's name first. */}
       <Trans>
         <span className="shrink-0">From </span>
         <SourceChatLink

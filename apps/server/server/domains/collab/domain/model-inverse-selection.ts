@@ -1,10 +1,7 @@
-/** The model's undo stack, chosen from the stored edit history. */
-
 import { editHandle } from "@meridian/agent-edit/integration";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import type { StoredInversePart } from "./turn-inverse-service.js";
 
-/** One model-visible edit on the stack. */
 export type Entry = {
   id: string;
   handle: string;

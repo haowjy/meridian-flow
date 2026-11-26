@@ -1,12 +1,3 @@
-/**
- * ProjectView — the controlled project workspace shell.
- *
- * The readable project route owns all navigation state. This view resolves what main shows from
- * the address (`useMainDocument`, one resolver for both shells), provides it (`useMainItem`), and
- * chooses the shell: the desktop's three slots (`DesktopProject`) or the phone's one view. Chat
- * commands are not threaded as props: leaves read them from `useChatNavigation()`.
- */
-
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -68,54 +59,30 @@ import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDi
 
 export type ProjectViewProps = {
   projectId: string;
-  /** Full route-loaded project, used before the account list query is ready. */
   project: Project;
-  /** The chat main shows; null when main holds no chat. */
   chatDisplay: ChatDisplay | null;
   routeLocationKey?: string;
   routeIssues?: {
     main?: ProjectRouteIssue;
     editor?: ProjectRouteIssue;
-    /** Why an unavailable Editor destination is unavailable, when the route knows. */
     unavailable?: ProjectRouteMask["unavailable"];
   };
-  /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
-  /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
-  /** Browser route adapter for taking main off a closed document. */
   contextRemovalRoute: Omit<ContextRemovalRoutePort, "goBack">;
-  /** The document main's address is: the one it last resolved, or its review's item names. */
   routeDocumentId: string | null;
-  /** Main's document scheme, when the address names a document. */
   activeContextScheme: ProjectContextTreeScheme | null;
-  /** A Work's Scratch route: its owning Work. Null for every other document. */
   activeContextWork: string | null;
-  /** Main's document path, when the address names a document. */
   activeContextPath: string | null;
-  /** The lineage a chat's Scratch route names, in place of a Work. */
   activeContextChat: string | null;
-  /** Draft identity persisted by an Editor document address. */
   draftItemKey?: string;
-  /** The draft the address's item reviews (`addressDraftOwner`). */
   draftOwner?: string | null;
-  /** Review changes is on, against this (`?review=`); undefined is the plain draft. */
   reviewTarget?: ReviewTarget;
-  /** The change in focus in Review changes (`?change=`). */
   reviewChangeId?: string;
   reviewControls?: MainReviewControls;
-  /** Document the Editor address resolved to; a review follows it through a rename. */
   mainAddressDocumentId?: string;
-  /**
-   * The document the answered address names: from its draft row when live lacks it (a page a
-   * draft created), else the server's answer.
-   */
   addressedDocument?: AddressedDocument;
-  /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
   draftAddressAdmission?: DraftAddressAdmission;
-  /**
-   * Selects a context file. When `scheme` is provided, the URL records it.
-   */
   onOpenContextTarget: OpenContextRoute;
   onSetEditorDraftItemKey: (review: DraftPin | null) => void;
 };
@@ -210,7 +177,6 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   availableWorks: readonly Work[];
   editorScope: WorkScope;
   editorWorkId: string | null;
-  /** The Editor's Work, when the route names one the project has. */
   editorWork: Work | null;
   contextLive: boolean;
 };
@@ -219,10 +185,8 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
-    /** The chat on screen's Work (main's chat, or the side's beside a document). */
     chatWork: Work | null;
     chatCommands: WorkDraftCommands;
-    /** Main keeps its previous document painted while the new address loads. */
     retainEditorWhileLoading?: boolean;
   };
 
@@ -231,7 +195,6 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
     <ReviewLaunchProvider projectId={props.projectId} openContextRoute={props.onOpenContextTarget}>
       <HydratedReviewScopes {...props} />
       <ManageWorksDialogHost projectId={props.projectId} />
-      {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
       <DragHint />
     </ReviewLaunchProvider>
   );
@@ -242,7 +205,6 @@ type MainPresentation = Pick<
   "activeContextScheme" | "activeContextPath" | "activeContextChat"
 > & { main: MainView };
 
-/** Resolves main's document from the address, and keeps the last one painted while one loads. */
 function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityProps) {
   const usePhone = usePhoneShell();
   const onDocument = props.chatDisplay === null;
@@ -351,10 +313,8 @@ function HydratedReviewControllers({
   usePhone: boolean;
   retainEditorWhileLoading?: boolean;
 }) {
-  // Under None the draft scope is the chat on screen: beside a document, the side's chat.
   const chatThreadId = useChatOnScreen();
   const newChat = useNewChatOnScreen();
-  // Every chat door and reveal opens through the one placement command.
   const openThread = usePlaceChat();
   useConversationRevealRouting(openThread);
   const { threads: projectThreads } = useProjectThreads(props.projectId);
@@ -372,7 +332,6 @@ function HydratedReviewControllers({
     threadId: chatThreadId,
     surface: "strip",
   });
-  // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
   const { notices } = useDraftCommandOwner();
   useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
   const main = props.chatDisplay === null ? props.mainAddressDocumentId : undefined;

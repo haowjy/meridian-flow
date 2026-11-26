@@ -1,5 +1,3 @@
-/** Project areas read from the replay, for document paths and placement menus. */
-
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
@@ -26,48 +24,31 @@ import { useWorkSourceWritable } from "./use-work-source-writable";
 export type ProjectMenuSource = {
   tree: DrillTree;
   tabFor(rowId: string): ServerOpenDocument | null;
-  /** How the tree behind the folder on screen (its trail, outermost first) is loading. */
   loadState(trail: readonly DrillNode[]): "ready" | "loading" | "failed";
-  /** The tree and shown node a folder or file id names, from whichever area holds it. */
   locate(id: string): {
     scheme: ProjectContextTreeScheme;
     owner: ContextOwner;
     tree: TreeView;
     entry: TreeEntry;
   } | null;
-  /** Resolve an area or folder row into its placement destination. */
   folderFor(rowId: string): {
     scheme: ProjectContextTreeScheme;
     owner: ContextOwner;
     path: string;
     tree: TreeView;
-    /** The folder's id, or the source's id for an area's top: what a destination names as its parent. */
     entryId: string;
-    /** Whether the area takes changes (`MenuArea.writable`). */
     writable: boolean;
   } | null;
-  /** Whether the area a root row names takes changes. */
   areaWritable(areaId: string): boolean;
-  /** The own area's tree and its opening trails. */
   own: {
     tree: TreeView | null;
-    /** Whether the own area takes changes. */
     writable: boolean;
-    /** Opens in the list holding the entry at `path`. */
     openAt(path: string): DrillNode[];
-    /** Opens inside the folder at `folders` (names from the area root). */
     openInside(folders: readonly string[]): DrillNode[];
     crumbTrail(path: string, depth: number): DrillNode[];
   };
 };
 
-/**
- * The project browsing tree: Manuscript, Knowledge, User, Unfiled and the
- * Scratch on screen as folders under the project's title. The own area (the open
- * document's, an entry being moved, or the folder a mention opens) is always
- * reachable; when it is not one of those (an Uploads file, or another Work's
- * Scratch), its tree is read here and held but not offered at the root.
- */
 export function useProjectMenuSource({
   projectId,
   title,
@@ -75,14 +56,8 @@ export function useProjectMenuSource({
   own,
 }: {
   projectId: string;
-  /** The root heading: the project's title. */
   title: string;
-  /** The Scratch to offer at the root, or null when no chat or Work is in view. */
   scratch: ScratchSource | null;
-  /**
-   * The own area's scheme and owner, and what to call it when the root does not
-   * offer it; null when there is none (the menu opens at the root).
-   */
   own: {
     scheme: ProjectContextTreeScheme;
     owner: ContextOwner;
@@ -250,7 +225,6 @@ export function useProjectMenuSource({
   };
 }
 
-/** What a menu calls an area outside the root's: "Scratch for <Work>", or the area's name. */
 export function useOwnAreaHeading(
   projectId: string,
   own: { scheme: ProjectContextTreeScheme; owner: ContextOwner } | null,
@@ -259,7 +233,6 @@ export function useOwnAreaHeading(
   const workId = own?.owner.workId;
   const rootThreadId = own?.owner.rootThreadId;
   const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
-  // A document's owner names its own area: the Work, or the chat whose Scratch it is.
   const lineageTitle = useLineageTitle(projectId, rootThreadId ? { rootThreadId } : null);
   const ownerName = work ? nameOf(work) : lineageTitle;
   if (!own) return "";

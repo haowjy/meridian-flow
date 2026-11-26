@@ -1,8 +1,3 @@
-/**
- * Late-bound observer seams for the thread WebSocket and the Loro room sockets. The transports
- * call a tap inline, so a tap catches its own failures and never throws.
- */
-
 import type { ProtocolMessage } from "loro-protocol";
 
 export type WireDirection = "client_to_server" | "server_to_client";
@@ -39,7 +34,6 @@ export function notifyThreadSocketClose(
   currentThreadTap?.onSocketClose(socketEpoch, code, wasClean);
 }
 
-/** Late-bound observer seam for each Loro room socket: its lifecycle and every decoded message. */
 export interface LoroWireTap {
   onMessage(
     direction: WireDirection,

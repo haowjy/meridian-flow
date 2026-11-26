@@ -1,5 +1,3 @@
-// Preflight and mutation of resolved block-operation and structural edits.
-
 import type { ParsedContent } from "@meridian/markup";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -40,7 +38,6 @@ interface ApplyAccumulator {
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 
-/** Mutate an agent-local document without rendering; the write owner snapshots and reports. */
 export function applyEdits(
   doc: DocHandle,
   model: AgentEditModel,

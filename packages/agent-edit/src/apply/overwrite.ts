@@ -1,5 +1,3 @@
-// Whole-document overwrite: the correspondence a `create` with overwrite=true resolves, also
-// applied directly to a host's document for a bound write that is not an actor's mutation.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
@@ -14,10 +12,6 @@ import {
 import { applyEdits } from "./apply-edits.js";
 import type { ApplyTransactionOrigin } from "./types.js";
 
-/**
- * Rewrite every block of `ctx.doc` as `written`, assigned against the blocks it
- * replaces; `empty` content removes them all. Unchanged blocks stay as they are.
- */
 export function resolveOverwrite(
   ctx: ResolveWriteContext & { doc: DocHandle },
   documentAddress: DocumentAddress,
@@ -32,19 +26,11 @@ export function resolveOverwrite(
   );
 }
 
-/**
- * Overwrite `doc` with nodes whose refs are already assigned (a host's bound
- * whole-document write, contract §6.2), under its owner's lock: the same
- * correspondence a `create` with overwrite=true resolves, so blocks left as
- * they were keep their items. An empty document, or one that reads as one blank paragraph,
- * takes the nodes as an insertion.
- */
 export function overwriteWithAssigned(input: {
   doc: DocHandle;
   model: AgentEditModel;
   codec: AgentEditCodec;
   documentId: string;
-  /** Source of `blocks`; never reparsed. */
   content: string;
   blocks: readonly Block[];
   origin?: ApplyTransactionOrigin;

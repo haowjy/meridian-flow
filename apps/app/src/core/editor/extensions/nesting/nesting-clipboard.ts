@@ -1,16 +1,8 @@
-/**
- * Lists and quotes on the clipboard. Other apps read and write them as `ul`, `ol`, `li` and
- * `blockquote` around blocks; here they are blocks that carry their nesting. `nestDom` wraps
- * copied blocks in the containers `nestTree` reads from them, and `flattenDom` unwraps pasted
- * containers into blocks that carry `data-` nesting attributes, which the blocks' parse rules
- * read.
- */
 import { isNested, type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
 import { DOMSerializer, type Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 
 export const NESTING_DATA_ATTRIBUTES = ["data-path", "data-kind", "data-marker", "data-start"];
 
-/** Elements that become a block of their own. A `div` holding blocks is only a wrapper. */
 const BLOCK_ELEMENTS = new Set([
   "p",
   "h1",
@@ -27,11 +19,9 @@ const BLOCK_ELEMENTS = new Set([
 ]);
 const LIST_ELEMENTS = new Set(["ul", "ol"]);
 const CONTAINERS = "ul, ol, blockquote";
-/** Cells hold blocks that are a sequence of their own: a path never crosses into them. */
 const SEQUENCE_BOUNDARIES = "td, th";
 
 type ItemFacts = { ordered: boolean; start: number | null };
-/** Hands a block on with the path it sits at, outermost container first. */
 type Emit = (block: Element, path: string) => void;
 
 function isElement(node: Node, names: ReadonlySet<string>): node is Element {
@@ -76,10 +66,6 @@ function taskMarker(item: Element): "todo" | "done" | null {
   return null;
 }
 
-/**
- * The blocks among `nodes`, at `path`. Loose words between blocks become a paragraph. A quote
- * right after a quote starts a new one (`|`), so two quotes stay two.
- */
 function walkBlocks(nodes: readonly Node[], path: string, emit: Emit, document: Document): void {
   let inline: Node[] = [];
   let previous: Node | null = null;
@@ -107,7 +93,6 @@ function walkBlocks(nodes: readonly Node[], path: string, emit: Emit, document: 
         first = false;
       };
       walkBlocks([...node.childNodes], `${path}>`, quoted, document);
-      // An empty quote still holds a line.
       if (first) quoted(document.createElement("p"), `${path}>`);
       previous = node;
     } else if (isElement(node, BLOCK_ELEMENTS)) {
@@ -183,7 +168,6 @@ function walkItem(
   if (!opened) own(document.createElement("p"), itemPath);
 }
 
-/** The outermost lists and quotes in their sequences, in document order. */
 function outermostContainers(root: Element): Element[] {
   return [...root.querySelectorAll(CONTAINERS)].filter((container) => {
     const around = container.parentElement?.closest(`${CONTAINERS}, li, ${SEQUENCE_BOUNDARIES}`);
@@ -191,11 +175,6 @@ function outermostContainers(root: Element): Element[] {
   });
 }
 
-/**
- * Unwraps every list and quote under `root` into its blocks, each carrying `data-path`, and
- * on an item's first block `data-marker`, `data-kind` and `data-start`. Nesting attributes the
- * source wrote itself are dropped first, so only what this pass read reaches the parser.
- */
 export function flattenDom(root: Element): void {
   for (const element of root.querySelectorAll(
     NESTING_DATA_ATTRIBUTES.map((name) => `[${name}]`).join(", "),
@@ -203,9 +182,7 @@ export function flattenDom(root: Element): void {
     for (const name of NESTING_DATA_ATTRIBUTES) element.removeAttribute(name);
   }
   const document = root.ownerDocument;
-  // Containers inside a cell are a sequence of their own, reached on a later pass.
   for (let batch = outermostContainers(root); batch.length > 0; batch = outermostContainers(root)) {
-    // Each run of adjacent containers is walked together, so a quote after a quote stays apart.
     const runs: Element[][] = [];
     for (const container of batch) {
       const run = runs.at(-1);
@@ -261,7 +238,6 @@ function nestDom(tree: readonly NestedNode[], blocks: readonly Node[], document:
   return out;
 }
 
-/** The editor's clipboard HTML: blocks in the `ul`, `ol` and `li` other apps expect. */
 export class NestingDOMSerializer extends DOMSerializer {
   serializeFragment(
     fragment: Fragment,

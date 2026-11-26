@@ -1,46 +1,5 @@
-import type { DraftId } from "@meridian/contracts";
-import type { ContextCommandDraft } from "../ports/context-command-transaction.js";
-
-/**
- * Copy: one atomic command per drop, for a selection of roots into one destination.
- *
- * The command reads each source tree once and each tracked document's content once, as the
- * version its surface shows (live, or a draft tab's draft). It then, in order:
- *
- * 1. duplicates every binary's object — bytes leave the database's reach before any row
- *    names them, and their keys are released if no transaction commits to name them;
- * 2. asks the destination adapter to plan the tree (names and identities; a root takes the
- *    device's `copyId` when it sent one), and binds each
- *    document's content for the address its copy will have through
- *    `collab/domain/copied-blocks.ts` — one identity map across the whole selection, so a link
- *    between two roots names both copies. Steps 1-2 and the reads hold no transaction and no
- *    lock: a source room that is not open loads through a second connection, so a transaction
- *    held across the read could starve the pool, and a lock held across them would stall every
- *    writer in the destination for the length of the tree;
- * 3. claims the operation as a `copy` command (`copy-commands.ts`) and, inside it, opens the
- *    command transaction, which takes the destination's Work (the sources are a frozen cut and
- *    are not locked);
- * 4. inserts the plan as one `submit` on the destination's list, which checks under the list's
- *    lock that every root's name is still free. If a concurrent write took one since the plan,
- *    nothing is inserted and the command plans and binds again, now under the lock.
- *
- * Every source and the destination folder are followed by id: a source that moved is copied from
- * where it is, one in Trash from where it was, one whose draft closed from the closed draft. A
- * source that is purged, or a root that would land inside itself, is left out and named in
- * `settled`. A destination in a closed Work stores a `returned` answer and makes nothing. The
- * answer is stored with the command, so a resend reads the same one; another request under the id
- * answers `command_conflict`. An error, or a source whose room has not yet received the client's
- * edits, stores nothing and stays sendable under the same operation ID. A duplicate that arrives
- * while the first attempt is preparing waits for it in this process instead of reading every
- * source again. A resend that does reach the insert (another process) finds its copies' ids taken
- * and answers `conflict`.
- *
- * The answer returns when the rows commit; their projections and link rows are derived after
- * commit without holding the answer. There is no Undo command: Copy's Undo is ordinary
- * deletion of the created identities.
- */
-
 import { setTimeout as delay } from "node:timers/promises";
+import type { DraftId } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type {
   ContextOperationCommand,
@@ -60,6 +19,7 @@ import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";
 import type {
+  ContextCommandDraft,
   ContextCommandScope,
   ContextCommandTransaction,
 } from "../ports/context-command-transaction.js";
@@ -80,44 +40,26 @@ import type {
 import { bindTree, type BoundTree as PlannedCopy } from "./bind-tree.js";
 import type { CopyCommands } from "./copy-commands.js";
 
-/** How long a read waits for the room to receive the edits a client's vector names. */
 const SOURCE_CATCH_UP_MS = 2_000;
 const SOURCE_CATCH_UP_POLL_MS = 100;
 
-/** One selected root, already resolved to its adapter and read view by the route. */
 export interface CopySourceHandoff {
-  /** Canonical address of the root. */
   uri: string;
-  /** The source scheme's copy capability. */
   copy: ContextCopyAdapter;
-  /** Scheme-relative path of the root. */
   path: string;
   view: CopySourceView;
   expected: { kind: "file" | "folder"; nodeId: string };
-  /** The device-minted identity for this root's copy; descendants are server-minted. */
   copyId?: string;
-  /**
-   * The client's own room version (`encodeRoomVersion`), when it holds this document open. Only a file source
-   * carries one; the cut compared against it is the view's room.
-   */
   roomVersion?: Uint8Array;
 }
 
-/** Where a copy lands: the destination parent, resolved to its adapter and path. */
 export interface CopyDestinationHandoff {
-  /** Canonical address of the destination parent folder. */
   uri: string;
-  /** The destination scheme's copy capability. */
   copy: ContextCopyAdapter;
-  /** The destination scheme, for the command transaction's namespace scope. */
   scheme: ContextScheme;
-  /** Scheme-relative path of the destination parent folder. */
   dir: readonly string[];
-  /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
   workScopeId: string | null;
-  /** The folder the writer named by id, and the folders to make under it; `dir` spells where it stands. */
   parent?: { folderId: string; createFolders: readonly string[] };
-  /** The Work's draft this copy lands in, when the destination is a drafted scheme's draft view. */
   draft: ContextCommandDraft | null;
 }
 
@@ -127,22 +69,16 @@ export interface ContextCopyCommandDeps {
   release: Pick<ObjectRelease, "keys">;
 }
 
-/** The command transaction one authenticated caller's port already holds. */
 export interface ContextCopyEnvironment {
   commands: CopyCommands;
   commandTransaction: ContextCommandTransaction;
 }
 
 export interface ContextCopyInput {
-  /** The calling port's bound transaction and receipt owner. */
   environment: ContextCopyEnvironment;
   request: ContextCopyRequest;
   sources: readonly CopySourceHandoff[];
   destination: CopyDestinationHandoff;
-  /**
-   * Resolve an identity destination again under the command's locks. Its answer replaces
-   * the route's when it names the same address; anything else is `stale_target`.
-   */
   resolveDestination?: (uri: string) => Promise<Result<CopyDestinationHandoff, ContextError>>;
 }
 
@@ -182,19 +118,12 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function copy(
     input: ContextCopyInput,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    // The copy works from the selection's outermost roots.
     const selected = { ...input, sources: outermostRoots(input.sources) };
     const { commands, commandTransaction } = input.environment;
-    // A replay has nothing to read: its answer is stored, and receipts are never deleted.
     let replay = await commands.lookup(input.request.operationId);
-    // A duplicate that arrives while the first attempt is still preparing waits for it; the
-    // winner's receipt, when it records one, is then the waiter's answer.
     const release = replay ? null : await holdOperation(input.request.operationId);
     try {
       replay = replay ?? (await commands.lookup(input.request.operationId));
-      // Reading holds no transaction. A source room that is not open loads through a second
-      // connection, so Copies that each held one while reading would starve the pool they
-      // wait on.
       const prepared = replay ? null : await prepare(selected);
       let claimed = false;
       try {
@@ -220,8 +149,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                 },
               );
             } catch (cause) {
-              // The Work lock found the destination's Work closed before anything was written. This
-              // command commits, so the objects the plan duplicated are released here.
               const returned = closedOwnerBounce(cause);
               if (!returned) throw cause;
               await deps.release.keys(putKeys);
@@ -238,10 +165,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
   }
 
-  /**
-   * Read every source, put every binary's bytes, and plan and bind the tree, before any
-   * transaction or lock is taken.
-   */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
     const purged: string[] = [];
@@ -299,12 +222,10 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       ready,
       documents,
       settled,
-      // A destination that cannot take a copy is refused where the destination is rechecked.
       plan: roots.length ? await planAndBind(input.destination, ready, documents) : null,
     });
   }
 
-  /** Plan the tree at the destination and bind every tracked document's content to its plan. */
   async function planAndBind(
     destination: CopyDestinationHandoff,
     roots: readonly CopySourceEntry[],
@@ -338,7 +259,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     });
   }
 
-  /** Put a copy of each binary's bytes; if any put fails, the ones already put are released. */
   async function duplicateBinaries(
     binaries: readonly CopySourceFile[],
   ): Promise<Result<{ binaries: Map<string, DuplicatedBinary>; putKeys: string[] }, ContextError>> {
@@ -394,11 +314,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     return Ok(documents);
   }
 
-  /**
-   * One document's frozen cut as the source surface shows it. When the client holds the
-   * document open its vector is compared with the cut of the view's room, and the read waits
-   * a moment for edits still on their way: typing and a drop are seconds apart, not ordered.
-   */
   async function prepareDocument(
     source: CopySourceHandoff,
     file: CopySourceFile,
@@ -427,9 +342,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           await delay(SOURCE_CATCH_UP_POLL_MS);
           continue;
         }
-        // Like any transient failure this is `io_error`: retryable, and never recorded, so a
-        // replay under the same operation ID reads again instead of being handed the first
-        // answer forever. The reason lets the replica stop after a bounded wait.
         return Err({
           code: "io_error",
           uri: source.uri,
@@ -449,7 +361,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
   }
 
-  /** Under the destination's lock: find the destination again by id, then insert the plan. */
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
@@ -520,7 +431,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   return { copy };
 }
 
-/** A source subtree and the content read for its tracked documents. */
 interface PreparedRoot {
   uri: string;
   snapshot: CopySourceEntry;
@@ -529,12 +439,9 @@ interface PreparedRoot {
 
 interface PreparedDocument {
   file: CopySourceFile;
-  /** Canonical address of the source document, as `metadata.copiedFrom` records it. */
   uri: string;
-  /** The address its links spelled from. */
   holderUri: string | null;
   blocks: readonly PMNode[];
-  /** Where each `ahead:` ref in the cut points now. */
   aheadSettlements: ReadonlyMap<string, string>;
   revision: string | null;
   version: "live" | "draft";
@@ -542,17 +449,11 @@ interface PreparedDocument {
 
 interface PreparedCopy {
   roots: PreparedRoot[];
-  /** The destination namespace this command locks; the sources are a frozen cut, not locked. */
   sourceIds: string[];
-  /** The duplicated objects' keys, released if no row commits to name them. */
   putKeys: string[];
-  /** The source trees with each binary rewritten to the object the copy duplicated. */
   ready: CopySourceEntry[];
-  /** Every tracked document's read, by source document id. */
   documents: Map<string, PreparedDocument>;
-  /** What the copy left out, named for `settled`. */
   settled: Settlement[];
-  /** The destination's plan and the content bound to it; null when no source is left to copy. An error is answered once the destination is rechecked. */
   plan: Result<PlannedCopy, ContextError> | null;
 }
 
@@ -622,10 +523,8 @@ function binariesOf(roots: readonly PreparedRoot[]): CopySourceFile[] {
   );
 }
 
-/** The object a copy put for one binary, and whether its preview came along. */
 type DuplicatedBinary = { storageUrl: string; hasPreview: boolean };
 
-/** Rewrite each binary's source entry to the object the copy duplicated. */
 function seededRoots(
   roots: readonly PreparedRoot[],
   binaries: ReadonlyMap<string, DuplicatedBinary>,
@@ -650,7 +549,6 @@ function toEntry(entry: CopyCreatedEntry): CopyContextEntryCreated {
   };
 }
 
-/** Whether the destination is the source folder or inside it: nothing can land inside what it copies. */
 function encloses(source: CopySourceHandoff, destinationUri: string): boolean {
   if (source.expected.kind !== "folder") return false;
   const target = trimTrailingSlash(destinationUri);
@@ -662,15 +560,10 @@ function trimTrailingSlash(uri: string): string {
   return uri.endsWith("/") ? uri.slice(0, -1) : uri;
 }
 
-/** Whether the client's copy holds an op the server's cut lacks, in any doc of the room. */
 function behind(client: RoomVersion, server: Uint8Array): boolean {
   return !versionCovers(decodeRoomVersion(server), client);
 }
 
-/**
- * The Work lock found the destination's owner closed (an archived or deleted Work, a chat in
- * Trash): the `returned` the command stores in place of the throw. Any other cause is undefined.
- */
 function closedOwnerBounce(cause: unknown): Settlement[] | undefined {
   if (cause instanceof LineageDraftsUnavailableError)
     return [{ rule: "returned", why: "chat_frozen" }];

@@ -135,8 +135,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
       if (member !== undefined) hangsOff.set(id, member);
     }
 
-  // The blocks the fork can read a mark on that Live's read of them does not show: any other
-  // block the fork shows reads Live's text under Live's node.
   const forkReads = [
     ...new Set([...draft.texts.keys(), ...overridden, ...insertedOrRemoved]),
   ].filter((id) => F.shown.has(id));
@@ -148,8 +146,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
       ownBodies.push(comment);
       continue;
     }
-    // Live has no body to show: every block holding the mark on either side reads differently
-    // for the body alone, so the body goes with them.
     const carriers = [
       ...new Set([...forkReads.filter((id) => sides.fork.carried(id).has(comment)), ...inLive]),
     ];
@@ -338,8 +334,6 @@ function pressedOf(
       const { doc, before, after } = wrote.structure;
       for (const [name, keys] of valuesOf(doc, before, after))
         for (const [key, value] of keys) {
-          // A `pieces` record goes with the change that holds one of its blocks, or else with
-          // the change its component connects to.
           const member = membersOf(name, key).find((id) => index.has(id)) ?? retired.get(key);
           const { values } = edits[index.get(member as string) as number];
           const into = values.get(name) ?? new Map();
@@ -416,9 +410,6 @@ export function applyBlocks(
     liveTexts.set(key, spanOf(change));
   }
 
-  // What the removal read of one text doc: what the writer was shown of Live, capped at what Live held before
-  // the press, plus the draft's own ops the press brings, which every peer receiving the press
-  // holds and must count as read.
   const seenOf = (key: DocKey): DocVersion => {
     const base = live.textOf(key);
     const before = held.get(key) ?? (base ? docVersion(base) : new Map());

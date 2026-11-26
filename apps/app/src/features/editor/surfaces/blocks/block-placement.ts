@@ -1,29 +1,3 @@
-/**
- * Where the handle and the drop line go, measured on a frame rather than in
- * render.
- *
- * Both readings are `getBoundingClientRect` and `getComputedStyle` against a
- * DOM ProseMirror has only just rewritten, and the surface re-renders on every
- * transaction — the writer's own keystrokes, a peer typing, an AI write
- * landing. Measuring them in render forced a synchronous layout on each one.
- * A frame coalesces the burst, and the state only moves when the numbers did,
- * so a transaction that changed nothing on screen costs one measurement and no
- * render at all.
- *
- * A scroll is no longer one of the things that moves these numbers: they are in
- * the manuscript overlay's coordinates, and the pane carries the handle and the
- * line through a scroll itself (`features/editor/chrome/manuscript-overlay.ts`).
- *
- * WHICH signals mean "measure again" is not this lane's question. A block
- * travels for reasons a `ResizeObserver` on one element never sees — three
- * paragraphs inserted above, the pane scrolling under a hand that never moved,
- * a diagram finishing its render — and every floating surface in the editor
- * needs the same list, so they share one: `watchManuscriptLayout`.
- *
- * Its own module because it changes for its own reasons: geometry and frame
- * timing, not pointer capture and not what a menu row says.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useLayoutEffect, useState } from "react";
 
@@ -89,7 +63,6 @@ function samePlacement(a: BlockChromePlacement, b: BlockChromePlacement): boolea
   );
 }
 
-/** True when `seamIndex` is an edge of the held block's run, or inside it. */
 function restingSeam(editor: Editor, seamIndex: number): boolean {
   const held = draggedBlockPos(editor.state);
   if (held === null) return false;

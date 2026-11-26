@@ -78,7 +78,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           seedFromMarkdown: async (documentId: string, { markdown }: { markdown: string }) => {
             await beforeCollabWrite?.();
             markdownByDocument.set(documentId, markdown);
-            // This sync fake supplies the collab-owned projection effect.
             await db
               .update(documents)
               .set({ sizeBytes: Buffer.byteLength(markdown, "utf8"), updatedAt: new Date() })
@@ -97,7 +96,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             await hook();
           };
         },
-        /** A rename or move to `destination`, as the records a tree command makes. */
         move: (nodeId: string, destination: string) => {
           const parts = destination.split("/");
           return context.tree.command({
@@ -139,7 +137,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const write = context.write("chapter", "Revised chapter");
       await writeStarted;
-      // The rename waits for the write's document key, then lands after it.
       const renamed = move(chapter, "renamed chapter.txt");
       releaseWrite();
       await expect(renamed).resolves.toMatchObject({ ok: true });

@@ -1,5 +1,3 @@
-// Hand-run probe of agent-edit on Loro (design §5) over the in-memory rooms, with a scripted model.
-// Run: pnpm --filter @meridian/agent-edit exec tsx .context/qa/loro-write.probe.ts
 import { type DocumentRoom, parseLoroRoomName } from "@meridian/contracts/protocol";
 import { encodeEnvelope, freshPeerId } from "@meridian/document-model";
 import { setCommentBody } from "@meridian/document-model/test-support";
@@ -36,11 +34,6 @@ const paragraph = (id: string, text: string) =>
   schema.nodes.paragraph.create({ id }, text ? schema.text(text) : null);
 const texts = (blocks: readonly PMNode[]) => blocks.map((block) => block.textContent);
 
-/**
- * A chat: one thread whose frontiers chain from result to result, as the host records them. Its
- * lookups answer by document, the latest read in any of the document's rooms (Live or a fork), so
- * a chat that switches between Live and Draft keeps what it read.
- */
 function chat(threadId: string, turnId: string) {
   const frontiers = new Map<string, ObservationFrontier>();
   const shown = new Map<string, ShownBlock[]>();
@@ -60,7 +53,6 @@ function chat(threadId: string, turnId: string) {
   });
   return {
     turnId,
-    /** A new request: the model plans on what every result so far showed. */
     request() {
       planning = new Map(frontiers);
       planningShown = new Map([...shown].map(([doc, blocks]) => [doc, [...blocks]]));
@@ -82,7 +74,6 @@ function chat(threadId: string, turnId: string) {
 }
 
 const host = createInMemoryLoroHost(schema);
-/** A core for a Live chat (`null`) or a Draft chat on `draftId`, as the server's host builds one. */
 const coreFor = (draftId: string | null) => {
   const chatRooms = host.chat(draftId);
   return createLoroEditCore({
@@ -100,8 +91,6 @@ const file = (documentId: string) => ({ file: `${documentId}.md`, documentId });
 const text = (outcome: WriteOutcome) => renderAgentEditResult(outcome.result);
 const run = <T>(work: () => Promise<T>) => host.command(work);
 
-// 1. A chat reads a chapter, the writer edits a sentence, the chat rewrites another sentence of the
-// same paragraph: the writer's sentence stays, and the result names the writer's change.
 await host.seed("ch1", [
   paragraph("p1", "The rain fell on the roof. Mara waited by the door."),
   paragraph("p2", "Nobody came that night."),
@@ -153,7 +142,6 @@ check(
 );
 check(host.records.length === 1 && host.records[0].delta !== null, "the write's record holds its delta", host.records);
 
-// The write landed as an offline peer's edit: its ops carry the turn's commit message.
 c1.request();
 const write2 = c1.record(
   await run(() =>
@@ -170,7 +158,6 @@ check(
   write2.result.concurrent,
 );
 
-// 2. Turn Undo takes the AI's words out and leaves the writer's.
 await host.writerEdit("ch1", (blocks) =>
   blocks.map((block) =>
     block.attrs.id === "p2" ? paragraph("p2", "Nobody came that night, or the next.") : block,
@@ -187,11 +174,9 @@ check(
   afterUndo,
 );
 
-// 3. `format: "edits"` lists the chat's edits.
 const edits = await core.read({ ...file("ch1"), format: "edits" } as never, c1.context());
 check(!edits.isError && /e1/.test(text(edits)) && /e2/.test(text(edits)), "edits lists e1 and e2", text(edits));
 
-// 4. Another chat's change is named by its chat; a removal by the writer is listed.
 const c2 = chat("thread-2", "t-other");
 c2.request();
 const read2 = c2.record(await core.read({ ...file("ch1") } as never, c2.context()));

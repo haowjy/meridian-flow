@@ -26,7 +26,6 @@ const url = "https://github.com/example/pack";
 const FILES = 200;
 const FILE_BYTES = 20_000;
 
-/** One ustar header block; GitHub wraps every entry in `<owner>-<repo>-<shortsha>/`. */
 function header(name: string, size: number, type: "0" | "5"): Buffer {
   const block = Buffer.alloc(512);
   const field = (value: string, offset: number, length: number) =>
@@ -49,7 +48,6 @@ function header(name: string, size: number, type: "0" | "5"): Buffer {
 const root = `pack-${sha}/`;
 const parts: Buffer[] = [header(root, 0, "5")];
 for (let index = 0; index < FILES; index += 1) {
-  // Random bytes, so gzip can't shrink the download below the expanded size.
   const body = randomBytes(FILE_BYTES);
   parts.push(header(`${root}skills/s${index}.md`, body.length, "0"), body);
   parts.push(Buffer.alloc((512 - (body.length % 512)) % 512));
@@ -57,7 +55,6 @@ for (let index = 0; index < FILES; index += 1) {
 parts.push(Buffer.alloc(1024));
 const tarball = gzipSync(Buffer.concat(parts));
 
-/** Answers the two requests a root URL makes, streaming the tarball in 64 KB chunks. */
 const fakeGithub: typeof fetch = async (input, init) => {
   await sleep(5);
   if (init?.signal?.aborted) throw init.signal.reason;
@@ -86,7 +83,6 @@ assert.equal(whole.commit, sha);
 assert.equal(Object.keys(whole.files).length, FILES);
 console.log(`unlimited: ${FILES} files at ${sha.slice(0, 7)}`);
 
-/** A clock that advances 1 s per reading, so the 60 s limit runs out mid-stream on every machine and its real timer never fires. */
 function tickingClock(): () => number {
   let ms = 0;
   return () => {

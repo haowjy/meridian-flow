@@ -1,11 +1,3 @@
-/**
- * Any block sequence the nesting attributes can express writes to Markdown that parses to
- * blocks which write the same text. The risk it guards is a state two writers can produce that
- * cannot be written or read back.
- *
- * A block that opens two lists at once (`- - text`) has no block for the outer item, so the
- * first read adds an empty paragraph for it; the check starts from the first read.
- */
 import { describe, expect, it } from "vitest";
 import { components, schema, t } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";

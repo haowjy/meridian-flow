@@ -1,14 +1,3 @@
-/**
- * A picture on the wire, in its two spellings.
- *
- * Plain `![alt](src)` is the whole story for a picture at its natural size,
- * which is nearly all of them. A picture the writer resized carries a width
- * Markdown has nowhere to put, so it escalates to the raw `<img>` tag in
- * [`image-html.ts`](./image-html.ts) — the same ladder a table climbs when
- * pipes cannot hold its spans. Clearing the size walks back down, and the
- * result is byte-identical to what the picture spelled before it was touched.
- */
-
 import { type MdastImage, stringifyBlock } from "../../helpers.js";
 import type { BlockCodec, ParseContext, PMNode } from "../../types.js";
 import {

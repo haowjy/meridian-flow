@@ -29,11 +29,7 @@ export function openDocumentFromDraftGroup(group: {
   const { scheme, path } = location;
   const filetype = filetypeForPath(path);
   const classification = classifyFiletype(filetype);
-  // Draft review only exists for tracked editable documents; a path that
-  // doesn't resolve to a schema has no editor surface to synthesize.
   if (classification.kind !== "tracked") return null;
-  // Tab names are the path basename, the stored name (tree `nameFromPath`
-  // convention); the group's `documentName` is that same name.
   const basename = readSegment(path.slice(path.lastIndexOf("/") + 1)).name;
   return {
     kind: "tracked",

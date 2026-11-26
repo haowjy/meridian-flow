@@ -60,15 +60,11 @@ export function useDraftAddressSync({
   writeItemKey,
 }: {
   projectId: string;
-  /** The chat on screen, whose Work's drafts the shell shows under None. */
   chatThreadId: string | null;
-  /** The rendered history entry's key. */
   locationKey: string | undefined;
-  /** The draft the address's item reviews (`addressDraftOwner`); null without one. */
   draftOwner: string | null;
   address: {
     itemKey: string | undefined;
-    /** Main's document, as the address resolved it; undefined when main holds no document. */
     documentId: string | undefined;
     admission: DraftAddressAdmission | undefined;
   };
@@ -81,7 +77,6 @@ export function useDraftAddressSync({
     entryKey === undefined || !documentId
       ? undefined
       : JSON.stringify([arrivalOf(history, entryKey), documentId]);
-  /** The arrival, and main's document in it, whose address main's view has taken in. */
   const arrived = useRef<string | undefined>(undefined);
   // What main's document shows, by the one rule: the address follows it. `shownOf` reads the
   // store when called, so `stored` is what re-runs the follow when the pin moves (a change focused).
@@ -95,7 +90,6 @@ export function useDraftAddressSync({
     arrived.current = locationKey;
     const next =
       address.itemKey && draftOwner ? { draftId: draftOwner, itemKey: address.itemKey } : null;
-    // An address naming the scope's draft is the toggle's Draft: every page shows its draft.
     if (next && next.draftId === scopeDraftId)
       writeTreeVersionChoice(accountId, projectId, "draft");
     const current = readDocumentView(accountId, projectId, documentId).pin;

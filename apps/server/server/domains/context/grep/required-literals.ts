@@ -6,17 +6,11 @@
  * `\Q`) yields nothing.
  */
 
-/** Shortest literal worth a prefilter: one character is in nearly every document. */
 const MIN_LENGTH = 2;
 
-/** `(?i)`, `(?-m)`, `(?s:`: flags change what every later literal means. */
 const FLAG_GROUP = /\(\?(?!:|P?<[A-Za-z_])/u;
 const REPEAT = /^\{\d+(?:,\d*)?\}/u;
 
-/**
- * One required literal per top-level alternative, or undefined when any
- * alternative has none (it could match without any of the others).
- */
 export function requiredLiterals(pattern: string): string[] | undefined {
   if (FLAG_GROUP.test(pattern) || pattern.includes("\\Q")) return undefined;
   const chars = Array.from(pattern);

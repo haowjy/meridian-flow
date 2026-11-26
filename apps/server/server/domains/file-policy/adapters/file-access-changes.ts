@@ -1,7 +1,3 @@
-/**
- * File-access change buses: Postgres NOTIFY across instances (the transport
- * thread events already use), and an in-process bus for memory compositions.
- */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -29,7 +25,6 @@ function listeners() {
 }
 
 export type PgFileAccessChanges = FileAccessChanges & {
-  /** Starts hearing other instances' (and this one's) committed changes. */
   listen(): Promise<{ unlisten: () => Promise<void> }>;
 };
 
@@ -41,7 +36,6 @@ export function createPgFileAccessChanges(input: {
   return {
     subscribe: local.subscribe,
     async publish(change) {
-      // NOTIFY inside the ambient transaction is delivered at its commit.
       await currentDrizzleDb(input.db).execute(
         sql`select pg_notify(${CHANNEL}, ${JSON.stringify(change)})`,
       );
@@ -63,7 +57,6 @@ export function createPgFileAccessChanges(input: {
   };
 }
 
-/** One process, no transactions: a change is heard as soon as it is published. */
 export function createLocalFileAccessChanges(): FileAccessChanges {
   const local = listeners();
   return {

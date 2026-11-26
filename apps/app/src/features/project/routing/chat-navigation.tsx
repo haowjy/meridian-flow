@@ -116,8 +116,6 @@ export function useProjectChatNavigation({
           ? ({ kind: "applied" } as const)
           : go({ kind: "chat-recents" }, { replace: options?.replace ?? false }),
       acceptCreatedChat: (threadId: string) => {
-        // Main's composer navigates and the arrival records the chat; the side's composer sends
-        // while main is not a new chat, and the chat stays beside.
         if (latest.current.mainKind === "new")
           void go({ kind: "chat", chatId: threadId }, { replace: false });
         else remember(threadId);

@@ -1,18 +1,8 @@
-/**
- * Takes a text selection out of the document without joining the blocks it
- * crosses. A textblock the range only reaches into keeps its unselected text
- * and its type; prose whitespace beside the removed text is trimmed. A block
- * the range covers entirely goes, and so do the containers that would be left
- * empty (a list item, a list). `deleteSelection` would merge the last block
- * into the first.
- */
-
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
 
 import { isTable, isTableCell } from "./point-landing";
 
-/** True when `selection` crosses textblocks, which is what this removes. */
 export function crossesTextblocks(selection: Selection): boolean {
   return (
     selection instanceof TextSelection &&
@@ -158,11 +148,6 @@ function removableChild(doc: PMNode, pos: number): RemovableChild | null {
   return null;
 }
 
-/**
- * Removes the block at `pos`, and the ancestors it would leave empty. A block
- * its parent can't do without (a list item's first paragraph, the document's
- * last block) keeps its place, emptied.
- */
 function removeBlock(transaction: Transaction, pos: number): void {
   const removable = removableChild(transaction.doc, pos);
   if (removable) {

@@ -16,8 +16,6 @@ import { selectedObject } from "./object-selection";
 
 let fixture: StandaloneEditor | null = null;
 
-// Arrow keys reach gapcursor, which measures the line to decide whether Down
-// leaves the block. jsdom cannot measure.
 installJsdomLayout();
 
 afterEach(() => {
@@ -70,7 +68,6 @@ function press(instance: Editor, init: KeyboardEventInit): boolean {
   return event.defaultPrevented;
 }
 
-/** One printable keystroke, the way ProseMirror hears one. */
 function typeCharacter(instance: Editor, character: string): void {
   instance.view.dom.dispatchEvent(
     new KeyboardEvent("keypress", {
@@ -107,8 +104,6 @@ describe("Enter on a selected object", () => {
     select(instance, positionOf(instance, "code_block"));
     expect(press(instance, { key: "Enter" })).toBe(true);
 
-    // No lane has registered the diagram surface yet: the object is inert,
-    // not a place where Enter quietly rewrites the manuscript.
     expect(blockTypes(instance)).toEqual(before);
   });
 });
@@ -116,13 +111,10 @@ describe("Enter on a selected object", () => {
 describe("Delete on a selected object", () => {
   it("takes the whole table rather than blanking its cells", () => {
     const instance = mount([paragraph("above"), table, paragraph("below")]);
-    // The join reflex: caret at the end of the line above, Delete to pull the
-    // next line up. The first press lands on the table as an object.
     instance.commands.setTextSelection("above".length + 1);
 
     press(instance, { key: "Delete" });
     expect(selectedObject(instance.state)?.node.type.name).toBe("table");
-    // Seen before it is destroyed: the second press is the destructive one.
     expect(instance.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`)).not.toBeNull();
 
     press(instance, { key: "Delete" });
@@ -131,9 +123,6 @@ describe("Delete on a selected object", () => {
 });
 
 describe("a printable character beside a selected object", () => {
-  // Closing an image's full-screen view leaves the picture node-selected, and
-  // one letter used to replace it. A letter is not a destructive verb.
-
   it("types after the picture rather than over it", () => {
     const instance = mount([
       {
@@ -155,8 +144,6 @@ describe("a printable character beside a selected object", () => {
 });
 
 describe("a peer deleting the selected object", () => {
-  // The rebuild restores a node selection by position alone, so it used to land
-  // on what followed the object, and one letter replaced that text.
   it.each<[string, JSONContent[], string]>([
     [
       "image",
@@ -189,7 +176,6 @@ describe("a peer deleting the selected object", () => {
     pair.peer.view.dispatch(pair.peer.state.tr.delete(at, at + (object?.nodeSize ?? 0)));
 
     pair.sync();
-    // The letter a keystroke commits, not a keypress: jsdom can't type at a caret.
     pair.local.view.dispatch(pair.local.state.tr.insertText("Z"));
 
     expect(pair.local.state.doc.textBetween(0, pair.local.state.doc.content.size, "\n")).toBe(

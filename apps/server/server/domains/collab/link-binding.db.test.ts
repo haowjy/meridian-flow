@@ -54,7 +54,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     const schema = buildDocumentSchema();
     const model = loroModel(schema);
-    /** Stored refs in document order, as the Live room holds them. */
     const storedRefs = (rooms: Rooms, documentId: string) =>
       withLive(rooms, documentId, (docs) =>
         walkLinkOccurrences(
@@ -103,7 +102,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       });
       const app = composeAppServices(ports);
       const { rooms } = ports.documentSync;
-      // Runs once, after the next whole-document write is bound and before it applies.
       let afterNextBind: (() => Promise<void>) | null = null;
       const bindMarkdown = ports.documentSync.bindMarkdown;
       ports.documentSync.bindMarkdown = async (input) => {
@@ -127,10 +125,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         return settled.value;
       };
       const read = async (uri: string) => (await ok(port.read(uri))).content;
-      /**
-       * An independent writer's edit, made from the document as it is now
-       * (by default: new prose, link removed); admitting it is returned.
-       */
       const writerEdit = async (
         documentId: string,
         edit = (top: readonly ShapeBlock[]): ShapeOp[] => [
@@ -171,8 +165,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const targetRef = `doc:${target}`;
         let soon: string | null = null;
 
-        // Each door registers any ahead ref it mints. The registry refuses to run inside a
-        // transaction, so a row only exists if the door bound before opening its own.
         const doors: {
           door: string;
           act: () => Promise<string>;
@@ -253,8 +245,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           },
           ...[writer, writerInThread].flatMap((actor) =>
             (["before", "after"] as const).map((when) => ({
-              // Desired state: an edit admitted before the save applies is replaced; one made
-              // against the old state and admitted after merges into the blocks the save kept.
               door: `a save and a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
               act: async () => {
                 const uri = `manuscript://merge-${when}-${"threadId" in actor.origin}`;
@@ -290,8 +280,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                   writerInThread,
                 ),
               );
-              // Only the new paragraph and word are the saver's; every paragraph the save kept
-              // keeps its items, and so the authorship it had.
               const saved = await withLive(rooms, id, textVersions);
               const freshUnits = [...saved].reduce(
                 (sum, [key, version]) => sum + opsBeyond(version, base.get(key)),
@@ -303,8 +291,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             refs: () => [],
             markdown: "Inserted.\n\nFirst para.\n\nSecond para changed here.\n\nThird.\n",
           },
-          // A2-R1: a save is an ordered block correspondence against the document, not a
-          // positional diff, so a kept paragraph between changed ones stays itself.
           ...[writer, writerInThread].flatMap((actor) =>
             (["before", "after"] as const).map((when) => ({
               door: `a save inserting above a kept paragraph keeps its items, anchors, and an edit to it admitted ${when} the save${"threadId" in actor.origin ? " (in a thread)" : ""}`,
@@ -389,7 +375,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           },
         ];
 
-        // Every door runs and reports; later doors build on earlier ones' documents.
         const failures: string[] = [];
         for (const { door, act, refs: expectedRefs, markdown } of doors) {
           try {
@@ -410,7 +395,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(failures).toEqual([]);
         expect(await registeredAddress(soon)).toBe(`manuscript://soon in ${projectId}`);
 
-        // A door that forgot to hoist fails at once instead of waiting on its own locks.
         await expect(
           runInDrizzleTransaction(db, () =>
             bindMarkdown({
@@ -428,7 +412,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
 type Rooms = import("./contracts.js").CollabTransport["rooms"];
 
-/** Runs `read` on a copy of the document's Live room, and frees the copy. */
 async function withLive<T>(rooms: Rooms, documentId: string, read: (docs: RoomDocs) => T) {
   const docs = await rooms.read({ kind: "live", documentId });
   try {
@@ -444,7 +427,6 @@ const idAt = (top: readonly ShapeBlock[], index: number): BlockId => {
   return block.id;
 };
 
-/** The units of a top-level textblock: its characters and inline nodes. */
 const lengthAt = (top: readonly ShapeBlock[], index: number) => {
   const block = top[index];
   if (block?.kind !== "text") throw new Error(`block ${index} is not a textblock`);
@@ -457,11 +439,9 @@ const whole = (top: readonly ShapeBlock[], index: number, text: string) => ({
   content: [{ kind: "text" as const, text, marks: {} }],
 });
 
-/** Each text doc's version, by block id. */
 const textVersions = (docs: RoomDocs) =>
   new Map([...docs.texts].map(([key, doc]) => [key, doc.oplogVersion()]));
 
-/** How many ops `version` holds that `base` does not. */
 function opsBeyond(version: VersionVector, base: VersionVector | undefined): number {
   let count = 0;
   for (const [peer, counter] of version.toJSON()) count += counter - (base?.get(peer) ?? 0);

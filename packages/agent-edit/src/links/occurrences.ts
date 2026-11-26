@@ -1,16 +1,7 @@
-/**
- * Rebuilding ProseMirror nodes with new attrs for some of their link
- * occurrences (links, `image`, `figure`), found by `walkLinkOccurrences`.
- *
- * Only the named occurrences change: a link run's text nodes get a new link
- * mark, an image or figure gets a new `src`/`ref`. Every other node is
- * reused, so an unchanged block stays `.eq` to its old self.
- */
 import type { PMNode } from "@meridian/markup";
 import type { LinkOccurrence } from "@meridian/markup/links";
 import { Fragment, type Mark } from "prosemirror-model";
 
-/** Stored link attrs; an image or figure's `src` travels as `href`. */
 export interface OccurrenceAttrs {
   ref: string | null;
   href: string;
@@ -59,7 +50,6 @@ function rebuildNode(node: PMNode, edits: readonly Edit[]): PMNode {
     const [index, ...rest] = edit.path;
     if (index === undefined) continue;
     if (rest.length === 0 && node.inlineContent) {
-      // A link run starts here and covers `count` siblings; an image is one node.
       for (let offset = 0; offset < edit.count; offset += 1) {
         const child = children[index + offset];
         if (child) children[index + offset] = withLink(child, edit.attrs);

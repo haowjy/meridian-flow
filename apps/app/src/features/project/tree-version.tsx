@@ -45,37 +45,24 @@ import { useScopeDraftOwner } from "./use-work-scope";
 
 export type ShellTreeVersion = {
   version: TreeVersion;
-  /** The Work's tree whichever way the toggle stands, for review; null with no draft. */
   draftVersion: TreeVersion | null;
   showing: "live" | "draft";
-  /** The toggle is offered: a picked Work has drafts to show, or the chat's draft has changes. */
   offered: boolean;
-  /** The draft the toggle shows. */
   draftId: string;
-  /** The picked Work's drafts, which the version chip lists and makes; null for a chat's own. */
   workDrafts: WorkDraftsState | null;
-  /** Shows one of the picked Work's drafts: the toggle goes to Draft on it. */
   pick: (draftId: string) => void;
-  /** The shown draft is deleted: the toggle goes to Live, and Draft is the Work's default again. */
   leave: () => void;
-  /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
   work: Work | null;
-  /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
   name: string | null;
-  /** The documents and folders the Work changes: marked in the tree on Live. Never a count. */
   changed: ReadonlySet<string>;
   /**
    * What the Work's review count says: its changed documents and folders, the Changes list's
    * items, less those a press has in flight.
    */
   changeCount: number;
-  /** The Work's drafts a press takes whole while it is in flight: they count none. */
   pressedDrafts: ReadonlySet<string>;
-  /** The Work's tree changes, when its list is open; null with no draft. */
   tree: WorkTreeChanges | null;
-  /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
-  /** Sets the toggle: every page that has the Work's draft shows it, or Live. */
   show: (next: "live" | "draft") => void;
 };
 
@@ -119,7 +106,6 @@ export function useDraftTreeVersion(
   return draftId ? draftTreeVersion(draftId, lifecycle) : null;
 }
 
-/** The owner key of a new chat on screen: a scope whose drafts nobody holds yet. */
 const NO_OWNER = "new-chat";
 
 /**
@@ -168,18 +154,11 @@ export function TreeVersionProvider({
 }: {
   projectId: string;
   chatThreadId: string | null;
-  /** A new chat's composer is on screen: under None, a scope with no drafts. */
   newChat: boolean;
   children: ReactNode;
 }) {
   const accountId = useAccountId();
   const { draftId, work, picked, known, workDrafts } = useScopeDraftOwner(projectId, chatThreadId);
-  // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before and
-  // show the new owner's (`enterScope`). A new chat on screen has no drafts, so it is a change to
-  // no owner. "" with no new chat, or any owner before the Works list loads, is no owner known
-  // yet (no chat on screen, or its row or the Works list still loading), which changes nothing. A layout effect, so the address's arrival after it in this
-  // commit wins. A Work pick has already run `enterScope` with the scope's write, and this run
-  // finds nothing to change.
   const queryClient = useQueryClient();
   const ownerKey = known ? draftId || (newChat ? NO_OWNER : "") : "";
   // A move between one picked Work's drafts leaves the toggle as the move set it: a pick puts it
@@ -219,19 +198,15 @@ export function TreeVersionProvider({
     () => new Set(pressedKey ? pressedKey.split(",") : []),
     [pressedKey],
   );
-  // The nodes the tree marks on Live.
   const changed = useMemo(
     () => new Set([...(rows ?? []).map((row) => row.documentId), ...(tree?.folders ?? [])]),
     [rows, tree],
   );
-  // A picked Work's chip stays, so `+ New draft` is always one pick away; a chat's own draft is
-  // offered while it holds changes.
   const offered = listedDraft !== null && (changeCount > 0 || workDrafts.drafts !== null);
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
-  // Every page follows the choice (`shownDraft`): writing it is the whole flip.
   const show = useCallback(
     (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
     [accountId, projectId],

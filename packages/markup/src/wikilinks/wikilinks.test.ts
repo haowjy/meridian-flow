@@ -1,5 +1,3 @@
-/** Fixture and boundary contracts for the shared wiki-style Markdown scanner. */
-
 import { describe, expect, it } from "vitest";
 
 import { markdownParser } from "../markdown-parse.js";

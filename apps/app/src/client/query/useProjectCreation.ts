@@ -1,4 +1,3 @@
-/** Navigate-first project creation: the `project_create` command's record is the creation. */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
@@ -49,12 +48,10 @@ export function useCreateProject() {
         void router.navigate({
           to: "/p/$projectId/$",
           params: { projectId: id, _splat: "chats" },
-          // Created from the /projects/new dialog: Back returns to the library.
           replace: true,
         });
         return id;
       });
-      // Kept after a success: the dialog is on its way out. A failure frees the next press.
       submitting.current = submit;
       const release = () => {
         submitting.current = null;
@@ -131,10 +128,6 @@ export function useSettleConfirmedCreation(projectId: string, hasRouteData: bool
   }, [confirmed, driver, hasRouteData, projectId, router]);
 }
 
-/**
- * For imperative reads (`fetchQuery` ignores `enabled`); query hooks use
- * `projectReadEnabled` instead.
- */
 export function useIsProjectPendingCreation(projectId: string | null | undefined): boolean {
   const records = useCommands({ kind: PROJECT_CREATE_KIND });
   const state = projectId ? projectCreationFor(records, projectId)?.state : undefined;

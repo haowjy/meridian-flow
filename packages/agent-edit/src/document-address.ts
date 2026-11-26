@@ -1,11 +1,6 @@
-// Canonical document address: host storage identity plus model-facing path.
-
 export interface DocumentAddress {
-  /** Host-side storage identity. */
   documentId: string;
-  /** Model-facing display path without the optional fragment. */
   filePath: string;
-  /** Model-facing fragment without the leading #, when present. */
   fragment?: string;
 }
 

@@ -1,4 +1,3 @@
-/** ContextFS-backed upload content adapter. */
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
@@ -13,17 +12,11 @@ import type {
   UploadSourceDestination,
 } from "./upload-intake.js";
 
-/** Tracked text bound before finalize; binary and empty uploads need nothing bound. */
 type BoundUpload = BoundWrite | null;
 
 export function createContextUploadContentPort(
   contextPorts: UnifiedContextPortFactory,
 ): UploadContentPort<BoundUpload> {
-  /**
-   * A source upload goes through the port the route resolved for the host's scope. A chat upload
-   * goes through the chat's own port, written at the chat-relative `uploads://name`: a New-chat
-   * upload has no handle yet, and the write must not depend on one.
-   */
   function portFor(
     reservation: Pick<UploadReservation, "projectId" | "owner">,
     actorUserId: string,
@@ -85,7 +78,6 @@ export function createContextUploadContentPort(
             });
       if (!result.ok || result.value.documentId !== input.reservation.documentId)
         return { ok: false };
-      // The leaf it landed at, in the folder it was written to.
       const { finalPath } = input.reservation;
       const leaf = result.value.uri.slice(result.value.uri.lastIndexOf("/") + 1);
       return { ok: true, finalPath: finalPath.slice(0, finalPath.lastIndexOf("/") + 1) + leaf };

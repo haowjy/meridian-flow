@@ -73,7 +73,6 @@ type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
  */
 type Pressed = {
   commandId: string;
-  /** The drafts it pressed, whose lanes its Undo goes in (`submitPressUndo`). */
   drafts: readonly string[];
   took: readonly string[];
   placement: Placement;
@@ -90,7 +89,6 @@ type Unpressed = "failed" | "told";
  */
 type PressTarget = { action: PressAction; documents: readonly string[] | null; whole: boolean };
 
-/** A document of a draft, as a press names it. */
 export type DraftItemRef = { documentId: string; itemKey: string };
 export type WorkDraftCommands = ReturnType<typeof usePressCommands>;
 
@@ -102,7 +100,6 @@ export function usePressCommands({
   surface,
 }: {
   projectId: string;
-  /** The Work the drafts belong to, if any: the chat strip counts what its Changes list holds. */
   work: Work | null;
   /**
    * The drafts the commands act on: one (a chat's, a page's), or every draft of `work` (the
@@ -110,7 +107,6 @@ export function usePressCommands({
    */
   drafts: readonly string[];
   threadId?: string | null;
-  /** Where this surface's notices show: the Changes list, a chat's strip, or a document's page. */
   surface: NoticeSurface["kind"];
 }) {
   // A new array each render would remake every command: the list's ids are what matter.
@@ -130,14 +126,12 @@ export function usePressCommands({
     const draftId = drafts[0] ?? "";
     const workWide = drafts.length > 1 && work !== null;
     const workKey = work ? workNoticeKey(work.id) : "";
-    /** Whose notice a press shows: its draft's, or the Work's for a press of every draft. */
     const noticeOf = (scope: Scope) =>
       scope.kind === "work"
         ? workKey
         : scope.kind === "draft" || scope.kind === "turn"
           ? scope.draft
           : (parseDraftItemKey(scope.item)?.draftId ?? draftId);
-    /** The rows listed now of the surface's drafts and, for a press, of its scope's. */
     const rows = (scope?: Scope) =>
       [...new Set([...drafts, ...(scope ? pressDrafts(scope) : [])])].flatMap(
         (draft) => cachedOwnerDrafts(queryClient, projectId, draft) ?? [],
@@ -172,7 +166,6 @@ export function usePressCommands({
         ),
       );
     };
-    /** A press's Undo: the server takes back what that press did, and nothing else. */
     const unpress = async (
       commandId: string,
       pressedDrafts: readonly string[],
@@ -216,7 +209,6 @@ export function usePressCommands({
       return placement.length ? placement : [{ list: project, sources: [] }];
     };
 
-    /** A folder's name as the Work's tree shows it, in the project's list or the account's. */
     const folderName = (node: string): string => {
       if (!treeLists) return "";
       for (const list of [{ kind: "project", projectId } as TreeListRef, treeLists.account])
@@ -252,7 +244,6 @@ export function usePressCommands({
           seated = [];
         },
       };
-      /** The press in force landed here: a Redo is a new press, which may have moved. */
       const place = (where: Placement) => {
         placement = where;
       };
@@ -345,7 +336,6 @@ export function usePressCommands({
       const inScope = lists.flatMap(({ listed }) => listed.items);
       const nodes = target.documents ?? inScope.map((item) => item.documentId);
       const taken = inScope.filter((item) => all || nodes.includes(item.documentId));
-      // Discard all takes folders with only a tree change too: they have no row.
       const folders = all
         ? lists.flatMap(({ draft, listed }) =>
             listed.folders.map((folder) => ({ draft, id: folder.id })),
@@ -362,7 +352,6 @@ export function usePressCommands({
           queryClient.cancelQueries({ queryKey: projectQueryKeys.drafts(projectId, draft) }),
         ),
       );
-      // Each list's cut is the Work's tree as that list read it: the first is the press's.
       const saw = lists[0]?.listed.saw;
       const record = await submitPress(live, {
         projectId,
@@ -371,7 +360,6 @@ export function usePressCommands({
         ...(verdict === "apply" && liveVersions.length ? { liveVersions } : {}),
       });
       if (!record) {
-        // Nothing was kept: the rows come back.
         await refresh(scope);
         return "told";
       }
@@ -415,7 +403,6 @@ export function usePressCommands({
       });
     };
 
-    /** `again`: a Redo in an editor presses again, under the step it already has. */
     const run = (
       target: PressTarget,
       input: { documentId: string | null; name?: string | null },
@@ -499,7 +486,6 @@ export function usePressCommands({
     const draftScope: PressScope = workWide
       ? { kind: "work", work: work.id as WorkId, drafts: drafts as DraftId[] }
       : { kind: "draft", draft: draftId as DraftId };
-    /** One document of a draft, both halves. */
     const pressDocument = (verdict: Verdict, item: DraftItemRef, heldRows?: HeldNoticeRows) =>
       run(
         {
@@ -511,7 +497,6 @@ export function usePressCommands({
         undefined,
         heldRows,
       );
-    /** One change of a document, named by any of its members (`PressScope`'s `change`). */
     const pressChange = (verdict: Verdict, item: DraftItemRef, change: string) =>
       run(
         {
@@ -556,7 +541,6 @@ export function usePressCommands({
         if (owner.restore(turn, draft)?.kind === "sending") owner.setRestore(turn, draft, null);
       });
     };
-    /** The Undo of the turn's restore in force in `draft`, the same as its Ctrl+Z. */
     const undoRestore = (turn: TurnId, draft: DraftId) => {
       const entry = owner.restore(turn, draft);
       if (entry?.kind === "in-force") void entry.press.undo();
@@ -589,10 +573,8 @@ export function usePressCommands({
     return {
       projectId,
       work,
-      /** The surface's draft: its one, or with several the first. */
       draftId,
       drafts,
-      /** Whose notices the surface shows (`useDraftNotice`): each draft's, and with several the Work's. */
       noticeKeys: workWide ? [workKey, ...drafts] : drafts,
       threadId,
       owner,
@@ -623,7 +605,6 @@ export function usePressCommands({
 }
 
 const WorkDraftCommandsContext = createContext<WorkDraftCommands | null>(null);
-/** One surface's commands for the surfaces under it (`useBoundWorkDraftCommands`). */
 export const WorkDraftCommandsBoundary = WorkDraftCommandsContext.Provider;
 export function useBoundWorkDraftCommands(): WorkDraftCommands {
   const commands = useContext(WorkDraftCommandsContext);

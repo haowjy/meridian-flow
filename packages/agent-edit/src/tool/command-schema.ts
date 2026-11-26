@@ -80,11 +80,6 @@ const INVERSE_COUNT = z
   .optional()
   .describe("How many edits to undo, all or nothing. Default 1.");
 
-/**
- * Which version of a document to read. It has no default: omitted
- * means the version this thread's writes change, which the host decides per
- * document. `read`, `grep`, `ls` and `from` share this one description.
- */
 export const DocumentVersionSchema = z
   .enum(["draft", "live"])
   .describe(
@@ -97,11 +92,6 @@ export const DOCUMENT_NAMES_DESCRIPTION =
 
 const SOURCE_PATH = z.string().min(1).describe(DOCUMENT_NAMES_DESCRIPTION);
 
-/**
- * `from`, the source of a block copy or a document copy: one
- * shape for every command. It keeps the model's own path: the host resolves
- * and reads it, and the engine only names it in the receipt.
- */
 const CopySourceSchema = z
   .object({
     path: SOURCE_PATH,
@@ -186,7 +176,6 @@ const MUTATION_BRANCHES = {
   },
 } as const;
 
-/** The host's tree commands: `path` is what the command changes. */
 const NAMESPACE_BRANCHES = {
   move: {
     description:
@@ -228,7 +217,6 @@ const NAMESPACE_BRANCHES = {
 
 type TargetKey = "file" | "path";
 
-/** A tree command names whole documents or folders, so none of its paths takes a `#fragment`. */
 function addNamespaceIssues(
   ctx: z.RefinementCtx,
   value: { command: string; path?: string; from?: { path?: string; paths?: string[] } },
@@ -264,7 +252,6 @@ function addNamespaceIssues(
     issue(["path"], "With `from.paths`, `path` is the folder they go into: end it with `/`.");
 }
 
-/** Reports the selector rule's issues on the argument each one names. */
 function addSelectorIssues(
   ctx: z.RefinementCtx,
   command: SelectorCommand,
@@ -387,16 +374,12 @@ const WRITE_TARGET = {
     ),
 };
 
-/** Engine read input: the document and which of its blocks to render. */
 export const ReadCommandSchema = readInput(ENGINE_TARGET, "file");
-/** Engine mutation input: every engine command changes a document's content. */
 export const WriteCommandSchema = z
   .discriminatedUnion("command", mutationBranches(ENGINE_TARGET))
   .superRefine((value, ctx) => refineMutation(value, ctx, "file"));
 
-/** The `read` tool's published input. */
 export const ReadToolInputSchema = readInput(READ_TARGET, "path");
-/** The `write` tool's input: the engine's commands plus the host's tree commands. */
 export const WriteToolInputSchema = z
   .discriminatedUnion("command", [
     ...mutationBranches(WRITE_TARGET),
@@ -405,15 +388,12 @@ export const WriteToolInputSchema = z
   .superRefine((value, ctx) => refineMutation(value, ctx, "path"));
 export type ReadCommand = z.infer<typeof ReadCommandSchema>;
 export type WriteCommand = z.infer<typeof WriteCommandSchema>;
-/** The commands the engine runs. */
 export type WriteCommandName = WriteCommand["command"];
 export type ReadToolInput = z.output<typeof ReadToolInputSchema>;
 export type WriteToolInput = z.output<typeof WriteToolInputSchema>;
 
-/** `write`'s commands the host runs itself: they change the tree. */
 export type NamespaceCommandName = Exclude<WriteToolInput["command"], WriteCommandName>;
 
-/** Every operation a `read` or `write` result reports. */
 export type DocumentCommandName = "read" | WriteToolInput["command"];
 
 export function writeCommandName(input: unknown): WriteToolInput["command"] | undefined {

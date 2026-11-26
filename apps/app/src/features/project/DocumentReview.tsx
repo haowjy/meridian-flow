@@ -1,13 +1,3 @@
-/**
- * One document host's review scope and paint: what the document shows (Live or a draft) and the
- * draft's list. Every host that holds a document (main, the side, the phone) gets one, so two
- * documents on screen show two drafts without sharing state. Commands stay account-wide and
- * queued per item (`DraftCommandOwner`). Painting a draft opens the plain draft; Review changes is
- * on only where the host's address (main) or stored slot (the side) says (`useHostReviewMode`).
- *
- * Only a host on screen paints a draft. The kept document's host and a closed side's host stay
- * mounted hidden and paint Live.
- */
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
@@ -32,7 +22,6 @@ import { type DocumentPaint, useDocumentPaint } from "./views";
 export type DocumentReview = {
   value: DraftReviewContextValue;
   paint: DocumentPaint;
-  /** Review changes on this host; null on Live and on a plain draft. */
   mode: ReviewMode | null;
   page: DraftPage | null;
   surface: ReviewSurface;
@@ -40,7 +29,6 @@ export type DocumentReview = {
 
 const DocumentPaintContext = createContext<DocumentPaint | null>(null);
 
-/** The paint of the document whose host this is; null outside a document host. */
 export function useHostDocumentPaint(): DocumentPaint | null {
   return useContext(DocumentPaintContext);
 }
@@ -56,7 +44,6 @@ export function useDocumentReview(
   const { workId: activeWorkId } = useWorkScopeState(projectId);
   const { works, noWork } = useWorks(projectId);
   const draftId = paint.draft?.draftId ?? paint.view.pin?.draftId ?? paint.scopeDraftId ?? "";
-  // A lineage's drafts carry no Work: its review reads the scope's Work for archive state.
   const reviewWork =
     (draftId ? works?.find((work) => work.draftId === draftId) : undefined) ??
     (activeWorkId === noWork?.id
@@ -83,7 +70,6 @@ export function useDocumentReview(
   return { value, paint, mode, page, surface };
 }
 
-/** A document host's own review, for everything that host renders. */
 export function DocumentReviewProvider({
   projectId,
   document,
@@ -92,7 +78,6 @@ export function DocumentReviewProvider({
 }: {
   projectId: string;
   document: OpenDocument | null;
-  /** Whether the host is on screen; one that is not reviews nothing. */
   showing: boolean;
   children: ReactNode;
 }) {

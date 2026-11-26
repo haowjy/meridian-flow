@@ -1,4 +1,3 @@
-/** Canonical convergence and causal-read boundary for a thread's Work binding. */
 import type {
   ListWorksResponse,
   ThreadListItem,
@@ -31,7 +30,6 @@ export type ThreadWorkConvergence =
       projectId: string;
       threadId: string;
       previousWorkId: string | null;
-      /** The thread's `workId` on a list read just made, which also refreshed the list and Works. */
       workId: string | null;
     };
 
@@ -39,7 +37,6 @@ export type ThreadProjectionInvalidation = {
   threadId: string;
   projectId: string;
   refreshLists: boolean;
-  /** The thread's own snapshot is refreshed by whoever asked, so this leaves it alone. */
   skipSnapshot?: boolean;
 };
 
@@ -49,7 +46,6 @@ const compareSeq = (left: string, right: string) => {
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
-/** Every cache rooted at the thread, optionally except its snapshot. */
 export function invalidateThreadKeys(
   client: QueryClient,
   threadId: string,

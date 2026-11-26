@@ -35,7 +35,6 @@ export function createDraftReviewIdentity(deps: {
   drafts: Pick<Drafts, "ownerOf">;
   reviewItems: Pick<DraftReviewItems, "resolve">;
 }): DraftReviewIdentity {
-  /** One document of a draft. */
   async function inDraft(draftId: DraftId, documentId: DocumentId) {
     const resolved = await deps.reviewItems.resolve(draftId, documentId);
     return resolved

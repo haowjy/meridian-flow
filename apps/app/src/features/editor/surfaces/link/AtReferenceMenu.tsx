@@ -112,8 +112,6 @@ export function ReferenceSuggestionMenu({
           row.kind === "link-ahead" ? (
             <>
               <FilePlus2 aria-hidden />
-              {/* It writes a link, not a document: Create is offered when the
-                  link is followed. */}
               <span className="truncate">{t`Link to “${row.label}” (not written yet)`}</span>
             </>
           ) : row.kind === "folder-mention" ? (
@@ -134,10 +132,6 @@ export function ReferenceSuggestionMenu({
   );
 }
 
-/**
- * Where a file lives, so two documents with one name are told apart: its
- * folder, after the area it is in unless that is the manuscript.
- */
 function rowLocation(row: Exclude<ReferenceRow, { kind: "folder-mention" }>): string {
   if (row.kind !== "file") return row.location;
   const parsed = parseContextUri(row.action.reference.uri);

@@ -1,30 +1,8 @@
 @import "./inline-review.css";
 
-/**
- * Editor-only ProseMirror chrome and decorations for collaborative documents.
- * Shared document rules live in styles/document.css. Geometry and color use
- * Ink & Jade variables so the editor follows the app theme.
- *
- * Long-form manuscript reading: a calm ~76ch measure and the shared
- * `prose-tokens` reading scale. The prose stays undecorated: the cinnabar
- * signature lives only in chrome, never in the manuscript itself. Internal
- * links are the deliberate exception. They draw as the same tag chip they are
- * in chat (`components/app/link-chip/`), because a link's destination is a
- * document in this project, and a writer reading a chapter should see which
- * words lead to one, which family it is in, and which are not written yet
- * without hovering each. The chip is presentation only; the label stays
- * ordinary editable text.
- *
- * The document only: the page, its marks, and the decorations drawn over the
- * words. Every control surface styles itself from a stylesheet beside its own
- * component, so a lane is one directory rather than one directory plus a hunk
- * in here.
- */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
   position: relative;
-  /* Keeps the editor's own z-layers (the review bar, the word-count pill) below the pane's
-     header popups. */
   isolation: isolate;
 }
 
@@ -103,7 +81,6 @@
   --nest-join-pad: calc(var(--prose-space-row) / 2);
 }
 
-/* A quote keeps its own space from the blocks around it, list items included. */
 .meridian-editor .ProseMirror .meridian-quoted:not([data-quote-join~="above"]) {
   margin-top: var(--prose-space-quote);
 }
@@ -112,8 +89,6 @@
   margin-bottom: var(--prose-space-quote);
 }
 
-/* Blocks of one quote meet through padding instead of margin, so its bars run unbroken
-   from the quote's first line to its last. */
 .meridian-editor .ProseMirror .meridian-quoted[data-quote-join~="above"] {
   margin-top: 0;
   padding-top: var(--nest-join-pad);
@@ -293,8 +268,6 @@
   color: var(--color-muted-foreground);
 }
 
-/* What a picture with nothing to draw says: an address nothing has been
-   uploaded to yet, or a document that is gone. */
 .meridian-image-node__note {
   max-width: 16rem;
   font-size: var(--text-sm);
@@ -390,11 +363,6 @@
   box-shadow: 0 0 0 0.125rem var(--color-primary);
 }
 
-/* An object's body is not text, so it does not wear the text caret. The
-   browser hands every child of a contenteditable the I-beam unless told
-   otherwise; on a picture that promises a caret the press will never place
-   (the press selects — see core/editor/objects). The arrow is the honest
-   cursor: click reads, drag moves, and neither is typing. */
 .meridian-editor .ProseMirror .node-image,
 .meridian-editor .ProseMirror .meridian-figure-node,
 .meridian-editor .ProseMirror .meridian-diagram-block,
@@ -467,7 +435,6 @@
   white-space: nowrap;
 }
 
-/* A comment's anchor in the text. */
 .meridian-editor .meridian-comment {
   box-shadow: inset 0 -2px 0 0 color-mix(in oklab, var(--color-warning) 60%, transparent);
 }
@@ -547,9 +514,6 @@
   padding: 0.125rem 0.375rem;
 }
 
-/* A search landing marks the words that matched and then gets out of the way.
-   The fade animates the ground, never opacity: fading the span would fade the
-   writer's own sentence with it. */
 .meridian-editor .ProseMirror .passage-match-highlight {
   border-radius: var(--radius-sm);
   animation: meridian-passage-match-fade 3.4s ease-out forwards;
@@ -567,15 +531,11 @@
   }
 }
 
-/* The file card standing where a picture can't be drawn: a block-level box in the line. */
 .meridian-image-node__card {
   display: inline-flex;
   vertical-align: middle;
 }
 
-/* While the editor lifts a text selection (core/editor/landing/selection-drag.ts)
-   no native drag is running, so nothing sets the drag cursor: keep the I-beam
-   over everything the pointer crosses. */
 .selection-dragging,
 .selection-dragging * {
   /* biome-ignore lint/complexity/noImportantStyles: beats every element's own cursor (links, handles) for the length of a drag. */

@@ -30,39 +30,26 @@ import {
 export type ReviewVerdict = "apply" | "discard";
 
 export type ReviewChangesConfig = {
-  /** `count`: the plain draft page, which paints nothing and only reads the rows for its header. */
   layout: "inline" | "side" | "count";
-  /**
-   * What the draft is compared against: Live, whose changes it presses; another draft, whose
-   * paragraphs it takes; or another file, read only. `reference` is the other room, null on Live
-   * and until it is open.
-   */
   against: "live" | "draft" | "file";
-  /** The target as the address names it (`ReviewTarget`): `live`, a draft id, or `file:<id>`. */
   target: string;
   reference: RoomDocs | null;
-  /** The draft this editor shows. */
   draftId: string;
-  /** The change in focus (the address's `change`); null is none yet. */
   focus: string | null;
-  /** Changes pressed and not yet answered: the page shows them gone. */
   hidden: ReadonlySet<string>;
   labels: {
     apply: string;
     discard: string;
     restore: string;
     take: string;
-    /** One-word tags for what a change that left the text alone did: its place, its style, a comment's body. */
     moved: string;
     restyled: string;
     comment: string;
-    /** An image with no caption, where Live's version of it is shown. */
     image: string;
   };
   press: (verdict: ReviewVerdict, row: ReviewRow) => void;
   take: (row: ReviewRow) => void;
   focusRow: (row: ReviewRow) => void;
-  /** The rows as last read, for the bar's stepper. */
   onRows: (rows: readonly ReviewRow[]) => void;
 };
 
@@ -75,10 +62,8 @@ type ReviewState = {
 type ReviewMeta = { config: ReviewChangesConfig | null } | { rows: readonly ReviewRow[] };
 
 export const reviewChangesKey = new PluginKey<ReviewState>("review-changes");
-/** How long the writer pauses before the rows are read again. */
 const SETTLE_MS = 150;
 
-/** Turns Review changes on (a config) or off (null) for this editor. */
 export function setReviewChanges(view: EditorView, config: ReviewChangesConfig | null): void {
   view.dispatch(
     view.state.tr
@@ -91,7 +76,6 @@ export function reviewRowsOf(state: EditorState): readonly ReviewRow[] {
   return reviewChangesKey.getState(state)?.rows ?? [];
 }
 
-/** Where each block starts, containers and blocks with no text included, by block id. */
 function blockPositions(doc: Node): Map<string, number> {
   const positions = new Map<string, number>();
   doc.descendants((node, pos) => {
@@ -101,7 +85,6 @@ function blockPositions(doc: Node): Map<string, number> {
   return positions;
 }
 
-/** Document ranges of `[from, to)` text offsets within the textblock at `pos`. */
 function textRanges(node: Node, pos: number, spans: readonly (readonly [number, number])[]) {
   const ranges: [number, number][] = [];
   if (spans.length === 0) return ranges;
@@ -123,7 +106,6 @@ function textRanges(node: Node, pos: number, spans: readonly (readonly [number, 
   return ranges;
 }
 
-/** The draft's own words of an edited paragraph, as text offsets. */
 function addedSpans(paragraph: ReviewParagraph): [number, number][] {
   const spans: [number, number][] = [];
   let offset = 0;
@@ -135,15 +117,10 @@ function addedSpans(paragraph: ReviewParagraph): [number, number][] {
   return spans;
 }
 
-/** A heading is a paragraph with a `level`: the reference reads as the heading it is. */
 function blockElement(level: number): HTMLElement {
   return document.createElement(level ? `h${Math.min(6, Math.max(1, level))}` : "p");
 }
 
-/**
- * The reference's version of a block with no text of its own: a rule as a rule, an image by its
- * caption, any other by the text inside it.
- */
 function blockReference(
   block: ShapeBlock,
   removed: boolean,
@@ -202,7 +179,6 @@ function referenceElement(
   return element;
 }
 
-/** What changed of a block whose text did not, as a one-word tag, with a comment's body. */
 function noteElement(paragraph: ReviewParagraph, config: ReviewChangesConfig): HTMLElement {
   const note = document.createElement("p");
   note.className = "meridian-review-ref meridian-review-note";
@@ -217,7 +193,6 @@ function noteElement(paragraph: ReviewParagraph, config: ReviewChangesConfig): H
         : config.labels.comment;
   note.append(tag);
   if (kind !== "comment") return note;
-  // A comment's body, its words marked as a paragraph's are: it is not in the text.
   const body = document.createElement("span");
   body.className = "meridian-review-comment";
   for (const part of paragraph.words) {
@@ -262,7 +237,6 @@ function drawnKey(row: ReviewRow, config: ReviewChangesConfig, focused: boolean)
   return `${row.id}:${textHash(parts.join("\u0000")).toString(36)}`;
 }
 
-/** The row's actions: a press's pair against Live, `Take` against another draft, none against a file. */
 function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement | null {
   if (config.against === "file") return null;
   const pair = document.createElement("span");
@@ -274,7 +248,6 @@ function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement |
     element.setAttribute("aria-label", label);
     element.title = label;
     element.dataset.glyph = glyph;
-    // The caret stays where the writer left it: the press is not an edit at the click.
     element.addEventListener("mousedown", (event) => event.preventDefault());
     element.addEventListener("click", (event) => {
       event.preventDefault();
@@ -315,7 +288,6 @@ function cellOf(row: ReviewRow, config: ReviewChangesConfig, focused: boolean, v
   return cell;
 }
 
-/** Inline: Live's text of the row's paragraphs above its first draft paragraph, with the pair. */
 function rowWidget(row: ReviewRow, config: ReviewChangesConfig, focused: boolean) {
   return (view: EditorView) => {
     const wrap = cellOf(row, config, focused, view);
@@ -328,10 +300,6 @@ function rowWidget(row: ReviewRow, config: ReviewChangesConfig, focused: boolean
   };
 }
 
-/**
- * Side by side: one paragraph's Live cell, in the left column. An added paragraph's is empty. The
- * row's first carries the pair.
- */
 function sideCell(
   row: ReviewRow,
   paragraph: ReviewParagraph,
@@ -359,7 +327,6 @@ function emptyCell(): HTMLElement {
   return element;
 }
 
-/** Side by side: the draft column's empty cell beside a paragraph only Live holds. */
 function draftHole() {
   const element = document.createElement("div");
   element.className = "meridian-review-hole";
@@ -429,14 +396,12 @@ function buildDecorations(
             }),
           );
       }
-      // A comment's row spans both columns, and its paragraph reads as itself.
       if (paragraph.kind === "removed" || paragraph.kind === "comment") return;
       const pos = positions.get(paragraph.id);
       if (pos === undefined) return;
       const node = doc.nodeAt(pos);
       if (!node) return;
       rowed.add(paragraph.id);
-      // A block with no text to tint reads as added whole.
       const whole = paragraph.kind === "added" && !node.isTextblock ? " meridian-review-added" : "";
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {
@@ -454,7 +419,6 @@ function buildDecorations(
     });
   }
   if (side) {
-    // Every paragraph both sides show reads beside itself, muted.
     const reference = referenceOf(state, config);
     const live = reference ? textOf(readDocument(reference)) : new Map<string, string>();
     doc.forEach((node, offset) => {
@@ -488,7 +452,6 @@ function referenceOf(state: EditorState, config: ReviewChangesConfig): RoomDocs 
   return loroSyncKey.getState(state)?.docs?.live ?? null;
 }
 
-/** The rows of the editor's draft copy as it stands against the reference. Null off a draft. */
 function readRows(state: EditorState, config: ReviewChangesConfig): ReviewRow[] | null {
   const docs = loroSyncKey.getState(state)?.docs;
   if (!docs?.live) return null;
@@ -504,16 +467,10 @@ function readRows(state: EditorState, config: ReviewChangesConfig): ReviewRow[] 
   return reviewRows(docs, readDocument(reference), fork);
 }
 
-/** Where the block of `id` starts, or null. */
 function positionOf(doc: Node, id: string): number | null {
   return blockPositions(doc).get(id) ?? null;
 }
 
-/**
- * `Take`: the row's paragraph becomes the other draft's, as an edit in this editor that Ctrl+Z
- * takes back. A paragraph only the other draft has comes in under `takenBlockId`; one only this
- * draft has goes. A row already taken changes nothing.
- */
 export function takeRow(view: EditorView, row: ReviewRow, draftId: string): void {
   const { schema } = view.state;
   const tr = view.state.tr;
@@ -558,7 +515,6 @@ export const ReviewChangesExtension = Extension.create({
           apply(tr, prior, _old, next) {
             const meta = tr.getMeta(reviewChangesKey) as ReviewMeta | undefined;
             if (meta && "config" in meta) {
-              // Rows read against another target are not this one's.
               const same =
                 meta.config &&
                 prior.config?.target === meta.config.target &&
@@ -596,7 +552,6 @@ export const ReviewChangesExtension = Extension.create({
         view: () => {
           let timer: ReturnType<typeof setTimeout> | undefined;
           let shownConfig: ReviewChangesConfig | null = null;
-          // A press, or Live typed in elsewhere, changes Live and not the draft this editor shows.
           let watched: RoomDocs | null = null;
           let unwatch = () => {};
           const read = (view: EditorView) => {
@@ -625,7 +580,6 @@ export const ReviewChangesExtension = Extension.create({
           return {
             update(view, previous) {
               const config = reviewChangesKey.getState(view.state)?.config ?? null;
-              // On, or compared against something else: read at once.
               const turnedOn =
                 config !== null &&
                 (shownConfig === null ||

@@ -1,8 +1,3 @@
-/**
- * Drizzle ContextDocumentStore for one Meridian context source: reads through one tree view
- * (live, or one Work's). Nothing here writes the tree; the list does (`tree-writes.ts`).
- */
-
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import {
   classifyFiletype,
@@ -51,7 +46,6 @@ type DocumentRow = Pick<
   | "rank"
 >;
 
-/** A node's name is its full filename; the document shape keeps the stem apart from the extension. */
 function stemOf(row: Pick<DocumentRow, "name" | "extension">): string {
   return row.extension !== "" && row.name.toLowerCase().endsWith(`.${row.extension}`)
     ? row.name.slice(0, -(row.extension.length + 1))
@@ -71,7 +65,6 @@ export function mapDocument(row: DocumentRow): ContextDocument {
     name: stemOf(row),
     extension: row.extension,
     segment: row.segment,
-    // The row keeps a stored file's own type (`png`); readers want its kind (`image`).
     fileType: isBinary ? binaryKind(row.fileType) : null,
     filetype: isBinary ? null : (row.fileType as Filetype),
     storageUrl: row.storageUrl,
@@ -84,7 +77,6 @@ export function mapDocument(row: DocumentRow): ContextDocument {
   };
 }
 
-/** A document visible in `view`, by id. The row may live in another source. */
 export async function locateDocumentById(
   db: Database,
   view: TreeView,

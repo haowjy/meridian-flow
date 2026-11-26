@@ -1,9 +1,3 @@
-/**
- * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (every press the journal holds unanswered, `followPresses`), the presses this tab can still take
- * back (`presses`), each turn's restore in a draft (`restore`) and one notice per draft owner. The
- * press itself is `usePressCommands`.
- */
 import { t } from "@lingui/core/macro";
 import type { CommandRecord } from "@meridian/command-driver";
 import { type DraftId, draftItemKey, parseDraftItemKey, type TurnId } from "@meridian/contracts";
@@ -12,23 +6,16 @@ import { notifyFailure } from "@/components/app/failure-toast";
 import { DraftNotices, workNoticeKey } from "./draft-notices";
 import type { PressEntry } from "./press-history";
 
-/** What a journaled press keeps out of review while it is in flight. */
 type JournalHold =
   | { kind: "item"; item: string; applying: boolean }
   | { kind: "drafts"; drafts: ReadonlySet<string>; applying: boolean }
   | { kind: "change"; item: string; change: string; applying: boolean };
 
-/** A row a notice keeps in the list, and where it was before the press took it. */
 export type HeldNoticeRow<T> = { key: string; row: T; after: readonly string[] };
 export type HeldNoticeRows = ReadonlyMap<string, readonly HeldNoticeRow<unknown>[]>;
 
-/** `settled`: the server answered and the press changed none of its items. */
 export type CommandOutcome = "done" | "settled" | "blocked";
 
-/**
- * A turn's restore in one draft, as this tab knows it: sent and not yet answered, or in
- * force with its one Undo (`press`).
- */
 export type RestoreEntry = { kind: "sending" } | { kind: "in-force"; press: PressEntry };
 
 const restoreKey = (turn: TurnId, draft: DraftId) => `${turn}:${draft}`;
@@ -39,15 +26,11 @@ export class DraftCommandOwner {
   private readonly reported = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private revision = 0;
-  /** Every press this tab can still take back or press again. */
   readonly presses = new Set<PressEntry>();
-  /** Rows kept in the Changes list for a notice, removed with that notice. */
   private readonly noticeRows = new Map<string, HeldNoticeRows>();
-  /** One notice per draft owner, outliving the surface that made it. */
   readonly notices = new DraftNotices((draftId, id) => {
     this.noticeRows.delete(`${draftId}:${id}`);
   });
-  /** `at`: when the entry last changed here; a card read from before then is out of date. */
   private readonly restores = new Map<string, { entry: RestoreEntry | null; at: number }>();
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -57,7 +40,6 @@ export class DraftCommandOwner {
   };
   snapshot = () => this.revision;
 
-  /** Whether the journal currently subtracts this item from every draft-list read. */
   holds(itemKey: string): boolean {
     const draft = parseDraftItemKey(itemKey)?.draftId;
     return this.journal.some((each) =>
@@ -67,12 +49,10 @@ export class DraftCommandOwner {
     );
   }
 
-  /** Whether a press in flight takes all of the draft. */
   holdsDraft(draft: string): boolean {
     return this.journal.some((hold) => hold.kind === "drafts" && hold.drafts.has(draft));
   }
 
-  /** Whether an Apply in flight takes a whole row from the draft. */
   applyingDraft(draft: string): boolean {
     return this.journal.some(
       (hold) =>
@@ -83,7 +63,6 @@ export class DraftCommandOwner {
     );
   }
 
-  /** Change rows a journaled press keeps out of one document's editor review. */
   heldChanges(itemKey: string): ReadonlySet<string> {
     return new Set(
       this.journal.flatMap((hold) =>
@@ -150,17 +129,14 @@ export class DraftCommandOwner {
     });
   }
 
-  /** The turn's restore in `draft` this tab has sent or holds in force. */
   restore(turn: TurnId, draft: DraftId): RestoreEntry | null {
     return this.restores.get(restoreKey(turn, draft))?.entry ?? null;
   }
 
-  /** When the turn's restore in `draft` last changed here; 0 if it never did. */
   restoreChangedAt(turn: TurnId, draft: DraftId): number {
     return this.restores.get(restoreKey(turn, draft))?.at ?? 0;
   }
 
-  /** The drafts where this tab has sent or holds the turn's restore. */
   restoredDrafts(turn: TurnId): DraftId[] {
     const prefix = `${turn}:`;
     return [...this.restores].flatMap(([key, { entry }]) =>
@@ -173,7 +149,6 @@ export class DraftCommandOwner {
     this.changed();
   }
 
-  /** Something a surface reads changed: a press's Undo went out or came back. */
   changed = () => {
     this.revision++;
     for (const listener of this.listeners) listener();
@@ -185,6 +160,5 @@ export class DraftCommandOwner {
   }
 }
 
-/** A folder's item in a Work's draft: the key its commands' state is kept under. */
 export const folderKey = (draftId: string, folderId: string): string =>
   draftItemKey(draftId as DraftId, folderId);

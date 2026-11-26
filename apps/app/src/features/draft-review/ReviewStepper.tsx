@@ -1,9 +1,3 @@
-/**
- * ReviewStepper — `‹ 2 of 6 ›`: steps through the changes in document order, bringing each into
- * view; when it crosses chapters, through the whole draft's, counted across them. Before any change is focused it reads the count. The review line's ladder
- * (`fitReviewLine`) swaps `2 of 6` for `2/6`, then hides the count; `touch` makes both arrows 44px
- * targets. The group takes the focus when Review changes opens.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -20,12 +14,10 @@ export function ReviewStepper({
   crosses = false,
 }: {
   count: number;
-  /** The focused change's place, or -1 when none is focused. */
   focusedIndex: number;
   disabled: boolean;
   onStep: (direction: 1 | -1) => void;
   touch?: boolean;
-  /** A step past either end goes on to another chapter: the stepper shows even for one change. */
   crosses?: boolean;
 }) {
   if (count <= 1 && !crosses) return null;

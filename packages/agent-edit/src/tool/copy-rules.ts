@@ -19,7 +19,6 @@ interface CopySourceIssue {
 
 const CONTENT_OR_FROM_MESSAGE = "Exactly one of `content` or `from` is required";
 
-/** Every `from` rule the given fields break, in a stable order. */
 export function copySourceIssues(
   command: "insert" | "replace" | "copy",
   fields: CopySourceFields,

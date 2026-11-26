@@ -1,4 +1,3 @@
-/** Proof that drafted writes lock a Work's draft behind the Work, and the resolver's surface. */
 import { createDb, type Database } from "@meridian/database";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { users } from "@meridian/database/schema";
@@ -19,7 +18,6 @@ import { createDrizzleDraftStore, createDrizzleDraftWriteBoundary } from "./driz
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-/** Resolves once another backend of this database waits on a lock (PostgreSQL's own timing). */
 async function lockWait(db: Database, timeoutMs = 5_000): Promise<"waiting" | "timeout"> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -59,12 +57,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const owner = { kind: "work", workId: work.id } as const;
       const named = await defaultDraftOf(root, work.id);
 
-      // An ambient transaction the command boundary didn't approve is refused, not joined.
       await expect(
         runInRootDrizzleTransaction(first, () => resolverOn(first).lockForWrite(owner, named)),
       ).rejects.toBeInstanceOf(DraftWriteJoinRefusedError);
 
-      // The first write's command transaction locks the draft and stays open.
       let locked!: () => void;
       const lockedSignal = new Promise<void>((resolve) => {
         locked = resolve;
@@ -94,10 +90,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(made.id).toBe(named);
       expect(joined.id).toBe(made.id);
-      // The second write waited on the Work row rather than reading around it.
       expect(secondOrder).toBe("waiting");
 
-      // The rest of the public surface, through the same resolver object.
       const resolver = resolverOn(root);
       expect(await resolver.ofOwner(owner)).toMatchObject({ id: made.id });
       expect(await resolver.ownerOf(made.id)).toMatchObject({ owner, draft: { id: made.id } });

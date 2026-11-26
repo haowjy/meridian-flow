@@ -1,5 +1,3 @@
-/** Focused real-Postgres harness for collab durability tests. */
-
 import type { WriteCommand } from "@meridian/agent-edit/integration";
 import { createAgentEditCodecFactory, loroModel } from "@meridian/agent-edit/integration";
 import type { DraftId } from "@meridian/contracts";
@@ -115,7 +113,6 @@ export const OTHER_USER_ID = "00000000-0000-4000-8000-000000000809";
 export const PROJECT_ID = "00000000-0000-4000-8000-000000000802";
 export const SOURCE_ID = "00000000-0000-4000-8000-000000000803";
 export const WORK_ID = "00000000-0000-4000-8000-000000000804" as WorkId;
-/** The draft the Work names. */
 export const WORK_DRAFT_ID = "atomicitywk1";
 export const ALPHA_ID = "00000000-0000-4000-8000-000000000805" as DocumentId;
 export const BETA_ID = "00000000-0000-4000-8000-000000000806" as DocumentId;
@@ -137,12 +134,10 @@ export const DEFAULT_SCENARIO_IDS = {
 export type CollabScenarioIds = typeof DEFAULT_SCENARIO_IDS;
 
 export async function resetDatabase(db: Database): Promise<void> {
-  // Clear the graph in this runner-owned disposable database using FK-ordered deletes.
   await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
   await seedDatabase(db);
 }
 
-/** Independent rows let warm and cold runs coexist without wiping durable evidence. */
 export async function seedDatabase(
   db: Database,
   ids: CollabScenarioIds = DEFAULT_SCENARIO_IDS,
@@ -219,14 +214,11 @@ export async function closeDatabase(db: Database): Promise<void> {
 
 export type CollabHarnessOptions = {
   ids?: CollabScenarioIds;
-  /** Default: every grant is confirmed. */
   fileAccess?: import("../../file-policy/index.js").FileAccess;
-  /** Default: a static scope, whose tokens ignore the tree. */
   links?: DocumentLinkScopes;
 };
 
 export function createHarness(db: Database, options: CollabHarnessOptions = {}) {
-  // One link scope for every door the harness assembles, as composition shares one.
   const links = options.links ?? createStaticDocumentLinkScopes();
   const { ALPHA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const documentName = (documentId: DocumentId) =>
@@ -304,7 +296,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     inTransaction: isInDrizzleTransaction,
   });
   const projections = { refresh: runDocumentWriteHook };
-  // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({ core: runtime.core });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -363,15 +354,12 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     purgeDiscards: async () => 0,
     reviewItems,
     folderIds: (draftId) => draftFolderIds(db, draftId),
-    // No tree lists in this fixture: a list read without a cut.
     treeCut: async () => ({}),
     pending: durableWorkDraftPendingStore,
     identity,
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
   });
-  // Tests mint a destination grant without a target; a write's grant names its document. A
-  // write is the model's tool call as the chat loop sends it: one command, one transaction.
   const testAgentEdit = {
     ...agentEdit,
     write: (command: WriteCommand, context: RoutedWriteContext) => {
@@ -430,7 +418,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       markupCodec,
       agentEditCodec,
     }),
-    /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
       await rooms.close();
     },

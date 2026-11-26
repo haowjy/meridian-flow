@@ -297,8 +297,6 @@ export function SourcesBody({
   /** Who owns main's document when it is a Work's Scratch note. */
   activeWorkId: string | null;
 }) {
-  // Scratch is the picked Work's when that is a named one; under No Work a chat keeps its notes
-  // in its Files menu, and the foot has no Scratch.
   const scratchWorkId = useScopeScratchSource(projectId)?.owner.workId ?? null;
   // An archived or deleted Work's Scratch shows, and takes no change until it is back.
   const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
@@ -322,8 +320,6 @@ export function SourcesBody({
   const [picked, setPicked] = useState<SourceKey>(mainChat ? "chat" : "manuscript");
   const shownRef = useRef(picked);
   shownRef.current = picked;
-  // Changes stays: it is the list the writer opens drafts from, whatever tree they live in.
-  // `picked` is Changes only while it is shown (see below).
   const follow = useCallback(
     (source: SourceKey) => {
       if (isTreeTab(source)) showTab(source);
@@ -358,15 +354,11 @@ export function SourcesBody({
     setPicked(source);
   }, [creatingScheme, creatingInAgents, showTab]);
   const changes = useChangesScope(projectId, chatThreadId);
-  // Under None, Changes is offered only while the chat on screen has drafts, but it stays
-  // while it is the pane on show, so emptying it keeps the last command's Undo in view.
   const changesShown = changes.offered || picked === "changes";
   const tabs = useMemo<readonly SourceKey[]>(
     () => ["chat", ...chosen, ...(changesShown ? ["changes" as const] : [])],
     [chosen, changesShown],
   );
-  // A tab that left the strip can't stay selected: main's item's source shows, else the first
-  // tree tab, else Chat.
   const fallback: SourceKey = mainChat
     ? "chat"
     : (tabs.find((key) => key === activeScheme) ?? chosen[0] ?? "chat");
@@ -382,8 +374,6 @@ export function SourcesBody({
     surface: "changes",
   });
 
-  // Every tree follows the Live/Draft toggle. Only Scratch reads the Work; without a named one it
-  // has no tree.
   const shell = useShellTreeVersion();
   const version = shell?.version ?? LIVE_VERSION;
   const drafting = shell?.showing === "draft";
@@ -427,8 +417,6 @@ export function SourcesBody({
     },
     [drafting, shell, onSelectFile, openDraftFile, onPicked],
   );
-  // A deleted Work's tree, on Draft, takes no change. An archived one offers its controls as an
-  // active one does, and the server bounces what they change ("Work was closed").
   const ended = version.ended === "deleted";
   const writable = useMemo(
     () =>

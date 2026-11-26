@@ -1,5 +1,3 @@
-/** Defines document-toolbar state and commands. */
-
 import type { TrackedSchemaType } from "@meridian/contracts/protocol";
 import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
 import { type Editor, isActive } from "@tiptap/core";
@@ -39,7 +37,6 @@ export type ToolbarControlId =
   | "alignment"
   | "uploadFigure";
 
-/** Why a control cannot apply here. The surface turns these into writer copy. */
 export type ToolbarBlockedReason =
   | "editor-loading"
   | "document-read-only"
@@ -53,30 +50,24 @@ export type ToolbarBlockedReason =
   | "code-document"
   | "no-project";
 
-/** The subset a whole-block conversion can refuse with. */
 export type BlockTypeRefusalReason = Extract<
   ToolbarBlockedReason,
   "object-selection" | "code-block" | "embedded-block" | "mixed-selection"
 >;
 
 export type ToolbarControlState = {
-  /** Lit when the control's state is currently applied (, F9). */
   active: boolean;
-  /** Null when the control can run; a reason to show otherwise (). */
   blockedBy: ToolbarBlockedReason | null;
 };
 
 export type ToolbarControlStates = Record<ToolbarControlId, ToolbarControlState>;
 
-/** A control state whose refusal can only be a whole-block one. */
 export type BlockTypeState = ToolbarControlState & { blockedBy: BlockTypeRefusalReason | null };
 
 export type ToolbarMarkName = "strong" | "em" | "code" | "strike";
 
-/** A heading level as a block type: `heading1` is a paragraph at level 1. */
 export type HeadingBlockTypeId = `heading${HeadingLevel}`;
 
-/** The block types "Turn into" offers. */
 export type BlockTypeId =
   | "paragraph"
   | HeadingBlockTypeId
@@ -85,7 +76,6 @@ export type BlockTypeId =
   | "quote"
   | "codeBlock";
 
-/** Body text and every heading level the schema allows. */
 const TEXT_LEVEL_BLOCK_TYPE_IDS: readonly BlockTypeId[] = [
   "paragraph",
   ...HEADING_LEVELS.map((level): HeadingBlockTypeId => `heading${level}`),
@@ -107,23 +97,18 @@ export function headingLevelOf(id: HeadingBlockTypeId): HeadingLevel {
   return HEADING_BLOCK_TYPE_LEVELS[id] as HeadingLevel;
 }
 
-/** The level a block type sets: null for body text, undefined for a type that is no level. */
 export function blockTypeLevel(id: BlockTypeId): HeadingLevel | null | undefined {
   return id === "paragraph" ? null : HEADING_BLOCK_TYPE_LEVELS[id];
 }
 
-/** Alignment as the dropdown speaks it: `null` on the wire reads as default. */
 export type ToolbarAlignmentValue = "default" | Exclude<BlockAlignment, null>;
 
 export type ToolbarContext = {
   editor: Editor | null;
-  /** False behind a schema fence or a read-only host; every verb greys. */
   editable: boolean;
-  /** A code file holds one code block; the document-only verbs cannot serve it. */
   schemaType: TrackedSchemaType;
   canUndo: boolean;
   canRedo: boolean;
-  /** Uploads land in a project's asset namespace; without one there is none. */
   imageUploadAvailable: boolean;
 };
 
@@ -189,18 +174,15 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
   };
 }
 
-/** The alignment the dropdown should show for the blocks under the selection. */
 export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
   const align = currentAlignableBlock(editor.state)?.node.attrs.align;
   return align === "center" || align === "right" ? align : "default";
 }
 
-/** What a mark control should show: lit when applied, and the reason it cannot apply otherwise. */
 export function textMarkState(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarControlState {
   return { active: isMarkActive(editor, mark), blockedBy: markBlocker(editor, mark) };
 }
 
-/** The whole "Turn into" truth table for the current selection (): which type the blocks already are, and why the others cannot apply here. */
 export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeState> {
   const strict = blockTypeRefusal(editor);
   const reversible = codeBlockRefusal(editor);
@@ -217,13 +199,8 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
   ) as Record<BlockTypeId, BlockTypeState>;
 }
 
-/**
- * The toolbar's heading menu: Turn into's body text and heading rows, current by level alone, so
- * an item or a quoted line still shows the level it has.
- */
 export function textLevelStates(editor: Editor): { id: BlockTypeId; state: BlockTypeState }[] {
   const states = blockTypeStates(editor);
-  // Undefined when the blocks share no level, so no row reads as current.
   const level = isActive(editor.state, "paragraph", { level: null })
     ? null
     : (currentHeadingLevel(editor) ?? undefined);
@@ -233,7 +210,6 @@ export function textLevelStates(editor: Editor): { id: BlockTypeId; state: Block
   }));
 }
 
-/** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (isActive(editor.state, "code_block")) return "codeBlock";
   const listKind = activeListKind(editor);
@@ -245,12 +221,10 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   return isActive(editor.state, "paragraph", { level: null }) ? "paragraph" : null;
 }
 
-/** The heading level every block under the selection has, or null when they share none. */
 export function currentHeadingLevel(editor: Editor): HeadingLevel | null {
   return HEADING_LEVELS.find((level) => isActive(editor.state, "paragraph", { level })) ?? null;
 }
 
-/** Convert the blocks under the selection in place. */
 export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
   if (!canWrite(editor) || blockTypeStates(editor)[id].blockedBy) return false;
 
@@ -259,13 +233,11 @@ export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
   return applyBlockType(editor, id);
 }
 
-/** The conversion behind Turn into for one selection, toggle semantics intact. */
 function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   const level = blockTypeLevel(id);
   if (level) return editor.chain().focus().toggleHeadingLevel({ level }).run();
 
   switch (id) {
-    // Body text from any text block, a fence included: a level change touches paragraphs only.
     case "paragraph":
       return editor.chain().focus().setParagraph().run();
     case "bulletList":
@@ -279,7 +251,6 @@ function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   }
 }
 
-/** Per-block application across a swept rectangle — the shape marks already have. */
 function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSelection): boolean {
   const undoes = activeBlockTypeId(editor) === id;
   const cells = selection.ranges.map((range) => ({ from: range.$from.pos, to: range.$to.pos }));
@@ -328,7 +299,6 @@ function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSele
   }
 }
 
-/** Read-only outranks every contextual reason, and still reports the state. */
 export function blockedFirst<Outranking, Reason>(
   outranking: Outranking | null,
   state: { active: boolean; blockedBy: Reason | null },
@@ -336,12 +306,10 @@ export function blockedFirst<Outranking, Reason>(
   return outranking ? { active: state.active, blockedBy: outranking } : state;
 }
 
-/** True toggle: one press fences the block, one press returns it to prose. */
 export function toggleCodeBlockBlock(editor: Editor): boolean {
   return turnIntoBlockType(editor, "codeBlock");
 }
 
-/** True toggle: one press lists, one press un-lists, however deep (). */
 export function toggleBulletListBlock(editor: Editor): boolean {
   return turnIntoBlockType(editor, "bulletList");
 }
@@ -365,7 +333,6 @@ export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue
   return true;
 }
 
-/** Toolbar and keymap traverse the same mounted editor history. */
 export function undoDocument(editor: Editor): boolean {
   if (!canWrite(editor)) return false;
   editor.commands.focus();
@@ -392,7 +359,6 @@ function canWrite(editor: Editor): boolean {
   return !editor.isDestroyed && editor.isEditable;
 }
 
-/** The kind of list every selected block sits in, or null when they are not all in one kind. */
 function activeListKind(editor: Editor): "bullet" | "ordered" | null {
   return selectionListKind(selectedSequence(editor.state.selection));
 }
@@ -404,7 +370,6 @@ function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
   return context.imageUploadAvailable ? null : "no-project";
 }
 
-/** What the deepest context under the selection refuses, or null when that context is the document itself and nothing local stands in the way. */
 function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | null {
   switch (context.owner) {
     case "object":
@@ -421,7 +386,6 @@ function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | 
   }
 }
 
-/** The block-type fence, shared with every other surface that rewrites a whole block (the block menu's Turn into, the formatting menu's). */
 export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null {
   const owner = chromeContextRefusal(resolveChromeContext(editor.state));
   if (owner) return owner;
@@ -441,7 +405,6 @@ export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null 
   return uniform ? refused[0] : "mixed-selection";
 }
 
-/** The fence for the two commands a plain code block REVERSES rather than refuses — the code-block toggle and "turn into paragraph". */
 export function codeBlockRefusal(editor: Editor): BlockTypeRefusalReason | null {
   const blocker = blockTypeRefusal(editor);
   return blocker === "code-block" ? null : blocker;
@@ -460,7 +423,6 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
   return editor.can().setMark(mark) ? null : "inline-code";
 }
 
-/** Why the selection holds no prose a mark could land on, or null when it holds some: marks land per node, so a mixed selection formats the prose it reaches and leaves the rest alone. */
 function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   const { state } = editor;
   const refusals = spannedRefusals(state);
@@ -472,7 +434,6 @@ function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   return refusals[0] ?? null;
 }
 
-/** What each text block the selection covers refuses, in document order. */
 function spannedRefusals(state: EditorState): (BlockTypeRefusalReason | null)[] {
   const { doc, selection } = state;
   const refusals: (BlockTypeRefusalReason | null)[] = [];

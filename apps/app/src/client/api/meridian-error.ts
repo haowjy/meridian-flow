@@ -1,13 +1,3 @@
-/**
- * meridian-error — frontend representation of the canonical `MeridianError` envelope.
- *
- * Purpose: One client-side error type used by both transports (HTTP and WS), so
- * `code`, `retryable`, `source`, and `details` survive the trip from server
- * boundary to UI banner instead of collapsing to a bare `new Error(message)`.
- * Key decision: extend `Error` so existing `onError?: (err: Error) => void`
- * callbacks keep working unchanged — consumers downcast via `isMeridianApiError`
- * to read structured fields.
- */
 import { t } from "@lingui/core/macro";
 import { isMeridianError, type MeridianError } from "@meridian/contracts/errors";
 
@@ -18,7 +8,6 @@ export class MeridianApiError extends Error {
   readonly details: MeridianError["details"];
   readonly envelope: MeridianError;
   readonly status: number | undefined;
-  /** The HTTP response's headers; undefined on the WS path. */
   readonly headers: Headers | undefined;
 
   constructor(envelope: MeridianError, status?: number, headers?: Headers) {
@@ -72,7 +61,6 @@ export function meridianApiErrorFromPayload(
   return null;
 }
 
-/** Shared across fetch, upload, and command feedback; raw codes never become writer copy. */
 export function deletedDestinationCopy(
   code: string,
   details?: MeridianError["details"],

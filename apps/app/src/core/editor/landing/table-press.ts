@@ -8,7 +8,6 @@ import { type Child, isTableCell } from "./point-landing";
 import { pressSelection } from "./press";
 import { viewGeometry } from "./view-geometry";
 
-/** The cell node `dom` renders, or null when `dom` is not a cell's own DOM. */
 function cellContainerAtDOM(view: EditorView, dom: Element): Child | null {
   let inside: number;
   try {
@@ -34,10 +33,8 @@ export function tablePressPlugin(editor: Editor): Plugin {
     props: {
       handleDOMEvents: {
         mousedown(view, event) {
-          // Primary presses only: the context-claim ladder owns the rest.
           if (event.button !== 0 || event.defaultPrevented || !view.editable) return false;
           const target = event.target;
-          // Only the cell's own DOM is inert padding; descendants keep their owner.
           const cell =
             target instanceof Element && target.matches("td, th") && view.dom.contains(target)
               ? cellContainerAtDOM(view, target)

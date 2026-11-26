@@ -6,10 +6,6 @@ import type { DocumentHistory } from "../editor-history";
 
 export type LoroSyncOptions = { copy: EditorCopy | null; history: DocumentHistory | null };
 
-/**
- * The binding (`@meridian/loro-prosemirror`) on the session's copy. Every write it makes leaves
- * by the session's `publish`, and the binding records it in the document's Undo (`history.steps`).
- */
 export const LoroSyncExtension = Extension.create<LoroSyncOptions>({
   name: "loroSync",
   addOptions: () => ({ copy: null, history: null }),

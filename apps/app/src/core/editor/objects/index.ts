@@ -1,11 +1,3 @@
-/**
- * Object physics — the design's second register, headless.
- *
- * A lane that ships an object type adds a row to `EDITOR_OBJECT_TYPES` and,
- * when Enter opens a surface, registers the handler from its mounted React
- * component. Nothing else here is meant to be re-implemented per type.
- */
-
 export {
   engageObject,
   type ObjectEngagement,

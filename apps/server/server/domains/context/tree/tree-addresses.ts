@@ -205,8 +205,6 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
     const accountId =
       selection.accountId && isUuid(selection.accountId) ? selection.accountId : null;
     if (selection.names.length === 0 || (projectIds.length === 0 && !accountId)) return null;
-    // A node's name is its full filename (its label: a twin's suffix is not in it); the
-    // candidates are stems, so match its stem too.
     const names = sql.join(
       selection.names.map((name) => sql`${name}`),
       sql`, `,

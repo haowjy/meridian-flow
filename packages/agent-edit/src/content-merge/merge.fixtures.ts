@@ -1,9 +1,3 @@
-/**
- * Fixtures for the merge's tests: a tiny document notation, seeded random documents with concurrent edit
- * scripts and ground truth, an invariant oracle that follows each unique word through a merge, and the
- * spec's fixed case table (spec-content-rebase.md section 5). Words are unique ("w17") so a word's text
- * is its identity.
- */
 import { hasBlockId, withBlockIds } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { correspond } from "../diff/correspond.js";
@@ -11,23 +5,16 @@ import type { Tok } from "../diff/tokens.js";
 import type { Conflict } from "./merge.js";
 import type { RuleName } from "./rules.js";
 
-/** `text#id` is a unit with the id `id`; no suffix, no id. */
 const withId = (text: string): [string, { id: string } | null] => {
   const m = /^(.*)#(\w+)$/s.exec(text);
   return m ? [m[1], { id: m[2] }] : [text, null];
 };
 
-/**
- * A document in the case table's notation: blocks joined by ` | `, each `kind:text`. A block's id is
- * written after its kind (`p#a:text`); a list item's, a quote paragraph's and a table cell's after
- * its text (`list:one#a;two#b`). Blocks with no id are given one by `tagBySide`.
- */
 export function parseDoc(schema: Schema, src: string): PMNode[] {
   return src.split(" | ").flatMap((part) => {
     const i = part.indexOf(":");
     const head = i < 0 ? part.trim() : part.slice(0, i).trim();
     const text = i < 0 ? "" : part.slice(i + 1);
-    // `p#a{path=--,marker=done}:text` sets the id and block attributes.
     const [, bare, braces] = /^(.*?)(?:\{([^}]*)\})?$/s.exec(head) ?? [];
     const attrs = Object.fromEntries(
       (braces?.split(",") ?? []).filter(Boolean).map((kv) => kv.split("=") as [string, string]),
@@ -50,7 +37,6 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
           schema.nodes.table_row.create(
             null,
             row.split(",").map((cell) => {
-              // `alpha^2` is a cell spanning two columns.
               const [, body, span] = /^(.*?)(?:\^(\d+))?$/.exec(cell) ?? [];
               return schema.nodes.table_cell.create({ colspan: Number(span ?? 1) }, para(body));
             }),
@@ -232,30 +218,25 @@ export class Rng {
 }
 
 export type Word = { t: string; em: boolean; strong: boolean; dot: boolean };
-/** A block's permanent id, as an editor would keep it: a split's first part keeps it, a copy gets a new one. */
 type Ided = { id: string };
 export type GBlock =
   | (Ided & {
       kind: "text";
       type: "paragraph" | "heading";
       level: number;
-      /** `-` is a list item, `>` a quoted paragraph. */
       path: "" | "-" | ">";
       words: Word[];
       origins: number[];
     })
   | (Ided & { kind: "figure"; alt: string; origins: number[] })
   | (Ided & { kind: "rule"; origins: number[] })
-  // A table's cells in row order (`cols` per row).
   | (Ided & {
       kind: "container";
       units: Word[][];
-      /** The id of each unit's paragraph, and of each table row. */
       unitIds: string[];
       rowIds: string[];
       cols: number;
       origins: number[];
-      /** A table's `align`. */
       attrs: { align: "center" | null };
     });
 
@@ -280,11 +261,11 @@ export type OpName =
 
 export interface Script {
   ops: OpName[];
-  touched: Set<number>; // base block ids this side's own ops touched
-  moved: Set<number>; // base block ids this side moved
-  edited: Set<number>; // base block ids this side touched other than by moving
-  structural: boolean; // split, merged or deleted a block
-  restructured: Set<number>; // base block ids this side split, merged or deleted
+  touched: Set<number>;
+  moved: Set<number>;
+  edited: Set<number>;
+  structural: boolean;
+  restructured: Set<number>;
 }
 
 export interface Scenario {
@@ -294,8 +275,8 @@ export interface Scenario {
   shared: Script;
   liveScript: Script;
   draftScript: Script;
-  repeats: boolean; // some text is deliberately not unique
-  copied: Set<string>; // words a repeatBlock op copied: their text no longer names one word
+  repeats: boolean;
+  copied: Set<string>;
 }
 
 export interface GenOptions {
@@ -304,7 +285,7 @@ export interface GenOptions {
   sharedP?: number;
   moveP?: number;
   repeats?: boolean;
-  ops?: OpName[]; // restrict op mix
+  ops?: OpName[];
 }
 
 let counter = 0;
@@ -416,7 +397,6 @@ const ALL_OPS: OpName[] = [
   "editAttr",
 ];
 
-/** Applies one random op in place; returns the op name or null if it didn't apply. */
 function applyOp(rng: Rng, doc: GBlock[], sc: Script, opts: GenOptions): OpName | null {
   const touched = new Set<number>();
   const op = applyOpInner(rng, doc, touched, opts);
@@ -555,7 +535,6 @@ function applyOpInner(
       return op;
     }
     case "repeatBlock": {
-      // Deliberate repeated content: a copy of an existing paragraph (same words) somewhere else.
       if (!withWords.length) return null;
       const [b] = rng.pick(withWords);
       for (const w of b.words) copiedWords.add(w.t);
@@ -609,7 +588,6 @@ function applyOpInner(
     case "addUnit": {
       if (!containers.length) return null;
       const b = rng.pick(containers);
-      // A table grows by a row or a column, so live adding one and the draft the other is generated.
       if (rng.chance(0.4)) {
         const rows = b.units.length / b.cols;
         const units: Word[][] = [];
@@ -682,7 +660,6 @@ export function runScript(rng: Rng, doc: GBlock[], n: number, opts: GenOptions):
   return s;
 }
 
-/** Scenario features the spec treats as known limitations, so failures are bucketed apart. */
 export function limitations(sc: Scenario): string[] {
   const out: string[] = [];
   if (sc.shared.ops.length) out.push("same-edit-both-sides");
@@ -843,7 +820,7 @@ export interface OracleInput {
   draft: readonly PMNode[];
   merged: readonly PMNode[];
   conflicts: readonly Conflict[];
-  liveTouched?: Set<number>; // ground truth; omit to skip the legitimacy check
+  liveTouched?: Set<number>;
   draftTouched?: Set<number>;
   pairSamples?: number;
   orderConflict?: boolean; // the sides' moves admit no single order; the draft's order is used
@@ -920,7 +897,6 @@ export function check(o: OracleInput, rnd: () => number = Math.random): string[]
     }
   }
 
-  // Attributes, order and block structure, for identifiable words outside conflicts.
   const ok = (w: string) => !repeated.has(w) && !excused(w) && (M.count.get(w) ?? 0) === 1;
   const rule = <T>(b: T, l: T, d: T) => (l === b ? d : d === b ? l : d);
   for (const w of M.list) {
@@ -1008,14 +984,13 @@ export const show = (bs: readonly PMNode[]) =>
     .join(" ");
 
 export interface Case {
-  row: string; // case-table row
+  row: string;
   name: string;
   base: string;
   live: string;
   draft: string;
   merged: string;
   conflicts: number;
-  /** The merge rules this row fires, and only those. */
   rules: RuleName[];
 }
 
@@ -1131,7 +1106,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: ["same-block-added-twice"],
   },
-  // Text in one paragraph
   {
     row: "same word, different edits",
     name: "word-conflict",
@@ -1212,7 +1186,6 @@ export const CASES: Case[] = [
     conflicts: 1,
     rules: ["draft-wins-text"],
   },
-  // Repeated content
   {
     row: "repeated content",
     name: "repeated-paragraphs",
@@ -1233,7 +1206,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: [],
   },
-  // Structure
   {
     row: "split vs edit",
     name: "live-split-draft-edit",
@@ -1304,7 +1276,6 @@ export const CASES: Case[] = [
     conflicts: 1,
     rules: ["draft-wins-stretch"],
   },
-  // Moves
   {
     row: "live moves, draft edits",
     name: "live-move-draft-edit",
@@ -1365,7 +1336,6 @@ export const CASES: Case[] = [
     conflicts: 2,
     rules: ["draft-wins-text", "moved-text-dropped"],
   },
-  // Delete vs edit
   {
     row: "live deletes, draft edits",
     name: "live-delete-draft-edit",
@@ -1426,7 +1396,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: [],
   },
-  // Block type, marks, attrs
   {
     row: "block type vs text",
     name: "heading-vs-text",
@@ -1487,7 +1456,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: ["block-attributes-merged"],
   },
-  // Non-text blocks (atomic)
   {
     row: "figure deleted vs untouched",
     name: "figure-delete",
@@ -1974,7 +1942,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: [],
   },
-  // Scripts without spaces
   {
     row: "CJK run",
     name: "cjk-run",
@@ -1985,7 +1952,6 @@ export const CASES: Case[] = [
     conflicts: 0,
     rules: [],
   },
-  // A short line does not link to a paragraph in another place
   {
     row: "a short line removed, an echo of it added far away",
     name: "short-line-far-addition",
@@ -2010,7 +1976,6 @@ export const CASES: Case[] = [
     conflicts: 1,
     rules: ["draft-wins-stretch"],
   },
-  // A join inside a container is owned where it happens
   {
     row: "a list item joined into another while a move pairs it with a lookalike",
     name: "item-join-lookalike",
@@ -2041,7 +2006,6 @@ export const CASES: Case[] = [
     conflicts: 1,
     rules: ["containers-merged", "draft-wins-stretch"],
   },
-  // Equal blocks in a stretch are no clash only when they sit in the same places
   {
     row: "both sides split a block; the draft's second half sits past another paragraph",
     name: "split-placed-apart",

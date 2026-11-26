@@ -47,7 +47,6 @@ function editor(content = "<p>Kael waits.</p>", projectId = "project-1"): Editor
 
 type Stored = { text: string; ref: string | null; href: string };
 
-/** Every link run, with an ahead ref's random id masked. */
 function links(target: Editor): Stored[] {
   const out: Stored[] = [];
   target.state.doc.descendants((node) => {
@@ -69,7 +68,6 @@ function ctrlK(target: Editor, from: number, to: number, href: string): Stored[]
   return links(target);
 }
 
-/** The browser's paste of clipboard text (and HTML), through every plugin's paste props. */
 function paste(target: Editor, text: string, html = ""): Stored[] {
   const event = new Event("paste", { bubbles: true, cancelable: true });
   const data: Record<string, string> = {

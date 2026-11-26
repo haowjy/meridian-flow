@@ -1,11 +1,3 @@
-/**
- * The typed-under menus: `/` (M8, §5.7, mockup 07) and `@`.
- *
- * One stylesheet because they are one primitive — `SuggestionMenu` — wearing
- * two triggers. Portalled, hence the `meridian-` prefix rather than a nesting
- * under the editor.
- */
-
 /* The popover clips its children to its own rounded corners; the list inside
    it is what scrolls.
 

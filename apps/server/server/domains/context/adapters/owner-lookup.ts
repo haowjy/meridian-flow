@@ -1,5 +1,3 @@
-/** Drizzle wiring of the owner lookup: Works, chats, subagents and the chats that hold files. */
-
 import { DAY_MS, deletionPurgeAt } from "@meridian/contracts/retention";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { decodeWorkHandle } from "@meridian/contracts/works";
@@ -29,10 +27,8 @@ function foldAccents(text: string): string {
   return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-/** `foldAccents` in SQL: decompose, then drop combining marks. Needs a UTF8 database. */
 const foldedWorkName = sql`regexp_replace(normalize(${works.name}, NFD), '[\u0300-\u036f]', '', 'g')`;
 
-/** A name with accents folded, lowercased and every run of non-alphanumerics collapsed to one dash, as SQL compares it. */
 function collapseName(name: string): string {
   return foldAccents(name)
     .toLowerCase()
@@ -110,8 +106,6 @@ export function createDrizzleOwnerLookup(
       return row ? (toWorkOwner(row) ?? null) : null;
     },
     async worksNamed(projectId, name) {
-      // Exact name, or the same name with punctuation and spacing collapsed: the two spellings
-      // `worksNamedLike` accepts. Few rows can match, so the cap only guards a pathological project.
       const exact = foldAccents(name.trim()).toLowerCase();
       const collapsed = collapseName(name);
       const rows = await currentDrizzleDb(db)

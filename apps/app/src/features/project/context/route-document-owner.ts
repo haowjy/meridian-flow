@@ -14,16 +14,12 @@ import type { OpenDocument } from "@/client/stores";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import type { ContextRouteRequest } from "../routing/project-route";
 
-/** The document an answered address names (`addressedDocument`). */
 export type AddressedDocument = { document: OpenDocument; draftOnly: boolean };
 
 export type RouteDocumentOwner =
   | { kind: "live"; file: TreeFile; byIdentity: boolean }
-  /** Live lacks the document: its descriptor is the address's draft row. */
   | { kind: "draft-only"; document: OpenDocument }
-  /** The bound document the tree lacks here (a review of a move): the address's answer. */
   | { kind: "addressed"; document: OpenDocument }
-  /** An identity the route holds that no source resolves yet. */
   | { kind: "pending" }
   | { kind: "absent" };
 /**

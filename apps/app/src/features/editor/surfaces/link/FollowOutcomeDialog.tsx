@@ -1,15 +1,3 @@
-/**
- * The Editor's host for what a follow says: the shared outcome presenter inside
- * an `EditorDialog`.
- *
- * A chrome surface like any other, and that part is load-bearing: this dialog
- * can arrive a quarter second after the click, by which time the writer may
- * have summoned the slash menu or the link form. Registering as a layer is what
- * makes the kernel replace that surface instead of leaving two of them claiming
- * Escape (law 4). `ProjectLinkRuntime` answers the follow; this only reads the
- * answer.
- */
-
 import type { Editor } from "@tiptap/core";
 
 import { linkTargetHref } from "@/core/editor/links";

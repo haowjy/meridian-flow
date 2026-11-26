@@ -1,5 +1,3 @@
-/** Durable inverse delivery to live rooms and drafts. */
-
 import { decodeEnvelope, freshPeerId, readDocument } from "@meridian/document-model";
 import { nodeOf } from "@meridian/loro-prosemirror";
 import { and, eq, inArray } from "drizzle-orm";

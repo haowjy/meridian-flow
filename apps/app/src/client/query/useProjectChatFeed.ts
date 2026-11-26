@@ -1,4 +1,3 @@
-/** Infinite, filtered project chat feed with favorite state projected onto its rows. */
 import {
   infiniteQueryOptions,
   keepPreviousData,
@@ -58,7 +57,6 @@ export function useProjectChatFeed(
   // Stable across renders that don't change `query.data`, so a keystroke
   // elsewhere in the tree does not invalidate every row's memo.
   const items = useMemo(
-    // An unfavorited row leaves Favorites at once, before the refetch confirms.
     () => flattenChatFeed(query.data).filter((item) => !favorite || item.isFavorite),
     [query.data, favorite],
   );

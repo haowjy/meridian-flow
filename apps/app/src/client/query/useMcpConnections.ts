@@ -19,9 +19,7 @@ export const mcpConnectionsRoot = (accountId: string) =>
 const mcpConnectionsKey = (accountId: string, projectId: string | null) =>
   [...mcpConnectionsRoot(accountId), projectId ?? "account"] as const;
 
-/** The server checks a connection at most once a minute: asking sooner learns nothing new. */
 const CHECK_INTERVAL_MS = 60_000;
-/** A check takes a few seconds and up to two tries; outside a project no hint says it finished. */
 const CHECKING_POLL_MS = 4_000;
 
 /**
@@ -48,13 +46,11 @@ export function useMcpConnections(projectId: string | null, { watch = false } = 
   });
 }
 
-/** The project the writer is in, if any: the Connections list of a project shows its own as well. */
 export function useRouteProjectId(): string | null {
   const params = useParams({ strict: false }) as { projectId?: string };
   return params.projectId ?? null;
 }
 
-/** Reads the list when the app opens and when the writer comes back, so a check starts. */
 export function useMcpConnectionsAtOpen(): void {
   useMcpConnections(useRouteProjectId());
 }

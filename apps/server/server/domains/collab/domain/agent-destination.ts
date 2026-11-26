@@ -13,7 +13,6 @@ export function runAtDestination<T>(destination: FileDestination, operation: () 
   return scope.run(destination, operation);
 }
 
-/** Live outside a model call: the writer's commands and the server's own writes are Live's. */
 export function currentDestination(): FileDestination {
   return scope.getStore() ?? LIVE;
 }

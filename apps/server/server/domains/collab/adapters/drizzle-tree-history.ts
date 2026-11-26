@@ -1,9 +1,3 @@
-/**
- * The model's tree changes as receipts: the rows its call keeps in the tool call's own
- * transaction (a write ordinal on each node it changed, from the counter the node's text edits
- * take too), the one history of a node `undo` and `revert` choose from, and the Works
- * whose drafts outlive a delete.
- */
 import type { WriteOrdinals } from "@meridian/agent-edit/integration";
 import { editHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
@@ -22,7 +16,6 @@ import { boundCommandId } from "./drizzle-document-edits.js";
 export function createDrizzleTreeHistory(
   db: Database,
   ordinals: WriteOrdinals,
-  /** The text engine's own stack of a document for a chat: ordinals of what Undo would take. */
   textStack: (
     threadId: string,
     documentId: string,
@@ -49,11 +42,6 @@ export function createDrizzleTreeHistory(
     ids.length === 0
       ? []
       : await tx().select().from(treeEditReceipts).where(inArray(treeEditReceipts.reverses, ids));
-  /**
-   * The reply's receipts, newest first; those reversing them; and of those, the card's Undo
-   * receipts. The model's own undo of one of the reply's changes is part of what the reply did,
-   * so it is not among them.
-   */
   const turnReceipts = async (threadId: ThreadId, turnId: TurnId) => {
     const mine = await tx()
       .select()

@@ -17,7 +17,6 @@ import {
 } from "./domain/types.js";
 import type { FileAccess } from "./file-access.js";
 
-/** A seam refused a grant under its locks; the write didn't happen. */
 export class FileEditRefusedError extends Error {
   constructor(readonly refused: readonly FileAccessDenied[]) {
     super(`File edit refused: ${refused.map((denial) => denial.reason).join(", ")}`);
@@ -77,10 +76,6 @@ export function runWithEditGrants<T>(
   });
 }
 
-/**
- * Whether the grants cover a write to each document: a document grant names
- * it, or a container grant (a create) holds it, as the file just created.
- */
 async function grantsCover(
   access: Pick<FileAccess, "authorize">,
   grants: readonly FileGrant<"edit" | "command">[],

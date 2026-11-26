@@ -1,14 +1,10 @@
-/** How a host presents one editable document; everything else about the host is shared. */
-
 export type DocumentPresentation = {
   /**
    * Whether this view lets the writer type, with its toolbar. The host's `readOnly` is a
    * different question (the Work's scope is frozen) and is checked against the room's access.
    */
   editable: boolean;
-  /** Remote carets and selections inside the editor. */
   collaborationDecorations: boolean;
-  /** Names the live binding in diagnostics. */
   bindingOwner: "desktop-document-host" | "mobile-project-document-host";
 };
 

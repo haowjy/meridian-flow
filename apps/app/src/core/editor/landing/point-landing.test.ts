@@ -63,12 +63,7 @@ it("lands a point in the cell it is over, and clamps one beside a scrolled table
     };
   };
 
-  expect([
-    cellOf(20, 20), // over the first cell's text
-    cellOf(175, 20), // over the second cell's text
-    cellOf(155, 3), // in the second cell's padding
-    cellOf(500, 20), // beside the table, past a cell scrolled out of view
-  ]).toEqual([
+  expect([cellOf(20, 20), cellOf(175, 20), cellOf(155, 3), cellOf(500, 20)]).toEqual([
     { kind: "inline", cell: 0 },
     { kind: "inline", cell: 1 },
     { kind: "inline", cell: 1 },

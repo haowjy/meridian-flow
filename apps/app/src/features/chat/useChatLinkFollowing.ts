@@ -1,48 +1,3 @@
-/**
- * Chat's half of link following: the scope, destination, and outcome host a
- * transcript's links follow through, over the shared `features/links` follower.
- * `ChatView` provides the returned navigation to transcript references and
- * renders the returned dialog props.
- *
- * Scope: the thread's Work, and its lineage while the thread is on No Work (a
- * bare `scratch://` is the lineage's), with no base URI (so relative links are
- * text). It is pending only while the thread or the Works snapshot is loading; a click
- * then waits, showing checking, and is never answered from a guessed Work.
- * A null thread binding remains pending rather than guessing No Work. A No
- * Work thread uses the locked row id whichever snapshot names it first, so
- * the scope does not
- * change identity mid-load and drop a click. A thread whose Work the loaded
- * snapshot does not have (deleted, or not visible) asks with its own binding,
- * and the server answers. Known gap: the server answers null once that Work is
- * gone, so existing names read as missing; the thread normally disappears with
- * its Work, and the fix is the server's.
- *
- * Destination: the Editor, opened the way chat's other document doors open it
- * (exact-reference pills, tool-row names), with no explicit host Work: the
- * route keeps the current Editor Work. Having the Editor
- * adopt the chat's Work is a decision for all of chat's doors at once.
- *
- * Visibility: `active` is the chat's visibility, so hiding the side or opening
- * Settings aborts a follow and dismisses its dialog. ChatView remounts per
- * thread, so switching threads aborts too.
- *
- * Drawing: the chat owns one resolution cache and hands it to the follower and
- * to the transcript, so a syntax link's chip and a click on it read the same
- * answer. One requester asks about every link the transcript shows, batched.
- * The cache is created once and never destroyed, as the follower's own would
- * be: `destroy()` drops listeners, and a StrictMode remount keeps the
- * instance.
- *
- * Doors: a URI door (a written-document name, a passage row) follows through this same
- * follower, carrying its shell's placement policy. One chat, one latest click: a door
- * and a transcript link cancel each other, and a hidden chat or a switched thread
- * cancels both.
- *
- * Exact `@` references in writer messages read the replay by identity
- * (`useReferenceAvailability`), so a deleted document turns its references
- * dashed at once.
- */
-
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { type ComponentProps, useCallback, useMemo, useState } from "react";
 
@@ -64,7 +19,6 @@ import { useLinkPlacement } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 
-/** What a chat link is resolved against, or pending while that is still loading. */
 function chatLinkScope({
   projectId,
   activeWork,
@@ -75,21 +29,16 @@ function chatLinkScope({
   worksSettled,
 }: {
   projectId: string;
-  /** The thread's Work from the Works snapshot; null when unknown or missing. */
   activeWork: Pick<Work, "id"> | null;
   thread: Pick<Thread, "workId"> | null;
-  /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
   rootThreadId: string | null;
-  /** The chat that owns the uploads a bare `uploads://` names. */
   chatThreadId: string | null;
   noWorkId: string | null;
-  /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
   if (activeWork)
     return { projectId, workId: activeWork.id, rootThreadId, chatThreadId, baseUri: null };
   if (!worksSettled || !thread?.workId) return "pending";
-  // A thread whose Work the snapshot lacks asks with its own binding; No Work is still its lineage.
   return {
     projectId,
     workId: thread.workId,
@@ -108,14 +57,11 @@ export function useChatLinkFollowing({
   projectId: string;
   activeThread: Thread | null;
   activeWork: Work | null;
-  /** The chat is showing; hiding it aborts a follow in flight. */
   active: boolean;
 }): {
   navigation: TranscriptLinkNavigation;
-  /** What the chat's folder chips (transcript and composer) open documents through. */
   folders: FolderMenuHost;
   dialog: ComponentProps<typeof LinkFollowDialog>;
-  /** The shell's URI doors, following through this same follower; null without a shell. */
   doors: {
     open: (uri: string, passage?: ContextPassageAnchor) => void;
     canOpen: ChatDoors["canOpen"];
@@ -125,7 +71,6 @@ export function useChatLinkFollowing({
   const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
   const noWorkId = noWork?.id ?? null;
-  // The first chat's id: a No Work chat's Scratch is its lineage's.
   const lineageId = activeThread?.rootThreadId ?? null;
   const chatThreadId =
     useTopChat(projectId, activeThread)?.chatId ??
@@ -167,7 +112,6 @@ export function useChatLinkFollowing({
       }),
     [openReferenceDocument],
   );
-  // A page this chat drafted opens on its draft.
   const place = useLinkPlacement(
     projectId,
     activeWork && activeThread ? activeThread.draftId : null,

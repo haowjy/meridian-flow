@@ -1,45 +1,18 @@
-/**
- * What a link's href means — the one classifier every link consumer reads.
- *
- * A link is a standard Markdown link to an address. Internal links come in two
- * spellings with one behavior: a Context URI `manuscript://…`, and a path
- * relative to the document holding the link. Both resolve to the one project
- * document at that address and navigate in-app; only `external` leaves the
- * app, and only `external` is decided entirely on the client. `[[name]]` is
- * not a spelling: it is text wherever it appears, and a paste turns it into a
- * link (`wikilink-paste.ts`) before it is ever stored.
- *
- * Two directions live here on purpose. `classifyLinkTarget` reads an href that
- * is already in the document — written by the markdown parser, by an LLM, or
- * by this module — and answers what it is. `normalizeLinkHref` reads what a
- * writer typed into a form and answers what to store. They share the scheme
- * fence, which is the point: a `javascript:` href is refused on the way in and
- * unrecognized on the way out, and neither answer can drift from the other.
- */
-
 import { CONTEXT_URI_SCHEMES, splitDocumentHrefSuffix } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
 export type InternalLinkTarget =
-  /** `manuscript://appendix/vault-charter.md`, `scratch://@w3/notes.md`. */
   | { kind: "scheme"; addressKind: "document" | "folder"; uri: string }
-  /** `chapter-213.md`, `../notes/kael.md` — resolved against the holder's URI. */
   | { kind: "relative"; addressKind: "document" | "folder"; path: string };
 
-export type LinkTarget =
-  | InternalLinkTarget
-  /** Everything that leaves the app. Never crosses the resolution port. */
-  | { kind: "external"; url: string };
+export type LinkTarget = InternalLinkTarget | { kind: "external"; url: string };
 
-/** True for both spellings of the one internal family. */
 export function isInternalLinkTarget(target: LinkTarget): target is InternalLinkTarget {
   return target.kind !== "external";
 }
 
-/** Canonical Context schemes share the server resolver's grammar. */
 const INTERNAL_SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);
 
-/** Web schemes a link mark may carry. Anything else is not a link we honor. */
 const EXTERNAL_SCHEMES: ReadonlySet<string> = new Set(["http:", "https:", "mailto:"]);
 
 /**
@@ -61,16 +34,10 @@ function hasAsciiControl(value: string): boolean {
 
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
-/**
- * An internal link is a Context URI: a known scheme followed by `://`, in any
- * case, exactly as `resolveDocumentHref` reads it. `kb:x` is neither internal
- * nor a web link.
- */
 function internalScheme(value: string, scheme: string): boolean {
   return INTERNAL_SCHEMES.has(scheme) && value.slice(scheme.length + 1).startsWith("//");
 }
 
-/** Whether reference completion must leave this writer-entered href entirely to the form. */
 export function linkInputStepsAsideFromReferences(input: string): boolean {
   const value = input.trim();
   if (!value || value.startsWith("//") || /^www\./i.test(value)) return true;
@@ -78,23 +45,15 @@ export function linkInputStepsAsideFromReferences(input: string): boolean {
   return Boolean(scheme && !INTERNAL_SCHEMES.has(scheme));
 }
 
-/** Host-like first segments retain the original Markdown-path exception. */
 function readsAsDocumentPath(value: string): boolean {
   const firstSegment = value.split(/[/?#]/, 1)[0] ?? "";
   return /\.mdx?($|[?#])/i.test(value) || /\s/.test(firstSegment);
 }
 
-/**
- * What this href is, or null when it is nothing the editor will act on — an
- * empty mark or a scheme outside both families. Null means no hover hint, no
- * follow, and no Open verb; it is not the same as an internal target that
- * resolves to nothing.
- */
 export function classifyLinkTarget(href: string): LinkTarget | null {
   const value = href.trim();
   if (!value || hasAsciiControl(value)) return null;
 
-  // Protocol-relative, the one scheme-less spelling that still means the web.
   if (value.startsWith("//")) return externalTarget(`https:${value}`);
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
@@ -105,25 +64,11 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
   return externalTarget(value);
 }
 
-/**
- * The href to store for something a writer typed, or null when it is not a
- * link at all (law 5: the form says so rather than committing nonsense). A
- * web URL, a Context URI, and a relative document path each keep their own
- * spelling.
- *
- * The one convenience is the missing `https://`, because writers paste bare
- * hostnames constantly. It is deliberately last, so `manuscript://…` and
- * `../notes/kael.md` keep their own meaning. A path whose first segment has no
- * dot (`notes/kael`, `Chapter 13`) is relative, since a hostname always has
- * one; a dotted first segment (`example.com/x`) is a web address unless it
- * reads as a document path (see `readsAsDocumentPath`).
- */
 export function normalizeLinkHref(input: string): string | null {
   const value = input.trim();
   if (!value || hasAsciiControl(value)) return null;
 
   if (value.startsWith("//")) return validExternalHref(`https:${value}`);
-  // A path is relative to the document holding it; there is no project root.
   if (value.startsWith("/")) return null;
 
   const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
@@ -139,7 +84,6 @@ export function normalizeLinkHref(input: string): string | null {
   return validExternalHref(`https://${value}`);
 }
 
-/** Canonical semantic spelling for resolution and hints, not an internal browser URL. */
 export function linkTargetHref(target: LinkTarget): string {
   switch (target.kind) {
     case "scheme":
@@ -151,10 +95,6 @@ export function linkTargetHref(target: LinkTarget): string {
   }
 }
 
-/**
- * A readable fallback while an internal destination's catalog title is
- * unavailable: the address's last segment, which is the document's name.
- */
 export function linkTargetLabel(target: LinkTarget): string {
   if (target.kind === "external") return target.url;
   const written = target.kind === "scheme" ? target.uri : target.path;
@@ -179,7 +119,6 @@ function externalTarget(candidate: string): LinkTarget | null {
   return url ? { kind: "external", url: url.href } : null;
 }
 
-/** The web-scheme fence: an allowed scheme that parses and addresses something. */
 function validExternalHref(candidate: string): string | null {
   // The writer's own spelling survives into the document; only rendering and
   // following use the parser's.
@@ -197,7 +136,6 @@ function parseExternalUrl(candidate: string): URL | null {
   }
 }
 
-/** Namespaced clipboard metadata may carry internal targets only. */
 export function internalClipboardTarget(value: string | null): string | null {
   if (value === null) return null;
   const target = classifyLinkTarget(value);

@@ -1,10 +1,3 @@
-/**
- * ChatPaneController — main's band while main holds a chat: the chat lane, and the chat's own
- * controls.
- *
- * The persistent `ChatSurface` owns the live conversation instance; this renders only its chrome.
- */
-
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";

@@ -43,14 +43,12 @@ import {
 } from "../../ports/tree-list-store.js";
 import { treeListOfSource } from "../tree-list-facts.js";
 
-/** Who makes a record: `agent:<chat>/<turn>` for the model, `user:<id>` for a person, else the server. */
 export function actorOf(origin: WriteProvenance | undefined): Actor {
   if (origin?.type === "agent") return `agent:${origin.threadId}/${origin.turnId}`;
   if (origin?.type === "human") return `user:${origin.userId}`;
   return "system";
 }
 
-/** The user or chat a record's actor string names; null for the server's own. */
 export function parseActor(
   actor: string | null | undefined,
 ): { kind: "user"; userId: string } | { kind: "agent"; chatId: string } | null {
@@ -60,14 +58,12 @@ export function parseActor(
   return null;
 }
 
-/** The Work's draft view for a draft, or live. */
 export function viewOfDraft(draftId: DraftId | null): View {
   return draftId === null ? LIVE : { draft: draftId };
 }
 
 export type TreeWriteTarget = { view: View; actor: Actor };
 
-/** The shown child of `parent` at this path segment, read as `childAtSegment` reads it. */
 function childNamed(
   projection: TreeProjection,
   parent: string,
@@ -77,7 +73,6 @@ function childNamed(
   return childAtSegment(childrenOf(projection, parent), segment, level);
 }
 
-/** `id`'s address in its source: the folders' segments from the source's top, its own last. */
 function pathOf(projection: TreeProjection, id: string): string[] {
   const names: string[] = [];
   for (
@@ -89,10 +84,6 @@ function pathOf(projection: TreeProjection, id: string): string[] {
   return names;
 }
 
-/**
- * Folders along `dir` from `from`, each the folder its segment reaches, else made under the
- * segment's name (beside a document of that name, as its twin); each made is pushed to `made`.
- */
 function ensureFolders(
   writer: TreeWriter,
   target: TreeWriteTarget,
@@ -118,7 +109,6 @@ function ensureFolders(
   return parent;
 }
 
-/** An existing folder along `dir`; none is made. */
 function findFolder(
   projection: TreeProjection,
   sourceId: string,
@@ -133,7 +123,6 @@ function findFolder(
   return parent;
 }
 
-/** Where among `parent`'s shown children a position puts a node; an anchor that is gone means the end. */
 function indexAt(
   projection: TreeProjection,
   parent: string,
@@ -149,23 +138,18 @@ function indexAt(
   return position.kind === "before" ? at : at + 1;
 }
 
-/** `record` is the create record, which a receipt names for Undo. */
-/** A folder a create made on the way: part of that create's change, so its Undo takes it back. */
 export type MadeFolder = { record: string; node: string };
 
 export type CreatedNode = {
   id: string;
   record: string;
-  /** The folders made for it, outermost first. */
   folders: MadeFolder[];
   name: string;
-  /** The segments it landed at, a twin's `~id` included. */
   path: string[];
 };
 
 export type InsertedTrees = { landed: ReadonlyMap<string, string>; folders: string[] };
 
-/** One node of a tree to insert, under the id it will have. */
 export type NewNode =
   | { kind: "folder"; id: string; filename: string; children: readonly NewNode[] }
   | {
@@ -185,12 +169,7 @@ export type NewNode =
     };
 
 export interface SourceTree {
-  /** This source's id, provisioned. */
   sourceId(): Promise<string>;
-  /**
-   * A document or stored file at `dir`/`filename`, its folders made as needed. `filename` is a
-   * name, not a segment: one a sibling has makes a twin.
-   */
   create(
     target: TreeWriteTarget,
     input: {
@@ -199,38 +178,25 @@ export interface SourceTree {
       kind: "document" | "file";
       filetype?: Filetype;
       blob?: BlobRef;
-      /** A node id the caller reserved. */
       id?: string;
-      /** The folder node it goes in, found already (`ContextEnsureTrackedOptions.into`); else `dir` is. */
       into?: string;
       provisional?: boolean;
       position?: ContextSiblingPosition;
-      /** Stored on the document's row beside the tree (`documents.metadata`, `has_preview`). */
       metadata?: DocumentCreationMetadata;
       hasPreview?: boolean;
     },
   ): Promise<Result<CreatedNode, AdapterFault>>;
-  /**
-   * The node at `dir`/`filename` in the view, whichever kind, or null: what an ensure reads
-   * before it creates.
-   */
   find(
     target: TreeWriteTarget,
     dir: readonly string[],
     filename: string,
     into?: string,
   ): Promise<{ id: string; kind: "document" | "file" | "folder"; path: string } | null>;
-  /**
-   * Trees of new nodes at their destination folders, made as one change: folders before what
-   * they hold, children in the order given. Answers the source-relative path each node landed
-   * at, by id, and the folders made on the way.
-   */
   insertTree(
     target: TreeWriteTarget,
     input: {
       trees: readonly {
         dir: readonly string[];
-        /** The folder to start from, by id, instead of walking `dir` by name: a folder in Trash is kept standing by what lands in it. */
         parent?: { folderId: string; createFolders: readonly string[] };
         roots: readonly NewNode[];
       }[];
@@ -246,7 +212,6 @@ export interface SourceTree {
     target: TreeWriteTarget,
     make: (scope: TreeScope) => { result: T; refused?: boolean },
   ): Promise<T>;
-  /** What this source's tree shows in `view`, as the list stands. */
   read<T>(view: View, read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T): Promise<T>;
 }
 
@@ -282,7 +247,6 @@ export function createSourceTree(deps: {
     }
   }
 
-  /** The columns of `documents` beside the tree: metadata and preview, for created nodes. */
   const annotateTree = async (nodes: readonly NewNode[]): Promise<void> => {
     for (const node of nodes) {
       if (node.kind === "folder") await annotateTree(node.children);

@@ -66,9 +66,6 @@ const DebugOverlay =
 
 export const Route = createFileRoute("/_authenticated")({
   ...PERSISTENT_SHELL_OPTIONS,
-  // `?settings=` is layout-owned so the settings overlay is URL-addressable from
-  // ANY authenticated route — the path stays put, only the param toggles.
-  // See `features/account/SettingsDialog`.
   validateSearch: (search: Record<string, unknown>): { settings?: SettingsSection } => ({
     settings: isSettingsSection(search.settings) ? search.settings : undefined,
   }),
@@ -163,7 +160,6 @@ function AuthenticatedAccountProviderTree({
   );
 }
 
-/** The account's command driver; a press waits on the account's document rooms. */
 function AccountCommandDriver({ children }: { children: ReactNode }) {
   const registry = useLiveDocumentSessionRegistry();
   return (
@@ -186,7 +182,6 @@ function AccountCommandDriver({ children }: { children: ReactNode }) {
   );
 }
 
-/** The journal's presses hold their rows in every tab and through a reload. */
 function FollowPresses() {
   const owner = useDraftCommandOwner();
   const presses = useCommands({ kind: PRESS_KIND });
@@ -243,7 +238,6 @@ function AuthenticatedProviderTree({
   );
 }
 
-/** Reading the connections starts their checks: when the app opens and when the writer comes back. */
 function McpConnectionsAtOpen() {
   useMcpConnectionsAtOpen();
   return null;

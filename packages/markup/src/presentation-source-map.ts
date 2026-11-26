@@ -1,4 +1,3 @@
-/** Opt-in parse provenance, projected onto final PM paths after text coalescing. */
 import { decodeString } from "micromark-util-decode-string";
 import type { Node as PMNode } from "prosemirror-model";
 import type { PresentationSourceRun, SourceRange } from "./types.js";
@@ -13,13 +12,11 @@ export function sourceRange(ast: unknown): SourceRange | null {
   return typeof from === "number" && typeof to === "number" ? { from, to } : null;
 }
 
-/** Container prefixes and newline normalization can rewrite an AST text leaf. */
 export function textSourceRange(ast: unknown, source: string, value: string): SourceRange | null {
   const range = sourceRange(ast);
   return range && decodeString(source.slice(range.from, range.to)) === value ? range : null;
 }
 
-/** Resolve an authorized original-source subrange without reinterpreting Markdown in the host. */
 export function presentationTextRange(
   run: PresentationSourceRun | undefined,
   source: string,

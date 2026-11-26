@@ -1,15 +1,3 @@
-/**
- * The app's half of image ingress: where a picture's bytes actually go.
- *
- * The editor owns the slot and the upload store owns the progress, the failure and
- * the abort; neither knows projects, endpoints, or CORS. This
- * component is that seam, the same shape as `ProjectLinkRuntime`: it registers
- * the two ports the ingress asks for.
- *
- * It renders nothing. What the writer sees while a drag is in the air, or when
- * a file is refused, is `ImageIngressOverlay`.
- */
-
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
@@ -45,10 +33,6 @@ export function ImageIngressRuntime({
   return null;
 }
 
-/**
- * One project's picture upload, as the port the ingress calls. A picture goes into
- * the home folder for a home document, otherwise the manuscript.
- */
 function pictureUploadPort(projectId: string, scheme: "user" | "manuscript"): ImageUploadPort {
   return async ({ id, file, alt, signal, onProgress }) => {
     const stored = await uploadContextFile({

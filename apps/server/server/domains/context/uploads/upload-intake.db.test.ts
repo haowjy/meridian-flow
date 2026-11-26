@@ -52,9 +52,7 @@ if (!RUN) {
   describe("upload intake (postgres)", () => {
     const USER = "00000000-0000-4000-8000-000000000a01";
     const PROJECT = "00000000-0000-4000-8000-000000000a02";
-    /** A New-chat upload: the chat id is minted by the client and its row does not exist yet. */
     const NEW_CHAT = "00000000-0000-4000-8000-000000000a03";
-    /** A chat whose row, and so whose handle `c1`, exists. */
     const CHAT = "00000000-0000-4000-8000-000000000a04";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
@@ -90,7 +88,6 @@ if (!RUN) {
       fileType: "markdown" as const,
     });
 
-    /** The intake as production composes it, over `db`. */
     function productionIntake(
       db: Database,
       objectStore: ObjectStorePort,
@@ -133,8 +130,6 @@ if (!RUN) {
           bytes: content,
         });
 
-        // Settle both calls before `finally` deletes the user: a rejected
-        // Promise.all would leave the other transaction running into the delete.
         const settled = await Promise.allSettled([
           uploadBytes(service(firstDb), objectStore, request()),
           uploadBytes(service(waiterDb), objectStore, request()),
@@ -150,7 +145,6 @@ if (!RUN) {
           value: { uri: "uploads://chapter", fileType: "markdown" },
         });
 
-        // Two uploads of one name at once: both keep it, and the later to land is the twin.
         const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0]);
         const twin = (db: Database) =>
           uploadBytes(service(db), objectStore, {
@@ -186,7 +180,6 @@ if (!RUN) {
       const replay = await repo.reserve(reservation("one", NEW_CHAT));
       const conflict = await repo.reserve(reservation("one", NEW_CHAT, "other.md"));
       if (first.kind !== "reserved") throw new Error(first.kind);
-      // Neither a reservation nor a claim holds a name: the upload is named where it lands.
       expect(first.reservation).toMatchObject({
         finalPath: null,
         fileType: null,
@@ -199,7 +192,6 @@ if (!RUN) {
       const claimed = await repo.claim(claimInput("one"));
       expect(claimed.kind === "claimed" && claimed.reservation.finalPath).toBe(null);
 
-      // Through the chat's own port.
       const objectStore = createInMemoryObjectStore();
       const intake = productionIntake(database.current, objectStore);
       const send = (chatId: string, filename: string, mimeType: string, bytes: Uint8Array) =>
@@ -228,7 +220,6 @@ if (!RUN) {
         expect.stringMatching(/^uploads:\/\/@c1\/notes\.zip~[0-9a-f]{4,}$/),
       ]);
 
-      // The New chat gets its row, and so its handle, at Send: the same upload now reads there.
       const finalized = await repo.finalize(PROJECT, "one", "draft");
       expect(finalized.canonicalUri).toBe("uploads://draft");
       await database.current.insert(threads).values({
@@ -282,7 +273,6 @@ if (!RUN) {
         const content = new TextEncoder().encode(text);
         const cases = [
           ["Chapter 13.md", "text/markdown", "Chapter 13", "", "markdown"],
-          // The same name again: each keeps it, a twin whose path carries `~id`.
           ["Chapter 13.markdown", "application/octet-stream", "Chapter 13", "", "markdown"],
           ["Chapter 13.mdx", "application/octet-stream", "Chapter 13", "", "markdown"],
           ["Chapter 13.txt", "text/plain", "Chapter 13", "", "markdown"],
@@ -319,7 +309,6 @@ if (!RUN) {
             .select()
             .from(treeNodes)
             .where(eq(treeNodes.id, result.value.documentId as never));
-          // The tree row stores the name with its extension.
           expect(document).toMatchObject({
             name: extension ? `${name}.${extension}` : name,
             extension,
@@ -451,7 +440,6 @@ if (!RUN) {
         const first = reservedOf(await f.start("retry", 8));
         expect(first.state).toBe("reserved");
         expect(reservedOf(await f.start("retry", 8)).documentId).toBe(first.documentId);
-        // Finish before the PUT keeps the row, so the writer can PUT and finish again.
         expect(await f.finish("retry")).toEqual({ ok: false, error: { code: "not_uploaded" } });
         await f.put(first.documentId, bytes);
         const done = await f.finish("retry");
@@ -462,7 +450,6 @@ if (!RUN) {
           value: { state: "finalized" },
         });
         expect(await f.keys()).toEqual([`uploads/${PROJECT}/${first.documentId}`]);
-        // A different name or size for the same intake is a different upload.
         expect(await f.start("retry", 9)).toEqual({
           ok: false,
           error: { code: "idempotency_conflict" },
@@ -483,7 +470,6 @@ if (!RUN) {
 
       it("reads type and text from the stored bytes, never from the declared name", async () => {
         const f = await flow();
-        // Declared as Markdown; the stored bytes are a PDF of the same length.
         const pdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n");
         const first = reservedOf(
           await f.start("liar", pdf.byteLength, "notes.md", "text/markdown"),
@@ -492,7 +478,6 @@ if (!RUN) {
         const result = await f.finish("liar");
         expect(result.ok && result.value.fileType).toBe("pdf");
         expect(f.bound).toEqual([""]);
-        // Text is bound as read from the object.
         const text = "# Real text\n";
         const second = reservedOf(await f.start("honest", text.length, "real.md", "text/markdown"));
         await f.put(second.documentId, new TextEncoder().encode(text), "text/markdown");
@@ -511,7 +496,6 @@ if (!RUN) {
         const first = reservedOf(await f.start("resume", 8));
         await f.put(first.documentId, f.bytesOf(8));
         expect(await f.finish("resume")).toEqual({ ok: false, error: { code: "storage_failed" } });
-        // The bytes are already checked and stored: starting again skips the PUT.
         expect(await f.start("resume", 8)).toMatchObject({ ok: true, value: { state: "stored" } });
         expect(await f.keys()).toContain(`uploads/${PROJECT}/${first.documentId}`);
         fail = false;

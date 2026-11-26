@@ -1,5 +1,3 @@
-/** Ordered admission envelope for edits that mutate Work-projected document state. */
-
 import type { WorkProjectionMutation, WorkWriteSet } from "../projects/index.js";
 import type { FileGrant } from "./domain/types.js";
 import { type FileEditRefusedError, runWithEditGrants } from "./edit-confirmation.js";

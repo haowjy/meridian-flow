@@ -1,12 +1,3 @@
-/**
- * The server's Markdown door to a document's text (design §4): every read, whole-document write,
- * seed and code merge outside the model's own tools goes through `DocumentRooms`, reading a copy
- * of the room and committing what changed on it as one batch.
- *
- * This stays out of `@meridian/agent-edit`: full-document SET is a server persistence concern,
- * built by orchestrating the package's codec and model with the room door.
- */
-
 import {
   createAgentEditCodecFactory,
   LoroDocument,
@@ -58,16 +49,9 @@ type MarkdownDocumentEngineDeps<Tx> = {
   schema: Schema;
   codec: MarkupCodec;
   exportCodec: MarkupCodec;
-  /**
-   * The operation's document-link scope: each method prepares it with the
-   * document it is about to spell, then serializes through the holder. The
-   * scope doors (`document-link-scope-doors.ts`) open it.
-   */
   links: DocumentLinkScopes;
   rooms: DocumentRooms<Tx>;
-  /** Runs `work` in the caller's transaction, or in one of its own outside any. */
   transaction<T>(work: (tx: Tx) => Promise<T>): Promise<T>;
-  /** Takes the document's mutation lock in the open transaction, held to its end. */
   lockDocument(documentId: DocumentId): Promise<void>;
   afterWrite?: MarkdownWriteHook;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -75,18 +59,11 @@ type MarkdownDocumentEngineDeps<Tx> = {
 
 class MergeChangesNothing extends Error {}
 
-/** A change made on a copy of the room: `doc` is the copy as the model reads and writes it. */
 type DocumentChange = (doc: LoroDocument) => Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
-  /**
-   * A copy of `room` as agent-edit's model reads it, for `read` to use and drop: it is freed when
-   * `read` settles, so nothing may keep it.
-   */
   readRoom<T>(room: DocumentRoom, read: (doc: LoroDocument) => Promise<T>): Promise<T>;
-  /** The Live document's top-level blocks; null when no write has reached it yet. */
   currentBlocks(documentId: DocumentId): Promise<PMNode[] | null>;
-  /** `view` is the version `doc` is: a Work draft's links spell in its draft's view. */
   serializeVersionedDocument(
     documentId: DocumentId,
     doc: LoroDocument,
@@ -99,42 +76,22 @@ export type MarkdownDocumentEngine = {
     documentId: string,
     scope: (links: HolderLinkScope) => DocumentLinkScope,
   ): Promise<Result<string, SyncError>>;
-  /** The markdown of the document's text, whatever its lifecycle; empty when it holds none. */
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<void, SyncError>>;
-  /**
-   * The first state of fresh bound content (an envelope of snapshots), built in memory with no
-   * database or room in reach: a bulk create encodes it before its transaction and installs it
-   * inside.
-   */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
-  /**
-   * Installs the first states of documents the caller's transaction just created, from
-   * `encodeSeed` (null for a document with no text, which needs no row). Rooms hear of it after
-   * commit. It derives nothing: the caller refreshes the projections once its transaction commits.
-   */
   installSeeds(
     seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
   ): Promise<void>;
-  /**
-   * Whole-document writes take a write a `LinkBinder` bound before the caller's transaction
-   * (contract §6.2); none of them parses Markdown. Each applies only to the holder it was bound
-   * for, as the whole-document overwrite of what the document holds, aligned so the blocks it
-   * leaves as they were keep their ids. A fresh write that finds content it never saw is
-   * `stale_document`.
-   */
   writeDocument(input: {
     documentId: DocumentId;
     content: BoundWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
-  /** A document a Work created takes its content, written like a seed whatever it holds. */
   writeCreatedContent(input: {
     documentId: DocumentId;
     content: BoundWrite;
@@ -174,7 +131,6 @@ export function createMarkdownDocumentEngine<Tx>(
     });
   }
 
-  /** The document's top-level blocks as every reader sees them, without ids. */
   const blocksOf = (doc: LoroDocument): PMNode[] =>
     model.projectBlocks(toLoroHandle(doc)).map((block) => block.node);
 
@@ -189,10 +145,6 @@ export function createMarkdownDocumentEngine<Tx>(
     return codec.serialize([...blocks], links);
   }
 
-  /**
-   * Load what `blocks` (and `stored` nodes: a bound write's) name, then spell as this document in
-   * `view` (default live).
-   */
   async function spelling(
     documentId: DocumentId,
     blocks: readonly PMNode[],
@@ -232,7 +184,6 @@ export function createMarkdownDocumentEngine<Tx>(
     };
   }
 
-  /** A bound write for this holder, of the shape this document stores (one code block for code files). */
   function checkBound(
     documentId: DocumentId,
     content: BoundWrite,
@@ -250,10 +201,6 @@ export function createMarkdownDocumentEngine<Tx>(
     return Ok(content);
   }
 
-  /**
-   * Overwrite `doc` with the bound nodes: agent-edit's whole-document correspondence, so blocks
-   * left as they were keep their ids.
-   */
   async function overwrite(
     documentId: DocumentId,
     doc: LoroDocument,
@@ -330,7 +277,6 @@ export function createMarkdownDocumentEngine<Tx>(
     );
   }
 
-  /** A document with fresh bound content as its only state, as a seed's envelope of snapshots. */
   function seedOf(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array {
     const docs = RoomDocs.create(shape, freshServerPeerId());
     try {
@@ -468,7 +414,6 @@ export function createMarkdownDocumentEngine<Tx>(
             const live = block?.textContent ?? "";
             result = mergeCodeText({ base, live, target });
             const merged = result.text;
-            // Raised before anything is committed: nothing to write, nothing to announce.
             if (merged === live) throw new MergeChangesNothing();
             const next = block
               ? block.type.create(block.attrs, merged ? block.type.schema.text(merged) : undefined)
@@ -490,12 +435,10 @@ export function createMarkdownDocumentEngine<Tx>(
   };
 }
 
-/** Whether a copy holds any state: a document no write has reached has no rows and no ops. */
 function hasState(docs: RoomDocs): boolean {
   return [...docs.owned()].some(([, doc]) => doc.oplogFrontiers().length > 0);
 }
 
-/** An agent's write carries its turn as the commit message: who changed what reads it (design §5). */
 function writeOptionsOf(origin: RuntimeOrigin): WriteOptions {
   return origin.type === "agent" ? { by: { turn: origin.actorTurnId } } : {};
 }
@@ -504,14 +447,8 @@ function roomOriginOf(origin: RuntimeOrigin): RoomOrigin {
   return origin.type === "agent" ? `server:turn:${origin.actorTurnId}` : `server:${origin.type}`;
 }
 
-/**
- * How a bound write may be applied: `write` to the document it was bound for; `seed` to
- * that document, to the document being created (its creator checks the address) or as
- * fixed static content.
- */
 type HolderUse = "seed" | "write";
 
-/** A bound write certifies one holder; applying it to another document is a bug. */
 function assertHolder(documentId: DocumentId, content: BoundWrite, use: HolderUse): void {
   const { holder } = content;
   if (holder.kind === "document" ? holder.documentId !== documentId : use === "write") {

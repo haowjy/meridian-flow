@@ -1,9 +1,3 @@
-/**
- * Binds the host's Review changes (`useReviewMode`) to its editor: turns the paint on and off,
- * presses a change from its margin pair (or takes another draft's paragraph), moves the focus to
- * the next change after a press, and closes Review changes against Live when the chapter has none
- * left, and compares against Live when its target is gone.
- */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
@@ -28,10 +22,6 @@ import { referenceOf, useReviewReference } from "@/features/draft-review/use-rev
 import { usePanePlace } from "@/features/project/pane-place";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 
-/**
- * The editor's width at which Review changes offers two columns: one side panel open beside a
- * 1280px window fits them, both open falls back to Inline.
- */
 const SIDE_BY_SIDE_MIN_PX = 680;
 
 export function ReviewChangesSurface({ editor }: { editor: Editor }) {
@@ -216,7 +206,6 @@ function useTargetGone(mode: ReturnType<typeof useReviewMode>): boolean {
   if (!mode) return false;
   const target = referenceOf(mode.target);
   if (target.kind === "file") return trees.isComplete && trees.find(target.documentId) === null;
-  // Only a draft of the shown Work knows its sibling drafts.
   return (
     target.kind === "draft" &&
     drafts !== null &&

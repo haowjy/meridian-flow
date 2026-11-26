@@ -1,4 +1,3 @@
-/** Ports for where a project holds its documents and folders now. */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileEntry,
@@ -29,7 +28,6 @@ export type HeldContextNode =
   /** The project holds a node that no live address can name: in Trash, or inconsistent. */
   | { kind: "unreachable" };
 
-/** What a view shows of the nodes asked about, held by the project or the writer's User area. */
 export type PlacedNodes = {
   /** Documents the view shows, in a live source: absent from the map when in Trash or hidden. */
   documents: Map<string, { authority: ProjectContextAuthority; entry: CatalogFileEntry }>;

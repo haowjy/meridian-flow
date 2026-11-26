@@ -1,8 +1,3 @@
-/**
- * The editor half of the flat block model: the five nesting attributes on every block that
- * can sit in a list or a quote, the commands and keys that write them, the drawing, and the
- * clipboard. Lists and quotes have no node of their own; see `nesting-commands.ts`.
- */
 import { Extension, InputRule } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
@@ -30,7 +25,6 @@ import {
 } from "./nesting-keys";
 import { copiedSlice } from "./nesting-landing";
 
-/** The shared schema's `block` group nodes, which are the ones that carry nesting. */
 const NESTED_TYPES = [
   "paragraph",
   "code_block",
@@ -44,26 +38,20 @@ const NESTED_TYPES = [
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     nesting: {
-      /** Makes the selected blocks items of this kind, or changes the kind of the items they are. */
       setList: (kind: ListKindName) => ReturnType;
-      /** Lists the selected blocks, or returns them to body text when they already are such items. */
       toggleListKind: (kind: ListKindName) => ReturnType;
-      /** Makes the selected blocks task items, or returns them to body text when they already are. */
       toggleTaskList: () => ReturnType;
       indentList: () => ReturnType;
       outdentList: () => ReturnType;
-      /** Quotes the selected blocks, or takes them out of their innermost quote when every one is quoted. */
       toggleQuote: () => ReturnType;
     };
   }
 }
 
-/** `- `, `* `, `+ ` and `N. ` at the start of a block. */
 function listInputRule(find: RegExp, kind: ListKindName): InputRule {
   return new InputRule({
     find,
     handler: ({ state, range, match }) => {
-      // Typed in an item of this kind already, a marker is just text.
       if (selectionListKind(selectedSequence(state.selection)) === kind) return null;
       const tr = state.tr.delete(range.from, range.to);
       setList(tr, kind);
@@ -71,7 +59,6 @@ function listInputRule(find: RegExp, kind: ListKindName): InputRule {
       const sequence = selectedSequence(tr.selection);
       const at = sequence.from;
       const own = sequence.facts[at].steps.at(-1);
-      // Typed after a list of the same kind, the block joins it and the number is not kept.
       if (start !== 1 && own?.opens) {
         tr.setNodeMarkup(sequence.positions[at], undefined, {
           ...sequence.blocks[at].attrs,
@@ -83,7 +70,6 @@ function listInputRule(find: RegExp, kind: ListKindName): InputRule {
   });
 }
 
-/** `> ` at the start of a block quotes it, one quote deeper each time, as Markdown reads it. */
 function quoteInputRule(): InputRule {
   return new InputRule({
     find: /^\s*>\s$/,
@@ -95,7 +81,6 @@ function quoteInputRule(): InputRule {
   });
 }
 
-/** `[ ] ` and `[x] ` at the start of an item make it a task. */
 function taskInputRule(): InputRule {
   return new InputRule({
     find: /^\[([ xX])\]\s$/,
@@ -114,7 +99,6 @@ function taskInputRule(): InputRule {
   });
 }
 
-/** True when a press at `clientX` falls in the block's marker gutter, where the box is drawn. */
 function inMarkerGutter(element: HTMLElement, clientX: number): boolean {
   const rect = element.getBoundingClientRect();
   const gutter = Number.parseFloat(getComputedStyle(element).paddingInlineStart) || 0;
@@ -123,7 +107,6 @@ function inMarkerGutter(element: HTMLElement, clientX: number): boolean {
 
 const stored = { default: null, rendered: false } as const;
 
-/** A nesting attribute read from the `data-` attribute `flattenDom` writes on pasted HTML. */
 function pasted(name: string, read: (value: string) => unknown = (value) => value) {
   return {
     ...stored,

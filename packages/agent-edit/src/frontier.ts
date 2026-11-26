@@ -1,19 +1,10 @@
-/**
- * Observation frontiers: what document state a model was shown. A frontier holds the frontiers of
- * each doc a result showed, in the copy it was rendered from (`loro-frontier.ts`). The host names
- * rooms.
- */
-
-/** One block a result showed the model in full, in whichever room it read; later showings last. */
 export interface ShownBlock {
   hash: string;
   body: string;
 }
 
 export interface ObservationFrontier {
-  /** The host's label for the room the result read (`loroRoomName`); carried, never read. */
   room: string;
-  /** `encodeFrontierMap` of the docs the result showed, at the copy it was rendered from. */
   snapshot: Uint8Array;
 }
 

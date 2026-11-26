@@ -44,25 +44,18 @@ type WikilinkOccurrence = {
   from: number;
   to: number;
   target: WikilinkTarget;
-  /** `#Heading` or `#^block`, kept on the destination; empty when none. */
   suffix: string;
-  /** The alias, or the name without `.md`, as note apps show it. */
   label: string;
 };
 
-/** What converting a paste reads from the Editor that holds it. */
 export type WikilinkPasteCatalog = {
-  /** The holder's address; null while it has none. */
   holderUri: string | null;
-  /** The documents a pasted link may name: the Editor's link index, in the areas a link names. */
   targets: readonly LinkAssignmentDocument[];
-  /** Where a link to a document nobody has written goes (the link-ahead row's rule). */
   linkAhead: (name: string, folders: readonly string[]) => { uri: string } | null;
 };
 
 type PastedWikilink = WikilinkOccurrence | Extract<WikilinkSyntaxFinding, { kind: "escape" }>;
 
-/** App resolution keeps its own filename/display policy; syntax belongs to markup. */
 function pastedWikilinks(text: string): PastedWikilink[] {
   return scanWikilinks(text, { context: "prose" }).findings.flatMap<PastedWikilink>((finding) => {
     if (finding.kind === "escape") return [finding];
@@ -87,13 +80,6 @@ function pastedWikilinks(text: string): PastedWikilink[] {
   });
 }
 
-/**
- * The link each pasted `[[…]]` becomes: assigned the document it names, or
- * a fresh ahead ref at the link-ahead address when it names none; null leaves
- * it text. Built once per paste: the candidates are located once and bucketed
- * by filename, so a link only ranks the documents that share its name, and a
- * target seen twice is ranked once.
- */
 function wikilinkResolver(
   catalog: WikilinkPasteCatalog,
 ): (occurrence: WikilinkOccurrence) => AssignedLink | null {
@@ -110,7 +96,6 @@ function wikilinkResolver(
   // Ranking ignores case, so its answer is cached under the lowercased path;
   // a link-ahead address keeps the writer's casing, so it is asked each time.
   const matches = new Map<string, Located | null>();
-  // One address pasted twice shares one assignment, as in `assignPastedSlice`.
   const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {
     const { target } = occurrence;
@@ -138,10 +123,6 @@ function wikilinkResolver(
   };
 }
 
-/**
- * The pasted slice with each convertible `[[…]]` as a link. Code (a fence or
- * a code mark) and text already inside a link are left as they are.
- */
 export function linkPastedWikilinks(
   slice: Slice,
   schema: Schema,
@@ -149,7 +130,6 @@ export function linkPastedWikilinks(
 ): Slice {
   const link = schema.marks.link;
   if (!link) return slice;
-  // With no catalog yet, nothing links, but escapes are still spelled out.
   const resolve = catalog ? wikilinkResolver(catalog) : () => null;
   // A single projection carries comments across marks, paragraphs and nested blocks.
   // Code is opaque according to the editor schema, never guessed from its prose.
@@ -193,7 +173,6 @@ export function linkPastedWikilinks(
       return [
         { from: occurrence.from, to: occurrence.to, text: occurrence.literal, assigned: null },
       ];
-    // Existing links keep their characters. Escapes still spell out inside them.
     if (existingLinks.some((span) => occurrence.from < span.to && occurrence.to > span.from))
       return [];
     const assigned = resolve(occurrence);

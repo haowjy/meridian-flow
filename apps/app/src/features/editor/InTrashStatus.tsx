@@ -5,11 +5,6 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useDocumentTrashRestore } from "@/features/project/context/DocumentTrashRestoreProvider";
 
-/**
- * What the editor's status pill says while the document on screen is in Trash, with Restore: a
- * document removed elsewhere. The text stays on screen read-only behind it; a restore reopens it
- * in place.
- */
 export function InTrashStatus({ documentId }: { documentId: string }) {
   return <DocumentInTrash documentId={documentId} />;
 }

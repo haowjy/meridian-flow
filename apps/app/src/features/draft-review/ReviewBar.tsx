@@ -1,13 +1,3 @@
-/**
- * Review changes' controls, in the toolbar's place while the page reviews:
- * what it compares against (`ReviewTargetPicker`), Inline or Side by side where the pane fits two
- * columns, then the stepper and, against Live, the chapter's × and ✓; Close is where
- * `Review N changes` was (`ReviewChangesButton`). Against Live the stepper walks this chapter's
- * changes, then the draft's next changed chapter in the Changes list's order, wrapping at the
- * ends; ‹ into the previous chapter lands on its last change. Only the stepper crosses chapters,
- * and it replaces the review's history entry as it does. Against another draft or file it walks
- * this chapter's differences.
- */
 import "./review-line.css";
 import { t } from "@lingui/core/macro";
 import { Columns2 } from "lucide-react";
@@ -45,7 +35,6 @@ export function ReviewBar() {
   const focused = rows.findIndex((row) => row.id === mode.changeId);
   const locked = review.controller.dispositionLocked;
   const ref = { documentId: mode.documentId, itemKey: mode.itemKey };
-  // The draft deleted the chapter: its Discard brings it back.
   const deleted = files.find((file) => file.documentId === mode.documentId)?.item.tree?.deleted;
   const live = mode.target === "live";
   const changed = live ? files.filter((file) => file.item.pending && file.contextLocation) : [];
@@ -84,7 +73,6 @@ export function ReviewBar() {
     });
   };
   const pressChapter = (verdict: "apply" | "discard", event: { currentTarget: HTMLElement }) => {
-    // The pressed control leaves with the bar: the focus waits for the notice's Undo.
     const page = event.currentTarget.closest<HTMLElement>("[data-paint-frame]");
     if (page)
       holdFocus(
@@ -146,11 +134,6 @@ export function ReviewBar() {
   );
 }
 
-/**
- * The review line gives up, in order, only while its controls don't fit its width: the
- * stepper's short count and tighter gaps, then no count, then (a finger only) the stepper
- * (review-line.css).
- */
 function fitReviewLine(line: HTMLDivElement | null) {
   if (!line) return;
   // The target picker's name shrinks before anything overflows, so a cut name gives the count's

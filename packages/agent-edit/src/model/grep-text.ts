@@ -16,29 +16,14 @@ const DESTINATION_FREE_LINKS: DocumentLinkScope = {
   spellSource: () => ({ href: "", address: null }),
 };
 
-/** Each block's markdown with link and image destinations spelled empty. */
 export function destinationFreeBlocks(markup: MarkupCodec, blocks: readonly PMNode[]): string[] {
   return markup.serializeBlocks(blocks, DESTINATION_FREE_LINKS).map((entry) => entry.body);
 }
 
-/**
- * One block's grep text, from its {@link destinationFreeBlocks} markdown. `verbatim` is a
- * code file's block, whose text is the node's text as stored.
- */
 export function grepBlockText(destinationFree: string, node: PMNode, verbatim: boolean): string {
   return verbatim ? node.textContent : markdownPlainText(destinationFree);
 }
 
-/**
- * Where a range of a block's destination-free markdown sits in the block's real body.
- *
- * The two differ only inside link and image occurrences, so each occurrence's two spans
- * (the markup package's own source spans, never a re-read of the link grammar) are
- * compared: what both share at the front and at the back lines up, and what sits between
- * (the destination, which the destination-free form spells empty) maps to the body's
- * whole destination. A range that starts or ends inside it widens to cover it. Null when
- * the two parses disagree on how many occurrences there are.
- */
 export function bodyRange(
   markup: MarkupCodec,
   destinationFree: string,

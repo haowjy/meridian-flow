@@ -9,7 +9,6 @@ import {
 } from "./shape.js";
 import { StructureView } from "./structure.js";
 
-/** One side's structure read and its blocks' normalized text, read once each. */
 export class Side {
   readonly view: StructureView;
   private readonly visible: (comment: string) => boolean;

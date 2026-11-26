@@ -59,7 +59,6 @@ const FIGURE_DOC: JSONContent = {
   ],
 };
 
-/** Every cell position in document order. */
 function cellPositions(target: Editor): number[] {
   const positions: number[] = [];
   target.state.doc.descendants((node, at) => {
@@ -115,7 +114,6 @@ describe("Turn into over a swept rectangle", () => {
   const prose = (text: string): JSONContent =>
     gridCell({ type: "paragraph", content: [{ type: "text", text }] });
 
-  /** Two rows by two columns, so a swept row is a rectangle, not the table. */
   function gridDoc(row1: JSONContent[], row2: JSONContent[]): JSONContent {
     return {
       type: "doc",
@@ -133,7 +131,6 @@ describe("Turn into over a swept rectangle", () => {
 
   const PLAIN_GRID = gridDoc([prose("Status"), prose("Kael")], [prose("Rank"), prose("Nine")]);
 
-  /** First block of every cell, in document order. */
   function cellBlocks(target: Editor): string[] {
     return cellPositions(target).map(
       (pos) => target.state.doc.nodeAt(pos)?.firstChild?.type.name ?? "missing",
@@ -150,7 +147,6 @@ describe("Turn into over a swept rectangle", () => {
     sweepFirstRow(target);
 
     expect(turnIntoBlockType(target, "heading2")).toBe(true);
-    // The writer swept a rectangle; the conversion must not eat the selection.
     expect(target.state.selection).toBeInstanceOf(CellSelection);
 
     expect(turnIntoBlockType(target, "heading2")).toBe(true);
@@ -174,8 +170,6 @@ describe("Turn into over a swept rectangle", () => {
     const [diagramCell] = cellPositions(target);
     sweepFirstRow(target);
 
-    // The deepest owner still answers first for what a cell HOLDS: a diagram
-    // in the rectangle refuses like a diagram in a select-all.
     expect(controlsFor(target).heading.blockedBy).toBe("mixed-selection");
     expect(turnIntoBlockType(target, "heading1")).toBe(false);
     const fence = target.state.doc.nodeAt(diagramCell)?.firstChild;

@@ -1,18 +1,10 @@
-/**
- * ReadOnlyViewerFrame — shared chrome for non-tracked file viewers: the viewer body and an
- * optional viewer-owned footer. The host's own chrome names the file (main's chip, the side
- * header, the phone's top bar).
- */
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 export type ReadOnlyViewerFrameProps = {
-  /** Inline viewer surface (image, PDF object, etc). */
   children: ReactNode;
-  /** Optional footer slot — viewer-specific actions/status. */
   footer?: ReactNode;
-  /** The frame's material; a host that paints its own passes `bg-transparent`. */
   className?: string;
 };
 

@@ -1,16 +1,3 @@
-/**
- * project-thread-cache — canonical read/write helpers for cached thread
- * projections, including optimistic project-list writes and live lifecycle
- * convergence across project lists, Project, and Work feeds.
- *
- * The cache stores `ThreadListItem[]` so consumers see the denormalized work +
- * lifecycle (`actionRequired`, `runningTurnId`) and draft-review count projection from the server.
- * A thread merged into an existing row never rewrites its `aiWriteMode`; only a new row takes
- * the thread's. Optimistic inserts produce a synthetic `ThreadListItem` from a base `Thread`
- * with default lifecycle hints (no work, no live turn, not waiting); the next
- * server fetch reconciles them.
- */
-
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useSyncExternalStore } from "react";
@@ -33,7 +20,6 @@ function chatLists(client: QueryClient) {
     .filter((query) => query.queryKey[2] === "threads");
 }
 
-/** A chat's name as any cached project list holds it; null when it has none yet. */
 export function cachedChatTitle(client: QueryClient, threadId: string): string | null {
   for (const query of chatLists(client)) {
     const title = (query.state.data as ThreadListItem[] | null | undefined)
@@ -44,7 +30,6 @@ export function cachedChatTitle(client: QueryClient, threadId: string): string |
   return null;
 }
 
-/** `cachedChatTitle` for a render: the caller renders again when a cached chat list changes. */
 export function useCachedChatTitles(): (threadId: string) => string | null {
   const client = useQueryClient();
   const subscribe = useCallback(
@@ -62,10 +47,6 @@ export function useCachedChatTitles(): (threadId: string) => string | null {
   return useCallback((threadId: string) => cachedChatTitle(client, threadId), [client, version]);
 }
 
-/**
- * Lift a base `Thread` into a `ThreadListItem` shape using neutral lifecycle
- * defaults. Used for optimistic inserts before the server projection arrives.
- */
 export type ThreadListLifecycle = Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
 
 const neutralLifecycle: ThreadListLifecycle = { actionRequired: false, runningTurnId: null };

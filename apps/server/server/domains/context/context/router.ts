@@ -1,10 +1,3 @@
-import type { CopySourceView } from "../ports/context-port.js";
-/**
- * Context-port router: builds a ContextPort that parses a URI, dispatches to the
- * scheme adapter that owns it, resolves Work handles at the project gate, and lifts
- * adapter faults into boundary ContextErrors enriched with the canonical URI.
- */
-
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import { contextRootUri } from "@meridian/contracts/context-uri";
@@ -37,6 +30,7 @@ import type {
   ContextWriteBinaryOptions,
   ContextWriteOptions,
   ContextWriteResult,
+  CopySourceView,
   FileRef,
   GrepFile,
   GrepQuery,
@@ -54,33 +48,25 @@ export interface ContextSourceBinding {
 
 export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string, view?: CopySourceView) => Promise<string | null>;
-  /** A chat's uploads by handle (`uploads://@c12/`): found, trashed, or no such chat. */
   resolveChatSource?: (
     ref: string,
   ) => Promise<
     { kind: "found"; binding: ContextSourceBinding } | { kind: "unavailable" } | { kind: "missing" }
   >;
-  /** Who owns what, for near-miss errors and the owner listings. */
   owners?: ProjectOwners;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   copyCommands?: import("../copy/copy-commands.js").CopyCommands;
-  /** Copy's collab cut and bind, and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
   sources: ReadonlyMap<
     ContextScheme,
     ContextSourceBinding | (() => Promise<ContextSourceBinding | null>)
   >;
-  /** Non-deleted, same-project Work authorities indexed only by exact handle. */
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
-  /** Primary Work for bare Work-scoped URIs in this router. */
   primaryWorkAuthority?: ResolvedWorkAuthority;
-  /** Lazily builds Work-scoped adapters for an authority-addressed target Work. */
   resolveWorkAdapters?: (
     authority: ResolvedWorkAuthority,
   ) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-  /** The No Work row's id, the work scope of notes written outside any named Work. */
   resolveNoWorkId?: () => Promise<string | null>;
-  /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
   commandTransaction?: ContextCommandTransaction;
 }
@@ -107,7 +93,6 @@ interface MutationDispatch extends Dispatch {
   requireCreation: (kind: "entry" | "intake") => Result<void, ContextError>;
 }
 
-/** A destination named by folder identity, with the missing segments beneath it. */
 type IdentityDestination = {
   folderId: string;
   createFolders?: readonly string[];
@@ -117,7 +102,6 @@ function joinContextPath(base: string, segments: readonly string[]): string {
   return segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
 }
 
-/** Intake bypasses general entry creation, never the source's actor policy. */
 function mutationDispatch(dispatch: Dispatch, origin?: WriteProvenance): MutationDispatch {
   const { adapter, authority, canonical } = dispatch;
   const actorCanCreate =
@@ -134,7 +118,6 @@ function mutationDispatch(dispatch: Dispatch, origin?: WriteProvenance): Mutatio
   };
 }
 
-/** One source a port can find a document in, and the Work scope it answers for. */
 type SourceLocation = {
   scheme: ContextScheme;
   authority: CanonicalContextAuthority;
@@ -148,10 +131,6 @@ function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContext
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { sources, parseOptions } = deps;
-  /**
-   * Every source this port can find an identity in: the contextual sources, No Work's, then
-   * every named Work's, each once.
-   */
   async function sourceLocations(): Promise<SourceLocation[]> {
     const locations: SourceLocation[] = [];
     const locationKeys = new Set<string>();
@@ -185,7 +164,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return locations;
   }
 
-  /** The first source of this port that shows `documentId` in its reader's view. */
   async function locateDocument(
     documentId: string,
   ): Promise<Result<{ location: SourceLocation; path: string } | null, ContextError>> {
@@ -208,7 +186,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     }
     return bindings;
   }
-  /** The handle this port's contextual source supplies for a scheme, to name in an error. */
   async function contextualHandle(scheme: ContextScheme): Promise<ContextualOwner | null> {
     const source = sources.get(scheme);
     const binding = typeof source === "function" ? await source() : source;
@@ -358,12 +335,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return Err(invalidEntryError(resolved.value.canonical, validation));
   }
 
-  /**
-   * The destination a writer named by folder identity, with the missing segments beneath it.
-   * Copy resolves it here so one refusal mapping holds: a folder that is
-   * gone (or an address that no longer resolves) is `destination_missing`; a destination the
-   * writer cannot edit is `permission_denied`.
-   */
   async function resolveIdentityDestination(
     parent: IdentityDestination,
     options: {
@@ -383,10 +354,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return resolved;
   }
 
-  /**
-   * The dispatch with its leaf rendered from the parts the name codec or the caller decided. A
-   * twin's `~id` stays on the leaf: it names which of the documents of that name is meant.
-   */
   function withFilename<T extends Dispatch, P extends { name: string; extension: string }>(
     dispatch: T,
     parts: P,
@@ -415,7 +382,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       : Err({ ...parsed.error, uri: dispatch.canonical });
   }
 
-  /** A binary's dispatch: a prose-shaped name takes its storage type's registered suffix. */
   function binaryDispatch<T extends Dispatch>(
     dispatch: T,
     binary: ContextWriteBinaryOptions,
@@ -429,7 +395,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return Ok(withFilename(dispatch, filenameForBinary(parts, binary.fileType, binary.mimeType)));
   }
 
-  /** A create's answer at the URI of the path it landed at (a twin's leaf carries its `~id`). */
   function landedAt<T extends { path: string }>(
     dispatch: Dispatch,
     landed: T,
@@ -438,7 +403,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return { ...rest, uri: uriFor(dispatch.scheme, path, dispatch.authority) };
   }
 
-  /** Claim a new tracked URI through its adapter: the checks both create entries share. */
   async function createDocument(
     uri: string,
     options: ContextWriteOptions | undefined,
@@ -467,7 +431,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return uri ? Ok({ uri }) : Err({ code: "destination_missing", uri: folderId });
     },
 
-    /** One Copy (`copy/` reads, binds and writes; this only resolves its addresses). */
     ...createContextCopyPort({
       copy: deps.copy,
       commands: deps.copyCommands,
@@ -483,8 +446,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!r.ok) return r;
       const { adapter, scheme, authority, canonical } = r.value;
 
-      // The adapter gets the path as written: it tries the exact stored name before the
-      // codec's, so a file kept as `binary.md` is found beside a document `binary`.
       const result = await callAdapter(canonical, () => adapter.stat(resolved.value.path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });
@@ -554,8 +515,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = fileDispatch(resolved.value);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      // Binding only prepares syntax and refs. The shared creation door checks
-      // the eventual origin and reservation identity, including intake policy.
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
       return callAdapter(canonical, () => adapter.bindTrackedDocument(path, content));
     },
@@ -682,8 +641,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Ok({ files: files.map((file) => toGrepFile(scheme, authority, file)), ...rest });
       }
 
-      // Each source gets what the limit has left; a source reached after it still counts its
-      // files, which costs no reads.
       const found: GrepFile[] = [];
       let totalFiles = 0;
       let exact = true;

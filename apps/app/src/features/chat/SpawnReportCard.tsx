@@ -1,9 +1,3 @@
-/**
- * Writer-facing subagent card, one per run from launch to finish. Running, it shows the live tool
- * call and, for a background run, Stop; finished, the row expands to the report. Only the chat
- * icon opens the child.
- */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
@@ -21,7 +15,6 @@ import type { SubagentRun } from "./subagent/run-model";
 import { SubagentRow, SubagentToolLine, subagentBodyIndent } from "./subagent/SubagentRow";
 import { SubagentStop, useSubagentStopScope } from "./subagent/SubagentStop";
 
-/** Where a background run's saved report lives; read only once the writer expands the card. */
 export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
 
 export type SpawnSource = { threadId: string; title: string | null };
@@ -29,7 +22,6 @@ export type SpawnSource = { threadId: string; title: string | null };
 type Props = {
   agentName: string;
   title: string | null;
-  /** The card's own saved outcome; live activity and a direct result can know it first. */
   outcome?: "succeeded" | "failed" | "cancelled";
   deliveryMode: "direct" | "background_notification";
   startedAt?: string;
@@ -40,10 +32,6 @@ type Props = {
   savedReport?: SavedReportSource | null;
   liveTool?: string | null;
   run?: SubagentRun;
-  /**
-   * The conversation the spawn named with `from`, and its title frozen at
-   * spawn (null for an untitled chat). The ref is a model handle, never shown.
-   */
   from?: SpawnSource | null;
 };
 
@@ -65,7 +53,6 @@ export function SpawnReportCard({
   const [expanded, setExpanded] = useSubagentDisclosure(
     childThreadId ? `run:${childThreadId}` : `execution:${savedReport?.execution ?? "unknown"}`,
   );
-  // One outcome for the whole card: the direct result, the saved card, then live activity.
   const activityOutcome =
     suppliedRun?.status === "done"
       ? "succeeded"
@@ -146,7 +133,6 @@ export function SpawnReportCard({
       ) : null}
     </div>
   );
-  // A background child outlives the reply that started it, so the composer's Stop can't reach it.
   if (running && !foreground && childThreadId && stopScope) {
     return (
       <SubagentStop
@@ -181,7 +167,6 @@ function ReportBody({
   );
 }
 
-/** Mounted only on expansion, so collapsed cards never fetch. */
 function SavedReportBody({ source }: { source: SavedReportSource }) {
   const saved = useQuery({
     queryKey: ["thread-execution-report", source.threadId, source.childThreadId, source.execution],
@@ -194,9 +179,7 @@ function SavedReportBody({ source }: { source: SavedReportSource }) {
   return <ReportBody report={report} />;
 }
 
-/** "From <source>": the earlier conversation this subagent was pointed at. */
 function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource }) {
-  // The frozen title stands in until the current one is known, and names a trashed source.
   const source = useSourceThread(threadId, title);
   return (
     <p
@@ -206,7 +189,6 @@ function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource 
         subagentBodyIndent,
       )}
     >
-      {/* One message, so a translation can put the source's name first. */}
       <Trans>
         <span className="shrink-0">From </span>
         <SourceChatLink threadId={threadId} title={source.title} trashed={source.trashed} />

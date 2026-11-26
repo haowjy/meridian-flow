@@ -1,8 +1,3 @@
-/**
- * The writer-facing words for a process fold's digest. The counting rule and
- * its numbers come from the view model (`FoldDigest`); this file only formats
- * them with Lingui and `Intl`.
- */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { type FoldDigest, humanizeSkillSlug } from "@meridian/thread-client";

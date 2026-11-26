@@ -1,18 +1,3 @@
-/**
- * Drawing what the resolver answered onto a link mark's `<a>`, without
- * storing any of it.
- *
- * The mark stores what a link names (its ref and href) and nothing about
- * whether it resolves (law 9), so the answer is drawn on the live element the
- * mark view owns: never in the schema, the wire format, or another peer's
- * document. The link mark renders outermost, so the `<a>` is one element
- * around the whole label, and a label with mixed formatting is one chip.
- *
- * Gone and missing both draw dashed. What tells a screen reader which, and
- * whether the link can be followed, rides the same `<a>`: `aria-description`,
- * and `aria-disabled` on a gone link, as chat's reference does.
- */
-
 import { t } from "@lingui/core/macro";
 import { parseLinkRef } from "@meridian/contracts";
 
@@ -23,10 +8,6 @@ import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resoluti
 import type { MountedLinks } from "./link-storage";
 import { linkTargetHref } from "./link-target";
 
-/**
- * Keeps a link element's chip and accessible state in step with its answer,
- * and asks about the link while the element is shown. Returns the release.
- */
 export function drawLinkAnswer(
   element: HTMLElement,
   link: { readonly [attribute: string]: unknown },
@@ -49,7 +30,6 @@ export function drawLinkAnswer(
       "--link-upload-progress",
       upload?.kind === "uploading" && upload.percent !== null ? `${upload.percent}%` : "0%",
     );
-    // An editor with no project behind it draws its links as plain anchors.
     const chip = resolution.available ? linkChip(target, entry, resolution.baseUri) : null;
     const attributes = chip ? linkChipAttributes(chip) : null;
     const folder =
@@ -72,7 +52,6 @@ export function drawLinkAnswer(
             ? t`Doesn't exist yet`
             : inDraft,
     );
-    // The sighted writer reads the same words on hover; outside a draft the link's own title stays.
     draw(element, "title", inDraft ?? (typeof link.title === "string" ? link.title : null));
     draw(
       element,
@@ -93,7 +72,6 @@ export function drawLinkAnswer(
   };
 }
 
-// Every resolution publish reaches every link on the page; only a changed value touches the DOM.
 function draw(element: HTMLElement, name: string, value: string | null): void {
   if (element.getAttribute(name) === value) return;
   if (value === null) element.removeAttribute(name);

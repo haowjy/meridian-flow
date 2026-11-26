@@ -88,13 +88,11 @@ describe("file policy", () => {
   const X = work("x");
   const archived = work("old", { archived: true });
 
-  // [case, principal, facts, level, limitedBy]
   // biome-ignore format: one row per case
   const table: [string, Principal, FileFacts, string, string | null][] = [
     ["a stranger gets nothing", { accountId: "stranger" }, file("manuscript"), "none", "not_found"],
     ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "not_found"],
     ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "not_found"],
-    // A draft that outlived its document's live delete opens its draft destination only.
     ["a surviving draft stays writable", person, file("manuscript", null, { deleted: true, survivingDraft: true, target: { kind: "draft", documentId: "doc", draftId: draftOf("a") }, draftOwner: ownerFacts(A) }), "edit", null],
     ["a surviving draft opens nothing live", person, file("manuscript", null, { deleted: true, survivingDraft: true, draftOwner: ownerFacts(A) }), "none", "not_found"],
     ["a surviving draft of a deleted project is gone", person, file("manuscript", null, { deleted: true, survivingDraft: true, projectDeleted: true, target: { kind: "draft", documentId: "doc", draftId: draftOf("a") }, draftOwner: ownerFacts(A) }), "none", "not_found"],
@@ -102,16 +100,12 @@ describe("file policy", () => {
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],
     ["archive outranks a read agent's limit", agent(link("read", "a")), file("scratch", archived), "read", "work_archived"],
-    // Uploads: read-only for every agent, writable for the person.
     ["the person edits uploads", person, file("uploads", A), "edit", null],
     ["an edit agent reads uploads", agent(link("edit", "a")), file("uploads", A), "read", "uploads_read_only"],
-    // Own scratch follows the thread's current named Work.
     ["a read agent edits its Work's scratch", agent(link("read", "a")), file("scratch", A), "edit", null],
     ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X), "read", "agent_read_only"],
-    // A No Work agent's Scratch is its lineage's: shared with its family, read-only elsewhere.
     ["a read agent edits its lineage's scratch", agent(lineageLink("root")), file("scratch", null, { ownerRootThreadId: "root" }), "edit", null],
     ["a read agent reads another lineage's scratch", agent(lineageLink("other")), file("scratch", null, { ownerRootThreadId: "root" }), "read", "agent_read_only"],
-    // Delegation: the minimum over the chain.
     ["an edit child under a read parent reads manuscript", agent(link("edit", "a"), link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["an edit child under a read parent edits their shared Work's scratch", agent(link("edit", "a"), link("read", "a")), file("scratch", A), "edit", null],
     ["a child in X under a read parent in A reads X's scratch", agent(link("edit", "x"), link("read", "a")), file("scratch", X), "read", "agent_read_only"],
@@ -153,7 +147,6 @@ describe("file policy", () => {
     expect(live.level).toBe("edit");
     const frozen = decide(...drafting(archived), ownerGrants);
     expect([frozen.level, frozen.limitedBy]).toEqual(["read", "work_archived"]);
-    // Scratch and uploads stay live in draft mode.
     const [principal] = drafting(archived);
     expect(decide(principal, file("scratch", A), ownerGrants).destination).toEqual({
       kind: "live",

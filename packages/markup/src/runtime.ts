@@ -1,11 +1,8 @@
-/** Hidden runtime threaded through codec contexts for helper dispatch. */
-
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { MdastRoot } from "./ast.js";
 import type { InlineOrigin } from "./presentation-source-map.js";
 import type { BlockCodec, MarkCodec, ParseContext, SerializeContext } from "./types.js";
 
-/** Frozen remark-stringify options — the codec-wide determinism contract. */
 export const MARKDOWN_STRINGIFY_OPTIONS = {
   bullet: "-",
   bulletOther: "*",
@@ -34,7 +31,6 @@ export interface CodecRuntime {
   parseBlocks(content: string, ctx: ParseContext): PMNode[];
   stringifyMarkdown(root: MdastRoot): string;
   serializeBlock(node: PMNode, ctx: SerializeContext): string;
-  /** A container's children as one Markdown text, blank lines and prefixes included. */
   serializeSequence(nodes: readonly PMNode[], ctx: SerializeContext): string;
 }
 

@@ -39,9 +39,7 @@ import { movedPieces } from "./pieces.js";
 export const loroSyncKey = new PluginKey<LoroSyncState>("loro-sync");
 
 export interface LoroSyncOptions {
-  /** The copy the editor shows and writes: a Live copy, or a draft's fork (writes go to overrides). */
   docs: RoomDocs;
-  /** The commit origin of the editor's tracked writes (default `editor`). */
   origin?: string;
   /** A fresh block id, for the empty paragraph a local transaction is the first write into. */
   newBlockId: () => BlockId;
@@ -63,11 +61,8 @@ export interface LoroSyncState {
   kept: ReadonlySet<BlockId>;
 }
 
-/** Meta on the transactions the binding dispatches itself (a peer's batch): never written back. */
 export const REMOTE_META = "remote";
-/** Meta on a remote transaction: the blocks its read kept. */
 const KEPT_META = "loro-kept";
-/** Meta on a local transaction: each placeholder id it stored, with the fresh id it took. */
 const STORED_META = "loro-stored";
 const NONE: ReadonlySet<BlockId> = new Set();
 
@@ -156,7 +151,6 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
         return kept === value.kept ? value : { docs, kept };
       },
     },
-    // The selection left a kept block: read without it, so it goes from the screen.
     appendTransaction(trs, oldState, newState) {
       if (trs.every((tr) => tr.getMeta(loroSyncKey) === REMOTE_META)) return null;
       const was = loroSyncKey.getState(oldState)?.kept ?? NONE;
@@ -217,7 +211,6 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
   });
 }
 
-/** The kept blocks the selection's head is still in. */
 function holding(state: EditorState, kept: ReadonlySet<BlockId>): ReadonlySet<BlockId> {
   const { $head } = state.selection;
   const path = new Set<unknown>();
@@ -226,7 +219,6 @@ function holding(state: EditorState, kept: ReadonlySet<BlockId>): ReadonlySet<Bl
   return still.length === kept.size ? kept : still.length > 0 ? new Set(still) : NONE;
 }
 
-/** Whether a step of `tr` changes anything inside a kept block. */
 function touchesKept(tr: Transaction, kept: ReadonlySet<BlockId>): boolean {
   return tr.steps.some((step, i) => {
     const range = rangeOf(step);
@@ -283,10 +275,6 @@ function storePlaceholders(tr: Transaction, newBlockId: () => BlockId): void {
   tr.setMeta(STORED_META, stored);
 }
 
-/**
- * Typing: one replace step of inline content inside one textblock. `stores`: the block was an
- * empty paragraph's placeholder, which the transaction stores under `id` (`storePlaceholders`).
- */
 type Typing = {
   id: string;
   rule: NodeRule;
@@ -296,11 +284,6 @@ type Typing = {
   stores: boolean;
 };
 
-/**
- * Typing: one replace step of inline content inside one textblock, besides the steps that store
- * placeholders. Without those it is the text fast path, written with `replaceText` into that
- * block's text doc alone (so typing inside bold is one op). Null when the transaction is not.
- */
 function typingOf(
   docs: RoomDocs,
   oldState: EditorState,
@@ -358,19 +341,12 @@ function writeTyping(
   return [{ key: id, doc, before, after: doc.frontiers() }];
 }
 
-/** Whether two nodes' attributes match, their ids aside. */
 function sameAttrs(a: Node, b: Node): boolean {
   for (const key of Object.keys(a.attrs))
     if (key !== "id" && a.attrs[key] !== b.attrs[key]) return false;
   return true;
 }
 
-/**
- * The transaction that brings the editor to the docs after an import (with the blocks it keeps),
- * or null if nothing shows. The selection follows its cursors. A selected node that still stands
- * stays selected. A caret whose block went goes to that block's neighbour, the end of the one
- * before it where there is one.
- */
 function remoteTransaction(
   docs: RoomDocs,
   state: EditorState,

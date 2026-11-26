@@ -1,14 +1,3 @@
-/**
- * Addresses: where an internal link points, and where a link to a document
- * nobody has written yet should point.
- *
- * Every internal link is an address (a Context URI, or a path relative to its
- * holder), and addresses are unique, so a link names one document or none.
- * The Editor `@` menu's link-ahead row and a follow's Create both name a new
- * document at an address; they use the contracts ahead-address rule so the link one
- * writes is the document the other makes.
- */
-
 import {
   aheadAddress,
   canonicalContextUri,
@@ -19,10 +8,6 @@ import { validateContextEntryName } from "@meridian/contracts/context-entry-vali
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
 
-/**
- * The ahead address of a manuscript path a writer typed, or null when the text
- * is no address (a segment beginning with `@`, or `..`): the serializer throws on those.
- */
 function manuscriptAhead(path: string): string | null {
   try {
     return aheadAddress(canonicalContextUri("manuscript", path), "link");
@@ -31,20 +16,11 @@ function manuscriptAhead(path: string): string | null {
   }
 }
 
-/**
- * What a writer calls the document an address names: its stored name
- * (`Chapter 13`, `map.png`). Addresses hold names already decoded, so this
- * never decodes again.
- */
 export function addressDocumentName(address: string): string | null {
   const parsed = parseContextUri(address);
   return parsed.ok ? documentTitleFromUri(parsed.value.path) : null;
 }
 
-/**
- * The areas a follow's Create can make a document in. Scratch notes come from a
- * Work's Files tab or the AI; uploads and Unfiled are not documents a link makes.
- */
 const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user"] as const;
 export type CreatableLinkScheme = (typeof CREATABLE_LINK_SCHEMES)[number];
 
@@ -52,16 +28,10 @@ export function isCreatableLinkScheme(scheme: string): scheme is CreatableLinkSc
   return (CREATABLE_LINK_SCHEMES as readonly string[]).includes(scheme);
 }
 
-/** The areas a link can name an existing document in: the creatable ones, Scratch and Unfiled. */
 export function isLinkDocumentScheme(scheme: string): boolean {
   return scheme === "scratch" || scheme === "unfiled" || isCreatableLinkScheme(scheme);
 }
 
-/**
- * The stored name of the document a writer's name makes (`Chapter 13.md` and
- * `Chapter 13` both make `Chapter 13`), and null when the name makes another
- * kind of file (`map.png` is not a document a link can conjure).
- */
 export function linkedDocumentName(name: string): string | null {
   const parsed = parseDocumentFilename(name);
   if (!parsed.ok) return null;
@@ -72,15 +42,6 @@ export function linkedDocumentName(name: string): string | null {
   return address?.ok ? address.value.path : null;
 }
 
-/**
- * Where a link to a not-yet-written document a writer named goes: beside its
- * holder, so Create later makes it in the same folder. A name with `folders`
- * (a pasted `[[Arc 1/Kael]]`) goes at that path from the holder's area root
- * instead, where note apps make a note for a path link. A holder with no
- * address yet, or in an area Create refuses (Scratch, Uploads, Unfiled), puts it under
- * the manuscript's root. Null when a segment cannot be a folder name or the
- * name cannot be a document filename.
- */
 export function linkAheadAddress(
   holderUri: string | null,
   name: string,
@@ -95,7 +56,6 @@ export function linkAheadAddress(
   const holder = holderUri ? parseContextUri(holderUri) : null;
   if (!holder?.ok || !holder.value.path || !isCreatableLinkScheme(holder.value.scheme))
     return manuscriptAhead(path.join("/"));
-  // Relative to the holder: beside it, or up its folders to the area root.
   const depth = segments.length ? holder.value.path.split("/").length - 1 : 0;
   const href = [...Array<string>(depth).fill(".."), ...path.map(encodeURIComponent)].join("/");
   const address = resolveDocumentHref(href, holderUri)?.uri;

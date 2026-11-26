@@ -1,14 +1,3 @@
-/**
- * The rule on a running server: a file Mars reports an error on is left out of its package's
- * Save (listed unavailable, so no chat can bind it), and the three read-only built-in Agents refuse a write, as Critic
- * itself and as children Muse spawns. Needs a stack on the mock provider:
- *
- *   LIVE_TEST_MODEL= MODEL_PROVIDER=mock pnpm dev
- *   pnpm exec tsx tools/qa/agents-through-mars/server-gate.mts
- *
- * `MF_SERVER_URL` and `DATABASE_URL` override the stack and database this checkout's `pnpm dev`
- * would use. Writes an Agent file into the default project's Agents source and chats there.
- */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -20,7 +9,6 @@ import { loopbackOrigin } from "../../dev/lib/dev-ports.ts";
 import { requireRunningStack } from "../../dev/lib/dev-stack.ts";
 
 const root = resolveCurrentRepoRoot();
-/** stdout and stderr together: `thread send` reports its tool results on stderr. */
 const mf = (...args: string[]) => {
   const run = spawnSync("./mf", args, { cwd: root, encoding: "utf8" });
   const output = `${run.stdout}${run.stderr}`;
@@ -74,13 +62,7 @@ try {
     const slug = `gate-${Date.now().toString(36)}`;
     const path = `agents://agents/${slug}.md`;
     const projectId = mf("project", "default").trim();
-    mf(
-      "doc",
-      "put",
-      path,
-      // `=` form: the parser reads a separate value that starts with a dash as another option.
-      "--text=---\nname: Gate\neffort: 7\n---\n\nBody.\n",
-    );
+    mf("doc", "put", path, "--text=---\nname: Gate\neffort: 7\n---\n\nBody.\n");
     try {
       const saved = http("POST", "/api/agents/save", {
         projectId,

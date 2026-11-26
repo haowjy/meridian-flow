@@ -70,7 +70,6 @@ type ThreadModel = {
   rows: Map<string, Row>;
   presentation: Map<string, RecoveryState>;
   bindings: Set<ChatSubmissionOwner>;
-  /** Records of switches whose last attempt in this tab did not reach the server. */
   failedSwitches: Map<string, CommandFailure>;
   switches: readonly JournalSwitch[];
   unsavedSwitches: Map<string, { mode: AiWriteMode; seq: number; occurrence: Occurrence }>;

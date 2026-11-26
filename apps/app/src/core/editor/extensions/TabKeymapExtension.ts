@@ -1,38 +1,3 @@
-/**
- * The editor owns Tab and Shift-Tab, and never hands them back, except for the
- * one press after an Escape that found nothing to close: the kernel lets that
- * one through to the browser so the keyboard can leave the editor.
- *
- * Tab makes a tab. That is what a writer expects from every editor they have
- * come from, and it is the one thing the browser's own Tab refuses to be: its
- * Tab is a focus move. TipTap's table and list extensions bind the key where
- * they have something to do and REFUSE it everywhere else, and a refusal is a
- * leak — in a heading, in a paragraph, on the first list item, DOM focus lands
- * on the nearest button in the app chrome while the ProseMirror selection
- * stays where it was, and every keystroke after that is discarded in silence.
- *
- * So the rule is `UndoRedoKeymapExtension`'s: ownership that lapses on a
- * refusal is not ownership. Every binding here consumes its key, and the only
- * question is what it does with it, deepest owner first:
- *
- * - in a table, Tab walks cells — a grid has no room for indentation — unless
- *   the caret stands in a list item or a fence INSIDE a cell, where the walk
- *   declines and the deeper owner's rung below answers;
- * - in a code fence, it indents, line-wise when something is selected;
- * - in a list, it nests or lifts the item, refusal included;
- * - anywhere else in prose, it inserts one tab character.
- *
- * Prose tabs reach the wire intact (law 9): a tab mid-line is literal
- * markdown, while a LEADING tab would parse back as an indented code block,
- * so the codec writes that one as `&#x9;` and reads it back as a tab. The
- * round trip is pinned in `packages/markup`'s codec test, which is what makes
- * this key safe to hand a writer.
- *
- * Registering through the kernel — rather than an `addKeyboardShortcuts` at
- * some priority number — is what puts those four cases on one ladder, and
- * what lets a future surface take Tab at `layer` scope while it is open
- * without touching this file.
- */
 import { isListed } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import {
@@ -49,13 +14,8 @@ import { isSourceBlock } from "../objects/object-types";
 
 const TAB_KEYMAP_NAME = "meridianTabKeymap";
 
-/** What one press is worth. A tab, because the writer pressed Tab. */
 const TAB = "\t";
 
-/**
- * What one Shift-Tab takes back off a line: the tab this file inserts, or the
- * spaces pasted code arrives with.
- */
 const OUTDENT = /^(\t| {1,4})/;
 
 /**
@@ -74,12 +34,6 @@ function consuming(
   };
 }
 
-/**
- * Runs the walk unless something deeper inside the cell owns the indent key,
- * in which case the key is DECLINED — handed down the kernel ladder, where the
- * fence rung (block scope) or the list sink (document scope) answers, and the
- * unconditional document rung means ownership still never lapses.
- */
 const walking = (verb: (editor: Editor) => void): ((editor: Editor) => KeymapBinding) => {
   return (editor) => (state) => {
     if (cellInteriorOwnsIndent(state)) return false;
@@ -128,10 +82,6 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
   return false;
 }
 
-/**
- * In a list the key indents the item; when `indentList` refuses (the first item) it does
- * nothing, rather than type a tab into the bullet.
- */
 const indentOrTab = consuming((editor, state, dispatch) => {
   if (insideListItem(state)) {
     editor.commands.indentList();
@@ -171,16 +121,6 @@ function insideListItem(state: EditorState): boolean {
   return isListed(block.attrs.path);
 }
 
-/**
- * Indent or outdent the fence lines the selection touches.
- *
- * A caret takes one tab where it stands. Anything selected is line-wise: a
- * writer who swept three lines means those three lines rather than "replace
- * them with a tab", which is the one place a fence differs from prose.
- *
- * Null when there is nothing to do — a fence selected whole rather than typed
- * into, or a Shift-Tab on lines carrying no indentation.
- */
 function fenceIndentTransaction(state: EditorState, direction: 1 | -1): Transaction | null {
   const { selection } = state;
   if (!(selection instanceof TextSelection)) return null;
@@ -207,7 +147,6 @@ function fenceIndentTransaction(state: EditorState, direction: 1 | -1): Transact
   return transaction.docChanged ? transaction.scrollIntoView() : null;
 }
 
-/** Offsets of the line starts a `from`–`to` range within `text` reaches. */
 function touchedLineStarts(text: string, from: number, to: number): number[] {
   const starts: number[] = [];
 
@@ -245,8 +184,6 @@ export const TabKeymapExtension = Extension.create({
             chrome?.registerKeymap({
               id: "tab-fence",
               scope: "block",
-              // The scope says where it is live; this says which block it is
-              // about, which is the narrowing `appliesTo` exists for.
               appliesTo: (context) => context.chain.includes("source-block"),
               bindings: { Tab: indentFence(1)(editor), "Shift-Tab": indentFence(-1)(editor) },
             }),

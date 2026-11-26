@@ -1,14 +1,9 @@
 import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
-/** A navigation that moves main as a side effect of a mode switch, and the entry it settled on. */
 let switching = 0;
 let switchedTo: number | undefined;
 
-/**
- * Runs `navigate` as the sidebar's own navigation (the Write | Chat switch): main follows, but the
- * writer pressed it to see the sidebar change, so it is not an open.
- */
 export function withoutOpen<T>(navigate: () => Promise<T>): Promise<T> {
   switching += 1;
   return navigate().finally(() => {

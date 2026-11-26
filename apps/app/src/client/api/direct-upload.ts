@@ -1,10 +1,3 @@
-/**
- * Sends a file to the object store by a signed PUT, between two calls to the server: `start`
- * reserves the upload and signs the PUT, `finish` reads the stored bytes back and makes the file
- * visible. The server never sees the bytes in between.
- *
- * What a destination changes is `start` and `finish`; this function is the same for all of them.
- */
 import { t } from "@lingui/core/macro";
 import type {
   UploadIntakeResult,
@@ -14,7 +7,6 @@ import type {
 
 export type DirectUpload = {
   file: File;
-  /** Reserves the upload, or resumes it: calling again returns the state it has reached. */
   start(signal: AbortSignal | undefined): Promise<UploadStart>;
   /**
    * Idempotent. Aborting it only stops the waiting: a finish the server has received lands the
@@ -22,14 +14,11 @@ export type DirectUpload = {
    */
   finish(signal: AbortSignal | undefined): Promise<UploadIntakeResult>;
   signal?: AbortSignal;
-  /** Whole percents of the PUT, or null where the browser cannot say how much there is to send. */
   onProgress?: (percent: number | null) => void;
 };
 
-/** The server refused the file itself (its name or size): trying again cannot change the answer. */
 export class UploadRefusedError extends Error {}
 
-// XMLHttpRequest rather than fetch: only it reports bytes sent.
 function putFile(
   put: UploadSignedPut,
   file: File,

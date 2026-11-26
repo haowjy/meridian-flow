@@ -1,4 +1,3 @@
-/** Ownership rejection and unavailable-storage contracts for browser records. */
 import { afterEach, expect, it, vi } from "vitest";
 import { browserRecord } from "./browser-record";
 

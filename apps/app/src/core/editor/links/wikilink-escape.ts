@@ -44,7 +44,6 @@ function tokenize(effects: Effects, ok: State, nok: State): State {
     effects.exit(TOKEN);
     return ok(code);
   };
-  // `\[` then `[`, or `\[` then `\[`: Meridian's own Markdown writes `\[\[`.
   const second: State = (code) => {
     if (code === BACKSLASH) {
       effects.consume(code);
@@ -66,7 +65,6 @@ const exitData: Handle = function (token) {
   this.config.exit.data?.call(this, token);
 };
 
-/** The remark plugin the clipboard door's codec adds. */
 export const remarkKeepWikilinkEscapes: Plugin = function () {
   const data = this.data() as Record<string, unknown[] | undefined>;
   data.micromarkExtensions = [

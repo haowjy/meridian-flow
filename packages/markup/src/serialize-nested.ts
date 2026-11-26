@@ -1,8 +1,3 @@
-/**
- * Quotes and lists on the way out: each block's own Markdown, prefixed line by line with the
- * quotes and list levels `nest` reads for it, and the gap that separates it from the block
- * before. The marker and spacing rules are the ones `mdast-util-to-markdown` applies to lists.
- */
 import {
   type BlockFacts,
   innermostListStep,
@@ -14,15 +9,9 @@ import type { Node as PMNode } from "prosemirror-model";
 export type SerializedBlock = {
   body: string;
   gap: string;
-  /**
-   * The containers open at the block, as the first line of a stub: every quote and list level
-   * with its marker at the width it has here, then a rule. Parsing content after the stub
-   * reads it as if it sat where the block sits.
-   */
   open: string;
 };
 
-/** `bodyOf` gives a block's own Markdown, with no trailing newline, from where `nest` reads it. */
 export function serializeNested(
   blocks: readonly PMNode[],
   bodyOf: (block: PMNode, facts: BlockFacts) => string,
@@ -110,7 +99,6 @@ export function serializeNested(
   });
 }
 
-/** Whether the second block of an item can start on the line after the first and read the same. */
 function joinsDirectly(
   before: PMNode,
   block: PMNode,

@@ -1,8 +1,3 @@
-/**
- * A document's Live text in its Loro room, for tests of the model's tools: what the writer types
- * (a client's batch, no commit message, so the model reads it as the user's) and what the room
- * reads now.
- */
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { encodeEnvelope, freshPeerId, readDocument, writeDocument } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";

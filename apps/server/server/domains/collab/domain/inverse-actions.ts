@@ -1,13 +1,10 @@
-// Effective immutable action history shared by card and model selectors.
 import type { StoredInversePart } from "./turn-inverse-service.js";
 
 type ActionRow = Pick<StoredInversePart, "kind" | "actor" | "actionId" | "id" | "targets">;
 
-/** A text part keys by its edit and ordinal. */
 export const partKey = (part: { editId: string; ordinal: number }) =>
   `${part.editId}:${part.ordinal}`;
 
-/** The undo and writer-revert actions that took each of `keys`' parts back. */
 export function effectiveActionIndex<Row extends ActionRow>(
   history: readonly Row[],
   keys: ReadonlySet<string>,

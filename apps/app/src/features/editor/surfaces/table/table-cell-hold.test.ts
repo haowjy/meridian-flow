@@ -1,16 +1,4 @@
 // @vitest-environment jsdom
-/**
- * A grip serves a cell, and a menu serves the cells it was opened on, for as
- * long as the writer is reaching for them — and the table is being written into
- * by collaborators the whole time.
- *
- * Two bindings, because that is the only way to produce the change this has to
- * survive: the Loro binding replaces the whole ProseMirror document on every remote
- * write, so the mapping reports every position deleted, the elements drawing the
- * table are reconciled underneath, and the writer's selection is reconstructed
- * from shared-document anchors. The hold answers which cell; the page answers where it is drawn; the
- * menu's target answers which cells its verbs run on.
- */
 import type { Editor } from "@tiptap/core";
 import { addRowBefore, CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
@@ -55,7 +43,6 @@ function mount(): CollabPair {
   return pair;
 }
 
-/** Where the cell holding `text` is, in whichever editor is asked. */
 function cellPos(instance: Editor, text: string): number {
   let found: number | null = null;
   instance.state.doc.descendants((node, pos) => {
@@ -72,7 +59,6 @@ function sync(current: CollabPair, write: (peer: Editor) => void): void {
   current.sync();
 }
 
-/** Every row of the table, as the text its cells hold. */
 function rowTexts(instance: Editor): string[][] {
   const rows: string[][] = [];
   instance.state.doc.descendants((node) => {
@@ -87,14 +73,12 @@ function rowTexts(instance: Editor): string[][] {
   return rows;
 }
 
-/** The hold a surface aims with: whatever cell holds `text`, right now. */
 function holdCell(instance: Editor, text: string) {
   const hold = holdNode(instance.state, cellPos(instance, text));
   if (!hold) throw new Error(`no hold on the cell holding ${text}`);
   return hold;
 }
 
-/** A collaborator inserts a row above the row holding `text`. */
 function peerAddRowAbove(current: CollabPair, text: string): void {
   sync(current, (peer) => {
     const at = cellPos(peer, text);
@@ -103,7 +87,6 @@ function peerAddRowAbove(current: CollabPair, text: string): void {
   });
 }
 
-/** The writer sweeps a rectangle by hand, from one cell to another. */
 function sweep(instance: Editor, anchor: string, head: string): void {
   instance.view.dispatch(
     instance.state.tr.setSelection(
@@ -125,10 +108,8 @@ describe("the cell a grip is aimed at, across a peer's write", () => {
 
     peerAddRowAbove(current, "one");
 
-    // The number still starts a cell — the empty one the peer's row put there.
     expect(local.state.doc.nodeAt(settled)?.type.spec.tableRole).toBe("cell");
     expect(local.state.doc.nodeAt(settled)?.textContent).toBe("");
-    // The hold answers with the writer's cell, wherever it now stands.
     const now = resolveNodeHold(local.state, hold);
     expect(now?.from).not.toBe(settled);
     expect(now && local.state.doc.nodeAt(now.from)?.textContent).toBe("one");
@@ -144,7 +125,6 @@ describe("the cells a table menu's verbs run on, across a peer's write", () => {
     peerAddRowAbove(current, "one");
 
     expect(runTableVerbOn(local, target, "deleteRow")).toBe(true);
-    // The writer's row is the one that went; the peer's new empty row stays.
     expect(rowTexts(local)).toEqual([
       ["", ""],
       ["three", "four"],
@@ -167,7 +147,6 @@ describe("the cells a table menu's verbs run on, across a peer's write", () => {
       peer.commands.deleteColumn();
     });
 
-    // Absent beats wrong: no state to read verbs from, and no verb runs.
     expect(tableTargetState(local, target)).toBeNull();
     expect(runTableVerbOn(local, target, "mergeCells")).toBe(false);
     expect(rowTexts(local)).toEqual([["one"], ["three"]]);

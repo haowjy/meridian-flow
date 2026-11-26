@@ -1,4 +1,3 @@
-/** Controller recovery fences: a submission or recovery outlives neither its session nor its owner. */
 import type {
   AdmissionLookup,
   RetireAdmissionResult,
@@ -127,7 +126,6 @@ describe("ThreadRunController write outcomes", () => {
       ),
     ).resolves.toMatchObject({ kind: "abandoned" });
 
-    // The sibling token still owns its own reconciliation and settles normally.
     const siblingRow = scenario.store
       .getState()
       .appendUserTurn("thread_1", [{ type: "text", text: "Sibling" }]);

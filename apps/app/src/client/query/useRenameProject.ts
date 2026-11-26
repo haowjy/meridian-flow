@@ -1,10 +1,3 @@
-/**
- * useRenameProject — the project title rename command. The title shows at
- * once; a refusal reverts to the last confirmed title, but only when no newer
- * rename has started since, so an older failure never rolls back over a newer
- * pending or confirmed title. The returned `rename` rejects only for the latest
- * rename's refusal, the one a `TitleEditSlot` should reopen.
- */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";

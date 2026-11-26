@@ -1,9 +1,3 @@
-/**
- * The set-overrides command kind: run this chat's Agent on another model and at another reasoning
- * setting, or back on its own. The command driver delivers it. The server never refuses it: a
- * model the gateway doesn't list, or a setting the model doesn't accept, is stored and falls back
- * to the Agent's at turn time.
- */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
 import { apiThreadOverridesPath } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
@@ -15,16 +9,10 @@ import { whenRead } from "./when-read";
 
 export const THREAD_SET_OVERRIDES_KIND = "thread_set_overrides";
 
-/** Each command sets both: `null` clears one, so the Agent's own applies. */
 export type ThreadSetOverridesBody = { threadId: string; overrides: ThreadOverrides };
 
-/** Lane of one chat's set-overrides commands, so the last one the writer made is the last one stored. */
 export const threadOverridesLane = (threadId: string) => `thread-overrides:${threadId}`;
 
-/**
- * The overrides a chat shows: the writer's newest unrefused change (so a pick shows at once and
- * stays through delivery), else what the server's thread read says.
- */
 export function projectThreadOverrides(
   records: readonly CommandRecord[],
   threadId: string,

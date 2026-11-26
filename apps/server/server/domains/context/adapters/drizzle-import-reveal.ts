@@ -80,7 +80,6 @@ export function createDrizzleContextImportReveal(deps: {
       });
 
       const tx = currentDrizzleDb(deps.db);
-      // What the create records do not carry: the document's properties, and a binary's preview.
       const facts = nodes.flatMap((node) => {
         if (node.kind === "file")
           return node.hasPreview ? [{ id: node.id, metadata: {}, hasPreview: true }] : [];

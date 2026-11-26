@@ -19,7 +19,6 @@ import type { HolderLinkScope } from "@meridian/markup/links";
 
 export type { HolderLinkScope };
 
-/** The project, named directly or by a document or thread in it, and whose file policy answers. */
 export type LinkScopeKey = (
   | { projectId: string }
   | { documentId: string }
@@ -33,45 +32,29 @@ export type LinkScopeKey = (
    * another account or thread.
    */
   viewer?: { accountId?: string; threadId?: string };
-  /** A fresh scope over already captured membership; never joins an enclosing scope. */
   memberships?: readonly { view: LinkView; members: readonly string[] }[];
-  /** Documents the caller already knows share this project (e.g. one source's search). */
   documentIds?: readonly string[];
 };
 
 export interface ScopePrepareRequest {
-  /** Each holder's own ahead bindings load with it (an ahead ref's meaning in that holder). */
   holders: readonly { documentId: string; view: LinkView }[];
   refs?: readonly string[];
   addresses?: readonly string[];
   folderAddresses?: readonly string[];
-  /** Nodes already carrying stored attrs (a document's blocks, copies, host-bound content): their refs, asset ids and ahead addresses load. */
   stored?: readonly PMNode[];
-  /**
-   * Freshly parsed nodes about to be bound: their written addresses resolve
-   * against the first holder, so they load after it.
-   */
   written?: readonly PMNode[];
-  /** The writing chat: a bare written `uploads://` is loaded at the address it will be bound to. */
   uploadsChat?: string;
-  /** Views a `reader` will resolve in, beside the holders'. */
   views?: readonly LinkView[];
 }
 
 export interface DocumentLinkScopes {
-  /** Open or join a snapshot for one project and viewer. Nothing is loaded yet. */
   within<T>(key: LinkScopeKey, operation: () => Promise<T>): Promise<T>;
-  /** Batched load into the innermost open snapshot. */
   prepare(request: ScopePrepareRequest): Promise<void>;
   /**
    * Synchronous holder-bound view of the innermost snapshot. It keeps that
    * snapshot, so work the operation defers past its end still spells from it.
    */
   holder(input: { documentId: string; view: LinkView }): HolderLinkScope;
-  /**
-   * The same, for a door with an address but no holder document (the resolver endpoint, chat:
-   * `uri` null). Resolution never reads the holder; only spelling would.
-   */
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
   /**
    * The document a draft view created at an address, as the view's tree reaches it, once `prepare` has loaded that address. Typed links never bind to a draft's
@@ -93,7 +76,6 @@ export interface DocumentLinkScopes {
 
 export const LIVE_VIEW: LinkView = { kind: "live" };
 
-/** Durable ahead-ref registration (context's `LinkAheadRegistry.register`). */
 export interface AheadRefRegistrar {
   /**
    * `register` for a write already inside its command transaction: it takes the targets'

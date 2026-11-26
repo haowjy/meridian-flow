@@ -16,16 +16,9 @@ import type { DocumentCut } from "./document-rooms.js";
 
 export interface LinkPrepareRequest {
   documentId: string;
-  /** Freshly parsed nodes whose written addresses ref assignment may resolve. */
   written?: readonly PMNode[];
-  /**
-   * Nodes that already carry stored attrs and will be spelled as stored:
-   * copies, and a host's bound write (`WriteContext.boundNodes`).
-   */
   stored?: readonly PMNode[];
-  /** Refs no doc carries yet that will be spelled (ahead refs this write registered). */
   refs?: readonly string[];
-  /** Decoded addresses to load (a registered ahead ref's own address). */
   addresses?: readonly string[];
   shown?: readonly ShownLink[];
   context?: WriteContext;
@@ -33,18 +26,14 @@ export interface LinkPrepareRequest {
 
 export interface AheadMint {
   ref: AheadRef;
-  /** aheadAddress(...) result: decoded, canonical, with an extension. */
   address: string;
-  /** The holder scope's project at mint time: the registry's namespace. */
   holderProjectId: string;
-  /** The holder scope's view at mint time: a draft view registers the ref's meaning there too. */
   view: LinkView;
 }
 
 export interface DocumentLinksPort {
   /** One batched load; awaited before every synchronous render, assign or apply block. */
   prepare(request: LinkPrepareRequest): Promise<void>;
-  /** Synchronous; holder and view come from the arguments, the snapshot from the open scope. */
   scopeFor(documentId: string, context: WriteContext | undefined): HolderLinkScope;
   /** Independent durable registration (§6). Throws if called inside a DB transaction. */
   registerAhead(mints: readonly AheadMint[]): Promise<void>;

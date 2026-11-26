@@ -1,21 +1,3 @@
-/**
- * The lightbox an object opens over the page (Q1, mockup 04).
- *
- * A popup, never a route and never a takeover: the chapter stays visible and
- * mounted behind the scrim, so the object's place in the document is seen
- * rather than stated, and X or Esc lands the writer back exactly where they
- * were reading.
- *
- * The viewer face is the dialog's whole job. Revision is not — writers revise
- * machine-authored diagrams through the normal chat (the ask-AI hook was ruled
- * out), so the only editing surface here is the demoted source escape hatch
- * behind ⋯, which opens the raw source beside the live preview.
- *
- * Which diagram language that source is written in is the provider's business,
- * never this file's: the row names itself in the verbs and brings the renderer
- * the preview uses (`core/editor/diagrams/diagram-providers.ts`).
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Code2, Copy, Download, Ellipsis } from "lucide-react";
@@ -39,7 +21,6 @@ import { DIAGRAM_EXPORT_FILENAME } from "./object-menu-items";
 import { ViewerCanvas } from "./ViewerCanvas";
 import { useVerbFeedback } from "./verb-feedback";
 
-/** Past the dialog's and the menu's focus restoration, under a blink. */
 const SOURCE_FOCUS_DELAY_MS = 120;
 
 export type ObjectLightboxProps = {
@@ -47,7 +28,6 @@ export type ObjectLightboxProps = {
   target: ObjectSurfaceTarget | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The source escape hatch — a layer of its own inside the dialog. */
   sourceOpen: boolean;
   onSourceOpenChange: (open: boolean) => void;
 };
@@ -113,10 +93,6 @@ export function ObjectLightbox({
   );
 }
 
-/**
- * Right padding leaves the dialog's own close control its corner: two controls
- * sharing one corner is how a writer presses the other one.
- */
 function LightboxHeader({
   title,
   menu,
@@ -130,8 +106,6 @@ function LightboxHeader({
     <div className="meridian-lightbox-header">
       <span className="font-medium text-muted-foreground text-sm">{title}</span>
       <span className="flex-1" />
-      {/* Inside the dialog, because the page's own notices are behind the
-          scrim and a writer who just pressed something is looking here. */}
       {notice}
       {menu}
     </div>
@@ -207,8 +181,6 @@ function DiagramFace({
               <Copy aria-hidden />
               {t`Copy ${provider.name} source`}
             </EditorMenuItem>
-            {/* Absent rather than disabled while nothing has rendered: there is
-                no image to hand over yet, and law 5 prefers the gap. */}
             {svg ? (
               <EditorMenuItem
                 onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), "download")}
@@ -253,7 +225,6 @@ function SourcePane({
   onChange,
   error,
 }: {
-  /** The provider's name, which is what the pane is labelled with. */
   name: string;
   value: string;
   onChange: (next: string) => void;
@@ -300,8 +271,6 @@ function ImageFace({ target }: { target: ObjectSurfaceTarget }) {
     <>
       <LightboxHeader title={alt || t`Image`} />
       <div className="meridian-lightbox-body">
-        {/* A photograph opens at its own size at most: Fit that enlarges a small
-            raster to fill the frame just shows the writer bigger pixels. */}
         <ViewerCanvas contentKey={source} maxFitScale={1}>
           {source ? <img src={source} alt={alt} draggable={false} /> : null}
         </ViewerCanvas>

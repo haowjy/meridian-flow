@@ -1,10 +1,3 @@
-/**
- * Ctrl+Z in the sidebar: takes back the writer's latest tree change in the shown source, made in
- * the view the toggle shows, or their latest Apply as one step (`tree-undo.ts`); on the Changes
- * tab, the latest of any source. A step that no longer fits is skipped, and its rows say so
- * (`TreeNotice`). Focus follows to the row the press brings back, as a row's Undo does. A press
- * inside a text field is the field's own Undo.
- */
 import { type KeyboardEvent, useMemo, useRef } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { followFocusFrom } from "@/components/app/RowWord";
@@ -35,17 +28,11 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
   const pressing = useRef(false);
   return useMemo(
     () => ({
-      /** Claims the event when it is the sidebar's Undo. */
       handles(event: KeyboardEvent): boolean {
         if (event.defaultPrevented || !isUndoKey(event) || isTextField(event.target)) return false;
         event.preventDefault();
         return true;
       },
-      /**
-       * `accountList`: the source is the account's (`user://`). `source` null: the Changes tab,
-       * whose press takes the latest step of any source. A press while one waits on the server
-       * is dropped: the stack is read one press at a time.
-       */
       press(accountList: boolean, source: string | null) {
         const session = (accountList ? account : project).session;
         if (!session || pressing.current) return;

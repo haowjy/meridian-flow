@@ -31,7 +31,6 @@ export async function listAgentFiles(signal: AbortSignal, projectId: string): Pr
   return getJson(`/api/agents/files?${query}`, { signal, schema: agentFilesSchema });
 }
 
-/** A package whose check fails comes back as a `failed` outcome, never as an HTTP error. */
 export async function saveAgentPackages(
   projectId: string,
   packages: SaveAgentsRequest["packages"],
@@ -40,7 +39,6 @@ export async function saveAgentPackages(
   return (await postJson("/api/agents/save", body, { schema: saveAgentsResponseSchema })).outcomes;
 }
 
-/** The result distinguishes a repeated Undo from a superseded Save. */
 export async function undoAgentSave(projectId: string, level: AgentsLevel, saveId: string) {
   return postJson(
     "/api/agents/save/undo",
@@ -49,7 +47,6 @@ export async function undoAgentSave(projectId: string, level: AgentsLevel, saveI
   );
 }
 
-/** A file's text as its package's latest Save holds it; a built-in's as shipped. */
 export async function readSavedAgentFile(
   signal: AbortSignal,
   file: { projectId?: string; level: AgentLevel; path: string },

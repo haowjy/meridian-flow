@@ -30,7 +30,6 @@ import { carryAnchor, holdBlock, type NodeHold, resolveBlockHold } from "../anch
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
 
-/** Marks the lifted block for the block surface's CSS; nothing is owned here. */
 export const BLOCK_LIFTED_CLASS = "meridian-block-lifted";
 
 type BlockDragState = {
@@ -41,7 +40,6 @@ type BlockDragState = {
    * replacement now starts.
    */
   hold: NodeHold;
-  /** False while the press might still turn out to be a click. */
   lifted: boolean;
 };
 
@@ -58,14 +56,12 @@ export function beginBlockDrag(editor: Editor, pos: number): void {
   if (hold) dispatchBlockDrag(editor, { hold, lifted: false });
 }
 
-/** The press became a drag. The block lifts. */
 export function liftBlockDrag(editor: Editor): void {
   const current = blockDragPluginKey.getState(editor.state);
   if (!current || current.lifted) return;
   dispatchBlockDrag(editor, { ...current, lifted: true });
 }
 
-/** Let go, dropped or cancelled. */
 export function endBlockDrag(editor: Editor): void {
   if (!blockDragPluginKey.getState(editor.state)) return;
   dispatchBlockDrag(editor, null);

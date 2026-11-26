@@ -1,37 +1,3 @@
-/**
- * ImageNodeView — what an inline picture looks like at every point in its life.
- *
- * One node view for five states, because they are one node: a picture on its
- * way (dimmed frame, its own proportions, a thin progress line), a picture that
- * did not make it (the same frame, what failed, Retry and Remove), a picture
- * somebody ELSE is uploading right now (the same frame, no percent and no verbs,
- * because neither the bytes nor the retry are ours), a picture whose upload
- * never finished at all (a reload or a redo found the slot but not the bytes),
- * and a picture (the ordinary case, a signed read URL for the document its
- * `asset:` source or its `ref` names).
- *
- * A stored picture this browser can't draw (no preview could be made) is a file
- * card with Download, never Retry. A picture whose ref names nothing it can draw says which: an address nothing
- * has been uploaded to yet (it draws itself when a file lands there), or a
- * document that is gone. Neither offers Retry, because nothing a press could
- * do would change the answer.
- *
- * Which of the two empty-slot states applies is never guessed: the slot's
- * `uploadToken` plus a live owner signal says an upload is in flight, and only
- * a token nobody claims is the abandoned one (`pending-images.ts`).
- *
- * The frame is the reason completion moves nothing. Its size comes from the file
- * the writer handed over, measured locally before the upload started, and it is
- * REMEMBERED here for the rest of the node view's life: the picture's own bytes
- * arrive a moment after its `src` does, and a frame that collapsed in that gap
- * would reflow the manuscript twice for one picture. A picture that arrived some
- * other way is measured when it draws, because the height cap needs its ratio to
- * narrow a stored width rather than stretch it.
- *
- * What is in flight arrives as a decoration rather than an attribute
- * (`pending-images.ts`): progress is the document's to show and nobody's to
- * store.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
@@ -84,7 +50,6 @@ export function ImageNodeView(props: NodeViewProps) {
   if (announcedFrame && !sameShape(announcedFrame, shape)) setShape(announcedFrame);
   const pictureDrawn = (event: SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth: width, naturalHeight: height } = event.currentTarget;
-    // An SVG with no size of its own reports zero, and has no ratio to keep.
     if (width > 0 && height > 0 && !sameShape({ width, height }, shape)) {
       setShape({ width, height });
     }
@@ -190,14 +155,6 @@ export function ImageNodeView(props: NodeViewProps) {
   );
 }
 
-/**
- * The picture's slot while its bytes travel, and after they failed to.
- *
- * Quiet by design (§5.6): the manuscript is being written around this, so the
- * frame states its name and its progress and nothing else. Failure is the one
- * time it asks for something, because law 5 says a picture that did not arrive
- * may not disappear without saying so.
- */
 function PendingImage({
   entry,
   status,
@@ -264,18 +221,6 @@ function PendingImage({
   );
 }
 
-/**
- * Somebody else's upload, in the slot they put it in.
- *
- * The same quiet frame as an upload of the writer's own, minus everything only
- * the uploading browser can know: no percent (it never leaves that browser), no
- * Retry (these are not our bytes), no Remove (the picture is on its way, and
- * removing the slot would cancel a collaborator's upload by accident).
- *
- * The shape is the uploading client's measurement, announced beside its token,
- * so this slot is already the picture's box (the wrapper wears it, as it does
- * for an upload of the writer's own) and the landing moves no line here either.
- */
 function UploadingElsewhere() {
   return (
     <span
@@ -293,16 +238,6 @@ function UploadingElsewhere() {
   );
 }
 
-/**
- * A slot nobody is filling: the upload was still running when its tab closed, or
- * a redo brought the insert back after its abort.
- *
- * It cannot be retried, because the bytes were one browser's and are gone. So it
- * says that plainly and offers the one thing left to do, rather than a Retry
- * that would do nothing (law 5). A slot whose owner is still live is never
- * drawn this way — that is what the upload token and the owner signal are for
- * (`pending-images.ts`).
- */
 function AbandonedImage({
   editor,
   getPos,
@@ -341,24 +276,6 @@ function AbandonedImage({
   );
 }
 
-/**
- * The box the picture stands in, from the two things that can decide it.
- *
- * A measured FRAME is the file's own size, held by the wrapper so the `<img>`
- * inside can change without the box changing; it is the same size wherever the
- * slot stands, mid-sentence or alone in its paragraph, because a picture is one
- * object at one size. A stored WIDTH is what the writer dragged the picture to,
- * and it wins over the frame — including while the bytes are still travelling,
- * so a slot resized mid-upload lands at the size the writer chose rather than
- * jumping back to the file's. The frame's ratio survives either way, which is
- * what keeps the landing from moving a line.
- *
- * `max-width` still belongs to the CSS: a picture wider than the prose column
- * is the column's business, at any size and from any source. Height is the
- * pane's business, and the box narrows to meet it so the ratio holds. Nothing
- * here reaches the document: the cap depends on the writer's pane, and the
- * stored width does not.
- */
 function imageBoxStyle(
   frame: PendingImageFrame | null,
   width: number | null,

@@ -1,11 +1,3 @@
-/**
- * useProjectList — React Query hook for the account project library, merged
- * with optimistic project state.
- *
- * Exposes loading/empty/ready/error status and the single project-list read
- * path across the shell.
- */
-
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -40,10 +32,6 @@ export type ProjectListStatus = {
   refetch: () => void;
 };
 
-/**
- * Account project list. `null` = not loaded yet; `[]` = loaded and empty.
- * Seeded from the authenticated route loader via the shared query provider.
- */
 export function useProjectListStatus(): ProjectListStatus {
   const { data, isError, isFetching, refetch } = unwrapListQuery(useProjectListQuery());
 

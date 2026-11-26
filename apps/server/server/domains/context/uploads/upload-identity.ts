@@ -1,5 +1,3 @@
-/** Identity projection for upload authorization and existing document consumers. */
-
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -18,9 +16,7 @@ export interface UploadIdentity {
   storageUrl: string | null;
   hasPreview: boolean;
   updatedAt: string;
-  /** Derived from the owning chat's current handle; chat-relative until the chat's row exists. */
   uri: string;
-  /** The chat that owns the upload (null for a document that is not an upload). */
   ownerChatId: string | null;
 }
 
@@ -45,7 +41,6 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
       .where(
         and(
           inArray(liveDocuments.id, [...ids] as never[]),
-          // A source upload is no chat's attachment, so it is not an upload here.
           uploadsOnly
             ? and(eq(uploadIntakes.state, "finalized"), isNotNull(uploadIntakes.ownerThreadId))
             : undefined,

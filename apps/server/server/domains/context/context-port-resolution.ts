@@ -1,8 +1,3 @@
-/**
- * ContextPort resolution helpers: centralize the non-deleted Work lookup that turns
- * thread or project-browse context into the correct unified ContextPort.
- */
-
 import type { DocumentVersion } from "@meridian/agent-edit";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
@@ -23,21 +18,17 @@ import type { UnifiedContextPortFactory } from "./unified-context-port-factory.j
 export interface ThreadContextResolution {
   thread: Thread;
   primaryWorkId: string | null;
-  /** The primary Work's row, deleted ones included; null when the thread has no primary Work. */
   primaryWork: Work | null;
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
-  /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
   uploadsOwner: UploadsOwner | null;
-  /** Finds another chat by its handle, for `uploads://@c12/` addresses. */
   uploadChats?: ChatUploadsOwners;
 }
 
 export interface ThreadContextResolutionDeps {
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
-  /** Absent only in fixtures that never read uploads. */
   topPrimaryChats?: TopPrimaryChatResolver;
   uploadChats?: ChatUploadsOwners;
   threads: Pick<ThreadRepository, "findById">;
@@ -61,7 +52,6 @@ export async function resolveThreadContext(
   const [primaryWorkAuthority, primaryWork] = primaryMembership
     ? await Promise.all([
         deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId),
-        // By id: the project listing leaves out No Work, whose chats can draft too.
         deps.works.findById(primaryMembership.workId),
       ])
     : [null, null];
@@ -83,7 +73,6 @@ export function contextPortForThread(
   resolution: ThreadContextResolution,
   options: {
     version?: DocumentVersion;
-    /** Where every write lands, as a person's or an Undo does; see `ThreadContextView`. */
     destination?: FileDestination;
   } = {},
 ): ContextPort {
@@ -131,12 +120,6 @@ async function resolvedAuthorities(
   );
 }
 
-/**
- * Resolve one project-browse port whose Work authorities have all been proven. Without a
- * primary Work the port is the project's, where a bare `scratch://` is No Work's Scratch; `workIds` are
- * then only checked to exist, so a caller that merely reads a Work's files does not make it
- * the port's own Work.
- */
 export async function contextPortForProjectAuthorities(input: {
   deps: ProjectBrowseContextPortDeps;
   projectId: string;
@@ -167,18 +150,12 @@ export async function contextPortForProjectAuthorities(input: {
   );
 }
 
-/**
- * Resolve a route-level context port after the caller has already proven
- * project ownership. The selected Work is primary, while every non-deleted Work in
- * the project remains addressable by handle.
- */
 export async function contextPortForProjectBrowse(input: {
   deps: ProjectBrowseContextPortDeps;
   projectId: string;
   userId: string;
   workId?: string | null;
   rootThreadId?: string | null;
-  /** A chat's id, possibly before its row exists: bare `uploads://` names its files. */
   chatId?: string | null;
 }): Promise<ContextPort | null> {
   if (input.chatId) {

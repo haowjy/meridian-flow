@@ -18,7 +18,6 @@ export function DropRegion({
   children,
 }: {
   state: TreeDropState;
-  /** Inside a list, whose rows reach the region's edges; else the rows sit 8px in. */
   flush?: boolean;
   className?: string;
   children: ReactNode;

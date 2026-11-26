@@ -130,12 +130,10 @@ function AccountFeatureProviders({
   );
 }
 
-/** Closes the account's sessions and deletes its local copies before sign-out; null outside the authenticated shell. */
 export function useOptionalSignOutCleanup(): (() => Promise<void>) | null {
   return useContext(SignOutContext);
 }
 
-/** The account's open tree lists; null outside the authenticated shell. */
 export function useOptionalTreeLists(): TreeListRegistry | null {
   return useContext(TreeListsAccountContext);
 }
@@ -174,7 +172,6 @@ export function useOptionalProjectStandings(): ProjectStandings | null {
   return useContext(ProjectStandingsAccountContext);
 }
 
-/** Immediate account-close fence, including the render-before-unmount transition. */
 export function useAccountEpochSignal(): AbortSignal {
   const signal = useContext(AccountEpochContext);
   if (!signal) throw new Error("AccountFeatureComposition is required");
@@ -187,10 +184,6 @@ export function useAccountId(): string {
   return accountId;
 }
 
-/**
- * Account epoch for command owners that also render outside the authenticated
- * shell (tests, SSR). `null` means there is no account lifetime to fence yet.
- */
 export function useOptionalAccountEpochSignal(): AbortSignal | null {
   return useContext(AccountEpochContext);
 }
@@ -205,14 +198,12 @@ export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCom
   return useContext(DraftCommandsContext);
 }
 
-/** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
 export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
   return useContext(PresentedContext);
 }
 
 const NOTHING_PRESENTED: readonly OpenDocument[] = [];
 
-/** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
 export function useShownDocuments(projectId: string): readonly OpenDocument[] {
   const presented = useContext(PresentedContext);
   return useSyncExternalStore(

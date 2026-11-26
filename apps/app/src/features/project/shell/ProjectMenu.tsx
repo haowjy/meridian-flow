@@ -1,4 +1,3 @@
-/** Project-title menu shared by the desktop rail and phone drawer. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";

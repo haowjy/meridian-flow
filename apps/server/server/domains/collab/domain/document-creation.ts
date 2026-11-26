@@ -1,16 +1,11 @@
-/** Atomic ownership of tracked-document identity, first text and arrival. */
-
 import type { DocumentId } from "@meridian/contracts/runtime";
 
 export type ImmediateDocumentCreation<T> = {
-  /** Claims the identity: an inserted row, or a revealed one at the path. Null when taken. */
   persistIdentity(): Promise<DocumentId | null>;
   initializeContent(documentId: DocumentId): Promise<T>;
 };
 
-/** The same, for a tree of documents created together (a Copy), all or none. */
 export type BulkDocumentCreation<T> = {
-  /** Claims every identity as inserted rows. Null when a name or id is taken. */
   persistIdentities(): Promise<readonly DocumentId[] | null>;
   initializeContent(documentIds: readonly DocumentId[]): Promise<T>;
 };

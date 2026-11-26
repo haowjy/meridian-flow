@@ -1,14 +1,9 @@
-/**
- * The project lists' shared row grammar: a list ruled between its rows and a
- * group's label. Work lists, deleted Works and the recency lists build from these.
- */
 import type { ReactNode } from "react";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 export type RuledRow = { key: string; node: ReactNode };
 
-/** Rows with a hairline between each and the next; none under the last. */
 export function RuledList({ rows, className }: { rows: readonly RuledRow[]; className?: string }) {
   return (
     <ul className={cn("min-w-0", className)}>
@@ -21,7 +16,6 @@ export function RuledList({ rows, className }: { rows: readonly RuledRow[]; clas
   );
 }
 
-/** A group's label with the space under it; the caller owns the space above. */
 export function GroupLabel({
   children,
   as: Tag = "div",

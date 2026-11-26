@@ -1,13 +1,3 @@
-/**
- * DocumentHost — one document in a view, on the desktop or the phone. The host is keyed by its
- * document: moving it between main and the side changes only its place, so its editor (undo,
- * caret, scroll) survives the move. Main's host also binds the address to its document and
- * records the opening; a host off main does neither.
- *
- * A `kept` host is the last document shown that is on screen no longer, mounted hidden so its
- * undo survives a return: it reviews nothing, presents nothing, and writes neither a pin nor the
- * address.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
@@ -60,12 +50,9 @@ export type DocumentHostProps = {
   projectId: string;
   document: OpenDocument;
   place: DocumentPlace;
-  /** Whether the host's slot is on screen: main always, the side while it is open. */
   visible: boolean;
-  /** Main's address answer; set only while the host is main's. */
   main?: MainDocument;
   presentation: "desktop" | "phone";
-  /** The band above the page: main's header or the side's. On the phone only the sheet has one. */
   header?: ReactNode;
   editorWorkId: string | null;
 };
@@ -102,10 +89,6 @@ export function DocumentHost(props: DocumentHostProps) {
   );
 }
 
-/**
- * Off main, a host follows its document through a rename or a move by the replica's
- * placement; main's host gets the same from its address, which follows the document.
- */
 function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolean): OpenDocument {
   const trees = useProjectTrees(projectId);
   if (main) return tab;
@@ -117,7 +100,6 @@ function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolea
   return placed.kind === "projected" ? placed.document : tab;
 }
 
-/** Main's and the side's documents are what removals, notices and availability act on. */
 function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentPlace) {
   const presented = useOptionalPresentedDocuments();
   const [token] = useState(() => crypto.randomUUID());
@@ -127,9 +109,6 @@ function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentP
   useLayoutEffect(() => () => presented?.unmount(token), [presented, token]);
 }
 
-/**
- * Records the opening in Recent once main shows the document live. Renders nothing.
- */
 function MainDocumentBinding({
   projectId,
   document,
@@ -139,7 +118,6 @@ function MainDocumentBinding({
 }) {
   const liveness = useDocumentLiveness(projectId, document);
 
-  // Recency is recorded from the document actually in main, once per arrival.
   const record = useRecordOpenedDocument();
   const recorded = useRef<string | null>(null);
   useEffect(() => {
@@ -156,7 +134,6 @@ function MainDocumentBinding({
   return null;
 }
 
-/** Desktop: the band, then the page (the side's inset from main's), then the document itself. */
 function DesktopDocumentFrame({
   projectId,
   document,
@@ -232,7 +209,6 @@ function EditableDocument({
   );
 }
 
-/** The document's identity and state, and its notices. */
 function DesktopDocumentChrome({
   projectId,
   document,
@@ -295,10 +271,6 @@ function DesktopDocumentChrome({
   );
 }
 
-/**
- * The phone's one document. No identity bar: the top bar's breadcrumb names the document, and a
- * refused create or move is said here. An untitled document has no review to wrap it.
- */
 function PhoneDocumentFrame({
   projectId,
   document,
@@ -339,8 +311,6 @@ function PhoneEditor({
   const review = useReviewMode();
   return (
     <DocumentStateSlotProvider>
-      {/* The version chip lives at the toolbar row's end, as on a desktop; Review changes has its
-          own bar instead. */}
       {review?.documentId === document.documentId ? null : (
         <DocumentStatePortal>
           <AgentFileState projectId={projectId} document={document} touch />
@@ -364,7 +334,6 @@ function PhoneEditor({
   );
 }
 
-/** Main while its address has no document to paint: opening, or not found. */
 export function MainDocumentStatus({ main }: { main: MainDocument }) {
   const { catalogResolved, addressState, isError } = main;
   const opening = addressState === "pending";

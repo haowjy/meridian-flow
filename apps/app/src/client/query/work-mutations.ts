@@ -1,10 +1,3 @@
-/**
- * What a screen does with Work commands: submit one to the command driver and read the records
- * the driver holds. A command's promise resolves when the server has settled it (`null`), or to
- * its failure, so a caller can reopen the field it edited; the record itself outlives the
- * screen and is shown by `work-command-selectors`. The Undo windows of deleted Works are this
- * tab's: they last until the writer's next action there.
- */
 import type { CommandDriver } from "@meridian/command-driver";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -23,20 +16,17 @@ import {
   workLanes,
 } from "./work-commands";
 
-/** The server turned a command away; `code` is its error code (`work_locked`, `work_not_found`). */
 export class WorkCommandRefused extends Error {
   readonly name = "WorkCommandRefused";
   constructor(readonly code: string | null) {
     super(`Work command refused${code ? `: ${code}` : ""}`);
   }
 
-  /** Only a refusal the server did not explain can succeed on a second try: the others ran and were turned away. */
   get retryable(): boolean {
     return this.code === null;
   }
 }
 
-/** The server left a closed Work as it stands: the writer's change did not apply. */
 export class WorkReturnedError extends Error {
   readonly name = "WorkReturnedError";
   constructor(readonly why: ReturnedWhy) {
@@ -44,10 +34,8 @@ export class WorkReturnedError extends Error {
   }
 }
 
-/** A command resolves to its failure, or `null` once the server has it. */
 export type RunWorkCommand<Op extends WorkOperation> = (
   variables: WorkCommandVariables[Op],
-  /** `saved` runs once the command is in the journal: where a destination may open. */
   options?: { saved?: () => void },
 ) => Promise<Error | null>;
 
@@ -72,7 +60,6 @@ export function useWorkMutations(projectId: string): WorkMutations {
   }, [client, driver, projectId]);
 }
 
-/** This project's Work commands the driver holds, oldest first. */
 export function useWorkCommandRecords(projectId: string): readonly WorkCommandRecord[] {
   const records = useCommands();
   return useMemo(
@@ -95,7 +82,6 @@ async function runWorkCommand<Op extends WorkOperation>(
 ): Promise<Error | null> {
   if (!driver) return new Error("Commands are not available yet");
   const { workId } = variables;
-  // A new command replaces what its Work showed before.
   for (const record of driver.getSnapshot().records) {
     const old = WORK_KINDS.has(record.kind) ? workCommandOf(record) : null;
     if (old?.state === "never" && old.workId === workId) void driver.dismiss(old.id);
@@ -114,7 +100,6 @@ async function runWorkCommand<Op extends WorkOperation>(
   if (operation === "restore" && settled?.state === "done") closeWindows(client, projectId, workId);
   if (!settled) return new Error("The command was removed before it settled");
   const failed = workCommandOf(settled);
-  // A closed Work answers `done` with nothing changed: the field reopens like a refusal.
   if (failed?.returned) {
     if (!workCommandSpecs[operation].keepsFailure) void driver.dismiss(id);
     return new WorkReturnedError(failed.returned);
@@ -127,7 +112,6 @@ async function runWorkCommand<Op extends WorkOperation>(
 const refusedBy = (record: WorkCommandRecord | null) =>
   new WorkCommandRefused(record?.code ?? null);
 
-/** Runs a refused command again, in its place. Resolves to its failure, or `null`. */
 export async function retryWorkCommand(
   driver: CommandDriver,
   failed: WorkCommandRecord,
@@ -141,8 +125,6 @@ export async function retryWorkCommand(
 export function dismissWorkCommand(driver: CommandDriver, id: string): void {
   void driver.dismiss(id);
 }
-
-// --- Undo windows of deleted Works ---
 
 export type WorkDeleteWindowEntry = { workId: string; commandId: string; openedAt: number };
 
@@ -181,7 +163,6 @@ export function useWorkDeleteWindowEntries(projectId: string): readonly WorkDele
   }).data;
 }
 
-/** The writer closed a Work's Undo window: it and any refused Undo go. */
 export function closeWorkDeleteWindow(
   client: QueryClient,
   driver: CommandDriver | null,

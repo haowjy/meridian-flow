@@ -1,9 +1,3 @@
-/**
- * The slice door: text and node drags inside the editor, and text dragged in
- * from outside. A slice lands where the landing says, as PM's own drop would,
- * unless that would change a table's grid.
- */
-
 import { t } from "@lingui/core/macro";
 import { isNested } from "@meridian/prosemirror-schema";
 import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model";
@@ -26,18 +20,11 @@ import { crossesTextblocks, removeRange } from "./range-removal";
 
 type SliceSource = {
   moved: boolean;
-  /** The source selection while it is still known to this editor. */
   selection: Selection | null;
 };
 
 const copyModifier = /Mac/i.test(globalThis.navigator?.platform ?? "") ? "altKey" : "ctrlKey";
 
-/**
- * The drag's source, read from `view.dragging`. ProseMirror keeps the node
- * selection there for its own drop handler but leaves it out of the public
- * type; without it a moved node's deletion would fall back to whatever the
- * document selection happens to be.
- */
 export function dragSource(view: EditorView, event: DragEvent): SliceSource {
   const dragging = view.dragging as { node?: NodeSelection } | null;
   return {
@@ -46,17 +33,12 @@ export function dragSource(view: EditorView, event: DragEvent): SliceSource {
   };
 }
 
-/** Drags inside the editor, and text dragged in from outside whose content is unknown until the drop. */
 export const sliceDoor: DropDoor = {
   plan({ view }, landing, event) {
     return slicePlan(view, landing, view.dragging?.slice ?? null, dragSource(view, event));
   },
 };
 
-/**
- * `handleDrop`'s plan: the slice ProseMirror resolved for this drop, landed at
- * `landing`. Text from outside is read again where it lands (see below).
- */
 export function droppedSlicePlan(
   view: EditorView,
   event: DragEvent,
@@ -72,13 +54,6 @@ export function droppedSlicePlan(
   );
 }
 
-/**
- * Text from outside, dropped beside a rendered diagram. ProseMirror parsed it
- * against the raw position, inside the diagram's hidden fence, and handed back
- * literal characters; the landing is outside it, so the text is read again as
- * the host would read it there. Null when nothing needs reading again, or the
- * host has no text parser (the literal slice stands).
- */
 function reparsedOutsideCode(view: EditorView, event: DragEvent, landing: Landing): Slice | null {
   if (landing.kind === "source") return null;
   const raw = view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -95,10 +70,6 @@ function reparsedOutsideCode(view: EditorView, event: DragEvent, landing: Landin
   return slice;
 }
 
-/**
- * The plan for a slice at `landing`. A null slice is an external drag still in
- * the air: its content is unknown, so the caret is the landing.
- */
 function slicePlan(
   view: EditorView,
   landing: Landing,
@@ -165,11 +136,6 @@ function deleteSource(transaction: Transaction, source: SliceSource): void {
   } else transaction.deleteSelection();
 }
 
-/**
- * True when this move lands inside the dragged range itself (its ends
- * included; for a `CellSelection`, inside any of its cells). The unselected
- * part of a block the range reaches into is an ordinary landing.
- */
 function landsInMovedRange(state: EditorState, landing: Landing, source: SliceSource): boolean {
   return (source.selection ?? state.selection).ranges.some(
     (range) => landing.pos >= range.$from.pos && landing.pos <= range.$to.pos,
@@ -178,12 +144,6 @@ function landsInMovedRange(state: EditorState, landing: Landing, source: SliceSo
 
 type BuiltDrop = { transaction: Transaction; from: number; to: number };
 
-/**
- * The transaction one slice drop dispatches, with the range it inserts in the
- * new document, or null when it changes nothing. Follows ProseMirror's own
- * drop (move-delete, node-vs-slice insert, landing selection), except that a
- * multi-line slice is inserted as blocks at a gap in the landing line.
- */
 function sliceDropTransaction(
   state: EditorState,
   pos: number,
@@ -258,7 +218,6 @@ function invisibleBoundaryRange(selection: Selection | null): boolean {
 
 type BlockSlice = { slice: Slice; joinsTail: boolean };
 
-/** Closes a multi-line slice into blocks that can be fitted at the landing gap. */
 function blocksAtLanding(
   landingBlock: PMNode,
   slice: Slice,
@@ -333,7 +292,6 @@ function sameGrid(a: PMNode, b: PMNode): boolean {
   return true;
 }
 
-/** The position of the innermost table, row or cell around `pos`, or null outside a table. */
 function tablePartAround(state: EditorState, pos: number): number | null {
   const $pos = state.doc.resolve(pos);
   for (let depth = $pos.depth; depth > 0; depth--) {
@@ -342,13 +300,6 @@ function tablePartAround(state: EditorState, pos: number): number | null {
   return null;
 }
 
-/**
- * Why this drop can't happen, or null when it can. A table's rows and columns
- * are fixed, so every table that survives, nested ones included, must keep its
- * grid (one whose whole range the drop deletes is gone, not changed). In a
- * cell, the drop also stays in that cell: the fitter is free to improvise a
- * landing the caret never promised.
- */
 function tableRefusal(
   before: EditorState,
   pos: number,

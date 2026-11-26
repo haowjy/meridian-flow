@@ -1,4 +1,3 @@
-/** Shared persisted Work draft fixture for collab operation integration tests. */
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -31,12 +30,10 @@ export const THREAD_ID = "00000000-0000-4000-8000-000000000706";
 export const TURN_ID = "00000000-0000-4000-8000-000000000707";
 export const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
 const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
-/** The draft the Work names. */
 export const WORK_DRAFT_ID = "workfixture1";
 
 export function createWorkDraftFixture(db: Database) {
   const collabs: Array<{ dispose(): Promise<void> }> = [];
-  /** Without custom links, use the real tree-backed scope, as production does. */
   const createTestCollab = (links?: ReturnType<typeof createTestDocumentLinkScopes>) => {
     const collab = createCollabDomain({
       links: links ?? createTestDocumentLinkScopes(db),

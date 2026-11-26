@@ -1,4 +1,3 @@
-/** Transactional namespace locks and live-path occupancy checks for context commands. */
 import type { Database } from "@meridian/database";
 import { contextSources, treeNodes, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -12,7 +11,6 @@ import type { ContextCommandScope } from "../../ports/context-command-transactio
 import type { TreeList } from "../../ports/tree-list-store.js";
 import { ownerFrom, sourceOwnerProjectId } from "../../tree/source-owner.js";
 
-/** A source's names: its owner's, under a scheme and (for a Work's source) its Work. */
 export type ContextNamespace = {
   owner: TreeList;
   scheme: string;
@@ -25,7 +23,6 @@ export function contextNamespaceKey(input: ContextNamespace): string {
     : `context-project:${input.owner.projectId}:${input.workId ?? "none"}:${input.scheme}`;
 }
 
-/** Acquire only namespace locks. Callers are responsible for Work checks. */
 export async function lockNamespaceKeys(
   db: Database,
   namespaces: readonly ContextNamespace[],
@@ -45,7 +42,6 @@ export async function lockContextNamespaces(
   scopes: readonly ContextCommandScope[],
   options: {
     workIds?: readonly string[];
-    /** Lineages whose draft-owner locks join the Work locks, right after them. */
     lineageRootIds?: readonly string[];
     sourceIds?: readonly string[];
     afterWorkLocks?: () => Promise<void>;

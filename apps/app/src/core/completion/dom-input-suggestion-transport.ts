@@ -1,4 +1,3 @@
-/** DOM-input observation transport for a host-neutral suggestion driver. */
 import type { SuggestionDriver, SuggestionTriggerRange } from "./suggestion-driver";
 import type {
   SuggestionHost,
@@ -21,11 +20,6 @@ export type DomInputSuggestionTransportOptions<TRow, TMeta = null> = Readonly<{
     input: Readonly<{ value: string; selection: DomInputSelection }>,
   ) => Readonly<{ query: string; text: string; triggerRange: SuggestionTriggerRange }> | null;
   keyBindings?: (menu: SuggestionMenu<TRow, TMeta>) => SuggestionKeyBindings;
-  /**
-   * Where the menu hangs. Defaults to the caret inside the input; a host whose
-   * controls sit under the input (a form's Save) anchors below them instead,
-   * so the menu never covers what the writer reaches for next.
-   */
   anchorRect?: () => DOMRect | null;
 }>;
 export type DomInputSuggestionTransport = Readonly<{ sync: () => void; destroy: () => void }>;

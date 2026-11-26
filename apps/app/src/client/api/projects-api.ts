@@ -1,13 +1,3 @@
-/**
- * projects-api — HTTP client for project, project-thread, works, and context
- * tree/entry endpoints.
- *
- * Thin typed wrappers over the `apps/server` project routes (list/create/delete
- * projects, list threads/works, read context tree, create context entries).
- * Owns the project network surface; no caching or
- * state (that's React Query).
- */
-
 import type { CommandBody } from "@meridian/contracts/commands";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
@@ -174,7 +164,6 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
   });
 }
 
-/** Reading an owned project also completes idempotent default-package seeding. */
 export async function getProject(projectId: string, init?: RequestInitOptions): Promise<Project> {
   return getJson(urlFor(apiProjectPath(projectId), init), { headers: init?.headers });
 }
@@ -186,10 +175,6 @@ export async function getProjectContextSources(
   return getJson(apiProjectContextSourcesPath(projectId), { signal });
 }
 
-/**
- * What a chat's uploads query says that its tree list does not (the server's `ChatUploadsResult`):
- * when each file was attached.
- */
 export type ChatUploadFacts = {
   uploads: readonly { documentId: string; attachedAt: string }[];
 };
@@ -283,7 +268,6 @@ export async function getProjectDocumentRead(
   );
 }
 
-/** The first chat's handle and title for a lineage, even when that chat is trashed. */
 export async function getContextLineage(
   projectId: string,
   rootThreadId: string,

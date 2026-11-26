@@ -1,4 +1,3 @@
-// Explicit composition and low-level integration surface for agent-edit hosts.
 export { overwriteWithAssigned } from "./apply/overwrite.js";
 export { EDIT_FAILED_MESSAGE } from "./apply/types.js";
 export type { AgentEditCodec, AgentEditCodecFactory } from "./codec-adapter.js";

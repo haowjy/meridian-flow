@@ -17,7 +17,6 @@ import { useSyncExternalStore } from "react";
 
 const WEB_ADDRESS = /^(?:https?:)?\/\//i;
 
-/** The absolute address of a web picture source (a protocol-relative one is https), or null. */
 export function remotePictureSource(src: string): string | null {
   return WEB_ADDRESS.test(src) ? (src.startsWith("//") ? `https:${src}` : src) : null;
 }
@@ -29,7 +28,6 @@ export function remotePictureSource(src: string): string | null {
  */
 export const REMOTE_SRC_ATTRIBUTE = "data-remote-src";
 
-/** A web address read back from untrusted clipboard HTML, or null. */
 export function clipboardRemoteSource(value: string | null): string | null {
   const address = value === null ? null : remotePictureSource(value.trim());
   if (!address) return null;

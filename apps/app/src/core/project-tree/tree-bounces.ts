@@ -1,10 +1,3 @@
-/**
- * Hears the server bounce the writer's own tree changes: a record it stamped `dropped` (it changed
- * a Work that was closed) arriving after this tab read the list. The replay already leaves the
- * record out, so the row stands as it was; this says so on it (`addBounces`), with what Copy
- * takes: a created document's text from its local copy, or a rename's name. Stamps the stored copy
- * already held when the tab opened the list were said in the tab that saw them arrive.
- */
 import {
   childrenOf,
   type DroppedRecord,
@@ -29,14 +22,12 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
   const check = () => {
     if (!read) return;
     const now = session.getSnapshot().doc;
-    // A stamp is a settlement: nothing to read until the settle log grows.
     const length = listOf(now).settleCount();
     if (now === doc && length === settles) return;
     const fresh = now !== doc;
     doc = now;
     settles = length;
     const own = droppedRecords(now).filter(({ record }) => record.actor === actor);
-    // A copy just read (or a replacement) holds what earlier tabs already said.
     if (fresh) {
       seen = new Set(own.map(({ record }) => record.id));
       return;
@@ -47,7 +38,6 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
   };
   const unsubscribe = session.subscribe(check);
   void session.loaded.then(() => {
-    // The session may have closed, freeing its doc, before its local copy finished loading.
     if (stopped) return;
     read = true;
     check();
@@ -70,7 +60,6 @@ function say(session: TreeListSession, arrived: readonly DroppedRecord[]): void 
   );
 }
 
-/** Where a create's row stood: its name, and the siblings its rank puts before it, nearest first. */
 function madeAt(
   projection: TreeProjection,
   record: Extract<DroppedRecord["record"], { type: "create" }>,

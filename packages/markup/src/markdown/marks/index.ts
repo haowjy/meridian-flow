@@ -1,5 +1,3 @@
-/** Markdown inline mark codec registrations. */
-
 export { annotationMarkCodecs } from "./annotations.js";
 export { codeMarkCodec } from "./code.js";
 export { emMarkCodec } from "./em.js";

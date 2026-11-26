@@ -107,14 +107,10 @@ export type CreateEditorExtensionsOptions = {
   presence: LocalPresenceFields;
   user?: EditorUser;
   assetRenderContext?: AssetRenderContext;
-  /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
-  /** Mounts the slash insertion menu; omitted surfaces never pay for it. */
   slashCommands?: SlashCommandExtensionOptions;
   atReferences?: AtReferenceExtensionOptions;
-  /** Turns project-tree rows into the same references `@` writes. */
   referenceDrop?: ReferenceDropOptions;
-  /** Turns a pasted `[[Name]]` into a link; only the Editor mounts it. */
   wikilinkPaste?: WikilinkPasteOptions;
 };
 
@@ -175,11 +171,10 @@ const EDITOR_CHROME_EXTENSIONS: Extensions = [
   // L-C table chrome (M6)
   // L-D slash (M8) mounts with the catalog option instead: a surface that
   // passes no catalog pays for no trigger.
-  BlockDragExtension, // L-E block movement (M9)
-  LinkSurfaceExtension, // L-F links (M7)
+  BlockDragExtension,
+  LinkSurfaceExtension,
 ];
 
-/** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(peers: PeerAwareness): string {
   const taken = new Set<string>();
   for (const [clientID, state] of peers.getStates()) {
@@ -321,7 +316,6 @@ export function createEditorExtensions({
     // Mounted history records the binding's writes, so its key bindings mount with it
     // rather than in the standalone set.
     UndoRedoKeymapExtension.configure({ history }),
-    // Text kept in place: a paragraph deleted under the caret, an edit Undo left.
     KeptExtension,
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of uploads mounts here rather than beside the doors.
@@ -329,7 +323,6 @@ export function createEditorExtensions({
   ];
 }
 
-/** Meridian's canonical editor schema without transport or shared state. */
 export function createStandaloneEditorExtensions({
   schemaType = "document",
   filetype,
@@ -413,7 +406,6 @@ export function createStandaloneEditorExtensions({
     // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
     AutoPairExtension,
     PassageHighlightExtension,
-    // Review changes' paint on a draft page; inert until its host turns it on.
     ReviewChangesExtension,
     // The one door a picture comes in through — picker, drop, pasted file,
     // pasted address — and the owner of the clipboard's asset translation,
@@ -481,7 +473,6 @@ export function createEditorConfig({
       }),
       ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
     ],
-    // The binding's rule: the editor starts as the docs read.
     content: roomContent(copy.docs).toJSON(),
     editable,
     autofocus,

@@ -1,5 +1,3 @@
-// Per-document model stacks over immutable edits, with all-or-nothing action planning.
-
 import { randomUUID } from "node:crypto";
 import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
@@ -244,10 +242,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     };
   }
   return {
-    /**
-     * The write ordinals of the model's text edits Undo would take, newest first: what a tree
-     * receipt of the same document is ordered against.
-     */
     async modelStack(documentId: DocumentId, threadId: string) {
       const history = await store.readHistory(documentId, threadId);
       const inspection = inspectionActions(history, entries(history, threadId));
@@ -294,10 +288,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
   };
 }
 
-/**
- * An undo that took nothing: the room cut the history of the edit's parts, or another Undo took
- * them between the capture and the commit.
- */
 const cantUndo = (handle: string, compacted: number): DocumentEditResult =>
   compacted > 0
     ? {
@@ -309,6 +299,5 @@ const cantUndo = (handle: string, compacted: number): DocumentEditResult =>
         message: `${handle} is already undone. Nothing was changed.`,
       };
 
-/** The version the chat writes this document in, as the model names it. */
 const versionOf = (document: InverseDocument) =>
   document.room.kind === "fork" ? ("draft" as const) : ("live" as const);

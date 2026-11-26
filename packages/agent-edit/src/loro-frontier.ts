@@ -26,12 +26,10 @@ import type { FrontierLookup } from "./frontier.js";
 
 export type FrontierMap = ReadonlyMap<DocKey, Frontiers>;
 
-/** `observation_frontiers.snapshot` on Loro: an envelope of each shown doc's encoded frontiers. */
 export function encodeFrontierMap(frontiers: FrontierMap): Uint8Array {
   return encodeEnvelope(new Map([...frontiers].map(([key, at]) => [key, encodeFrontiers(at)])));
 }
 
-/** Null for bytes that are not a Loro frontier map (a frontier an older build recorded). */
 export function decodeFrontierMap(bytes: Uint8Array): Map<DocKey, Frontiers> | null {
   try {
     const map = new Map<DocKey, Frontiers>();
@@ -42,7 +40,6 @@ export function decodeFrontierMap(bytes: Uint8Array): Map<DocKey, Frontiers> | n
   }
 }
 
-/** The doc a reader of `docs` reads `key` from: its own, else Live's for a draft. */
 function shownDoc(docs: RoomDocs, key: DocKey): LoroDoc | undefined {
   return key === STRUCTURE_KEY ? docs.structure : docs.textOf(key);
 }
@@ -122,7 +119,6 @@ export async function latestRead(
   return frontier ? decodeFrontierMap(frontier.snapshot) : null;
 }
 
-/** The doc keys whose frontiers differ between a recorded read and `docs` now. */
 export function changedSince(docs: RoomDocs, recorded: FrontierMap): Set<DocKey> {
   const now = docs.frontiers();
   const changed = new Set<DocKey>();
@@ -139,11 +135,6 @@ function sameFrontiers(a: Frontiers, b: Frontiers): boolean {
   return a.every((id) => b.some((other) => other.peer === id.peer && other.counter === id.counter));
 }
 
-/**
- * Who wrote each change in `doc` between `from` (a recorded frontier, or none for a doc the read
- * never saw) and now, by its commit message: a chat's turn, a press, or undefined for the writer
- * (design §5).
- */
 export function authorsSince(
   doc: LoroDoc,
   from: Frontiers | undefined,

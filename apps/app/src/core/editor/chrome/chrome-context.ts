@@ -1,27 +1,9 @@
-/**
- * Deepest-context resolution: which context owns chrome right now.
- *
- * Law 4 makes the deepest context under the selection the owner of any
- * transient surface — cell text beats table, table beats document. One
- * resolver answers that question for everybody: the Esc chain walks home
- * through it, the context-menu router routes by it, and the persistent
- * toolbar greys by it. A second reading of the document would be a second
- * answer, and two answers is how a surface ends up owned by nobody.
- *
- * Pure over `EditorState`; nothing here touches the DOM or React.
- */
-
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import { AllSelection, type EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 
 import { selectedObject } from "../objects/object-selection";
 import { isEditorObject, isSourceBlock, objectTypeSpec } from "../objects/object-types";
 
-/**
- * The contexts chrome can be owned by, shallowest first. The order is the
- * nesting order, not a precedence list: `chain` reports what the selection is
- * standing inside and `owner` is the last (deepest) of them.
- */
 export const CHROME_CONTEXT_KINDS = [
   "document",
   "table",
@@ -33,33 +15,11 @@ export const CHROME_CONTEXT_KINDS = [
 export type ChromeContextKind = (typeof CHROME_CONTEXT_KINDS)[number];
 
 export type ChromeContext = {
-  /** The deepest context under the selection: the owner of transient chrome. */
   owner: ChromeContextKind;
-  /** Owner node's schema type name. Null only at the document level. */
   nodeType: string | null;
-  /**
-   * The object REGISTRATION that owns chrome (`EDITOR_OBJECT_TYPES` `id`), null
-   * whenever the owner is not a registered object.
-   *
-   * Separate from `nodeType` because one node type carries several
-   * registrations: a mermaid fence and any other fenced diagram dialect are both
-   * `code_block`, and a per-object keymap has to know which one is selected.
-   */
   objectSpec: string | null;
-  /** Owner node's document position. Null only at the document level. */
   pos: number | null;
-  /** Document down to the owner, deepest last; `chain.at(-1) === owner`. */
   chain: readonly ChromeContextKind[];
-  /**
-   * The object the selection is standing INSIDE, if any — a table around a
-   * cell caret. Null when the selection is on the object itself or in plain
-   * prose.
-   *
-   * The Esc chain's first step out of an object's prose (law 3: the writer
-   * inside a table cell steps out to the table before leaving it entirely).
-   * Nothing else about the ancestor walk carries a position, so the chain
-   * cannot recover it later.
-   */
   objectPos: number | null;
 };
 
@@ -72,19 +32,6 @@ export const DOCUMENT_CHROME_CONTEXT: ChromeContext = {
   objectPos: null,
 };
 
-/**
- * The selection holds prose the writer could format, and `pos` is inside it.
- *
- * Not "a selection exists". §5.1's formatting claim outranks the object claim,
- * so anything that answers yes here shadows a right-click on the thing under
- * the pointer. A `CellSelection` over a whole table and a `NodeSelection` on a
- * figure are both non-empty ranges with no prose text selected; answering yes
- * for them would put the formatting menu over every table and every object.
- *
- * `AllSelection` does count: Ctrl+A then format the chapter is the gesture the
- * rule exists for, and the formatting commands fence their own non-prose
- * targets (see `surfaces/toolbar`).
- */
 export function proseSelectionCovers(state: EditorState, pos: number | null): boolean {
   const { selection } = state;
   if (pos === null || selection.empty) return false;
@@ -135,25 +82,12 @@ export function resolveChromeContext(state: EditorState): ChromeContext {
   return { owner, nodeType, objectSpec: null, pos, chain, objectPos };
 }
 
-/**
- * The source block the selection is standing ON, as opposed to inside.
- *
- * A plain code fence is prose the writer types into, so it is deliberately not
- * an editor object. It can still be selected whole — the block handle does it,
- * and so does ProseMirror's own parent-node selection — and when it is, it is
- * what the writer is pointing at.
- */
 export function selectedSourceBlock(state: EditorState): { node: PMNode; pos: number } | null {
   const { selection } = state;
   if (!(selection instanceof NodeSelection)) return null;
   return isSourceBlock(selection.node) ? { node: selection.node, pos: selection.from } : null;
 }
 
-/**
- * The context at an arbitrary document position — what the POINTER is over,
- * as opposed to what the selection is in. The context-menu router needs this
- * one: a right-click is aimed at a place, and the selection may be elsewhere.
- */
 export function chromeContextAt(doc: PMNode, pos: number): ChromeContext {
   const clamped = Math.max(0, Math.min(pos, doc.content.size));
   const $pos = doc.resolve(clamped);

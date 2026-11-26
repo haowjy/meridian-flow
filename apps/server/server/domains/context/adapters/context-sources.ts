@@ -10,11 +10,6 @@ import { sourceAuthority } from "./context-file-entry.js";
 
 const PROJECT_SLUGS = ["manuscript", "kb", "unfiled", "agents"];
 
-/**
- * The sources a project's owner reads. A Work's are listed until the Work is purged: an archived
- * or deleted Work's notes are read-only, not gone, and a purge takes the source rows with it. A
- * lineage's and a chat's are listed until the source itself ends.
- */
 export function createDrizzleContextSources(db: Database): ContextSources {
   async function read(where: SQL | undefined): Promise<ContextSource[]> {
     const rows = await currentDrizzleDb(db)

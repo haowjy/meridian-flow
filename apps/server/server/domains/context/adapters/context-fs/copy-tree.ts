@@ -44,15 +44,11 @@ export interface CopyTreeDeps {
   documentCreation: Pick<DocumentCreationAggregate, "createDocumentsAtomically">;
   documentSync: Pick<CollabDomain, "installSeeds" | "refreshDocumentProjection">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
-  /** Who made the copy: `user:<id>`. */
   actor: string;
-  /** The canonical address of a document at a scheme-relative path in this source. */
   holderUri(path: string): string;
-  /** A folder's address: its name as stored, never the document alias (folder `Lore.md` is not `Lore`). */
   folderUri(path: string): string;
 }
 
-/** Plan `roots` under `dir`: mint every identity, write nothing, hold no lock. */
 export function planCopyTree(
   deps: CopyTreeDeps,
   input: { dir: readonly string[]; roots: readonly CopySourceEntry[] },
@@ -63,7 +59,6 @@ export function planCopyTree(
 export function treePlan(dir: readonly string[], planned: readonly PlannedCopyNode[]): CopyPlan {
   const nodes = flatten(planned);
   const identity = createCopyIdentityMap({
-    // Binaries are in the map too: an image inside the copied set must show its copy.
     documents: nodes.flatMap((node) =>
       node.kind === "file"
         ? [
@@ -104,7 +99,6 @@ export async function insertPlannedTrees(
   inputs: readonly {
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
-    /** The folder to start from, by id, instead of walking the plan's `dir` by name. */
     parent?: { folderId: string; createFolders: readonly string[] };
   }[],
   position?: ContextSiblingPosition,
@@ -165,7 +159,6 @@ export async function insertPlannedTrees(
   let refusal: AdapterFault | null = null;
   let landed: ReadonlyMap<string, string> = new Map();
   let folders: string[] = [];
-  // Rows, then each tracked document's first state, then its arrival: one unit.
   let created: Awaited<ReturnType<DocumentCreationAggregate["createDocumentsAtomically"]>>;
   try {
     created = await deps.documentCreation.createDocumentsAtomically({
@@ -198,7 +191,6 @@ export async function insertPlannedTrees(
         ),
     });
   } catch (error) {
-    // A node id the device minted is in use: the same drop sent twice, or a stray id.
     if (error instanceof NodeIdRefusedError) return Err({ code: "conflict" });
     throw error;
   }
@@ -223,10 +215,6 @@ export async function insertPlannedTrees(
   });
 }
 
-/**
- * The plan as the nodes to insert, with each tracked document's first state by new id. A
- * binary's node points at the object the copy duplicated before this transaction.
- */
 function toNewTree(
   roots: readonly PlannedCopyNode[],
   contents: ReadonlyMap<string, CopiedContent>,
@@ -273,7 +261,6 @@ function toNewTree(
           size: source.sizeBytes ?? 0,
         },
         hasPreview: source.hasPreview,
-        // A binary has no drafts or revisions, so its copy always records the live file.
         metadata: { copiedFrom: { uri: source.uri, version: "live", revision: null } },
       });
     }
@@ -297,7 +284,6 @@ function toNewTree(
   return Ok({ roots: converted, contents: contentsById, ids, binaryIds });
 }
 
-/** The identities a copy created, each folder before what it holds, at the paths that landed. */
 function entriesOf(
   nodes: readonly PlannedCopyNode[],
   landed: ReadonlyMap<string, string>,
@@ -332,7 +318,6 @@ function flatten(nodes: readonly PlannedCopyNode[]): PlannedCopyNode[] {
   );
 }
 
-/** Mint every identity, parents before their children: each node keeps its source's name. */
 function planLevel(
   deps: CopyTreeDeps,
   dir: readonly string[],
@@ -347,7 +332,6 @@ function planLevel(
       planned.push({
         kind: "folder",
         source,
-        // A selected root may carry the device's id; a folder's children never do.
         id: source.copyId ?? crypto.randomUUID(),
         name: filename,
         path,

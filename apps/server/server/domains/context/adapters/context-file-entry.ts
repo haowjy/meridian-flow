@@ -1,5 +1,3 @@
-/** The row-to-file-entry mapping that project availability and recent documents answer with. */
-
 import { hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
@@ -11,7 +9,6 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-/** Bytes in object storage rather than a Loro room: stored bytes, or a binary file type. */
 export function isStorageBackedDocument(document: {
   fileType: string;
   storageUrl: string | null;
@@ -23,9 +20,7 @@ export type CatalogFileRow = {
   id: string;
   contextSourceId: string;
   folderId: string | null;
-  /** The filename as the tree shows it, extension included. */
   name: string;
-  /** The path segment: the filename, and a later twin's `~` suffix. */
   segment: string;
   extension: string;
   fileType: string;
@@ -40,9 +35,7 @@ export function sourceAuthority(
   scheme: ContextUriScheme,
   workId: string | null,
   workHandle: string | null,
-  /** The ref of the thread that owns a lineage Scratch or chat uploads source. */
   ownerThreadRef?: string | null,
-  /** A chat-owned source: its address is the chat's, or bare until the chat row exists. */
   chatOwned = false,
 ): CanonicalContextAuthority {
   if (scheme !== "scratch" && scheme !== "uploads") return { kind: "contextual" };
@@ -120,7 +113,6 @@ export function mapAuthoritativeFile(input: {
     ),
     extension: document.extension,
     ...persistedClassification,
-    // No name is provisional: the list names every node when it is made.
     provisionalName: false,
     rank: document.rank,
   };

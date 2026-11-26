@@ -1,15 +1,3 @@
-/**
- * MobileBreadcrumb — tappable location trail for the phone context screen
- * (a lone root crumb at the Files root, deeper trails when drilled in).
- *
- * Mount-point agnostic on purpose: today it sits left-aligned inside the
- * MobileTopBar (right after the drawer trigger), but it may move to its own
- * row later, so it renders no bar chrome of its own. Ancestor segments navigate (44px-tall touch targets);
- * the last segment is the current location — non-interactive and visually
- * dominant. Deep trails middle-truncate (`first › … › parent › current`) via
- * `collapseBreadcrumbSegments`; long labels truncate per segment with the
- * current segment getting the leftover width.
- */
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
@@ -18,17 +6,10 @@ import { collapseBreadcrumbSegments } from "./context-location";
 
 export type MobileBreadcrumbSegment = {
   label: string;
-  /** Navigates to this ancestor. Omitted on the last (current) segment, and on a place with nowhere to go. */
   onSelect?: () => void;
-  /** Interactive control that stands for the current segment (the chat switcher). */
   current?: ReactNode;
 };
 
-/**
- * Display-list entry. `key` is the segment's position in the *original*
- * trail (stable identity — labels may repeat, e.g. `/a/a/a`); the elision
- * marker renders as `…` between leading and trailing runs.
- */
 type BreadcrumbItem =
   | { kind: "segment"; key: string; segment: MobileBreadcrumbSegment }
   | { kind: "ellipsis"; key: string };
@@ -55,13 +36,6 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
 
   return (
     <nav aria-label={t`Breadcrumb`} className="flex min-w-0 flex-1 items-center">
-      {/* Separators live INSIDE each <li> — an <ol> only permits <li>
-          children. Width priority is deliberately asymmetric: the last
-          segment is what the user is looking at, so ancestors shrink first
-          (flex-shrink 3, ~36px floor) while the current segment shrinks
-          reluctantly (factor 1). Symmetric shrinking crushed the document
-          name to a few characters on deep trails while ancestors kept their
-          full 96px caps. */}
       <ol className="flex min-w-0 flex-1 items-center">
         {items.map((item, index) => {
           const separator =
@@ -82,13 +56,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
           }
           if (index === lastIndex) {
             return (
-              <li
-                aria-current="page"
-                key={item.key}
-                // Grows so an interactive current segment (the chat switcher)
-                // sizes against the row, not its own content.
-                className="flex min-w-0 flex-1 items-center"
-              >
+              <li aria-current="page" key={item.key} className="flex min-w-0 flex-1 items-center">
                 {separator}
                 {item.segment.current ? (
                   <div className="-my-3 flex min-w-0 flex-1 items-center">
@@ -106,8 +74,6 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
             <li key={item.key} className="flex min-w-9 shrink-[3] items-center">
               {separator}
               {item.segment.onSelect ? (
-                // -my-3 keeps the 44px target without growing the 20px trail row
-                // past the top bar's two-line band.
                 <button
                   type="button"
                   onClick={item.segment.onSelect}
@@ -116,7 +82,6 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
                   <span className="truncate">{item.segment.label}</span>
                 </button>
               ) : (
-                // A place with nowhere to go (a chat's Scratch) names itself and is not a control.
                 <span className="flex min-w-0 max-w-24 items-center px-1 text-sm text-muted-foreground">
                   <span className="truncate">{item.segment.label}</span>
                 </span>

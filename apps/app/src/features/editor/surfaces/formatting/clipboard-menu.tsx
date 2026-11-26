@@ -1,18 +1,3 @@
-/**
- * Cut, Copy, and Paste as menu rows: the block every claimed menu carries.
- *
- * Two menus reach for it — the formatting menu over a selection (§5.1) and the
- * link menu over a link (§5.5, mockup 06 state C) — and the writer must meet
- * one answer in both: the same wording, the same shortcut, and the same reason
- * when a browser withholds a direction. Three separate rows in two files would
- * be two answers within a week, so the state, the copy, and the greying live
- * here once and the menus mount them.
- *
- * What differs between the two is only WHERE the verbs act, and that is the
- * `prepare` prop: the formatting menu means the selection the writer swept,
- * and the link menu means the link they pointed at.
- */
-
 import type { Editor } from "@tiptap/core";
 import { ClipboardPaste, Copy, Scissors } from "lucide-react";
 import { type ComponentType, useState } from "react";
@@ -52,17 +37,12 @@ const CLIPBOARD_COMMANDS: Record<
   paste: pasteIntoSelection,
 };
 
-/** Which direction of the clipboard each verb needs. */
 const CLIPBOARD_DIRECTION: Record<FormattingClipboardId, keyof ClipboardAccess> = {
   cut: "write",
   copy: "write",
   paste: "read",
 };
 
-/**
- * Whether each row can run, and why not (law 5). A browser can withhold either
- * direction, and the writer needs to hear which one and what to press instead.
- */
 export function clipboardItemStates(
   editor: Editor,
   clipboard: ClipboardAccess,
@@ -78,7 +58,6 @@ export function clipboardItemStates(
 
   return {
     cut: { active: false, blockedBy: readOnly ?? write },
-    // Copying is reading; a document nobody may change is still readable.
     copy: { active: false, blockedBy: write },
     paste: { active: false, blockedBy: readOnly ?? read },
   };

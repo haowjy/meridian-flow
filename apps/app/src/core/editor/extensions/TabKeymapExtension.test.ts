@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** Tab consumes the indent key without replacing a selected picture. */
 import type { Editor, JSONContent } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -8,7 +7,6 @@ import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/st
 
 let fixture: StandaloneEditor | null = null;
 
-// Tab reaches prosemirror-tables, which asks the view where the textblock ends.
 installJsdomLayout();
 
 afterEach(() => {
@@ -27,7 +25,6 @@ function mount(content: JSONContent[], editable = true): Editor {
   return fixture.editor;
 }
 
-/** Press the key; true when something refused the browser's default. */
 function pressTab(instance: Editor, shiftKey = false): boolean {
   const event = new KeyboardEvent("keydown", {
     key: "Tab",

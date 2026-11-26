@@ -127,7 +127,6 @@ it("carries what a copied link names across the clipboard", async () => {
       .toEqual(pasted);
   }
 
-  // Plain text spells each link's current full address, never an id.
   const documentSchema = buildDocumentSchema();
   const resolution = createLinkAnswerCache();
   const answers: Record<string, LinkAnswer> = {
@@ -272,7 +271,6 @@ it("carries what a copied link names across the clipboard", async () => {
     const editor = new Editor({
       extensions: createStandaloneEditorExtensions({ assetRenderContext: { projectId } }),
       content: { type: "doc", content },
-      // The app's paste sanitizer runs before every plugin transform.
       editorProps: { transformPastedHTML: sanitizePastedHTML },
     });
     const settled: Record<string, LinkAnswer> = {
@@ -439,7 +437,6 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: [
         { type: "image", src: "manuscript://uploads/map.png", ref: `doc:${OTHER_MAP}` },
         { type: "image", src: "manuscript://uploads/map.png", ref: `doc:${OTHER_MAP}` },
-        // Contextual: no ref to bind, so it stays a picture resolved by address.
         { type: "image", src: "uploads://seal.png", ref: null },
       ],
     },
@@ -465,7 +462,6 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: [{ type: "image", src: `asset:${UPLOAD}`, ref: null }],
     },
     {
-      // No address was recorded, so another project has nothing to bind.
       row: "an upload copied before the catalog holds it is not pasted into another project",
       copied: earlyCopied,
       into: pictureEditor("project-b", [
@@ -480,7 +476,6 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: [{ type: "figure", src: `asset:${UPLOAD}`, ref: null, caption: "Plate" }],
     },
     {
-      // The figure is one picture: rejecting its image rejects the figure.
       row: "an early upload figure is not pasted into another project",
       copied: earlyFigureCopied,
       into: pictureEditor("project-b", [
@@ -517,7 +512,6 @@ it("carries what a copied link names across the clipboard", async () => {
     for (const { row, copied: clip, into, pasted } of pictureRows) {
       if ("html" in clip) into.view.pasteHTML(clip.html, new Event("paste") as ClipboardEvent);
       else {
-        // A real paste event: `pasteText` would ask for plain characters.
         const event = new Event("paste", { bubbles: true, cancelable: true });
         Object.defineProperty(event, "clipboardData", {
           value: { getData: (type: string) => (type === "text/plain" ? clip.text : "") },
@@ -535,7 +529,6 @@ it("carries what a copied link names across the clipboard", async () => {
           });
       });
       expect.soft(pictures, row).toEqual(pasted);
-      // Never a link standing in for a picture, nor an import of an address.
       expect.soft(into.getHTML(), `${row}: no stand-in link`).not.toContain("<a ");
       into.destroy();
     }

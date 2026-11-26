@@ -71,8 +71,6 @@ export const FileSuggestionList = forwardRef<
               <li key={suggestion.entryId}>
                 <ListRow
                   density="menu"
-                  // Scheme roots are contexts, not folders: they carry their
-                  // identity icon (same mapping the tree panel uses).
                   icon={
                     root
                       ? schemeIcon(suggestion.scheme)

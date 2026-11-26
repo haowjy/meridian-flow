@@ -45,15 +45,11 @@ export function createEditorDocumentCommand({
     try {
       const scope = current.editorWorkId;
       const requested = routeTargetOwner(request, scope);
-      // Identity decides sameness once the address has resolved; the path is
-      // only the fallback before that.
       const sameDocument = projectAddressMatchesContextTarget(
         current.address,
         requested,
         current.addressDocumentId,
       );
-      // A review launch carries the locator its draft row captured, which a rename or a
-      // reused path can have outdated. Identity decides where that document is now.
       let target: ContextRouteRequest = requested;
       if (options?.replaceIfSameDocument === true) {
         target = resolveLaunchLocator({
@@ -68,9 +64,6 @@ export function createEditorDocumentCommand({
         if (options.isCurrent?.() === false) return { kind: "superseded" };
       }
       const preparedTab = options?.document ? tabAtLocator(options.document, target) : undefined;
-      // Re-opening the document the address names (a rename or move following
-      // its own placement, a review re-launch) keeps the review the address
-      // carries; any other document starts without one.
       const itemKey = options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined);
       // The same document on the same draft keeps its review unless the open names one.
       const keepsReview =
@@ -100,8 +93,6 @@ export function createEditorDocumentCommand({
         sameDocument &&
         !opensReview
       ) {
-        // The address already carries this review: the owner that settles its path may have
-        // moved the URL since this command read it, and writing the stale path back would flip it.
         const carriesReview =
           !!itemKey &&
           itemKey === current.address.itemKey &&

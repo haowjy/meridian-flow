@@ -1,5 +1,3 @@
-/** Whole-source Markdown parsing with conservative unfinished-mark repair. */
-
 import type { Node as PMNode } from "prosemirror-model";
 import remend from "remend";
 

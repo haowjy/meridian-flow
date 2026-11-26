@@ -26,18 +26,10 @@ export type PaneHeaderRailToggle = { open: boolean };
 
 export type PaneHeaderProps = {
   title: ReactNode;
-  /** Left sidebar toggle (far-left). Omit when the pane has no left rail. */
   left?: PaneHeaderRailToggle;
-  /** Right rail toggle (far-right). Omit when the pane has no right rail. */
   right?: PaneHeaderRailToggle;
-  /** Right-aligned actions (e.g. share), before the right toggle. */
   actions?: ReactNode;
-  /**
-   * Full-height chip right after the left toggle (main's Recently opened door), at the same x
-   * in both sidebar states.
-   */
   leading?: ReactNode;
-  /** A failure on what the pane shows; floats under the band. */
   notice?: ReactNode;
 };
 
@@ -48,19 +40,13 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
       <header className="flex h-full items-center gap-x-1 pr-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
-          // The same x as main's header's first chip in both sidebar states: the
-          // band's gutter, or just past the toggle. -mr-1 cancels the gap so the
-          // title chip sits flush beside it.
           <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle && "-ml-0.5")}>
             {leading}
           </div>
         ) : null}
 
-        {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
-        {/* Relative: a refused title rename floats under the band from here. */}
         <div className="relative flex min-w-0 flex-1 items-center self-stretch">{title}</div>
 
-        {/* Band-tall too, so an inactive chip among the actions has its full-height pill. */}
         <div className="ml-auto flex shrink-0 items-center gap-1 self-stretch">
           {actions}
           {right && !right.open ? <PanelToggleSpacer /> : null}

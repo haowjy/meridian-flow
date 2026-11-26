@@ -22,11 +22,6 @@ import { type CreateTarget, resolveBinaryTarget, resolveCreateTarget } from "./c
 import type { LiveCreate } from "./live-create.js";
 import { actorOf, type SourceTree, type TreeWriteTarget, viewOfDraft } from "./tree-writes.js";
 
-/**
- * People and auto-apply chats are live. A draft-mode chat on a drafted source is a draft
- * placement: reads see the chat's draft, and creates are records of it, written under its
- * owner's lock, which the command transaction takes.
- */
 export interface DraftPlacement {
   owner: DraftOwner;
   draftId: DraftId;
@@ -38,10 +33,8 @@ export type ContextPlacement =
   | { kind: "live"; draft?: DraftPlacement }
   | ({ kind: "draft" } & DraftPlacement);
 
-/** Commands only a live placement runs. */
 export type LiveOnlyCommand = "take a whole-file write" | "create a file with text";
 
-/** The draft a drafted tree command is made in: it, its owner, its thread and user. */
 export type DraftCommandOwner = {
   owner: DraftOwner;
   draftId: DraftId;
@@ -51,14 +44,8 @@ export type DraftCommandOwner = {
 
 export interface CreatePlacement {
   readonly kind: ContextPlacement["kind"];
-  /** What reads see, resolved once per command; a read never makes a draft. */
   readView(version: "draft" | "live" | undefined): Promise<TreeView>;
-  /** The fault a live-only command meets here, or null when it may run. */
   refuse(command: LiveOnlyCommand): AdapterFault | null;
-  /**
-   * A tracked document at `path`: the one the path reaches, or a create where it reaches none, a
-   * folder or a stored file (a twin beside it), or where `options.beside` asks for a new one.
-   */
   ensureTracked(
     path: string,
     options?: ContextEnsureTrackedOptions,
@@ -69,7 +56,6 @@ export interface CreatePlacement {
   ): Promise<
     Result<{ documentId: string; placement: ContextPlacement["kind"]; path: string }, AdapterFault>
   >;
-  /** The draft a drafted move or delete is made in, or null where this adapter has none. */
   readonly draftOwner: DraftCommandOwner | null;
 }
 
@@ -91,7 +77,6 @@ export function createPlacement(
     : draftPlacement(placement, deps);
 }
 
-/** The tracked document an ensure reuses at its target: the one its leaf reaches, if any. */
 async function existingTracked(
   deps: CreatePlacementDeps,
   target: TreeWriteTarget,
@@ -105,7 +90,6 @@ async function existingTracked(
   return { documentId: existing.id, path: existing.path };
 }
 
-/** A binary file at the path, as a record of the view; its bytes are already in storage. */
 async function createBinary(
   deps: CreatePlacementDeps,
   target: TreeWriteTarget,
@@ -192,7 +176,6 @@ function draftPlacement(
 ): CreatePlacement {
   const { executor, tree } = deps;
   const owner = draftOwnerOf(placement);
-  /** A command in the drafting Work's draft, which the transaction ensures and locks. */
   const inDraft = <T>(operation: (draft: { id: DraftId }) => Promise<Result<T, AdapterFault>>) =>
     executor.runInDraft(owner, (draft) => operation({ id: draft.id }));
   return {
@@ -225,7 +208,6 @@ function draftPlacement(
           ...(options?.metadata ? { metadata: options.metadata } : {}),
         });
         if (!created.ok) return created;
-        // The create's admission made its authority and its Work text draft.
         const documentId = created.value.id as DocumentId;
         await options?.recordCreate?.({
           documentId,
@@ -238,7 +220,6 @@ function draftPlacement(
       });
     },
     writeBinary(path, options) {
-      // A draft's binary document is its own file holding the draft's object (12b-Q2).
       return inDraft(async (draft) => {
         const created = await createBinary(
           deps,

@@ -45,25 +45,24 @@ import { settleStretches } from "./stretch.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move" | "attributes";
-  baseIds: number[]; // original base block indices the conflict covers
+  baseIds: number[];
   base: Tok[];
   live: Tok[];
   draft: Tok[];
 }
 
 export interface ContentMergeResult {
-  overrode: number; // live words replaced by the draft in contested text
-  rules: RuleCounts; // how many times each rule fired
+  overrode: number;
+  rules: RuleCounts;
 
-  blocks: PMNode[]; // the new draft
-  conflicts: Conflict[]; // where both sides changed the same text; the draft's version is in `blocks`
+  blocks: PMNode[];
+  conflicts: Conflict[];
   orderConflict: boolean; // the two sides' paragraph moves admit no single order; the draft's order won
 }
 
 /** Base tokens between two one-sided changes checked for being one change the diffs placed differently. */
 const COALESCE_WINDOW = 3;
 
-/** Hunks from both sides that touch the same base tokens `lo..hi`. */
 interface Cluster {
   lo: number;
   hi: number;
@@ -71,7 +70,6 @@ interface Cluster {
   draft: Hunk[];
 }
 
-/** Live and draft hunks sorted by position, grouped into clusters of hunks that overlap each other. */
 function clusterHunks(
   liveHunks: Hunk[],
   draftHunks: Hunk[],
@@ -126,7 +124,6 @@ function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[]
   return draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
 }
 
-/** Whether a table's cells, with their `colspan` and `rowspan`, fill a rectangle with no overlap or hole. */
 function isRectangular(table: PMNode): boolean {
   const taken = new Set<string>();
   let width = 0;
@@ -243,7 +240,6 @@ function mergeContainers(
   return out;
 }
 
-/** A correspondence carried onto reordered sides. Pairs that no longer run in order stay; `align` skips them. */
 function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Correspondence {
   const baseAt = new Int32Array(c.partner.length).fill(-1);
   baseOrder.forEach((o, n) => {
@@ -282,7 +278,6 @@ function staysFor(base: readonly PMNode[], side: readonly PMNode[]): (i: number)
   };
 }
 
-/** `node` with the ids of `model`, a block equal to it but for ids. */
 function withIdsOf(node: PMNode, model: PMNode): PMNode {
   const kids: PMNode[] = [];
   node.forEach((child, _, i) => {
@@ -435,7 +430,6 @@ function merge(
   const { base: baseSide, live: liveSide, draft: draftSide } = sides;
   const liveAlignment = align(baseSide, liveSide, inLive);
   const draftAlignment = align(baseSide, draftSide, inDraft);
-  // Each removed block is its own removal, so one side's removal of a run meets the other's block by block.
   for (const a of [liveAlignment, draftAlignment])
     a.hunks = a.hunks.flatMap((h) => {
       if (h.ins.length) return [h];
@@ -480,7 +474,6 @@ function merge(
       draft: [],
     })),
   ];
-  // A stretch where the pairing could not be trusted keeps the draft's blocks: one clash each.
   for (const st of stretches?.stretches ?? []) {
     const [l, d] = [st.live, st.draft].map((bs) => bs.flatMap((b) => tokenizeBlock(b)));
     replacedWords(
@@ -504,7 +497,6 @@ function merge(
   ];
   fire("moved-text-dropped", movedByLive.length);
   for (const m of movedByLive) {
-    // The stale paste vanished, but words kept at the edited source were not replaced.
     overrode += m.source.filter((i) => isWordTok(baseToks[i]) && draftAlignment.pos[i] < 0).length;
     conflicts.push({
       kind: "moved-text",
@@ -588,7 +580,6 @@ function merge(
     const absorbed = draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
     if (absorbed) merged.push(...absorbed);
     else {
-      // Words cut by the draft may still survive at its paste destination.
       const retained = [...draftVersion];
       for (let i = lo; i < hi; i++) {
         const tok = draftPastes.get(i);

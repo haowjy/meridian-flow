@@ -1,4 +1,3 @@
-/** A draft-only document keeps its scheme when opened from its draft group. */
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { expect, it } from "vitest";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";

@@ -23,22 +23,16 @@ import {
 import type { PMNode } from "@meridian/markup";
 import { occurrenceIdentity, walkLinkOccurrences } from "@meridian/markup/links";
 
-/** One copied document's new identity and where it lands. */
 export interface CopiedDocument {
   documentId: string;
   uri: string;
 }
 
-/** One copied folder's new identity and where it lands. */
 export interface CopiedFolder {
   folderId: string;
   uri: string;
 }
 
-/**
- * The identities one copy creates, indexed by both the source identity and — for a
- * ref-less spelling that only names an address — the source address.
- */
 export interface CopyIdentityMap {
   documents: ReadonlyMap<string, CopiedDocument>;
   folders: ReadonlyMap<string, CopiedFolder>;
@@ -98,9 +92,7 @@ function indexOnce<Entry, Target>(
 export function remapCopiedBlocks(input: {
   blocks: readonly PMNode[];
   map: CopyIdentityMap;
-  /** The source holder's address: a stored relative spelling was written against it. */
   sourceHolderUri: string | null;
-  /** Where each `ahead:` ref settles now, so a settled ref maps like a `doc:` one. */
   aheadSettlements?: ReadonlyMap<string, string>;
 }): PMNode[] {
   const occurrences = walkLinkOccurrences(input.blocks);
@@ -127,7 +119,6 @@ function remappedAttrs(
       : null;
   }
   if (identity !== null) {
-    // A stored identity: the ref names the copy set exactly, whatever its href spells.
     const parsed = parseLinkRef(identity);
     if (parsed?.kind === "doc") {
       const target = map.documents.get(parsed.documentId);

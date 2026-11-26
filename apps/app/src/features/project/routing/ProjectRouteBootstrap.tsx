@@ -1,9 +1,3 @@
-/**
- * Seeds the route's snapshot into the query cache before the readable project
- * shell mounts. A project still being created has no data yet: it mounts
- * without it, then seeds once when its data arrives, without remounting. Later
- * loader echoes never re-seed.
- */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
@@ -19,7 +13,6 @@ export function ProjectRouteBootstrap({
   pending,
 }: {
   project: Project;
-  /** `null` while the project is being created. */
   data: ProjectRouteData | null;
   user: { userId: string };
   pending: ReactNode;

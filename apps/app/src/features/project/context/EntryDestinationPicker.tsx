@@ -1,13 +1,3 @@
-/**
- * Row-anchored folder placement using the same project tree as document paths. One picker for
- * Move… and Copy to…. Move… offers the places in the row's own list (the project's files, or the
- * account's Your files) and the row's position among the folder's siblings; Copy to… offers every
- * place and always adds. A list is the unit of history, so between two the action is Copy: a
- * selection in both lists is offered Copy to…, never Move… (`ContextEntryActions`). Given a
- * selection, Move… moves all of it, each row inside a moved folder going with its folder, and
- * offers no positions.
- */
-
 import { t } from "@lingui/core/macro";
 import type {
   ContextSiblingPosition,
@@ -48,11 +38,8 @@ export type PickedEntry = {
 type EntryDestinationPickerProps = {
   projectId: string;
   action: "move" | "copy";
-  /** The area the rows sit in, which the menu opens at; absent opens at the project's root. */
   from?: { scheme: ProjectContextTreeScheme; owner: OpenDocumentOwner };
-  /** The row the picker opened from: it opens beside it, at its folder. */
   entry: PickedEntry;
-  /** A selection the row's menu acted on, moved together in screen order; absent moves the row alone. */
   selection?: readonly DragEntry[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -92,14 +79,12 @@ function OpenPicker({
     () => (scheme && owner ? { scheme, owner, heading: schemeLabel(scheme) } : null),
     [scheme, owner],
   );
-  // A Scratch row's own Scratch, else the picked Work's, as the sidebar lists it.
   const scopeScratch = useScopeScratchSource(projectId);
   const scratch = useMemo(
     () => (scheme === "scratch" && owner ? { owner, heading: schemeLabel(scheme) } : scopeScratch),
     [scheme, owner, scopeScratch],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  // Opens at the row's own folder, except in an area that takes no changes: the root then.
   const openAt = own && source.own.writable ? source.own.openAt(entry.path) : [];
   const unavailable = t`This location is unavailable`;
 
@@ -131,7 +116,6 @@ function OpenPicker({
   }, [several, picked, entry.kind, entry.id, entry.name, source, shell]);
   const placed = subjects.map((row) => ({ row, at: source.locate(row.ref.id) }));
 
-  /** Why a destination is no place for the subjects, if it is not. */
   const refusalAt = (destination: NonNullable<ReturnType<typeof source.folderFor>>) => {
     for (const { row, at } of placed) {
       if (
@@ -142,18 +126,12 @@ function OpenPicker({
       )
         return "inside-itself";
     }
-    // Copy adds beside what is there, so only a folder inside itself refuses.
     if (action === "copy") return null;
     return placed.every(({ at }) => at?.entry.parentId === destination.entryId)
       ? "already-there"
       : null;
   };
 
-  /**
-   * Every other place among its own siblings, in the parent's complete order
-   * (not what a search shows): the top, after each sibling, the bottom. The
-   * place it already holds is not offered.
-   */
   function positionChoices(folderName: string) {
     const here = placed[0]?.at;
     if (several || !here) return [];
@@ -175,7 +153,6 @@ function OpenPicker({
         position: { kind: "start" },
       });
     others.forEach((other, index) => {
-      // After the row just above it is where it already is.
       if (index === at - 1) return;
       const sibling = other.name;
       choices.push(
@@ -227,7 +204,6 @@ function OpenPicker({
     if (several) selection?.focus();
   }
 
-  /** Copies the rows into the folder at the end of `trail`. */
   function copy(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);

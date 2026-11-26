@@ -1,31 +1,12 @@
-/**
- * The raw-HTML spelling a picture escalates into once it carries a display size.
- *
- * Markdown's `![alt](src)` has nowhere to put a width, so a resized picture
- * takes the same road a table with a `colspan` takes: an HTML tag, written and
- * read by this package, understood by every Markdown renderer downstream. The
- * escalation is one-way and reversible — a picture at its natural size never
- * spells itself this way, and one whose size the writer cleared goes back to
- * `![alt](src)` byte for byte.
- *
- * The tag has to be readable in both dialects, and the two parsers hand it over
- * differently: pure Markdown reports a raw `html` node holding the source text,
- * while MDX has already parsed it into a JSX element (`img` is a lowercase
- * intrinsic, so MDX accepts it as-is once `escape.ts` lets it through). Both
- * shapes arrive here and leave as the same handful of facts.
- */
-
 import { storedLinkRef } from "@meridian/contracts";
 import type { MdastJsxFlow, MdastJsxText, MdxJsxAttribute } from "../../ast.js";
 import type { PMNode, SerializeContext } from "../../types.js";
 import { decodeHtmlAttribute, escapeHtmlAttribute, parseHtml } from "../html-tag.js";
 
-/** The picture's wire facts, whichever dialect spelled them. */
 export type ImageHtmlAttributes = {
   url: string;
   alt: string | null;
   title: string | null;
-  /** CSS pixels, or null for a picture that carries no size. */
   width: number | null;
 };
 
@@ -47,7 +28,6 @@ export function imageWireAttributes(node: PMNode, ctx: SerializeContext): ImageH
   };
 }
 
-/** The wire spelling of an `image` or `figure` source. */
 export function spelledSource(node: PMNode, ctx: SerializeContext): string {
   return ctx.links.spellSource({
     src: String(node.attrs.src ?? ""),
@@ -59,7 +39,6 @@ function attrStringOrNull(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
 }
 
-/** A width the codec cannot write back is no width: the picture serializes plain. */
 function imageWidth(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
@@ -97,10 +76,6 @@ export function parseImageHtmlAst(ast: unknown): ImageHtmlAttributes | null {
   return parseRawImageHtmlAttributes(element.attributes);
 }
 
-/**
- * Read an image from raw HTML attributes, decoding entity references at the
- * boundary before the image becomes document data.
- */
 export function parseRawImageHtmlAttributes(
   attributes: ReadonlyMap<string, string | null>,
 ): ImageHtmlAttributes | null {
@@ -114,7 +89,6 @@ export function parseRawImageHtmlAttributes(
   );
 }
 
-/** Read attributes whose parser has already decoded their values, as MDX does. */
 function parseImageHtmlAttributes(
   attributes: ReadonlyMap<string, string | null>,
 ): ImageHtmlAttributes | null {
@@ -124,8 +98,6 @@ function parseImageHtmlAttributes(
   const src = attributes.get("src");
   const alt = attributes.get("alt");
   const title = attributes.get("title");
-  // A bare `alt` or `title` with no value says nothing about the picture, and
-  // the round-trip would invent `alt=""` for it.
   if (typeof src !== "string" || alt === null || title === null) return null;
 
   const width = parseWidth(attributes.get("width"));
@@ -134,11 +106,6 @@ function parseImageHtmlAttributes(
   return { url: src, alt: alt ?? null, title: title ?? null, width };
 }
 
-/**
- * The width the tag claims: a number, null for a tag that claims none, and
- * `undefined` for one this package would not write back the same way — a
- * percentage, a fraction, a zero.
- */
 function parseWidth(value: string | null | undefined): number | null | undefined {
   if (value === undefined) return null;
   if (value === null || !/^\d+$/.test(value)) return undefined;

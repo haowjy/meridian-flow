@@ -36,7 +36,6 @@ it("does not warn when a child's useQuery builds the key the parent reads", asyn
         </QueryClientProvider>,
       );
     });
-  // The parent is already subscribed when the child opens the chat and builds the key.
   await render(false);
   await render(true);
   expect(errors).not.toHaveBeenCalled();

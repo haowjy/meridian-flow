@@ -1,14 +1,3 @@
-/**
- * A chat's Scratch: the lineage's notes for a No Work chat, the Work's for a
- * chat on a named Work, with any lineage notes left behind by a rebind under
- * "Earlier notes". It always means the chat on screen. Picking a note goes to
- * the Editor. Rows offer Rename, Move… and Delete like any list's while the
- * owner can still be edited; the AI makes the notes, so there is no New note.
- *
- * A chat's Files menu shows it (`MenuScratchSection`), headed "Scratch for this chat" /
- * "Scratch for <Work>". The sidebar's Scratch is another thing: the picked Work's tree as one
- * of its tree sources (`SourcesBody`).
- */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen } from "lucide-react";
@@ -34,18 +23,15 @@ import { useShellTreeVersion } from "../tree-version";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
-/** The document main shows, if any: its row reads as current. */
 function useOpenDocumentId(): string | undefined {
   const item = useOptionalMainItem()?.item;
   return item?.kind === "document" ? item.documentId : undefined;
 }
 
-/** A chat's Scratch: its trees, the list areas they make, and the load state. */
 function useChatScratch(projectId: string, threadId: string | null) {
   const shell = useShellTreeVersion();
   const source = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchTrees(projectId, source);
-  // An ended Work's Scratch can be copied from, not changed.
   const editable = useWorkSourceWritable(projectId, source?.owner.workId);
   const areas = useMemo<MoveArea[]>(
     () => [
@@ -154,7 +140,6 @@ function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
   );
 }
 
-/** A chat's Scratch rows: Earlier notes first, then the current notes, starting at `depth`. */
 function ChatScratchTree({
   projectId,
   scratch,

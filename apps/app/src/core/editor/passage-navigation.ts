@@ -25,15 +25,11 @@ import {
 } from "./live-range-navigation-runtime";
 import { claimDocumentTarget } from "./reading-position-navigation";
 
-/** A block hash plus the term that matched inside it. */
 export type PassageAnchor = { blockHash: string; term: string };
 
 export type PassageNavigationResult =
-  /** The passage was found and marked. */
   | { kind: "landed" }
-  /** The document is open, but the passage it promised is not there any more. */
   | { kind: "stale" }
-  /** Nothing could be decided: the document never synced or never mounted. */
   | { kind: "unavailable" };
 
 export async function navigateToPassage(input: {

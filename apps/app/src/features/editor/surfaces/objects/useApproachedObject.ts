@@ -1,23 +1,3 @@
-/**
- * Which object the writer is approaching, and whether its controls show.
- *
- * Law 7's "chrome on approach" has two doors into the same state: hover
- * reveals, and selection (or a caret inside a fence) makes it persistent. One
- * hook answers both, so the diagram row, the image row, and the code chips
- * cannot disagree about who is being approached.
- *
- * `target` and `visible` are separate on purpose, and the gap between them is
- * the fade: the anchor is held for the fade's duration after the writer leaves,
- * so the row fades out over its object rather than blinking away from under
- * the pointer.
- *
- * Both doors settle on a `NodeHold`, never on the element the pointer hit.
- * Elements are geometry: an element is how the pointer names an object and how
- * the row is measured, and a remote write replaces it while the writer is still
- * looking at the same diagram. So what this hook carries between frames is the
- * object, and DOM is resolved from it on every read.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useEffect } from "react";
 
@@ -35,15 +15,10 @@ import { type ObjectSurfaceTarget, objectSurfaceAt, objectSurfaceForHold } from 
 
 export type ObjectApproach = {
   target: ObjectSurfaceTarget | null;
-  /** Drives the fade. False with a live target means "on its way out". */
   visible: boolean;
 };
 
-export function useApproachedObject(
-  editor: Editor,
-  /** Holds the current object regardless of the pointer — a menu is open on it. */
-  pinned = false,
-): ObjectApproach {
+export function useApproachedObject(editor: Editor, pinned = false): ObjectApproach {
   const chrome = useEditorChrome(editor);
   const context = useChromeContext(editor);
   const suppressed = useChromeSuppressed(editor);

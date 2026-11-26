@@ -1,9 +1,3 @@
-/**
- * Barrel: the public store surface for features — re-exports the open-document
- * descriptor, the project and thread stores plus announcements. Features
- * import from `@/client/stores` only, never store internals.
- */
-
 export {
   documentContextOwner,
   isEditorOpenDocument,

@@ -105,7 +105,6 @@ describe("model document stack", () => {
         ).toMatchObject({ status: "success" });
         return turnId;
       };
-      // Stack actions change the original edit's state, but are not new card targets.
       {
         const turnId = await command("undo");
         const text = await harness.liveMarkdown(ALPHA_ID);
@@ -120,7 +119,6 @@ describe("model document stack", () => {
         ).toMatchObject({ status: "nothing_to_undo" });
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe(text);
       }
-      // The undone edit can't be reverted; the model writes it again, and reverts that.
       const again = await core.write(
         {
           command: "replace",

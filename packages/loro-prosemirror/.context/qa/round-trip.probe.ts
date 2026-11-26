@@ -1,8 +1,3 @@
-/**
- * Round-trip probe for the shape and the binding (`round-trip.md`). Run from the repo root:
- *   pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/round-trip.probe.ts
- * Exits non-zero on the first failed check, printing it.
- */
 import {
   applyOps,
   decodeEnvelope,
@@ -65,7 +60,6 @@ function check(name: string, ok: boolean, detail?: () => unknown) {
 const fromMarkdown = (source: string): Node =>
   withBlockIds(schema.topNodeType.create(null, codec.parse(source).blocks));
 
-/** `doc` with a comment on the text range [from, to) of the `n`th textblock. */
 function comment(doc: Node, n: number, from: number, to: number, id: string): Node {
   let seen = 0;
   let start = -1;
@@ -159,7 +153,6 @@ for (const [name, make] of Object.entries(fixtures)) {
     join.type === MessageType.JoinRequest && sameBytes(join.version, version) && decodeRoomVersion(join.version).size === live.version().size,
   );
 
-  // A draft fork reads Live, writes only overrides and forked text docs, and leaves Live alone.
   const draft = track(RoomDocs.draftOf(live, freshPeerId()));
   check(`${name}: fresh draft reads Live`, readProseMirror(draft, schema).eq(doc));
   const liveBefore = live.structure.oplogVersion();
@@ -173,7 +166,6 @@ for (const [name, make] of Object.entries(fixtures)) {
       sameValue(draft.structure.getMap(m).toJSON(), live.structure.getMap(m).toJSON()),
     ),
   );
-  // Writing Live's content back into the draft deletes its overrides (matching overrides are dropped).
   writeProseMirror(draft, doc);
   check(`${name}: draft back to Live content shows Live`, readProseMirror(draft, schema).eq(doc));
   check(
@@ -197,14 +189,12 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
-// Concurrent writers: structure moves, removal, restore, the virtual empty paragraph.
 {
   const base = fromMarkdown("One.\n\nTwo.\n\nThree.\n\n| a | b |\n|--|--|\n| x | y |");
   const a = seed(base);
   const b = track(RoomDocs.create(shape, freshPeerId()));
   b.importBatch(a.exportSince());
   const blocks = readDocument(a);
-  // a moves "Three." to the top; b retypes "Two." as a heading and types in it.
   writeDocument(a, [blocks[2], blocks[0], blocks[1], blocks[3]]);
   const bBlocks = readDocument(b);
   const two = bBlocks[1];
@@ -221,7 +211,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
     ra.child(0).textContent === "Three." && ra.child(2).attrs.level === 2 && ra.child(2).textContent === "Two, typed.",
     () => show(ra),
   );
-  // An emptied cell reads one unstored empty paragraph with a derived id; writing it back stores nothing.
   const current = readDocument(a);
   const table = current.find((x) => x.node === "table");
   if (!table || table.kind !== "container") throw new Error("fixture");
@@ -243,7 +232,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   check("write-back of the filled cell writes nothing", a.structure.oplogVersion().compare(v) === 0);
 }
 
-// The sentinel and code rules on merged states.
 {
   const live = seed(fromMarkdown("plain text here"));
   const p = readDocument(live)[0];
@@ -266,7 +254,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   const v = live.textOf(p.id)?.oplogVersion();
   writeProseMirror(live, readProseMirror(live, schema));
   check("write-back of normalized marks writes nothing", live.textOf(p.id)?.oplogVersion().compare(v as never) === 0);
-  // A hidden comment (no body) shows nothing and survives a write of its block.
   text?.mark({ start: 9, end: 12 }, "comment_ghost", true);
   live.textOf(p.id)?.commit();
   check(
@@ -281,7 +268,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   );
 }
 
-// applyOps on the shape: a text splice with an inline node, a format, an insert, a delete, attrs.
 {
   const live = seed(fromMarkdown("First paragraph.\n\nSecond one.\n\nThird."));
   const [p1, p2, p3] = readDocument(live);
@@ -318,8 +304,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   check("the change carries its author", result.ok && result.changes.every((c) => JSON.stringify(readCommitMessage(c.doc.getChangeAt(c.after[0]).message).by) === JSON.stringify({ turn: "t1" })));
 }
 
-// The binding: typing on the fast path, structure edits on the full path, a remote batch held during
-// composition and imported after.
 {
   const live = seed(fromMarkdown("Hello world.\n\nSecond."));
   const tab = track(RoomDocs.create(shape, freshPeerId()));
@@ -339,7 +323,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   state = state.apply(split);
   check("a split reaches the shape", readProseMirror(tab, schema).eq(state.doc), () => ({ want: show(state.doc), got: show(readProseMirror(tab, schema)) }));
   check("typing changed the text doc", textVersion() !== undefined);
-  // A remote batch imports through the guard and reads into the shape.
   const liveBlocks = readDocument(live);
   const last = liveBlocks[1];
   if (last.kind !== "text") throw new Error("fixture");
@@ -350,8 +333,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   check("remote edit reads in the shape", readProseMirror(tab, schema).lastChild?.textContent === "Second, remote.");
 }
 
-// The plugin's view half with a stand-in view: a remote batch re-reads only what changed and keeps
-// the caret in its block; a batch arriving mid-composition is held until the composition ends.
 {
   const live = seed(fromMarkdown("Alpha beta.\n\nGamma."));
   const tab = track(RoomDocs.create(shape, freshPeerId()));
@@ -369,19 +350,16 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
     },
   };
   const handle = plugin.spec.view?.(view as never) ?? {};
-  // Caret after "Alpha" in the first paragraph.
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6)));
   const first = readDocument(tab)[0];
   const textDoc = tab.textOf(first.id);
   const counter = () => textDoc?.oplogVersion().get(tab.peer) ?? 0;
-  // Typing inside bold writes one op per character and no style op.
   view.dispatch(view.state.tr.addMark(1, 6, schema.marks.strong.create()));
   const c0 = counter();
   view.dispatch(view.state.tr.insertText("x", 3));
   check("typing inside bold is one op", counter() - c0 === 1, () => counter() - c0);
   check("typing is one doc change (fast path)", writes.at(-1) === 1);
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 7)));
-  // A peer types at the start of the caret's paragraph.
   const peer = track(RoomDocs.create(shape, freshPeerId()));
   peer.importBatch(tab.exportSince());
   const peerFirst = readDocument(peer)[0];
@@ -391,7 +369,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   check("remote batch reaches the editor", view.state.doc.eq(readProseMirror(tab, schema)), () => ({ want: show(readProseMirror(tab, schema)), got: show(view.state.doc) }));
   check("caret stays after the same character", view.state.selection.head === 7 + "Remote ".length, () => view.state.selection.head);
   check("the binding's own transaction wrote nothing back", writes.length === 2);
-  // Mid-composition: held, then released on compositionend.
   view.composing = true;
   const gamma = readDocument(peer)[1];
   if (gamma.kind !== "text") throw new Error("fixture");
@@ -407,8 +384,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   handle.destroy?.();
 }
 
-// A Draft editor: typing forks the block's text doc (Live untouched), and a Live batch imported into
-// the tab's Live copy is forwarded into the fork and shown.
 {
   const live = seed(fromMarkdown("Draft me.\n\nLive edits this."));
   const tabLive = track(RoomDocs.create(shape, freshPeerId()));
@@ -441,7 +416,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array) {
   unregister();
 }
 
-// The in-memory rooms: write, subscribe, commit after the transaction, a fork room forwarded.
 {
   const rooms = createMemoryDocumentRooms(shape);
   const room = { kind: "live", documentId: "doc1" } as const;

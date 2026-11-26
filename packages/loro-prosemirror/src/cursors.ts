@@ -15,13 +15,11 @@ export interface DocCursor {
   after: boolean;
 }
 
-/** A selection's ends as cursors; an end outside any textblock the docs hold is null. */
 export interface SelectionCursors {
   anchor: DocCursor | null;
   head: DocCursor | null;
 }
 
-/** The cursor at `$pos`, when it is inside a textblock the docs hold. */
 export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
   const block = $pos.parent;
   const id = block.attrs.id;
@@ -39,13 +37,11 @@ export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
   return cursor ? { block: id, cursor, after: offset > 0 && unit !== undefined } : null;
 }
 
-/** The selection's ends as cursors in their blocks' text docs, taken while editor and docs agree. */
 export function selectionCursors(docs: RoomDocs, state: EditorState): SelectionCursors {
   const { selection } = state;
   return { anchor: cursorAt(docs, selection.$anchor), head: cursorAt(docs, selection.$head) };
 }
 
-/** Where the textblock `id` starts in `doc`, and the block. */
 export function textblockOf(doc: Node, id: string): { node: Node; start: number } | null {
   let found: { node: Node; start: number } | null = null;
   doc.descendants((child, pos) => {

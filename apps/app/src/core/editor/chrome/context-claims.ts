@@ -56,24 +56,9 @@ export const CONTEXT_CLAIM_ORDER = [
 export type ContextClaimId = (typeof CONTEXT_CLAIM_ORDER)[number];
 
 export type ContextClaimTarget = {
-  /**
-   * The deepest element under the pointer. `Element`, not `HTMLElement`: a
-   * mermaid diagram is SVG and so is every icon glyph in an overlay row, and
-   * both are exactly what a writer right-clicks. `closest()` works either way.
-   */
   element: Element;
-  /** Document position under the pointer; null when the pointer left the prose. */
   docPos: number | null;
-  /** Deepest context at the pointer, resolved by `resolveChromeContext`. */
   context: ChromeContext;
-  /**
-   * The pointer sits inside a non-empty text selection.
-   *
-   * Not merely "a selection exists": §5.1 claims the menu for a selection the
-   * writer right-clicked ON. A selection three paragraphs above the pointer is
-   * not what the writer is pointing at, and shadowing the native menu there
-   * would spend spellcheck on nothing.
-   */
   insideTextSelection: boolean;
   event: MouseEvent;
 };
@@ -89,13 +74,6 @@ export type ContextClaimHandler = {
   claim: (target: ContextClaimTarget) => boolean;
 };
 
-/**
- * Walk the ladder and give the event to the first registered claimant that
- * takes it. `null` means nobody claimed and the browser keeps its menu.
- *
- * Several handlers may register the same id (two lanes, one surface kind);
- * they are tried in registration order within the id.
- */
 export function resolveContextClaim(
   handlers: readonly ContextClaimHandler[],
   target: ContextClaimTarget,

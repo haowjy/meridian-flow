@@ -173,14 +173,12 @@ export class ChatDeletes {
     return outcome;
   }
 
-  /** The notice ends without Undo (the writer moved on in the list). */
   dismiss = () => this.end();
 
   open() {
     this.closed = false;
   }
 
-  /** The writer left the project or signed out. */
   close() {
     this.closed = true;
     this.end();
@@ -221,12 +219,10 @@ export class ChatDeletes {
       current: readLastShownChat(accountId, projectId) === threadId,
     };
     navigation.forgetChat(threadId);
-    // Focus stays with the notice's Undo, not the new chat's composer.
     if (taken.main) void navigation.openNewChat({ replace: true, focus: false });
     return taken;
   }
 
-  /** Each thing goes back only where nothing has replaced it since. */
   private putBack(threadId: string, taken: Taken) {
     const { accountId, projectId } = this.ports;
     const navigation = this.ports.navigation();

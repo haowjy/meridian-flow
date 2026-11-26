@@ -10,7 +10,6 @@ export type FileSuggestion = {
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
-  /** A twin's `~id` (`EntryName`). */
   suffix?: string;
   kind: FileSuggestionKind;
   parents: readonly string[];
@@ -40,7 +39,6 @@ export function treeFileSuggestions(
   return suggestions;
 }
 
-/** One entry as a suggestion, a file keyed by its document. */
 export function fileSuggestion(scheme: ProjectContextTreeScheme, entry: TreeEntry): FileSuggestion {
   return {
     entryId: entry.kind === "dir" ? entry.entryId : entry.documentId,
@@ -78,7 +76,6 @@ export function folderChildren(
   );
 }
 
-/** Parent folder path of an entry path: `/a/b` → `/a`, `/a` → `/`. */
 export function parentPath(path: string): string {
   const index = path.lastIndexOf("/");
   return index <= 0 ? "/" : path.slice(0, index);

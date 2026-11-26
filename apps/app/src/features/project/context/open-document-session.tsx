@@ -14,28 +14,19 @@ import { useLiveDocumentBinding } from "./use-live-document-binding";
 type OpenDocumentSessionProps = {
   projectId: string;
   documentId: string;
-  /** The live room of a document only a Work holds. */
   workOnly?: boolean;
-  /** The draft whose fork room opens (a plain draft or Review changes); absent for Live. */
   draftId?: string;
-  /** Which room to open isn't known yet: open none. */
   held?: boolean;
   bindingOwner?: DocumentPresentation["bindingOwner"];
   children: (
     session: DocumentSession | null,
     failed: boolean,
-    /** The browser's local copy already holds the document: it paints before the room syncs. */
     localContentReady: boolean,
     retry: () => void,
     failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null,
   ) => ReactNode;
 };
 
-/**
- * One stable host across local adoption; server retention lasts until the host
- * unmounts. An explicit retry reopens it as a fresh session: local probe and
- * server binding both start over.
- */
 export function OpenDocumentSessionBoundary(props: OpenDocumentSessionProps) {
   const [opening, setOpening] = useState(0);
   const reopen = useCallback(() => setOpening((value) => value + 1), []);

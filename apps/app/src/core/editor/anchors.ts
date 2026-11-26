@@ -1,5 +1,3 @@
-/** Resolves stable editor anchors across document changes. */
-
 import {
   type DocCursor,
   loroSyncKey,
@@ -13,16 +11,10 @@ import { docsOf, findBlock, pointAt } from "./loro-points";
 
 export type AnchorRange = { from: number; to: number };
 
-/** A range that survives what ProseMirror's own mapping cannot. */
 export type EditorAnchor = AnchorRange & {
   relative: { start: DocCursor; end: DocCursor } | null;
 };
 
-/**
- * Pin a range so a surface can find it again after the document moves. Ends inside text are
- * pinned as Loro cursors; an end between blocks has no character to hold, and the numbers,
- * carried through each transaction, stand in for it.
- */
 export function anchorRange(state: EditorState, range: AnchorRange): EditorAnchor {
   const docs = docsOf(state);
   const start = docs && pointAt(docs, state.doc, range.from);
@@ -46,7 +38,6 @@ function resolveRelative(
   return { from, to };
 }
 
-/** Carry the anchor's fallback numbers across one mapping. */
 export function carryAnchor<Anchor extends EditorAnchor>(
   anchor: Anchor,
   mapping: Mappable,
@@ -67,14 +58,12 @@ export function carryAnchor<Anchor extends EditorAnchor>(
   return { ...anchor, from: from.pos, to: Math.max(from.pos, to.pos) };
 }
 
-/** Where the anchor sits in this state, or null when it is gone. */
 export function resolveAnchorIn(state: EditorState, anchor: EditorAnchor): AnchorRange | null {
   if (anchor.relative && docsOf(state)) return resolveRelative(state, anchor.relative);
   if (anchor.from < 0 || anchor.to > state.doc.content.size) return null;
   return { from: anchor.from, to: anchor.to };
 }
 
-/** Where a held range sits after a change, or null when it is gone. */
 export function resolveAnchor(
   state: EditorState,
   anchor: EditorAnchor,
@@ -84,7 +73,6 @@ export function resolveAnchor(
   return carried && resolveAnchorIn(state, carried);
 }
 
-/** The same held range, re-pinned against the document as it now stands. */
 export function followAnchor(
   state: EditorState,
   anchor: EditorAnchor,
@@ -94,15 +82,11 @@ export function followAnchor(
   return at && anchorRange(state, at);
 }
 
-/** A node a surface has hold of: where it is, and WHICH node it is. */
 export type NodeHold = EditorAnchor & {
-  /** The node's block `id`, the identity every peer shares; null for a node without one. */
   identity: string | null;
-  /** Read back at every resolution: coordinates outlive what was at them. */
   nodeType: string;
 };
 
-/** Take hold of the node starting at `pos`, or null when none starts there. */
 export function holdNode(state: EditorState, pos: number): NodeHold | null {
   if (pos < 0 || pos > state.doc.content.size) return null;
   const $pos = state.doc.resolve(pos);
@@ -117,10 +101,6 @@ export function holdNode(state: EditorState, pos: number): NodeHold | null {
   };
 }
 
-/**
- * Where the held node is now, or null once it is not that node any more. A node with a block `id`
- * is found by it wherever it now stands; one without (an inline picture) by its seams.
- */
 export function resolveNodeHold(state: EditorState, hold: NodeHold): AnchorRange | null {
   if (hold.identity !== null) {
     const found = findBlock(state.doc, hold.identity);
@@ -140,21 +120,15 @@ export function resolveNodeHold(state: EditorState, hold: NodeHold): AnchorRange
   return { from: at.from, to: at.from + node.nodeSize };
 }
 
-/** The same node after a change, re-pinned. Null once it is not the same node. */
 export function followNode(state: EditorState, hold: NodeHold, mapping: Mappable): NodeHold | null {
   return followHold(state, hold, mapping, resolveNodeHold);
 }
 
-/**
- * Take hold of the top-level block starting at `pos`, or null when `pos` is not
- * the start of one.
- */
 export function holdBlock(state: EditorState, pos: number): NodeHold | null {
   if (pos < 0 || pos > state.doc.content.size) return null;
   return state.doc.resolve(pos).depth === 0 ? holdNode(state, pos) : null;
 }
 
-/** Where the held block is now, or null when the writer's block is gone. */
 export function resolveBlockHold(state: EditorState, hold: NodeHold): AnchorRange | null {
   const at = resolveNodeHold(state, hold);
   // A peer who wrapped the block in something else left it somewhere no block
@@ -162,7 +136,6 @@ export function resolveBlockHold(state: EditorState, hold: NodeHold): AnchorRang
   return at && state.doc.resolve(at.from).depth === 0 ? at : null;
 }
 
-/** The same block after a change, re-pinned. Null once it is not the same block. */
 export function followBlock(
   state: EditorState,
   hold: NodeHold,
@@ -171,7 +144,6 @@ export function followBlock(
   return followHold(state, hold, mapping, resolveBlockHold);
 }
 
-/** Two holds on the same node in the same place. */
 export function sameHold(one: NodeHold | null, other: NodeHold | null): boolean {
   if (one === other) return true;
   if (!one || !other) return false;
@@ -194,13 +166,11 @@ function followHold(
   return at && { ...anchorRange(state, at), identity: hold.identity, nodeType: hold.nodeType };
 }
 
-/** The block id of the node after `$pos`. */
 function identityAt($pos: ResolvedPos): string | null {
   const id = $pos.nodeAfter?.attrs.id;
   return typeof id === "string" ? id : null;
 }
 
-/** True when this transaction is the binding bringing a peer's or the model's write in, rather than anything done here. */
 export function isRemoteDocumentRebuild(transaction: Transaction): boolean {
   return transaction.getMeta(loroSyncKey) === REMOTE_META;
 }

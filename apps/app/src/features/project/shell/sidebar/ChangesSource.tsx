@@ -86,8 +86,6 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   }).data?.length;
   const { works, nameOf } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
-  // The shell's count is the Changes list's: the Work's changed documents and folders, from its
-  // open list. The Works list's stored count is the same count for a Work whose list is not open.
   const shell = useShellTreeVersion();
   const changed = shell?.draftId === draftId && draftId ? shell.changeCount : null;
   const workDrafts = picked && shell?.work?.id === picked.id ? shell.workDrafts?.drafts : null;
@@ -242,8 +240,6 @@ export function ChangesSource({
         : [],
     ]),
   );
-  // One place for the tab's words: a word goes on the row that draws its node, in whichever
-  // section, else on the pane's heading. A row a press took stays drawn while a word speaks for it.
   const drawnKey = sections
     .map((section) => [...section.folderOf].map(([node, parent]) => `${node}>${parent}`).join())
     .join("|");
@@ -263,8 +259,6 @@ export function ChangesSource({
     // `sections` is rebuilt every render; what it draws is in the keys below.
   }, [drawnKey, folded, notice, held]);
   const treeWords = useTreeNoticeWords(projectId, place);
-  // A draft's notice speaks on its own rows: two drafts can hold one document. The Work's speaks
-  // on every draft's.
   const speaksIn = (section: DraftSection) =>
     !notice ||
     notice.draftId === section.draftId ||
@@ -282,8 +276,6 @@ export function ChangesSource({
   const shown = new Map(sections.map((section) => [section.draftId, shownOf(section)]));
   const goneRows = [...shown.values()].some((rows) => rows.some((row) => row.gone));
 
-  // A notice holds the list as the writer saw it: a row it took stays in its place while the
-  // notice speaks for it, and the owner drops the snapshot when the notice ends.
   const snapshotSection = (section: DraftSection): readonly HeldNoticeRow<unknown>[] => {
     const keys = section.items.map(changeKey);
     return section.items.map((item, at) => ({
@@ -542,8 +534,6 @@ function DraftChangesSection({
       {shown.length > 0 ? (
         <ul className="flex flex-col px-2">
           {shown.map(({ row: item, gone }) => {
-            // A row a Discard took is struck through with its Undo; one an Apply took has
-            // its Undo, and opens the document where it is now.
             if (gone)
               return (
                 <li key={item.key} data-change-row={item.key} data-command-notice="row">

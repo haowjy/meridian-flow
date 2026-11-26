@@ -1,5 +1,3 @@
-/** The one drop caret: drawn where the plan lands, driven by `LandingExtension`. */
-
 import type { EditorState } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
@@ -103,7 +101,6 @@ export class DropCaretView {
     this.element.style.height = `${(rect.bottom - rect.top) / scaleY}px`;
   }
 
-  /** Draw the caret at `pos`; a drag that ends unseen takes it away after a while. */
   show(pos: number) {
     this.setCursor(pos);
     clearTimeout(this.timeout);

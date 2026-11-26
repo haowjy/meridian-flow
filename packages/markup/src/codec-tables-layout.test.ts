@@ -93,16 +93,12 @@ describe("tables and Layout round-trip corpus", () => {
   });
 
   it("carries a resized column across a merged cell, which spans two grid slots", () => {
-    // What the editor produces: merge a header row, then drag the boundary of
-    // its second grid column. prosemirror-tables sizes `colwidth` to the cell's
-    // colspan and leaves the untouched slots at zero.
     const cell = (type: "table_header" | "table_cell", text: string, attrs = {}) =>
       schema.node(type, attrs, [paragraph(t(text))]);
     const table = schema.node("table", null, [
       schema.node("table_row", null, [
         cell("table_header", "Status", { colspan: 2, colwidth: [0, 266] }),
       ]),
-      // The resize wrote the new width into every row of that grid column.
       schema.node("table_row", null, [
         cell("table_cell", "Class"),
         cell("table_cell", "Warden", { colwidth: [266] }),
@@ -591,10 +587,8 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /** Hard-break cells and every container a writer can nest their table inside. */
   type BrokenCellMarks = readonly (readonly ReturnType<typeof m>[])[];
 
-  /** Marks on the broken cell text; one entry breaks the body row alone. */
   const BROKEN_CELL_SHAPES: readonly { shape: string; rowMarks: BrokenCellMarks }[] = [
     { shape: "plain cell text", rowMarks: [[]] },
     { shape: "marked cell text", rowMarks: [[m("strong")]] },
@@ -650,7 +644,6 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /** A spanned table is HTML, where `<br />` IS the spelling and stays one. */
   it("round-trips a hard break in a spanned cell inside a Layout wrapper", () => {
     const html = [
       "<table>",
@@ -692,22 +685,16 @@ describe("tables and Layout round-trip corpus", () => {
       ]);
     };
 
-    // One entry per spanned column, non-negative: a slot count that cannot
-    // describe the cell, a negative width, and a fraction are all lies.
     for (const colwidth of [[120, 80], [], [-1], ["120"], [Number.NaN]]) {
       expect(() => codec.serializeBlock(withColwidth(colwidth), UNSCOPED_DOCUMENT_LINKS)).toThrow(
         "colwidth must be null or one non-negative width per spanned column",
       );
     }
 
-    // Sizing a spanned column divides the cell's box by its colspan, so a
-    // fraction is what a real drag leaves behind. The wire rounds it.
     expect(codec.serializeBlock(withColwidth([173.5]), UNSCOPED_DOCUMENT_LINKS)).toContain(
       'widths="174"',
     );
 
-    // Zero is not malformed: it is prosemirror-tables' "this column has no
-    // width", which a resize leaves in every slot it did not touch.
     expect(codec.serializeBlock(withColwidth([0]), UNSCOPED_DOCUMENT_LINKS)).not.toContain(
       "widths=",
     );

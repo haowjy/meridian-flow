@@ -1,8 +1,3 @@
-/**
- * The browser's side of the one upload route, `/context/{scheme}/upload`: a chat attach is
- * `scheme=uploads` with the chat in the query, a file dropped into a document is the document's
- * own source (and a Work's id for its Scratch). Removing a reference never deletes the file.
- */
 import {
   MAX_UPLOAD_BYTES,
   type StartUploadInput,
@@ -19,7 +14,6 @@ import { jsonPost, uploadResponse } from "./upload-request";
 type ContextUploadTarget = {
   projectId: string;
   scheme: string;
-  /** `chatId` for a chat's uploads, `workId` for a Work's Scratch; nothing otherwise. */
   query: Readonly<Record<string, string>>;
   /** Minted by the caller: a document's link to the file stands before the file does. */
   intakeId: string;
@@ -31,7 +25,6 @@ function url(target: Omit<ContextUploadTarget, "intakeId" | "file">, step = "") 
   return `/api/projects/${encodeURIComponent(target.projectId)}/context/${encodeURIComponent(target.scheme)}/upload${step}?${query}`;
 }
 
-/** Reserves the upload, or resumes it. A refusal (a name, a size) rejects with the writer's words. */
 export function startContextUpload(
   target: ContextUploadTarget,
   signal?: AbortSignal,
@@ -43,7 +36,6 @@ export function startContextUpload(
     intakeId,
     filename: file.name,
     sizeBytes: file.size,
-    // The signed PUT carries the type exactly; the server answers with the header to send.
     mimeType: file.type || "application/octet-stream",
   };
   return uploadResponse<UploadStart>(fetch(url(target), { ...jsonPost(body), signal }));
@@ -52,7 +44,6 @@ export function startContextUpload(
 export function uploadContextFile(
   target: ContextUploadTarget & {
     signal: AbortSignal;
-    /** Whole percents, or null where the browser cannot say how much there is to send. */
     onProgress?: (percent: number | null) => void;
   },
 ): Promise<UploadIntakeResult> {
@@ -68,7 +59,6 @@ export function uploadContextFile(
   });
 }
 
-/** A chat's attach: the file waits in the chat's flat `uploads` for a send. */
 export const chatUploadPort: ComposerUploadPort = {
   intake: ({ file, intakeId, scope, signal }) =>
     uploadContextFile({

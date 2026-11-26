@@ -16,7 +16,6 @@ import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
 import { pendingText } from "./pending-documents.js";
 
-/** `(draft_id, document_id)` for each hold, narrowed to `documentIds` when given. */
 export function retentionHolds(documentIds?: readonly DocumentId[]): SQL {
   const only = (column: string) =>
     documentIds

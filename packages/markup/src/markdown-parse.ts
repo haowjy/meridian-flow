@@ -1,5 +1,3 @@
-/** Positioned Markdown parser shared by codecs and source scanners. */
-
 import type { Extension } from "mdast-util-from-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";

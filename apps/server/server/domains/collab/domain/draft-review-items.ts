@@ -19,55 +19,34 @@ export type DraftReviewItem = {
   draftId: DraftId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The draft's text of the document has a change to review. */
   pending: boolean;
-  /** Live's version under the fork's removals, base64 (`DraftItem.liveVersion`); null when none. */
   liveVersion: string | null;
-  /** How many changes the draft's fork of the document has (`DraftItem.changeCount`). */
   changeCount: number;
-  /** created: the draft has a `created` row; edited: text changes only. */
   origin: "created" | "edited";
-  /** A creation only the Work shows: derived on read, nothing rewrites it. */
   isNew: boolean;
   binary: boolean;
   documentName: string | null;
-  /** Canonical URI in the draft's view (the last address for one the draft deletes). */
   path: string | null;
-  /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
-  /**
-   * The draft's row on the document: the revision a tree cut freezes, and what it says.
-   * `movedFrom` is where live has a moving document now (`path` is where the draft puts it).
-   */
   tree: { movedFrom: string | null; deleted: boolean } | null;
-  /** Chats with pending text changes, then the chats behind its tree row. */
   actorThreadIds: string[];
-  /** A text change no chat wrote (the writer's typing). */
   unattributed: boolean;
   updatedAt: Date;
 };
 
-/** One document the draft has a view of: its item, and whether the list shows it. */
 export type ResolvedDraftItem = { item: DraftReviewItem; listed: boolean };
 
 export interface DraftReviewItems {
-  /** The draft's listed items. */
   list(draftId: DraftId): Promise<DraftReviewItem[]>;
-  /**
-   * One document's item and whether it is listed, for every document the draft has a view
-   * of (text changes, or a change row); null only when it is not addressable.
-   */
   resolve(draftId: DraftId, documentId: DocumentId): Promise<ResolvedDraftItem | null>;
 }
 
 export function createDraftReviewItems(deps: {
   tree: DraftTreeStateReader;
-  /** The documents the draft has a pending fork of (only these documents' when given). */
   text(
     draftId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<readonly WorkDraftTextChanges[]>;
-  /** The chats behind each document's draft row (moved or deleted it, created it). */
   treeActors(
     draftId: DraftId,
     documentIds?: readonly DocumentId[],

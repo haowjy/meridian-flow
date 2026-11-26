@@ -26,7 +26,6 @@ import { watchManuscriptLayout } from "@/core/editor/chrome";
 
 import { manuscriptOverlay, type OverlayBox, overlayRect } from "./manuscript-overlay";
 
-/** All four edges: a row hangs off the top-right, a hint off the bottom-left. */
 export type AnchorRect = OverlayBox;
 
 /**

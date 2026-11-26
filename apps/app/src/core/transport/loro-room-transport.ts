@@ -1,15 +1,3 @@
-/**
- * The room transport on `loro-protocol`, for a document's room and a tree list's (design §4 and §6): one socket per room, a Join that
- * exchanges versions, local batches sent as `DocUpdate`s and acknowledged one `Ack` each, peers'
- * batches handed to the session (which imports them through the composition guard), and presence
- * on the room's ephemeral store.
- *
- * The Join exchange, which the server's handler speaks too (design §4, "The Join exchange"):
- * the client sends `JoinRequest` with its room version; the server answers `JoinResponseOk` with
- * the permission and its own room version, then sends what the copy lacks as one `DocUpdate`
- * (fragmented when large); the client sends what the server lacks as one `DocUpdate`, which is
- * acknowledged like any other. Server `DocUpdate`s are not acknowledged.
- */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   decodeLoroJoinExtra,
@@ -54,35 +42,22 @@ import { notifyLoroMessage, notifyLoroSocketClose, notifyLoroSocketOpen } from "
 export type RoomResetReason =
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  /** The document was deleted or discarded; its rooms never reopen. */
   | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
 
-/**
- * How a terminal room reset treats its unacknowledged edits. `removed`: the document was purged,
- * so nothing reconnects on its own; the session stays read-only until its owner closes it, or an
- * exact open proves the document present and restarts it.
- */
 export type ResetDisposition = "schema" | "removed";
 
-/** The room's connection, drawn in `.context/state-machines.md`. */
 export type RoomConnectionState =
   | { kind: "connecting"; attempt: number }
   | { kind: "connected" }
   | { kind: "disconnected" }
-  /** A close with 4401: the sign-in lapsed. The room retries like a disconnected one. */
   | { kind: "signed-out" }
   | { kind: "reset"; reason: RoomResetReason; disposition: ResetDisposition }
-  /** Access ended: a Join refused with `permission-denied`, or a close with 4403. */
   | { kind: "unauthorized"; reason: string; code?: number }
   | { kind: "terminal"; reason: string };
 
-/** What the transport needs from the copy it carries. */
 export type TransportedCopy = {
-  /** The copy's room version now. */
   version(): RoomVersion;
-  /** What the copy holds beyond `since`, as an envelope; null when nothing. */
   exportSince(since: RoomVersion): Uint8Array | null;
-  /** A peer's batch from the server: the session imports it through the composition guard. */
   importRemote(batch: Uint8Array): void;
 };
 
@@ -90,41 +65,22 @@ export type LoroRoomTransportOptions = {
   room: LoroRoom;
   peer: string;
   copy: TransportedCopy;
-  /** The room's presence; a room without one (a tree list) joins no presence channel. */
   presence?: EphemeralStore;
-  /**
-   * Called with each `JoinResponseOk`'s `extra` before anything is sent. `"rejoin"` closes the
-   * socket and joins again: the copy changed under the Join (a tree copy of another list).
-   */
   onJoined?: (extra: Uint8Array | undefined) => "rejoin" | undefined;
   connectivityHints?: ConnectivityHintsPort;
 };
 
 export type LoroRoomTransport = {
-  /** Send a local batch; it is acknowledged once the room imported it. */
   send(batch: Uint8Array): void;
-  /**
-   * Resolves once the server holds everything this copy holds now (its acked batches and the
-   * batches it sent cover the version taken at the call). Rejects when the room ends first.
-   */
   whenCurrentChangesAcknowledged(): Promise<void>;
-  /**
-   * Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or
-   * signed out) is waited for until it joins and its Join's batch (what the server lacks, the
-   * typing done while away included) is acknowledged; it resolves when the room ends. A fork room never covers the Live ops its copy
-   * forwards, so a press waits on this, not on `whenCurrentChangesAcknowledged`.
-   */
   whenSentAcknowledged(): Promise<void>;
-  /** What the server is known to hold: its Join version, the batches it acked and sent. */
   serverVersion(): RoomVersion;
-  /** The copy holds what the server held at its first Join: the content is in, not only the Join. */
   readonly synced: boolean;
   readonly whenSynced: Promise<void>;
   subscribeStatus(listener: (state: RoomConnectionState) => void): () => void;
   subscribeAccess(
     listener: (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void,
   ): () => void;
-  /** True while connected, joined, and every batch sent on this connection is acknowledged. */
   subscribeServerAcknowledgement(listener: (acknowledged: boolean) => void): () => void;
   destroy(): void;
 };
@@ -136,7 +92,6 @@ const RESET_REASONS: Readonly<Record<string, RoomResetReason>> = {
 };
 
 const RETRY_MS = [250, 1_000, 2_500, 5_000, 10_000];
-/** Room payload per fragment, under the protocol's 256 KiB message limit with header room. */
 const FRAGMENT_BYTES = MAX_MESSAGE_SIZE - 4 * 1024;
 
 function resetState(reason: RoomResetReason): RoomConnectionState {
@@ -153,10 +108,8 @@ function randomBatchId() {
   return bytesToHex(bytes);
 }
 
-/** A message as one frame. `encode` allocates the frame's own buffer, so it is never shared. */
 const frame = (message: ProtocolMessage) => encode(message) as Uint8Array<ArrayBuffer>;
 
-/** Each doc's version once an envelope's updates are imported, from their metadata. */
 function batchEnd(batch: Envelope): RoomVersion {
   return new Map([...batch].map(([key, bytes]) => [key, updateEnd(bytes)]));
 }
@@ -187,13 +140,7 @@ export function createLoroRoomTransport({
   let destroyed = false;
   let attempt = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Batches sent on this connection and not yet acked, with each doc's version once imported. */
   const unacked = new Map<string, RoomVersion>();
-  /**
-   * `whenSentAcknowledged` callers, each with the batches it waits on: those unacked when it last
-   * saw the room connected, or null until it is again (a dropped socket's batches go in the next
-   * Join's batch, which is sent before the room reads as connected).
-   */
   const sentWaiters = new Set<{ ids: Set<string> | null; resolve: () => void }>();
   const settleSentWaiters = () => {
     for (const waiter of sentWaiters) {
@@ -210,18 +157,12 @@ export function createLoroRoomTransport({
     }
   };
   const server = new Map<DocKey, DocVersion>();
-  /** Fragments of a server batch being reassembled, by batch id. */
   const fragments = new Map<string, { count: number; parts: Uint8Array[] }>();
   let resolveSynced!: () => void;
   const whenSynced = new Promise<void>((resolve) => {
     resolveSynced = resolve;
   });
   let synced = false;
-  /**
-   * Until synced: the Join's version, and what the transport handed the copy (its version at the
-   * Join and each batch received since). Decided from what was handed, not `copy.version()`: the
-   * composition guard can hold a batch and import it later without the transport seeing it.
-   */
   let catchUp: { want: RoomVersion; handed: Map<DocKey, DocVersion> } | null = null;
   const settleSynced = () => {
     if (synced || !catchUp || !versionCovers(catchUp.handed, catchUp.want)) return;
@@ -360,10 +301,8 @@ export function createLoroRoomTransport({
         if (reset) return end(resetState(reset));
         if (message.appCode === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode)
           return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
-        // A Join this build could not form: retrying sends the same one.
         if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
           return end({ kind: "terminal", reason: message.appCode });
-        // `document-unknown`: the server has not seen this browser's `create` yet.
         socket?.close(1000, "rejoin");
         return;
       }
@@ -423,7 +362,6 @@ export function createLoroRoomTransport({
     clearTimeout(retryTimer);
     retryTimer = undefined;
     attempt += 1;
-    // Signed out lasts until a Join is answered, so a retry doesn't flash the sign-in prompt away.
     if (state.kind !== "signed-out") emitStatus({ kind: "connecting", attempt });
     const ws = new WebSocket(buildSameOriginWsUrl(LORO_WS_PATH));
     ws.binaryType = "arraybuffer";

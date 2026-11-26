@@ -812,8 +812,6 @@ export function runTreeCommand(
       if (leaf === undefined)
         return refuse("invalid_write", command.path, "A folder needs a name.");
       const found = resolveShown(projection, shown, path.root, path);
-      // A folder that stands there is what the call asked for; a document there is kept and the
-      // new folder is its twin, beside it.
       if (found.kind === "node" && found.node.kind === "folder" && !found.node.trashed)
         return finish(nothingDone(found.node.id, command.path, { already: "live", notMoved: [] }));
       const parent = destinationParent(cx, path, path.segments.slice(0, -1));
@@ -942,8 +940,6 @@ export function runTreeCommand(
           if (!named.has(result.go.node.id)) named.set(result.go.node.id, { from, goes: true });
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
-      // As the sidebar's `outermost`: a node named twice, or inside a folder also named, moves once,
-      // with that folder; it counts as moved when the folder does.
       const decided: Decided[] = [];
       let made = 0;
       for (const item of going) {
@@ -974,7 +970,6 @@ export function runTreeCommand(
         }
       }
       if (made === 0) {
-        // Everything was already there or left out: the call is done. Anything else named nothing.
         if (nothingToMake !== undefined && notMoved.length + leftOut.length === command.from.length)
           return finish(nothingDone(nothingToMake, command.path, { notMoved, leftOut }));
         const none = [...notMoved, ...leftOut.map((left) => left.path)];
@@ -1027,15 +1022,12 @@ export function runTreeCommand(
       const node = found.node;
       const writtenUri = uriOfPath(cx, command.path);
       noteChanges(cx, projection, node, path, writtenUri);
-      // The delete takes what the model saw inside the folder: a name it was shown, or any name
-      // inside a folder it never listed. What was added since stays and keeps the folder standing.
       const inside = descendantsOf(projection, node.id).filter(
         (id) => !projection.nodes.get(id)?.trashed,
       );
       const addedSince = new Set<string>();
       const wasShown = (id: string): boolean => {
         const parent = (projection.nodes.get(id) as TreeNode).parent;
-        // A folder the model never listed is deleted whole; one it listed is deleted as listed.
         return (
           !shown.whole.has(parent) || [...(shown.names.get(parent)?.values() ?? [])].includes(id)
         );
@@ -1083,8 +1075,6 @@ export function runTreeCommand(
 
     case "restore": {
       const path = pathFrom(cx, command.path);
-      // Source-qualified Trash entries, newest deletion first: a path in one source never
-      // reaches another's node, and restoring again brings the next older one.
       const source = sourceIdOf(path.root);
       let target: TreeNode | undefined;
       let entry: TrashEntry | undefined;
@@ -1115,7 +1105,6 @@ export function runTreeCommand(
       const record = entry
         ? scope.writer.restoreEntry(scope.view, scope.actor, entry.from ?? entry.id)
         : scope.writer.restore(scope.view, scope.actor, node.id);
-      // The entry came from this view's Trash, so its delete is in force.
       if (record === "unknown") throw new Error(`restore: no delete in force for ${node.id}`);
       remember(cx, record.id, node.id);
       const after = scope.writer.view(scope.view);
@@ -1149,18 +1138,10 @@ export function runTreeCommand(
 }
 
 export type UndoneTree = {
-  /**
-   * What the Undo did with the receipt (`changeUndone`): `taken` when every record's opposite
-   * stood already; `discarded` when a Discard took every record instead, which leaves the
-   * card's Undo nothing to do either.
-   */
   fate: ReturnType<typeof changeUndone> | "discarded";
-  /** The closed owner the Undo would have changed, when a record stayed for it. */
   closed?: ClosedSource;
-  /** Whether some record stayed while others were taken back. */
   partial: boolean;
   made: MadeRecord[];
-  /** Whether any opposite record is in live (a drafted change an Apply landed is taken back there). */
   inLive: boolean;
   landedAt: string;
   kept?: string;
@@ -1168,11 +1149,6 @@ export type UndoneTree = {
   delta: ShownDelta;
 };
 
-/**
- * Takes a receipt's records back, newest first, in one walk of the package's `takeBackAll` (which
- * finds a record's copy after an Apply or a restored Discard). Only what the receipt did is taken back:
- * what others put in a folder it made stands, and keeps the folder standing.
- */
 export function runTreeUndo(
   scope: TreeScope,
   places: Places,
@@ -1214,7 +1190,6 @@ export function runTreeUndo(
       remember(cx, back.id, entry.node);
     }
   }
-  // The answers about sources the locks missed were guesses: nothing of this commits.
   judge.assertLocked();
   const after =
     scope.view.draft !== null && inLive ? scope.writer.view(LIVE) : scope.writer.view(scope.view);
@@ -1239,7 +1214,6 @@ export function runTreeUndo(
     partial: cx.made.length > 0 && stayed !== "taken",
     made: cx.made,
     inLive,
-    // A create taken back leaves its node in Trash: the answer names the path it was asked by.
     landedAt: here && !here.trashed ? nodeUri(cx, after, here) : asked,
     ...(standing[0] ? { kept: keptStanding(cx, after, standing[0].id, standing[0].children) } : {}),
     touched,
@@ -1259,7 +1233,6 @@ export function runTreeUndo(
   };
 }
 
-/** Every node a call changed, with its path before and after, from the two views of the list. */
 function touchedNodes(cx: Context, before: TreeProjection, after: TreeProjection): TouchedNode[] {
   const named = new Set(cx.made.map((made) => made.node));
   const touched: TouchedNode[] = [];

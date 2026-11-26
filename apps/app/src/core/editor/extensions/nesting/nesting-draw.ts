@@ -1,9 +1,3 @@
-/**
- * Draws lists and quotes. Both are runs of sibling blocks, so the indent, the quote bars, the
- * marker and the number come from one decoration per block, taken from `nest`'s reading of
- * the siblings, not from wrapper elements. Numbers are drawn with generated content
- * (`data-number`): CSS counters cannot tell where a list restarts among siblings.
- */
 import {
   type BlockFacts,
   innermostListStep,
@@ -14,22 +8,16 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
-/** The inline offset where `steps` end, in the step widths `editor.css` defines. */
 function offset(steps: readonly StepFacts[]): string {
   const lists = steps.filter((step) => step.type === "list").length;
   const quotes = steps.length - lists;
   return `calc(${lists} * var(--nest-list-step) + ${quotes} * var(--nest-quote-step))`;
 }
 
-/** True when the block continues a quote the block before it is in. */
 function joinsQuoteAbove(facts: BlockFacts | undefined): boolean {
   return facts?.steps.some((step) => step.type === "quote" && !step.opens) ?? false;
 }
 
-/**
- * One bar per quote step. Blocks of one quote meet through their padding, so a bar runs
- * through the gap to the next block of its quote and stops short of it otherwise.
- */
 function quoteBars(
   facts: BlockFacts,
   next: BlockFacts | undefined,
@@ -51,9 +39,6 @@ function quoteBars(
   return `background-image: ${images.join(", ")}; background-position: ${positions.join(", ")}; background-size: ${sizes.join(", ")};`;
 }
 
-/**
- * Draws one container's blocks: markers, numbers and nesting bars.
- */
 function drawContainer(container: ProseMirrorNode, start: number, out: Decoration[]) {
   const blocks: ProseMirrorNode[] = [];
   const positions: number[] = [];

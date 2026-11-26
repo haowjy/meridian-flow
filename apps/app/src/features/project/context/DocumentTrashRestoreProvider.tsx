@@ -1,4 +1,3 @@
-/** One project-lifetime owner for Trash restore progress and outcomes, by node id. */
 import {
   createContext,
   type ReactNode,
@@ -18,12 +17,10 @@ import type { EntryRef } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
 import { leaveSelections } from "./entry-drag/selection";
 
-/** What a restore needs of a Trash entry: the record names the node, the notices its name. */
 export type Restorable = { ref: EntryRef; name: string };
 
 export type TrashRestoreState = { kind: "restored" };
 
-/** `restored`: the node is back in the tree, so a view of it in Trash follows it there. */
 type RestoreContextValue = {
   states: ReadonlyMap<string, TrashRestoreState>;
   /**
@@ -31,7 +28,6 @@ type RestoreContextValue = {
    * struck through, while the tree notice still offers that restore's Undo.
    */
   restored: readonly GoneRow<TrashEntry>[];
-  /** Restores entries to where they were: a `restore` record each; each shows its own outcome. */
   restore: (entries: readonly Restorable[]) => void;
   /**
    * Restores entries into a destination (a drag out of Trash). They leave the Trash list and
@@ -96,7 +92,6 @@ export function DocumentTrashRestoreProvider({
     };
   }, [projectList.session, accountList.session]);
 
-  /** Appends the entries' `restore` records, one update per list, and on a drag their moves into the destination. */
   const append = useCallback(
     (entries: readonly Restorable[], destination?: TreeDestination) => {
       const held = entries.map((entry) => ({ entry, ...actions.holding(entry.ref.id) }));

@@ -9,7 +9,6 @@ const pending = new Map<string, Set<object>>();
 const targeted = new WeakSet<Editor>();
 const restored = new WeakSet<Editor>();
 
-/** Claim before opening a document, including while its editor is still mounting. */
 export function claimDocumentTarget(documentId: string): () => void {
   const owners = pending.get(documentId) ?? new Set<object>();
   const owner = {};
@@ -25,7 +24,6 @@ export function markEditorTarget(editor: Editor): void {
   targeted.add(editor);
 }
 
-/** The editor reopened at the writer's place; only the review's first reconcile after that mount yields to it. */
 export function markRestoredPlace(editor: Editor): void {
   restored.add(editor);
 }
@@ -41,7 +39,6 @@ export function mayRestoreReadingPosition(editor: Editor, documentId: string): b
 const mountedEditors = new Map<string, Set<Editor>>();
 const mountWaiters = new Map<string, Set<() => void>>();
 
-/** An editor of the document has decided whether to restore a place. */
 export function reportEditorMounted(documentId: string, editor: Editor): () => void {
   const editors = mountedEditors.get(documentId) ?? new Set<Editor>();
   editors.add(editor);
@@ -53,7 +50,6 @@ export function reportEditorMounted(documentId: string, editor: Editor): () => v
   };
 }
 
-/** Resolves when an editor of the document has decided its place; `signal` bounds a mount that never comes. */
 export function whenEditorMounted(documentId: string, signal: AbortSignal): Promise<void> {
   if (mountedEditors.has(documentId) || signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {

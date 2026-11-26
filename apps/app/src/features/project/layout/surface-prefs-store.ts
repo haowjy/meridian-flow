@@ -1,11 +1,3 @@
-/**
- * Device-local project chrome preferences.
- *
- * Widths belong to slots (the left rail and the side), so whatever surface sits in
- * a slot reads one width. Whether the sidebar and the side panel are open is one
- * choice for the device, whatever main shows. Placement is not stored here: it follows the kind
- * of item the address names.
- */
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -17,13 +9,10 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export type SlotWidths = Record<PanelSlotId, number>;
-/** Whether the left sidebar and the side panel are open. */
 export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
   "rail-l": { min: 220, max: 380 },
-  // Below this the side header's title, Swap with main and rename input compress into slivers.
-  // The shell caps the side at half the room beside the sidebar (`desktop-layout.ts`).
   side: { min: 280, max: 2400 },
 };
 
@@ -65,11 +54,6 @@ type Saved = Record<string, unknown>;
 const record = (value: unknown): Saved =>
   value && typeof value === "object" ? (value as Saved) : {};
 
-/**
- * Version 4 (`main`) kept a width and collapsed flag per surface and for the dock slot; version 5
- * kept open/closed per mode, which maps only where every mode agrees; version 6 named the side's
- * slot `dock`. What does not map is left out and `merge` fills it with its default.
- */
 function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurfacePrefsBlob {
   const blob = record(persisted);
   const kept = {
@@ -113,7 +97,6 @@ function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurf
   return {};
 }
 
-/** How an open document's chrome is set; shared across documents on this device. */
 export type DocumentPrefs = { propertiesOpen: boolean };
 export const DEFAULT_DOCUMENT_PREFS: DocumentPrefs = { propertiesOpen: false };
 
@@ -221,7 +204,6 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
   ),
 );
 
-/** Stable selector for surface preference actions (avoids re-renders on state changes). */
 export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
   return useProjectSurfacePrefsStore(
     useShallow((state) => ({

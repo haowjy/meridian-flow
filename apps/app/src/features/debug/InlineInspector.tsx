@@ -1,33 +1,3 @@
-/**
- * InlineInspector — alt+click any rendered turn/block to inspect its record.
- *
- * The "inline" half of the debug surface: instead of mirroring the conversation
- * in a side panel, you alt+click the REAL transcript and a small popover shows
- * the domain record (Turn or Block) as JSON, anchored at the cursor.
- *
- * Why this is a DOM-anchor consumer (and why scroll-to-turn is NOT):
- * - This only ever acts on elements that are CURRENTLY RENDERED — you click what
- *   you can see. `react-virtuoso` only mounts visible rows, but a click target
- *   is by definition mounted, so `data-turn-id` / `data-block-id` resolve fine.
- * - scroll-to-turn would need to reach OFF-SCREEN rows, which have no DOM node
- *   under virtualization — so it lives in `TurnList` via `scrollToIndex`, owned
- *   by the chat track, not here. (See archived dom-anchors-contract.)
- *
- * Key decisions:
- * - Mounted only from `DebugOverlay`, so it inherits the dev-only build gate AND
- *   the runtime enable toggle — alt+click does nothing unless the overlay is on.
- * - Capture-phase listener with `preventDefault` + `stopPropagation` so the
- *   inspect gesture never triggers the app's own click handlers.
- * - Read-only: resolves turn/block records from the thread store; model-request
- *   capture is lazy-loaded via owner-gated `GET …/debug/model-requests` (404 when
- *   capture is disabled on the server). Store snapshot is held in a ref so the
- *   stable listener always reads fresh data without re-subscribing.
- * - Block is preferred over turn when both match (most specific wins). When a
- *   record isn't in the store, we still show the DOM attributes so the id is
- *   never a dead end.
- * - i18n exception: DEV-only debug surface; inline English bypasses Lingui.
- */
-
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
 import type { Block, Turn, TurnContextPreview } from "@meridian/contracts/threads";
 import type { SyncedThread } from "@meridian/thread-client/sync";

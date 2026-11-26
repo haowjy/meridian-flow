@@ -1,5 +1,3 @@
-/** Public codec, plugin, and context contracts for @meridian/markup. */
-
 import type { SpelledHref } from "@meridian/contracts";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { PluggableList } from "unified";
@@ -26,23 +24,16 @@ export interface DocumentLinkScope {
   spellSource(attrs: { src: string; ref: string | null }): SpelledHref;
 }
 
-/** ProseMirror mark attribute bag — JSON-serializable values only. */
 export type MarkAttrs = Record<string, unknown>;
 
-/** Result of parsing text content into ProseMirror nodes. */
 export interface ParsedContent {
   blocks: PMNode[];
 }
 
 export interface ParseOptions {
-  /**
-   * Parse as if the content were spliced into a document where these containers are open:
-   * a block's `open` from `serializeBlocks`. The blocks carry the document's paths.
-   */
   within?: string | null;
 }
 
-/** Where one link occurrence was written, as offsets into the parsed text. */
 export interface OccurrenceSpan {
   start: number;
   end: number;
@@ -58,7 +49,6 @@ export interface ParsedContentWithSpans extends ParsedContent {
   spans: OccurrenceSpan[];
 }
 
-/** Context threaded through block/mark serialize calls. */
 export interface SerializeContext {
   schema: Schema;
   links: DocumentLinkScope;
@@ -66,49 +56,36 @@ export interface SerializeContext {
   leadsQuote?: boolean;
 }
 
-/** Context threaded through block/mark parse calls. */
 export interface ParseContext {
   schema: Schema;
 }
 
-/** Block-level: one registration per PM block node type. */
 export interface BlockCodec<ASTNode = unknown> {
-  /** ProseMirror node type name this handles. */
   name: string;
 
-  /** PM node → serialized markdown/MDX body. */
   serialize(node: PMNode, ctx: SerializeContext): string;
 
-  /** Parsed AST node → PM node (return null to skip/delegate). */
   parse(ast: ASTNode, ctx: ParseContext): PMNode | null;
 }
 
-/** Mark-level: one registration per PM mark type. */
 export interface MarkCodec<ASTNode = unknown> {
-  /** ProseMirror mark type name this handles. */
   name: string;
 
-  /** Mark attrs → inline syntax wrapper. */
   serialize(text: string, attrs: MarkAttrs, ctx: SerializeContext): string;
 
-  /** Inline AST node → mark attrs (return null to skip). */
   parse(ast: ASTNode, ctx: ParseContext): MarkAttrs | null;
 }
 
-/** A plugin bundles codecs with parser configuration and processing hooks. */
 export interface MarkupPlugin {
   blocks?: readonly BlockCodec[];
   marks?: readonly MarkCodec[];
   remarkPlugins?: PluggableList;
   preprocess?: (text: string) => string | PreparedSource;
-  /** Receives the preprocessed source matching AST positions, including internal reparses. */
   postParse?: (root: MdastRoot, source: string) => MdastRoot;
-  /** Format-specific wrapping applied after a block's ordinary codec. */
   postSerializeBlock?: (node: PMNode, serialized: string, ctx: SerializeContext) => string;
 }
 
 export interface BuildOptions {
-  /** Folder export only; ordinary and model output remain escaped. */
   export?: boolean;
   requireSchemaBlockCoverage?: boolean;
   requiredBlockNames?: readonly string[];
@@ -119,7 +96,6 @@ export interface MarkupCodecBuilder {
   build(options?: BuildOptions): MarkupCodec;
 }
 
-/** Assembled text ↔ ProseMirror codec. */
 export interface MarkupCodec {
   /** Pure syntax: every link `ref` is null and every href is as written. */
   parse(content: string, options?: ParseOptions): ParsedContent;
@@ -127,9 +103,7 @@ export interface MarkupCodec {
   parseWithSourceMap(content: string): ParsedContentWithSourceMap;
   serialize(blocks: PMNode[], links: DocumentLinkScope): string;
   serializeBlock(block: PMNode, links: DocumentLinkScope): string;
-  /** One entry per block: its Markdown as it sits in the document, and the gap before it. */
   serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): SerializedBlock[];
-  /** One canonical whole-source parse for presentation while Markdown is arriving. */
   parseStreaming(content: string, options?: MarkdownStreamOptions): MarkdownStreamResult;
 }
 
@@ -139,11 +113,9 @@ export interface MarkdownStreamOptions {
 
 export interface MarkdownStreamResult {
   readonly blocks: readonly PMNode[];
-  /** The exact code node whose fenced construct is awaiting more input. */
   readonly openCode: PMNode | null;
 }
 
-/** Original source offsets, never stored on document nodes. */
 export interface SourceRange {
   from: number;
   to: number;

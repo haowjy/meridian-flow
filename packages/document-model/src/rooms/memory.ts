@@ -8,25 +8,20 @@ import { decodeRoomVersion, encodeRoomVersion } from "../version.js";
 import { encodeChanges } from "../write.js";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "./document-rooms.js";
 
-/** A `document_snapshots` row as the in-memory adapter keeps it. */
 export interface SnapshotRow {
   snapshot: Uint8Array;
   frontiers: Frontiers;
   savedAt: number;
 }
 
-/** The in-memory adapter's transaction: rows and after-commit imports, applied by `transaction`. */
 export interface MemoryRoomTx {
   readonly rows: Map<string, Map<DocKey, SnapshotRow>>;
   readonly afterCommit: (() => void)[];
 }
 
 export interface MemoryDocumentRooms extends DocumentRooms<MemoryRoomTx> {
-  /** Run `work` in a transaction: its rows land and its imports run only if it resolves. */
   transaction<T>(work: (tx: MemoryRoomTx) => Promise<T>): Promise<T>;
-  /** The stored rows by room name, as a reload would read them. */
   rows(): ReadonlyMap<string, ReadonlyMap<DocKey, SnapshotRow>>;
-  /** Unload every room, freeing every doc. */
   close(): Promise<void>;
 }
 
@@ -69,8 +64,6 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       listener({ room: loaded.room, batch, origin });
   };
 
-  // As the Postgres adapter: what an import changed is saved and sent, and a restore the room's
-  // copy wrote on it (design §1, rule 1) goes out after the batch as the room's own.
   const landed = (loaded: Loaded, { changed, restore }: Imported) => {
     for (const key of changed) loaded.dirty.add(key);
     if (restore.length) relay(loaded, encodeChanges(restore), "server:restore");

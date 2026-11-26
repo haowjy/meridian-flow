@@ -13,7 +13,6 @@ import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { useAccountId } from "./context/account-feature-context";
 
-/** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
 export type WorkScope =
   | { status: "ready"; workId: string }
   | { status: "loading" | "error"; workId: null };
@@ -97,7 +96,6 @@ export function useScopeDraftOwner(
   const { works, deleted, noWork } = catalog;
   const thread = useDisplayedThread(projectId, chatThreadId);
   const snapshot = noWork ? { works: works ?? [], noWork } : null;
-  // A deleted Work stays the pick until it is purged, as the scope keeps it.
   const picked =
     workId && workId !== noWork?.id
       ? (workFromSnapshot(snapshot, workId) ?? deleted.find((work) => work.id === workId) ?? null)
@@ -111,7 +109,6 @@ export function useScopeDraftOwner(
     (drafts === null || drafts.some((draft) => draft.id === shown.draftId))
       ? shown.draftId
       : (drafts?.find((draft) => draft.isDefault)?.id ?? picked?.draftId ?? "");
-  // A Work still being created has its draft id from the browser that minted it.
   const creating = !picked && workId ? catalog.creations.get(workId)?.work.draftId : undefined;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
   const chatKey = picked || creating || !chatWork || !thread ? "" : thread.draftId;
@@ -127,7 +124,6 @@ export function useScopeDraftOwner(
   );
 }
 
-/** A Work's draft id, the Work created or still being created; null for none. */
 function workDraftId(works: ReturnType<typeof useWorks>, id: string): string | null {
   return (
     works.works?.find((work) => work.id === id)?.draftId ??

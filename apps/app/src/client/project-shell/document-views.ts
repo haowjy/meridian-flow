@@ -1,20 +1,9 @@
-/**
- * How this browser tab shows each document: Live or a draft, and which draft. One
- * record per (account, project) in sessionStorage, keyed by document id, holding only views that
- * differ from the default. Whichever host holds the document paints it from here.
- *
- * A document opens on Live. A view shows a draft only when the writer chose it (the version menu,
- * a review launch) or arrived at an address naming it. The view outlives no browser-tab session:
- * a remembered draft would hide a later draft of the same owner, because an item names the
- * draft and the document, not one draft.
- */
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 import { writeTreeVersionChoice } from "./store";
 
-/** The draft a page shows, by its id and item. Whether Review changes is on is the address's. */
 export type DraftPin = { draftId: string; itemKey: string };
 
 export type DocumentView = {
@@ -29,7 +18,6 @@ export type DocumentView = {
 
 export const DEFAULT_DOCUMENT_VIEW: DocumentView = { version: "live" };
 
-/** A pin replaces the draft shown; `null` drops it. Choosing Live drops the pin with it. */
 export type DocumentViewPatch = {
   version?: DocumentView["version"];
   pin?: DraftPin | null;

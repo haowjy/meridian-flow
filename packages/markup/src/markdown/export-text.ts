@@ -1,7 +1,3 @@
-/**
- * Export preserves literal wiki-style spans (wikilinks, embeds, callout
- * markers, footnotes), not other Markdown bracket syntax.
- */
 import { defaultHandlers, type Handle } from "mdast-util-to-markdown";
 import type { MdastText } from "../ast.js";
 
@@ -59,8 +55,6 @@ function verbatimSpans(node: object, value: string, info: { before: string; afte
   for (const match of value.matchAll(FOOTNOTE)) {
     const start = match.index;
     const end = start + match[0].length;
-    // `[^1](url)`, `[^1][x]`, `[a][^1]` and `![^1]` can still form a link or
-    // image, so those stay escaped.
     const previous = start ? value[start - 1] : info.before.at(-1);
     const next = end < value.length ? value[end] : info.after[0];
     if (previous !== "]" && previous !== "!" && next !== "(" && next !== "[")

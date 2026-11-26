@@ -1,4 +1,3 @@
-/** The Manage Works list: Work creation and lifecycle in Active, Archived, and Deleted tabs. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Plus } from "lucide-react";
@@ -42,7 +41,6 @@ import {
   workListEntries,
 } from "./work-list-model";
 
-/** The tab an Archive or Unarchive, or its retry, moves the Work to. */
 const archiveTarget = (operation: "archive" | "unarchive"): ArchiveTab =>
   operation === "archive" ? "archived" : "active";
 
@@ -80,7 +78,6 @@ export function WorkCollection({
       ),
     [works, deleted, creations, restoring, deletion.windows, failures],
   );
-  // Focus follows an Archive, or its retry, to the tab the Work moves to.
   const retry = ({ operation, workId, retry }: WorkRowFailure) =>
     operation === "archive" || operation === "unarchive"
       ? () => archiveFocus.follow(workId, archiveTarget(operation), retry())
@@ -250,17 +247,12 @@ export function WorkCollection({
 const workRowOf = (workId: string) =>
   document.querySelector<HTMLElement>(`[data-work-id="${CSS.escape(workId)}"]`);
 
-/**
- * A tab's rows. A Work deleted from this list keeps its place, struck through with its Undo; one
- * deleted elsewhere (its own page) shows its Undo at the top.
- */
 function WorkRows({
   list,
   entries,
   row,
   empty,
 }: {
-  /** Which tab's list, where a Work deleted from it keeps its place. */
   list: string;
   entries: readonly WorkListEntry[];
   row: (entry: WorkListEntry, place?: WorkPlace) => ReactNode;
@@ -309,7 +301,6 @@ function NewWorkButton({ onNew, variant }: { onNew: () => void; variant?: "outli
   );
 }
 
-/** The Active tab with no Work: what a Work is for, and the way to start one. */
 function StartWork({ onNew }: { onNew: () => void }) {
   return (
     <div className="flex flex-col items-center px-2 py-16 text-center sm:py-20">

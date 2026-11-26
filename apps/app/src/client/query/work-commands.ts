@@ -38,13 +38,11 @@ export type ReturnedWhy = Extract<Settlement, { rule: "returned" }>["why"];
 
 export type WorkOperation = keyof WorkCommandVariables;
 
-/** What a Work record stores: the project (a refresh needs it) and the writer's variables. */
 export type WorkCommandBody<Op extends WorkOperation = WorkOperation> = {
   projectId: string;
   variables: WorkCommandVariables[Op];
 };
 
-/** The server's names for the kinds, which `resolve` is told. */
 const KINDS = {
   create: "work_create",
   update: "work_update",
@@ -56,24 +54,17 @@ const KINDS = {
 
 type WorkCommandSpec<Op extends WorkOperation> = {
   request: (body: WorkCommandBody<Op>) => HttpRequest;
-  /** The Work as this command expects to leave it, before the server answers. */
   project: (
     work: Work | undefined,
     variables: WorkCommandVariables[Op],
     context: { at: string },
   ) => Work | undefined;
-  /** The Work with the committed fields this command owns, as the server returned them. */
   commit: (
     work: Work | undefined,
     variables: WorkCommandVariables[Op],
     committed: Work | undefined,
   ) => Work | undefined;
-  /** Whether the server snapshot already shows what this command asked for. */
   reached: (work: Work | undefined, variables: WorkCommandVariables[Op]) => boolean;
-  /**
-   * A refusal stays as a record for a surface to show. Otherwise its caller
-   * reports it from the command's own promise, and the record goes at once.
-   */
   keepsFailure: boolean;
 };
 
@@ -89,7 +80,6 @@ const workCommands = {
       path: apiProjectWorksPath(projectId),
       body: { id: workId, draftId, name, goal },
     }),
-    // Until the server has it, the Work shows only as a `WorkCreation`.
     project: (work) => work,
     commit: (work, _, committed) => work ?? committed,
     reached: (work) => !!work,
@@ -110,7 +100,6 @@ const workCommands = {
       ),
     reached: (work, { data }) =>
       !!work && Object.entries(data).every(([key, value]) => work[key as keyof Work] === value),
-    // A rename reopens its own field on failure.
     keepsFailure: false,
   },
   archive: {
@@ -161,7 +150,6 @@ const workCommands = {
   },
 } satisfies { [Op in WorkOperation]: WorkCommandSpec<Op> };
 
-/** Indexed through the mapped type so a generic operation keeps its own spec. */
 export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = workCommands;
 
 /**
@@ -182,32 +170,21 @@ export const workLanes = (
   ...(unsettledProjectCreation(records, projectId) ? [projectLane(projectId)] : []),
 ];
 
-/** The kind a Work operation is stored and delivered as. */
 export const workKindOf = (operation: WorkOperation): string => KINDS[operation];
 
 export const WORK_KINDS: ReadonlySet<string> = new Set(Object.values(KINDS));
 
-/** A Work command as the screens read it: a driver record in the Work's own terms. */
 type ViewOf<Op extends WorkOperation> = {
-  /** The driver record's id. */
   id: string;
   operation: Op;
   projectId: string;
   variables: WorkCommandVariables[Op];
   workId: string;
   state: CommandRecord["state"];
-  /** A read of the Works started after this settled `done` has included it. */
   observed: boolean;
   since: number;
-  /** The Work the server returned; set once the command is `done`. */
   committed?: Work;
-  /**
-   * Set when the server answered `done` but changed nothing because the Work is closed
-   * (`settled: [{ rule: "returned", why }]`). The result is then the Work as it stands, so
-   * projecting it puts the subject back.
-   */
   returned: ReturnedWhy | null;
-  /** The error code of the attempt the server turned away (`work_locked`, `work_not_found`). */
   code: string | null;
 };
 
@@ -217,16 +194,13 @@ const OPERATION_OF = Object.fromEntries(
   Object.entries(KINDS).map(([operation, kind]) => [kind, operation]),
 ) as Record<string, WorkOperation>;
 
-/** What a Work command's outcome carries: the Work route's own body, or the stored result of one. */
 type StoredWork = StoredResult & { work?: Work; refusal?: { error: string } };
 type WorkResult = WorkAnswer | StoredWork;
 
 const isAnswer = (result: WorkResult): result is WorkAnswer => "id" in result;
 
-/** A refusal stored with the command: the only one a Work command still has. */
 const locked = (result: unknown) => (result as StoredWork | undefined)?.refusal?.error === "locked";
 
-/** The Work view of a driver record; null for another domain's. */
 export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
   const operation = OPERATION_OF[record.kind];
   if (!operation) return null;
@@ -252,11 +226,6 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
   } as WorkCommandRecord;
 }
 
-/**
- * The Work kinds, and the binding that tells the driver which Work outcomes each read of this
- * tab's Works included. Every tab runs `onSettled` for each Work record it sees settle, and for
- * each settled record still in the journal as it opens.
- */
 export function workDomain(client: QueryClient): CommandDomain {
   // A record settled before the tab opened is in every read the tab starts; only the route's
   // threads and Works, read on the server first, may predate it.

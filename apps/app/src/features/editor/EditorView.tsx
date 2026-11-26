@@ -1,4 +1,3 @@
-/** The document body: one editor over the room its host bound, Live or a draft's fork. */
 import type { Filetype, TrackedSchemaType } from "@meridian/contracts/protocol";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -8,7 +7,6 @@ import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./
 
 export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   documentId: string;
-  /** The host-owned live/local session; absent while it opens. */
   session?: DocumentSession;
   bindingKey?: string;
   detached?: boolean;
@@ -16,7 +14,6 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   schemaType?: TrackedSchemaType;
   filetype?: Filetype;
   showCollaborationDecorations?: boolean;
-  /** The hosted document, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
   /** Main's document: the caret main gives goes to it, not to a side's or a sheet's. */
   inMain?: boolean;

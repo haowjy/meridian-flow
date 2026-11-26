@@ -1,16 +1,13 @@
-/** Active destination editors used by passage navigation. */
 import { fullHashForBlockId } from "@meridian/agent-edit";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import type { DocumentSession } from "./document-session";
 import { resolvePassage, type TextRange } from "./passage-resolution";
 
-/** The one on-screen editor of a document: a document is mounted in at most one host. */
 export type LiveEditorTarget = {
   editor: Editor;
   session: DocumentSession;
   localContentReady: boolean;
-  /** Registration lifetime. Retirement revokes every capability on this target. */
   signal: AbortSignal;
 };
 
@@ -77,10 +74,6 @@ export async function whenLiveEditor(
   });
 }
 
-/**
- * Mark a searched passage in the target's editor: the term inside the block the hash names, else
- * its one occurrence anywhere. Null when the editor is gone or didn't take the mark.
- */
 export function showPassageInTarget(
   target: LiveEditorTarget,
   passage: { blockHash: string; term: string },

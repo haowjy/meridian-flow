@@ -1,8 +1,3 @@
-/**
- * A draft owner's notice (`DraftNotices`) where a surface shows it: a Discard or an Apply, with
- * its Undo. `CommandNotice` is a surface's footer, which shows the
- * question an Apply all asks first in the notice's place while it is open.
- */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
@@ -23,7 +18,6 @@ import { documentDisplayName } from "@/features/chat/document-display-name";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftNotice } from "./draft-notices";
 
-/** Apply all's question: the sentence, a way out, and the command itself. */
 type CommandQuestion = {
   kind: "apply-all";
   sentence: ReactNode;
@@ -33,11 +27,6 @@ type CommandQuestion = {
   disabled: boolean;
 };
 
-/**
- * Apply all, which asks first when it deletes documents (`deleting`), naming them. `question`
- * goes to the surface's `CommandNotice`, in the footer below its files: opening it never moves a
- * row.
- */
 export function useApplyAllQuestion({
   deleting,
   apply,
@@ -75,7 +64,6 @@ export function useApplyAllQuestion({
   };
 }
 
-/** The owner's notice, wherever it was made; the caller shows it if it was made there. */
 export function useDraftNotice(draftId: string): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
@@ -85,10 +73,6 @@ export function useDraftNotice(draftId: string): DraftNotice | null {
   );
 }
 
-/**
- * The notice a surface acting on several drafts shows (`WorkDraftCommands.noticeKeys`): a press
- * ends the surface's last notice, so at most one of them holds one.
- */
 export function useSurfaceNotice(keys: readonly string[]): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
@@ -104,10 +88,6 @@ export function useSurfaceNotice(keys: readonly string[]): DraftNotice | null {
   );
 }
 
-/**
- * The notice a document's page shows on the draft it shows (`draftId`, null on Live), or with
- * `documentId` null the one the Recently opened landing shows (`DraftNotices.forDocument`).
- */
 export function useDocumentNotice(
   projectId: string,
   documentId: string | null,
@@ -121,7 +101,6 @@ export function useDocumentNotice(
   );
 }
 
-/** The Discard notice that can bring `documentId` back (`DraftNotices.discarding`). */
 export function useDiscardingNotice(documentId: string | null): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
@@ -139,7 +118,6 @@ export function CommandNotice({
   question?: CommandQuestion | null;
 }) {
   const footer = useRef<HTMLDivElement>(null);
-  // The group's menu may sit far above a long list: bring the question into view.
   const asking = question?.kind;
   useEffect(() => {
     if (asking) footer.current?.scrollIntoView?.({ block: "nearest" });
@@ -172,12 +150,6 @@ export function CommandNotice({
   );
 }
 
-/**
- * One notice: "Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss, or on a
- * document's page what an Apply did, "Change applied to Live." with Undo, since the page has no
- * rows to say it; elsewhere an Apply speaks only on its rows. An Undo that failed shows the pill
- * toast, and the notice keeps its Undo.
- */
 export function DraftNoticeLine({
   notice,
   className,
@@ -244,16 +216,10 @@ export function DraftNoticeLine({
 }
 
 type DraftNoticeWords = {
-  /** The row (a document's or folder's id) is one the notice speaks for. */
   held: (id: string) => boolean;
-  /** The word that row shows, or null. */
   word: (id: string) => ReactNode;
 };
 
-/**
- * A notice said on the rows it concerns (`RowWord`), for a list that has rows: a Discard's Undo
- * on every row it took, or each fact an Apply brought on its document's row.
- */
 const focused = new Set<number>();
 const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
 
@@ -262,7 +228,6 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   const trees = useProjectTrees(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
-    // An Apply's rows offer its Undo while it can be taken back: the notice ends with it.
     const visible = notice.wholeDraft ? notice.documents.slice(0, 1) : notice.documents;
     const documentOf = (id: string) => visible.find((each) => each.documentId === id);
     return {
@@ -307,12 +272,10 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   };
 }
 
-/** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
 export const noticeAction = (container: HTMLElement) =>
   container.querySelector<HTMLElement>("[data-command-notice] [data-row-word]:not(:disabled)") ??
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
-/** The question an Apply all asks first, naming every document it will delete. */
 function ApplyAllQuestion({ deleting }: { deleting: readonly string[] }) {
   useLingui();
   const deletes = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(

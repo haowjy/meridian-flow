@@ -6,12 +6,10 @@
  */
 import type { FileFacts, FileNode } from "./types.js";
 
-/** The file itself, then its ancestors, nearest first. */
 function nodeChain(facts: Pick<FileFacts, "self" | "ancestors">): FileNode[] {
   return facts.self ? [facts.self, ...facts.ancestors] : [...facts.ancestors];
 }
 
-/** Rules attached to the file or an ancestor, nearest first. */
 export function matchAncestors<R extends { node: FileNode }>(
   facts: Pick<FileFacts, "self" | "ancestors">,
   rules: readonly R[],

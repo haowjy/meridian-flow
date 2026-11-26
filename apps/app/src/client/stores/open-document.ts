@@ -1,7 +1,3 @@
-/**
- * The descriptor a document host paints from: identity, owner and kind, derived per view from
- * the project's tree, a draft row or the sources. Nothing stores it.
- */
 import type {
   ChatOwnerRef,
   ContextOwner,

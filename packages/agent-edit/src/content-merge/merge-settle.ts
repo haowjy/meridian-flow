@@ -1,18 +1,9 @@
-/**
- * Settling the inline merge: combining two sides' insertions at one point, and choosing the whitespace
- * before each merged word. Both work on `MergedTok`s and know nothing about hunks or blocks.
- */
 import type { Mark } from "prosemirror-model";
 import { coreKey, isBlockTok, isWordTok, SPACELESS, type Tok } from "../diff/tokens.js";
 import { equalOrderedMatches } from "../ordered-matching.js";
 import { BASE, DRAFT, isSubsequence, LIVE, type MergedTok, type Origin } from "./merge-hunks.js";
 import type { Fire } from "./rules.js";
 
-/**
- * The in-order words two token runs share, as index pairs. A shared punctuation mark counts only
- * inside a run of shared tokens that holds a word: two sentences that each end in "." are two
- * sentences, not one.
- */
 function sharedTokens(live: MergedTok[], draft: MergedTok[]) {
   const all = equalOrderedMatches(
     live.map((o) => coreKey(o.tok)),
@@ -25,7 +16,6 @@ function sharedTokens(live: MergedTok[], draft: MergedTok[]) {
   return all.filter((_, k) => keep[k]);
 }
 
-/** Word-by-word union of two token runs; a shared word is kept once, in the draft's form. */
 function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
   const matches = sharedTokens(live, draft);
   const out: MergedTok[] = [];
@@ -40,7 +30,6 @@ function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
   return out;
 }
 
-/** A run of tokens split into the part before the first paragraph start, and the paragraphs. */
 function splitParagraphs(run: MergedTok[]): { inline: MergedTok[]; paragraphs: MergedTok[][] } {
   const first = run.findIndex((o) => isBlockTok(o.tok));
   if (first < 0) return { inline: run, paragraphs: [] };
@@ -53,12 +42,6 @@ function splitParagraphs(run: MergedTok[]): { inline: MergedTok[]; paragraphs: M
   return { inline: run.slice(0, first), paragraphs };
 }
 
-/**
- * Both sides inserted text at one point and each run has words of its own, but fewer than the words
- * the two share: they are two versions of one text, such as the draft's copy of words live cut and
- * then restored, with a word changed. The merge treats it as a clash: the union would glue the
- * versions ("bright dim").
- */
 export function isOneTextTwice(live: MergedTok[], draft: MergedTok[]): boolean {
   const { inline: liveInline } = splitParagraphs(live);
   const { inline: draftInline } = splitParagraphs(draft);
@@ -95,7 +78,6 @@ export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fir
     liveParagraphs.map(paragraphKey),
     draftParagraphs.map(paragraphKey),
   )) {
-    // Between two identical paragraphs both sides' others stay, live's first.
     for (const p of liveParagraphs.slice(i, mi)) out.push(...p);
     for (const p of draftParagraphs.slice(j, mj)) out.push(...p);
     out.push(...draftParagraphs[mj]);
@@ -125,11 +107,6 @@ const whitespaceKey = (t: TextTok | null) =>
     ? null
     : `${t.ws}\u0001${t.wsMarks ? JSON.stringify(t.wsMarks.map((m) => m.toJSON())) : ""}`;
 
-/**
- * Whitespace before each token, taken from a version where the same two tokens are neighbours. Each
- * document's token arrays and the base-to-live and base-to-draft token maps say where a merged token
- * sits in that document.
- */
 export function settleWhitespace(
   merged: MergedTok[],
   docs: { base: Tok[]; live: Tok[]; draft: Tok[] },
@@ -153,7 +130,6 @@ export function settleWhitespace(
     const tok = current.tok;
     const pred = k > 0 ? merged[k - 1] : null;
     const atStart = !pred || isBlockTok(pred.tok);
-    // The token as each document has it, if it sits after the same neighbour there.
     const neighbours = ([BASE, LIVE, DRAFT] as const).map((doc): TextTok | null => {
       const toks = toksOf[doc];
       const at = indexIn(current, doc);

@@ -31,7 +31,6 @@ import { encodeRemoval, isOrderKey, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
 import { type DocVersion, plainVersion } from "./version.js";
 
-/** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
   key: DocKey;
   doc: LoroDoc;
@@ -39,10 +38,6 @@ export interface DocChange {
   after: Frontiers;
 }
 
-/**
- * The batch that sends `changes`: per doc, the update from its first change's `before` on (a doc
- * a transaction wrote twice sends once).
- */
 export function encodeChanges(changes: readonly DocChange[]): Uint8Array {
   const entries = new Map<DocKey, Uint8Array>();
   for (const change of changes)
@@ -50,7 +45,6 @@ export function encodeChanges(changes: readonly DocChange[]): Uint8Array {
   return encodeEnvelope(entries);
 }
 
-/** A doc's update from `before` on: the ops one change wrote. */
 function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
   if (before.length === 0) return doc.export({ mode: "update" });
   const from = doc.frontiersToVV(before);
@@ -62,9 +56,7 @@ function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
 }
 
 export interface WriteOptions {
-  /** Who the write is by (its commit message, `commitMessage`); none is the writer's own typing. */
   by?: CommitAuthor;
-  /** The commit origin local subscribers see (the binding skips its own). */
   origin?: string;
   random?: Random;
   /**
@@ -78,7 +70,6 @@ export interface WriteOptions {
    * write reads the docs as `readDocument` does with them, so it leaves them as they are.
    */
   kept?: ReadonlySet<BlockId>;
-  /** The read of the structure with `kept` as it is now, when the caller already took it. */
   view?: StructureView;
   /**
    * The pairs of blocks this write moved text between (a split, a join, a paste, a drop): the
@@ -167,7 +158,6 @@ export class StructureWriter {
       this.set("attrs", `${id}/${name}`, stored[name] ?? null);
   }
 
-  /** The read shows `id` under `parent` only because it broke a cycle there. */
   brokenCycle(id: BlockId, parent: BlockId | null): boolean {
     const read = this.view.parent(id);
     return read === parent && read !== this.view.value("parent", id);
@@ -203,7 +193,6 @@ export class StructureWriter {
   }
 }
 
-/** Whether `id` has other siblings before it in `written` than in `read`, among those in both. */
 function movedAmong(read: readonly BlockId[], written: readonly BlockId[], id: BlockId): boolean {
   const inRead = new Set(read);
   const inWritten = new Set(written);
@@ -229,7 +218,6 @@ function sameOrderAsBase(view: StructureView, id: BlockId): boolean {
   return true;
 }
 
-/** Set a comment's body (null deletes it), override-aware like every structure write. */
 export function setCommentBody(
   docs: RoomDocs,
   comment: string,
@@ -262,8 +250,6 @@ export function writeDocument(
 ): DocChange[] {
   const { shape } = docs;
   const known = options.previous && indexOf(options.previous);
-  // With `previous`, the structure is read only when the write changes it: a change to text alone
-  // reads and writes only the text docs it changed.
   let view = options.view;
   let writer: StructureWriter | undefined;
   const read = () => {
@@ -302,7 +288,6 @@ export function writeDocument(
           return [block.id, typeof order === "string" ? order : undefined] as const;
         }),
       );
-      // A key as read is left as stored: a kept block's is the key its record holds, and stays.
       for (const [id, key] of orderKeys(ids, current, random, read().kept))
         if (key !== current.get(id)) structure().set("order", id, key);
     }
@@ -344,7 +329,6 @@ export function writeDocument(
   if (docs.draft || writer || left) structure().dropMatchingOverrides(written);
   if (left)
     for (const id of read().shown) {
-      // A block under a removed block hides with it, and comes back with it.
       const parent = read().parent(id);
       const goesWithParent = typeof parent === "string" && !written.has(parent);
       if (!written.has(id) && !goesWithParent) structure().remove(id);
@@ -355,7 +339,6 @@ export function writeDocument(
   return changes;
 }
 
-/** `previous` by id: each stored block and its parent, and each parent's stored children in order. */
 function indexOf(previous: readonly ShapeBlock[]) {
   const blocks = new Map<BlockId, { block: ShapeBlock; parent: BlockId | null }>();
   const children = new Map<BlockId | null, BlockId[]>();
@@ -425,7 +408,6 @@ export function writeText(
   return sameValue(before, after) ? null : { key: id, doc, before, after };
 }
 
-/** The splice from `a` to `b`: common prefix and suffix, never splitting a surrogate pair. */
 function spliceOf(a: string, b: string): { index: number; remove: number; insert: number } {
   let { start, end } = commonEnds(a, b);
   if (start > 0 && isHighSurrogate(a.charCodeAt(start - 1))) start--;

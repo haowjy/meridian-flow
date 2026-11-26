@@ -1,9 +1,3 @@
-/**
- * The link mark on the wire: always a standard `[text](destination "title")`.
- *
- * The destination is whatever the serialize scope spells for the stored link;
- * the stored `ref` itself never reaches the wire, and parse never invents one.
- */
 import { storedLinkRef } from "@meridian/contracts";
 import type { MarkCodec } from "../../types.js";
 
@@ -46,12 +40,6 @@ export function markdownLinkDestination(href: string): string {
   return `<${value.replace(/[\\<>]/g, "\\$&")}>`;
 }
 
-/**
- * `[label](href)` for plain-text label and destination: what an app writes
- * where no ProseMirror document is serialized (a chat reference, a clipboard
- * fallback). Escapes only what could end the label or open a construct that
- * swallows its closing bracket.
- */
 export function formatMarkdownLink(label: string, href: string): string {
   const text = label.replace(/[\r\n]+/g, " ").replace(/[\\[\]`*<]/g, "\\$&");
   return `[${text}](${markdownLinkDestination(href)})`;

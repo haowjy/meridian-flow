@@ -1,4 +1,3 @@
-/** Drizzle adapter for restorable document trash and retention: emptying Trash, and the purge window. */
 import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meridian/contracts";
 import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
@@ -42,13 +41,11 @@ import {
 } from "./source-owner.js";
 import { loadDocumentAddresses, ownerOfDocument } from "./tree-addresses.js";
 
-/** Documents released in one run: bounds how long one run holds the database. */
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
 const ENTRY_PAGE = 100;
 const sourceProjects = alias(projects, "document_trash_source_projects");
 const requestProjects = alias(projects, "document_trash_request_projects");
 
-/** A project's Trash holds its own sources' nodes and its account's home folder's. */
 function projectTrashMember() {
   return ownedByRequestSql(
     { projectId: sourceOwnerProjectId, userId: sql`${contextSources.userId}` },
@@ -56,7 +53,6 @@ function projectTrashMember() {
   );
 }
 
-/** An unsettled drafted record on one of the nodes, or one that creates or moves under them. */
 function unsettledOn(doc: LoroDoc, nodes: ReadonlySet<string>): boolean {
   const settled = settlementsOf(doc);
   return listRecords(doc).some(
@@ -73,7 +69,6 @@ export function createDrizzleDocumentTrash(deps: {
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   purges: DocumentPurgeDisposal;
-  /** What collab ends with a purged document's content. */
   collab: DocumentContentEnd;
   tree: Pick<TreeListStore, "submit">;
 }): DocumentTrash {
@@ -89,7 +84,6 @@ export function createDrizzleDocumentTrash(deps: {
     },
   });
 
-  /** The Trash rows of a project: documents with a delete in force, in a living source. */
   const rows = async (projectId: ProjectId, documentIds?: readonly DocumentId[]) =>
     currentDrizzleDb(deps.db)
       .select({
@@ -119,11 +113,6 @@ export function createDrizzleDocumentTrash(deps: {
       )
       .orderBy(desc(treeNodes.trashedAt), desc(treeNodes.id));
 
-  /**
-   * The Trash entries of a project, newest first: each node a delete took whose folder that
-   * delete did not take too, so a folder stands for what its delete took and a document deleted
-   * on its own is its own entry. A document purged by a Discard is in no entry.
-   */
   const entryRows = (projectId: ProjectId) =>
     currentDrizzleDb(deps.db).execute<{
       id: string;
@@ -148,7 +137,6 @@ export function createDrizzleDocumentTrash(deps: {
         AND ${ownedByRequestSql({ projectId: sql`sp.id`, userId: sql`cs.user_id` }, { projectId: sql`rp.id`, accountId: sql`rp.user_id` })}
       ORDER BY t.trashed_at DESC, t.id DESC`);
 
-  /** The Works whose changes keep each document in Trash past its window. */
   const holdsOf = async (ids: readonly DocumentId[]) => {
     const held = new Map<DocumentId, Array<{ id: string; name: string }>>();
     if (ids.length === 0) return held;
@@ -219,7 +207,6 @@ export function createDrizzleDocumentTrash(deps: {
   async function listEntries(projectId: ProjectId): Promise<TrashEntryFacts[]> {
     const roots = await entryRows(projectId);
     if (roots.length === 0) return [];
-    // What each folder's delete took: its documents count, and hold it while a Work has changes.
     const taken = await currentDrizzleDb(deps.db).execute<{ trash_record: string; id: string }>(sql`
       SELECT t.trash_record, t.id::text AS id
       FROM ${treeNodes} t JOIN ${documents} d ON d.id = t.id
@@ -298,8 +285,6 @@ export function createDrizzleDocumentTrash(deps: {
         await deps.tree.submit({
           lists: [list],
           make: ([{ writer }]) => {
-            // The records admitted since the first submission may have put a node inside:
-            // the purge names exactly what this one found, and the replay rescues the rest.
             writer.purge("system", taken.entry, taken.nodes);
           },
         });
@@ -355,9 +340,6 @@ export function createDrizzleDocumentTrash(deps: {
       return await runInDrizzleTransaction(deps.db, async () => {
         const owner = await ownerOfDocument(tx(), documentId);
         if (!owner) return null;
-        // Its owner's list holds its create (no view shows it, so nothing moved it to another
-        // list) and is the one an Undo of the Discard reshows it from: a read of what is still
-        // unsettled, under the list's key.
         await deps.tree.submit({
           lists: [owner],
           make: (copies) => {
@@ -372,8 +354,6 @@ export function createDrizzleDocumentTrash(deps: {
           .limit(1);
         if (!still) return null;
         if ((await deps.purges.settle([documentId])) === "pending") return null;
-        // The list that holds its create says the content is gone: the browsers keeping a copy
-        // of a Discarded document delete it on this record, the one fact they can trust.
         await deps.tree.submit({
           lists: [owner],
           make: (copies) => {
@@ -457,8 +437,6 @@ export function createDrizzleDocumentTrash(deps: {
         count += released.documentIds.length;
         if (released.storageUrls.length) await objects.storageUrls(released.storageUrls);
       };
-      // One entry's purge is its own transaction: a failure stays logged each pass and does not
-      // stop the entries after it.
       const isolated = async (id: string, run: () => Promise<Released | null>) => {
         try {
           return await run();
@@ -496,7 +474,6 @@ export function createDrizzleDocumentTrash(deps: {
         const before = count;
         for (const { id } of candidates)
           await finish(await isolated(id, () => purgeUnviewed(id as DocumentId, cutoff)));
-        // A candidate that waits stays a candidate: stop when a pass releases nothing.
         if (count === before) break;
       }
       return count;

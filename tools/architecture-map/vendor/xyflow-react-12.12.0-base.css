@@ -1,7 +1,4 @@
-/* @xyflow/react 12.12.0 dist/base.css (MIT, webkid GmbH), formatted by Biome. Colours are overridden in styles/page.css. */
 /* biome-ignore-all lint/style/noDescendingSpecificity: vendored as upstream ships it */
-/* this will be exported as base.css and can be used for a basic styling */
-/* these are the necessary styles for React/Svelte Flow, they get used by base.css and style.css */
 .react-flow {
   direction: ltr;
 
@@ -160,7 +157,6 @@
   -moz-user-select: none;
   user-select: none;
 }
-/* Arrowhead marker styles - use CSS custom properties as default */
 .react-flow__arrowhead polyline {
   stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));
 }
@@ -443,7 +439,6 @@ svg.react-flow__connectionline {
 .react-flow__resize-control.top.right {
   cursor: nesw-resize;
 }
-/* handle styles */
 .react-flow__resize-control.handle {
   width: 5px;
   height: 5px;
@@ -480,7 +475,6 @@ svg.react-flow__connectionline {
 .react-flow__resize-control.handle.bottom.right {
   left: 100%;
 }
-/* line styles */
 .react-flow__resize-control.line {
   border-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));
   border-width: 0;

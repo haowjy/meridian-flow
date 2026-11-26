@@ -20,10 +20,6 @@ import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, EditOp, ProjectedBlock } from "../ports/model.js";
 import { fullHashForBlockId, uniqueHashPrefixes } from "./block-hash.js";
 
-/**
- * One call's document as agent-edit plans and writes on it: a room copy or a planning view, and the
- * commit options every write on it carries. The model reads it fresh after each write.
- */
 export class LoroDocument {
   private blocks: ShapeBlock[] | null = null;
   private hashes: Map<BlockId, string> | null = null;
@@ -32,17 +28,14 @@ export class LoroDocument {
   constructor(
     readonly docs: RoomDocs,
     readonly schema: Schema,
-    /** The author and origin of every write on this document (a chat's turn). */
     public write: WriteOptions = {},
   ) {}
 
-  /** The document's top-level blocks as every reader sees them. */
   top(): readonly ShapeBlock[] {
     this.blocks ??= readDocument(this.docs);
     return this.blocks;
   }
 
-  /** The display hash of each top-level block: the shortest unique prefix of its id's hash. */
   hashOf(id: BlockId): string {
     if (!this.hashes) {
       const ids = this.top().map((block) => block.id);
@@ -54,7 +47,6 @@ export class LoroDocument {
     return hash;
   }
 
-  /** The one ref of a block id, so a ref keeps its identity across reads. */
   ref(id: BlockId): LoroBlock {
     let ref = this.refs.get(id);
     if (!ref) {
@@ -87,16 +79,13 @@ export class LoroDocument {
     return result;
   }
 
-  /** Forget the read after the docs changed under it (an imported batch). */
   forget(): void {
     this.blocks = null;
     this.hashes = null;
   }
 }
 
-/** A top-level block of a `LoroDocument`, by id. */
 export interface LoroBlock {
-  /** Changes only when `LoroDocument.apply` stores this empty paragraph under a fresh id. */
   id: BlockId;
   readonly document: LoroDocument;
 }
@@ -148,12 +137,10 @@ export function loroModel(schema: Schema): LoroDocumentModel {
 
     getText: (ref) => nodeFor(blockOf(ref)).textContent,
 
-    // Each write commits as it applies; there is no transaction to open around it.
     transact: (_doc, fn) => fn(),
 
     insertBlocks(doc, after, parsed) {
       const document = loroDocumentOf(doc);
-      // The codec's blocks have no ids: this is where they become stored blocks.
       const blocks = blocksOf(
         schema.topNodeType.create(
           null,
@@ -226,7 +213,6 @@ function invalid(message: string) {
   return { ok: false as const, code: "invalid_write" as const, message };
 }
 
-/** The shape block at `path` (child indexes) under `block`, as the model's view read it. */
 function shapeAt(block: ShapeBlock, path: readonly number[]): ShapeBlock | undefined {
   let node: ShapeBlock | undefined = block;
   for (const index of path) {
@@ -236,7 +222,6 @@ function shapeAt(block: ShapeBlock, path: readonly number[]): ShapeBlock | undef
   return node;
 }
 
-/** One `EditOp`, addressed by path in the model's view, as a `ShapeOp` addressed by block id. */
 function shapeOp(schema: Schema, block: ShapeBlock, op: EditOp): ShapeOp | string {
   const node = shapeAt(block, op.path);
   if (!node) return "its path does not address a block";
@@ -287,10 +272,6 @@ function shapeBlockOf(schema: Schema, node: PMNode): ShapeBlock {
   return block;
 }
 
-/**
- * The stored style of a lowered format's key: the mark's name, or for a mark that may overlap
- * the Loro key (`comment_<id>` for a comment).
- */
 function styleKey(mark: string, attrs: Record<string, unknown> | null): string {
   if (mark === COMMENT_MARK && attrs?.id != null)
     return `${COMMENT_STYLE_PREFIX}${String(attrs.id)}`;

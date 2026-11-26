@@ -1,4 +1,3 @@
-/** Transactional execution for commands whose domain failures are returned as Results. */
 import { Err, type Result } from "../../../shared/result.js";
 import type {
   ContextCommandActiveDraft,

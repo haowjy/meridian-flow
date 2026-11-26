@@ -86,7 +86,6 @@ function databaseSlug(checkoutRealpath: string): string {
 }
 
 function liveLinkedWorktrees(repoRoot: string): string[] {
-  // Git still lists a worktree whose directory is gone.
   return listCheckoutPaths(repoRoot)
     .filter((worktree) => existsSync(path.join(worktree, ".git")) && !isMainCheckout(worktree))
     .map((worktree) => realpathSync(worktree));

@@ -1,17 +1,14 @@
-import type { CopySourceView } from "../ports/context-port.js";
-/**
- * The port's Copy: turn a request of canonical addresses into the adapters that own them and
- * hand the command its sources, destination and (for an identity destination) a way to
- * resolve it again under the locks. The router supplies address resolution; everything that
- * reads or writes is `copy-command.ts`.
- */
-
 import { isDraftedScheme, isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { CopyContextEntriesResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
-import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/context-port.js";
+import type {
+  ContextCopyRequest,
+  ContextError,
+  ContextScheme,
+  CopySourceView,
+} from "../ports/context-port.js";
 import {
   type ContextCopyCommandDeps,
   type CopyDestinationHandoff,
@@ -21,21 +18,17 @@ import {
 } from "./copy-command.js";
 import type { CopyCommands } from "./copy-commands.js";
 
-/** A canonical address resolved to the adapter that owns it. */
 export interface CopyEnd {
   adapter: ContextSchemeAdapter;
   canonical: string;
-  /** Scheme-relative path. */
   path: string;
   workScopeId: string | null;
 }
 
 export interface ContextCopyPortDeps {
-  /** Absent compositions refuse Copy typed. */
   copy: ContextCopyCommandDeps | undefined;
   commands: CopyCommands | undefined;
   commandTransaction: ContextCommandTransaction | undefined;
-  /** The router's one identity-destination resolver, re-run under the command's locks. */
   resolveIdentityDestination: (
     parent: { folderId: string; createFolders?: readonly string[] },
     options: {
@@ -47,7 +40,6 @@ export interface ContextCopyPortDeps {
 }
 
 export function createContextCopyPort(deps: ContextCopyPortDeps) {
-  /** A destination this scheme can copy into, or null when it has no copy capability. */
   const handoff = (
     end: CopyEnd,
     folder: { folderId: string; createFolders?: readonly string[] } | null,
@@ -72,10 +64,6 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       : null;
   };
 
-  /**
-   * A Copy into a folder the project no longer holds: nothing is copied. The answer is stored
-   * under the operation ID like every other, so a resend reads the same one.
-   */
   async function leftOutForMissingFolder(
     request: ContextCopyRequest,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {

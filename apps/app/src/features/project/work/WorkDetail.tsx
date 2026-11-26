@@ -1,8 +1,3 @@
-/**
- * One Work inside the Manage Works dialog: its name and the AI's status, and its goal. An archived
- * Work is view-only: one notice with Unarchive under the title, and no inline edits offered. Its
- * chats and files are the sidebar's, under that Work's scope.
- */
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect } from "react";
@@ -30,7 +25,6 @@ import { WorkHeading } from "./WorkTitles";
 // An update refused after a reload has no field left to reopen: it shows here, under the title.
 const HEADER_FAILURES = ["archive", "unarchive", "update"] as const;
 
-/** Asks before leaving with an unsaved goal edit; the dialog calls it for Back and close. */
 export type LeaveGuard = (leave: () => void, cancel: () => void) => void;
 
 export function WorkDetail({
@@ -44,10 +38,8 @@ export function WorkDetail({
   projectId: string;
   work: AddressableWork;
   deletion: WorkDeletion;
-  /** The Work was deleted from here: back to the list, where its Undo row is. */
   onDeleted: () => void;
   onGuard: (guard: LeaveGuard | null) => void;
-  /** Makes this Work the scope, the way the picker does. */
   onShowWork: (workId: string) => void;
 }) {
   const mutations = useWorkMutations(projectId);

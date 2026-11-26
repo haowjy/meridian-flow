@@ -5,13 +5,10 @@
  * reference for each key.
  */
 export default {
-  // The viewer's title, and the prefix of what it remembers in the browser.
   title: "Meridian architecture",
 
-  // The repository root, relative to this file. Every other path below is relative to it.
   root: "../..",
 
-  // Where "on GitHub" links go.
   repo: "haowjy/meridian-flow",
   draft: "main",
 
@@ -33,7 +30,6 @@ export default {
   // whose Opens is a page named after the directory (apps/server → server.md).
   services: { glob: "apps/*", page: "system.md" },
 
-  // Each directory matching `glob` (and holding `needs`, when given) must lie under some box's Paths.
   coverage: [
     { glob: "apps/*" },
     { glob: "packages/*", needs: "package.json" },
@@ -88,7 +84,6 @@ export default {
     pages: "*.context/*state-machine*.md",
   },
 
-  // Nav entries beyond the README's page list. Leave one out and the section is off.
   nav: { journeys: "Journeys", machines: "State machines", dependencies: "Dependencies" },
 
   // What the dev server shows in the viewer. true: any tracked file opens at its repo path.

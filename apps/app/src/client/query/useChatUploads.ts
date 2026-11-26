@@ -1,10 +1,3 @@
-/**
- * The files attached to one chat, newest first: what the chat's uploads dropdown lists.
- *
- * Names and addresses come from the chat's uploads tree, so a subagent's view passes its top
- * chat's id. When each file was attached comes from the
- * chat's uploads query, which a chat that is still being created answers with nothing.
- */
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getChatUploadFacts } from "@/client/api/projects-api";
@@ -22,14 +15,10 @@ import { useProjectTreeView } from "./useProjectTree";
 export type ChatUpload = {
   documentId: string;
   name: string;
-  /** The stored file type, for the row's icon. */
   fileType: string | null;
   uri: string;
-  /** When the file was attached; null until the server reports it. */
   attachedAt: string | null;
-  /** The `@` reference the composer inserts for it; null when its address is not stable yet. */
   reference: DocumentReference | null;
-  /** Whether the composer inserts it as an image (an asset) or a document reference. */
   fileKind: "document" | "asset";
 };
 

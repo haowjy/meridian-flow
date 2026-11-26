@@ -1,5 +1,3 @@
-/** Implements the editor chrome kernel and its scoped interactions. */
-
 import { type Editor, Extension } from "@tiptap/core";
 import { keydownHandler } from "@tiptap/pm/keymap";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -27,7 +25,6 @@ export const chromeKernelPluginKey = new PluginKey("meridianChromeKernel");
 
 type ChromeStorage = {
   chrome: EditorChrome;
-  /** @internal driven by this extension only. */
   controller: EditorChromeController;
 };
 
@@ -37,21 +34,17 @@ declare module "@tiptap/core" {
   }
 }
 
-/** The kernel for this editor, or null on an editor that never mounted it (standalone code surfaces). */
 export function getEditorChrome(editor: Editor | null | undefined): EditorChrome | null {
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[CHROME_EXTENSION_NAME]?.chrome ?? null;
 }
 
-/** Marks chrome that lives outside the editor's DOM — a portalled object row, a table grip — as still belonging to one editor, so a right-click on it goes through that editor's claim ladder instead of straight to the browser. */
 const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
 
-/** Spread onto portalled chrome so the kernel's router can still see it. */
 export function editorChromeAttributes(chrome: EditorChrome): Record<string, string> {
   return { [EDITOR_CHROME_ATTRIBUTE]: chrome.id };
 }
 
-/** Is this element part of THIS editor's portalled chrome? */
 export function isEditorChromeElement(chrome: EditorChrome, element: Element): boolean {
   return element.closest(`[${EDITOR_CHROME_ATTRIBUTE}="${chrome.id}"]`) !== null;
 }
@@ -294,7 +287,6 @@ export const ChromeKernelExtension = Extension.create({
           },
 
           handleDOMEvents: {
-            /** A non-primary press is the claim ladder's, and ProseMirror never hears it. */
             mousedown(_view, event) {
               if (event.button !== 0) return true;
               sweepOrigin = { x: event.clientX, y: event.clientY };
@@ -321,7 +313,6 @@ export const ChromeKernelExtension = Extension.create({
   },
 });
 
-/** The claim decision, synchronous inside the event because `preventDefault` is worthless after it returns. */
 function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEvent): boolean {
   const element = event.target;
   if (!(element instanceof Element)) return false;

@@ -1,5 +1,3 @@
-/** Writer-facing location of an open tab, shared by the identity bar's surfaces. */
-
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
@@ -7,22 +5,17 @@ import { parentPath as parentFolderPath } from "./file-suggestions";
 
 export type TabLocation = {
   scheme: ProjectContextTreeScheme;
-  /** Tree-style parent folder path: `/` for a scheme root. */
   parentPath: string;
   folders: string[];
   leaf: string;
   provisional: boolean;
-  /** Whether the identity bar's typed surfaces may edit this tab. */
   editable: boolean;
-  /** Server path (leading slash), or null for a not-yet-materialized tab. */
   path: string | null;
 } & OpenDocumentOwner;
 
 export type IdentityDestination = {
-  /** The folder (or source) the writer picked; absent when the folder path says it. */
   parentId?: string;
   scheme: ProjectContextTreeScheme;
-  /** Tree-style parent folder path: `/`, `/Act 2`. */
   folderPath: string;
 } & OpenDocumentOwner;
 
@@ -31,7 +24,6 @@ export type DesiredIdentity = {
   name: string;
 };
 
-/** Resolve a surface's folder choice into the complete final destination. */
 export function identityDestination(
   location: TabLocation,
   editorWorkId: string | null,
@@ -58,7 +50,6 @@ export function identityDestination(
   };
 }
 
-/** Where a tab's document sits; a tab with no path yet is in Unfiled. */
 export function tabLocation(tab: OpenDocument): TabLocation {
   if (tab.kind === "new") {
     return {

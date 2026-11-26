@@ -1,16 +1,3 @@
-/**
- * DocumentToolbar — the editor's one persistent chrome row.
- *
- * It carries the document-level verbs and never contextual ones: the geometry
- * is fixed, so controls never move, vanish, or gain neighbors as the caret
- * travels. Contextual verbs belong to the surfaces anchored to the
- * block that owns them. `EditorSurfaceFrame` docks this row above the scroll
- * area, prose-aligned; the row itself is bare, with no card chrome.
- *
- * Everything a control knows about its own state comes from
- * `toolbar-commands.ts`: lit when applied, greyed with a reason when it cannot
- * apply. This file renders that matrix and dispatches; it decides nothing.
- */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { TrackedSchemaType } from "@meridian/contracts/protocol";
@@ -61,12 +48,9 @@ import { blockedReasonMessage, toolbarControlLabel } from "./toolbar-copy";
 
 export type DocumentToolbarProps = {
   editor: Editor | null;
-  /** False behind a schema fence or a read-only host: every verb greys. */
   editable?: boolean;
-  /** A code file takes no figures; the control greys rather than lying. */
   schemaType?: TrackedSchemaType;
   onUploadFigure?: () => void;
-  /** Uploads need a project to own the asset; without one the control greys. */
   uploadAvailable?: boolean;
 };
 
@@ -124,8 +108,6 @@ export const DocumentToolbar = memo(function DocumentToolbar({
             <Redo2 aria-hidden />
           </ToolbarControl>
         </div>
-        {/* History is the writer's recovery, not a formatting verb; the rule
-          keeps it legible as its own group without adding a second row. */}
         <span className="mx-0.5 h-3.5 w-px shrink-0 bg-border-subtle" aria-hidden />
         <div className="flex shrink-0 flex-wrap items-center gap-1">
           <ToolbarMenuControl
@@ -174,9 +156,6 @@ export const DocumentToolbar = memo(function DocumentToolbar({
           >
             <List aria-hidden />
           </ToolbarControl>
-          {/* The link form is not the toolbar's surface: it belongs to the
-            link lane and opens over the writer's own words, wherever they are.
-            The button is one more door into it, beside Ctrl+K and Add link. */}
           <ToolbarControl id="link" state={controls.link} onPress={() => openLinkForm(editor)}>
             <LinkIcon aria-hidden />
           </ToolbarControl>
@@ -248,7 +227,6 @@ const ALIGNMENT_ICONS = {
   right: AlignRight,
 } as const;
 
-/** A control that opens a menu of values, each a verb on the selection. */
 function ToolbarMenuControl({
   editor,
   id,
@@ -259,14 +237,11 @@ function ToolbarMenuControl({
   editor: Editor | null;
   id: ToolbarControlId;
   state: ToolbarControlState;
-  /** What the button wears: the value the selection already has. */
   icon: LucideIcon;
   children: (editor: Editor) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const label = toolbarControlLabel(id);
-  // Without an editor the matrix already says "still opening"; naming it here
-  // is what lets the rest of this component assume one.
   const blockedReason = blockedReasonMessage(id, editor ? state.blockedBy : "editor-loading");
 
   // A greyed control opens nothing, so no menu is composed around it at all;
@@ -326,8 +301,6 @@ function MenuTrigger({
         aria-label={label}
         aria-pressed={active || undefined}
         aria-disabled={blocked || undefined}
-        // Wider than the icon buttons by exactly the chevron it carries: the
-        // dropdown says so before it is opened.
         className={cn(
           "gap-px px-1 has-[>svg]:px-1 coarse:min-w-11",
           toolbarControlClass({ active, blocked }),

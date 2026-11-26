@@ -1,4 +1,3 @@
-/** live-lineage-api — HTTP client for server-owned turn live-lineage reads. */
 import type { ListTurnLiveLineageResponse } from "@meridian/contracts/protocol";
 import { apiThreadTurnLiveLineagePath } from "@meridian/contracts/protocol";
 

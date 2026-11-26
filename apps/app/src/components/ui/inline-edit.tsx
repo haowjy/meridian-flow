@@ -1,14 +1,3 @@
-/**
- * Inline edit fields — the one way text is edited in place.
- *
- * The field inherits the font, size, weight, tracking and colour of the text it
- * replaces and has no padding or border, so the words stay exactly where they
- * were. `InlineEditInput` sizes itself to its text (it never stretches across
- * its row); `InlineEditTextarea` fills its column and grows with its content.
- * The visible field edge comes from the `inline-edit-field` utility's
- * box-shadow bleed, which takes no layout space. Pair resting text with the
- * `inline-edit-trigger` utility for the matching hover hint.
- */
 import type * as React from "react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";

@@ -1,8 +1,3 @@
-/**
- * In-memory `DocumentLinksPort` over a fixed catalog: agent-edit tests and the
- * server's in-memory composition. It is a real adapter, not a stub; a test
- * moves a document by changing the catalog, never by writing to a holder.
- */
 import {
   type CatalogDocument,
   type CatalogFolder,
@@ -28,34 +23,20 @@ import { storedLinkKeys } from "@meridian/markup/stored-links";
 import type { DocumentLinksPort } from "./document-links.js";
 
 export interface StaticCatalogDocument extends CatalogDocument {
-  /** An image the shipped `asset:` rule may claim. */
   image?: boolean;
 }
 
 export interface StaticDocumentCatalog {
   projectId: string;
-  /** Read at every call, so replacing an entry moves, deletes or creates a document. */
   documents: readonly StaticCatalogDocument[];
-  /** Read at every call, so replacing an entry moves or removes a folder. */
   folders?: readonly CatalogFolder[];
-  /** Ahead id → settled document id. */
   settlements?: ReadonlyMap<string, string>;
 }
 
 export interface StaticDocumentLinksOptions {
-  /**
-   * Answer every lookup as loaded. Only for compositions whose doors never
-   * prepare through this port (the server's in-memory scopes); tests keep the
-   * default, so a door that forgot to prepare a key sees a real snapshot miss.
-   */
   preloaded?: boolean;
 }
 
-/**
- * Keys loaded by `prepare`, the way the server's batched loader loads them:
- * documents by id, settlements by ahead id, and documents at addresses.
- * Unlike a server snapshot it lives as long as the port, so it is never finer.
- */
 interface Loaded {
   ids: Set<string>;
   folderIds: Set<string>;
@@ -115,7 +96,6 @@ export function createStaticDocumentLinks(
         const settled = catalog.settlements?.get(parsed.aheadId);
         if (settled) loaded.ids.add(settled);
       }
-      // A deleted picture keeps its path only while no other image holds it.
       for (const id of loaded.ids) {
         const entry = byId(id);
         if (entry?.image && entry.presence === "deleted") loaded.addresses.add(entry.uri);
@@ -127,7 +107,6 @@ export function createStaticDocumentLinks(
       )) {
         loaded[target.kind === "folder" ? "folderAddresses" : "addresses"].add(target.uri);
       }
-      // A row an address load found is known by id too, as the server remembers it.
       const tree = catalogTree(catalog.documents, catalog.folders);
       for (const uri of loaded.addresses) {
         const found = tree.documentAt(uri);
@@ -152,7 +131,6 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
   const byId = (id: string) => catalog.documents.find((entry) => entry.documentId === id) ?? null;
   const folderById = (id: string) =>
     catalog.folders?.find((entry) => entry.folderId === id) ?? null;
-  // `undefined` is a snapshot miss: the key was never prepared.
   const ifLoaded = <T>(set: keyof Loaded, key: string, answer: () => T): T | undefined =>
     !loaded || loaded[set].has(key) ? answer() : undefined;
   return {
@@ -179,7 +157,6 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
         const path = parsed.ok && parsed.value.scheme === "manuscript" ? parsed.value.path : null;
         if (path !== null && entry.presence !== "deleted") return { kind: "path", path };
         if (path !== null) {
-          // A deleted picture keeps its path only while no other image holds it.
           if (loaded && !loaded.addresses.has(entry.uri)) return undefined;
           const images = catalog.documents.filter((each) => each.image && each.uri === entry.uri);
           if (images.length === 1) return { kind: "path", path };
@@ -203,13 +180,6 @@ type CatalogNode = Walkable & {
   folder?: CatalogFolder;
 };
 
-/**
- * The catalog's addresses read as the tree reads them: folders are walked by segment (a document
- * `Kael` beside a folder `Kael~f051` leaves `Kael/Note` in the folder), the leaf is the exact name
- * or its alias, else the one document that differs only by a left-off extension. The catalog has
- * addresses, not parents, so the tree is rebuilt from them: a folder it lists keeps its id, and a
- * directory it does not list stands in as a folder whose id begins with its `~` suffix.
- */
 function catalogTree(
   documents: readonly StaticCatalogDocument[],
   folders: readonly CatalogFolder[] = [],
@@ -250,7 +220,6 @@ function catalogTree(
       document,
     });
   }
-  /** The folder reached by walking `segments` at folder level from the root of the address's source. */
   const walk = (source: string, segments: readonly string[]): CatalogNode | undefined => {
     let at = dirs.get(`${source}\0`);
     for (const segment of segments) {

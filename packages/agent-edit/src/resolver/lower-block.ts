@@ -151,7 +151,6 @@ function changedAttrs(
     return changed;
   }
   if (candidates.length === 0) return changed;
-  // A node the codec's round trip has no counterpart of shows nothing: write no attribute.
   const shown = shownOf();
   if (!shown) return changed;
   for (const key of candidates)
@@ -174,7 +173,6 @@ function shownNode(walk: Walk, path: readonly number[]): Block | null {
   return node ?? null;
 }
 
-/** The `ordinal`th inline atom of the textblock at `path` in the codec's round trip. */
 function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block | null {
   const atoms: Block[] = [];
   shownNode(walk, path)?.forEach((child) => {
@@ -200,7 +198,6 @@ function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly 
 interface LoweredText {
   splices: TextSplice[];
   formats: FormatRange[];
-  /** Inline atoms the model kept, by unit in the view and in the model's text. */
   kept: Array<{ unit: number; modelUnit: number; ordinal: number }>;
 }
 
@@ -325,7 +322,6 @@ function textOps(
       for (let unit = base; unit < hunk.from; unit += 1) {
         const mine = marksA[unit];
         const theirs = marksB[model + unit - base];
-        // An atom carries no marks.
         if (mine === null || theirs === null) {
           open = undefined;
           continue;
@@ -358,7 +354,6 @@ function textOps(
   return { splices, formats, kept };
 }
 
-/** The model's units [at, end) as a splice's content, each text unit with its carried marks. */
 function newText(after: Block, { at, end }: Hunk, carried: ReadonlyArray<readonly Mark[]>) {
   const nodes: Block[] = [];
   let unit = at;
@@ -453,7 +448,6 @@ function keepOneSpace(
     const floor = prev ? prev.to + (deletes(prev) ? 0 : 1) : window.from;
     const ceiling = next ? next.from - (deletes(next) ? 0 : 1) : window.to;
     let { from, to, at, end } = hunk;
-    // Take in the spaces on both sides, then give back the side that stays: the text is the same.
     while (from > floor && isSpace(a[from - 1])) [from, at] = [from - 1, at - 1];
     while (to < ceiling && isSpace(a[to])) [to, end] = [to + 1, end + 1];
     const keepsBefore = !isSpace(a[from]) || sameEditor(from - 1, from);
@@ -513,7 +507,6 @@ function carriedMarks(
           for (const mark of hidden(unit)) set = mark.addToSet(set);
       for (let unit = word.from; unit < word.to; unit += 1) out[unit] = set;
     }
-    // The gaps: before the first new word, between each two, after the last.
     for (let j = 0; j <= news.length; j += 1) {
       const gapFrom = j > 0 ? news[j - 1].to : change.at;
       const gapTo = j < news.length ? news[j].from : change.end;
@@ -523,7 +516,6 @@ function carriedMarks(
       let set = both(left, right);
       const l = j > 0 ? sources[j - 1].at(-1) : -1;
       const r = j < news.length ? sources[j][0] : olds.length;
-      // Between two new words that stand for one old word there is no old space.
       if (l === undefined || r === undefined || l < r) {
         const oldFrom = l === undefined || l < 0 ? change.from : olds[l].to;
         const oldTo = r === undefined || r >= olds.length ? change.to : olds[r].from;
@@ -537,7 +529,6 @@ function carriedMarks(
   return out;
 }
 
-/** The segments of `units` [from, to) that are not whitespace: words, punctuation, atoms. */
 function wordsIn(units: string, from: number, to: number): TextWindow[] {
   const found: TextWindow[] = [];
   let at = from;
@@ -548,7 +539,6 @@ function wordsIn(units: string, from: number, to: number): TextWindow[] {
   return found;
 }
 
-/** The word diff of two unit strings as hunks: base units [from, to) become the model's [at, end). */
 function wordHunks(a: string, b: string): Hunk[] {
   const hunks: Hunk[] = [];
   let base = 0;
@@ -628,7 +618,6 @@ function retainShared(
   return out;
 }
 
-/** The marks on each unit of a textblock; null for an inline atom, which carries none. */
 type Marks = Array<readonly Mark[] | null>;
 
 function unitMarks(block: Block): Marks {
@@ -676,9 +665,7 @@ function unitWindows(
 
 interface TextblockText {
   node: Block;
-  /** The textblock's path in the block, joined. */
   key: string;
-  /** Offset of its first character in the block's `textContent`. */
   start: number;
   length: number;
 }

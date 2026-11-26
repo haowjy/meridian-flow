@@ -111,8 +111,6 @@ describe("contentMerge", () => {
     expect(result.orderConflict).toBe(false);
   });
 
-  // Live cut " and the moon was bright", the writer undid the cut, and the draft's replacement of
-  // `bright` by `dim` kept its own copy of the cut words: two versions of one text at one point.
   it("keeps the draft's version of words live restored, without both copies", () => {
     const [base, live, draft] = [
       "p#a:The river was cold.",
@@ -148,9 +146,6 @@ describe("contentMerge", () => {
     ).toEqual([]);
   });
 
-  // Risk: a concurrent edit script drops, invents, duplicates or resurrects a word, or breaks
-  // idempotence, identical-change collapse or the degenerate cases. Placement misses outside the
-  // spec's envelope (section 9) are excluded; safety failures inside it are not allowed.
   it("keeps every word across 200 seeded concurrent edit scripts", () => {
     const suites: GenOptions[] = [
       {},

@@ -184,7 +184,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
   });
   const ordinals = createDrizzleWriteOrdinals(deps.db);
-  // Removal records, read by the tools that answer a call on a removed document.
   const removalRecords = deps.removals;
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(deps.db),
@@ -333,7 +332,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
   });
   const drafts = createWorkDraftReviewService({
-    // Press rows, deleted drafts and empty forks share the 30-day retention pass.
     purgeDiscards: async () =>
       (await discardPurge.purge()) +
       (await ownDrafts.purgeDeleted()) +

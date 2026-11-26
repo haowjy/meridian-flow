@@ -44,7 +44,6 @@ function keepsBlocks(transaction: Transaction): boolean {
   });
 }
 
-/** A change the Loro binding applied: a peer's, an undo or the first load. Its blocks already have their ids. */
 function fromBinding(transaction: Transaction): boolean {
   return transaction.getMeta(loroSyncKey) === REMOTE_META;
 }
@@ -57,7 +56,6 @@ function fromBinding(transaction: Transaction): boolean {
 export function fixBlockIds(transaction: Transaction, oldState: EditorState): void {
   if (!transaction.docChanged || fromBinding(transaction) || keepsBlocks(transaction)) return;
 
-  // Where each id's block from the old document stands now.
   const owners = new Map<string, number>();
   for (const { node, pos } of blocksOf(oldState.doc)) {
     const id = node.attrs.id as string | null;

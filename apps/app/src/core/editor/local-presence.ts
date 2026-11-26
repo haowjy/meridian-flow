@@ -12,49 +12,29 @@
  */
 import { EphemeralStore, type Value } from "loro-crdt";
 
-/** One copy's fields, as plain JSON the ephemeral store carries. */
 export type PeerState = { [field: string]: Value };
 
-/**
- * Peers as a publisher may see them: who else is here, what they say, and when that changes. It
- * cannot write; `setField` does that.
- */
 export type PeerAwareness = {
-  /** This copy's own key. */
   readonly clientID: string;
   getStates(): Map<string, PeerState>;
-  /** Called when a peer's state changes (an import or an expiry), never for this copy's own. */
   on(event: "change", handler: () => void): void;
   off(event: "change", handler: () => void): void;
 };
 
-/**
- * What a publisher holds: the channel it reads peers from, and its own field to write. Not
- * `suspend`/`resume`: whether this client is visible is the session's answer.
- */
 export type LocalPresenceFields = {
   readonly peers: PeerAwareness;
-  /** Publish one field of this client's presence. Accepted while suspended. */
   setField: (field: string, value: Value) => void;
-  /** This client's fields as it means them, on the wire or not. */
   localState: () => PeerState | null;
-  /**
-   * Which editor wrote the caret now on the wire. One slot for the session, so views of one
-   * session can tell whose caret it is (see `gateCaretPresence`).
-   */
   readonly caretPublisher: { current: object | null };
 };
 
-/** The whole of one client's presence, as its owner holds it. */
 export type LocalPresence = LocalPresenceFields & {
-  /** The store the transport carries. */
   readonly store: EphemeralStore;
   suspend: () => void;
   resume: () => void;
   release: () => void;
 };
 
-/** A peer's entry expires this long after its last update; carets refresh it while shown. */
 const PRESENCE_TIMEOUT_MS = 30_000;
 
 export function createLocalPresence(self: string): LocalPresence {

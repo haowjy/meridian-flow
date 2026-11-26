@@ -1,14 +1,3 @@
-/**
- * ContextViewerHost — read-only viewer surface for context viewer tabs.
- *
- * Fetches the active file through `useProjectContextRead` (the signed-URL
- * read route), chooses the matching viewer body for its kind, and composes the
- * shared `ReadOnlyViewerFrame`. Every host's own chrome names the file: the
- * main's title chip, the side header, the phone's top bar, the upload dialog's
- * title. From a pane only images, PDFs and binaries land here, since a text file
- * mounts the editor; a chat's upload, text included, always opens here.
- */
-
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle } from "lucide-react";
 import { documentDownloadUrl } from "@/client/api/figures-api";
@@ -25,9 +14,7 @@ import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
-  /** A viewer tab, or a chat's text upload, which opens read-only here and never in the editor. */
   document: ServerOpenDocument;
-  /** Main's file: once read, it is main's surface (`MainSurface`). */
   inMain?: boolean;
 };
 
@@ -71,9 +58,6 @@ function ViewerContent({
     return null;
   }
 
-  // Tracked-classified viewer tabs use the same read-only text preview in the
-  // Editor host. Collaborative editing remains in the tracked editor
-  // mount and does not render through this component.
   const kind = previewKind(document, read.data);
   const binary = read.data.kind === "binary" ? read.data : null;
 

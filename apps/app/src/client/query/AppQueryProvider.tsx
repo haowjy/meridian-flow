@@ -5,16 +5,10 @@ import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 
 export type AppQueryProviderProps = {
-  /** From `_authenticated` loader — `null` triggers client fetch. */
   initialProjects: Project[] | null;
   children: ReactNode;
 };
 
-/**
- * Single QueryClient for the authenticated shell. Seeds the project list
- * from the SSR loader; stores read the mounted client through React Query
- * context instead of a module singleton.
- */
 export function AppQueryProvider({ initialProjects, children }: AppQueryProviderProps) {
   const [queryClient] = useState(() => {
     const client = new QueryClient({

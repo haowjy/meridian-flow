@@ -18,7 +18,6 @@ export type ResolvedEdit = {
   pieceOf?: BlockRef;
 } & (
   | {
-      /** The smallest changes to one block: its text, formatting, attributes and nodes. */
       kind: "ops";
       block: BlockRef;
       ops: readonly EditOp[];

@@ -1,9 +1,3 @@
-/**
- * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
- * for addresses with no document yet, settled by the first live document the tree's
- * walk reaches at the address (or at registration, if one is already there). Binding
- * is global and once; drafts store nothing about ahead refs.
- */
 import type { ContextSourceId } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
@@ -47,11 +41,9 @@ import {
   UnresolvableAddressError,
 } from "./document-address.js";
 
-/** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
 export type LinkAheadRegistryDeps = { eventSink?: EventSink };
 
-/** Registry rows at exactly this address. */
 function atAddress(address: Address) {
   return and(
     address.owner.kind === "project"
@@ -67,7 +59,6 @@ function atAddress(address: Address) {
     address.chatThreadId
       ? eq(linkAheadRefs.chatThreadId, address.chatThreadId)
       : isNull(linkAheadRefs.chatThreadId),
-    // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
     sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
     eq(linkAheadRefs.path, address.path),
   );
@@ -205,8 +196,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       root_thread_id: address.rootThreadId ?? null,
       chat_thread_id: address.chatThreadId ?? null,
     }));
-    // Every unsettled ref in an arrival's source may now reach it: a link's path is read through
-    // the tree's walk (`Kael/Note` reaches a Note in a twin folder), not compared as text.
     const pending = await currentDrizzleDb(this.db).execute<{
       ahead_id: string;
       path: string;
@@ -313,7 +302,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return found.kind === "found" && found.node.kind === "document" ? found.node.document.id : null;
   }
 
-  /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */
   private async settle(address: Address, documentId: string, aheadId?: string): Promise<number> {
     const rows = await currentDrizzleDb(this.db)
       .update(linkAheadRefs)

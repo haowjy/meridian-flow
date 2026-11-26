@@ -72,8 +72,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const narrowHold = useNarrowWindowHold();
   const panels = useDesktopPanels(narrowHold.held);
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
-  // The single writer-driven open/close entry for a panel. Opening a panel also releases the
-  // narrow-window hold on it, so the control can never write a pref that changes nothing.
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.openByHand(slot);
     setSlotOpen(slot, open);
@@ -90,7 +88,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     foldSidebar();
     focusMain();
   });
-  // An ask to show a sidebar pane (Manage Agents, the chat strip's "more") opens the sidebar.
   const asked = useSidebarTabs((state) => state.asked);
   const seenAsk = useRef(asked);
   useEffect(() => {
@@ -98,7 +95,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     seenAsk.current = asked;
     if (asked && !panels["rail-l"].open) setSlotOpenHere("rail-l", true);
   });
-  // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {
@@ -121,10 +117,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const trashedId = useTrashNavigation().shown;
   const trashed = useDocumentStanding(projectId, trashedId ?? null);
   const trashedName = trashed.kind === "in-trash" ? trashed.node.name : undefined;
-  // A masked address paints no document: a removed one shows its removed state in place.
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.document : null;
 
-  // Each mounted document at its host's current descriptor, newest on screen first.
   const shown = useShownDocuments(projectId);
   const side = useSideItem();
   const sideTab = side.item?.kind === "document" ? side.document : null;
@@ -187,7 +181,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatThread = useHostChatId();
   const chatOnScreen = useChatOnScreen();
-  // Recent chats is the chat lane's page with no chat: main shows it in its own host.
   const chatRecents = mainChat?.kind === "chat-recents";
   const chatInMain = mainChat !== null && !chatRecents;
   const chatHost: SlotGridHost = {
@@ -268,8 +261,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ...documentHosts,
     chatHost,
   ];
-  // Main's own page when it holds no document or chat: its lane's recent page, a removed
-  // address, or the Trash.
   if (chatRecents || (!mainChat && !mainTab))
     hosts.push({
       key: "main",
@@ -356,7 +347,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-/** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
   const { pending, failed } = useSideItem();
   const place = usePlace();
@@ -365,7 +355,6 @@ function SideEmpty({ projectId }: { projectId: string }) {
       <SideEmptyHeader projectId={projectId} />
       <div className={cn(pageSheetClass(true), "flex min-h-0 flex-1")}>
         {pending || failed ? null : (
-          // The dropdown's inset, so the list reads the same in both places.
           <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
             <DocumentChoices
               projectId={projectId}

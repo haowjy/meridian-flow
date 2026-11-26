@@ -1,8 +1,3 @@
-/**
- * The Work list's Deleted tab: soft-deleted Works stay restorable, with
- * everything that went with them, until the server purges them. Each row
- * restores in place; a Work found purged keeps its row, saying so, until dismissed.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
@@ -25,7 +20,6 @@ export function DeletedWorkList({
 }: {
   projectId: string;
   entries: readonly (ListedWorkEntry | GoneEntry)[];
-  /** This list's name, for the place a restored row leaves. */
   list: string;
   onRestore: (work: Work, place: WorkPlace) => void;
 }) {

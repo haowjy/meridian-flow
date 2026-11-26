@@ -1,5 +1,3 @@
-/** Restoring chat and Work visibility claims returning lineage addresses once. */
-
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -142,7 +140,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         (
           await availability.placed({ projectId: p as never, documentIds: [id] }, { userId: u })
         ).documents.get(id);
-      // A hidden lineage or chat is restorable authority: its documents are not placed meanwhile.
       await expect(placed()).resolves.toBeUndefined();
       await expect(placed(upload)).resolves.toBeUndefined();
       await expect(placed(deleted)).resolves.toBeUndefined();

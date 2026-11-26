@@ -35,7 +35,6 @@ export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
-  /** Already-parsed content, with the original source retained in `content`. */
   parsedContent?: ParsedContent;
   /**
    * Blocks copied from another document. They take the place of
@@ -48,7 +47,6 @@ export interface ResolveWriteParams {
   in?: unknown;
   around?: string;
   all?: boolean;
-  /** Target every block of the document, whatever its repaired size turns out to be (`in` is ignored). */
   wholeDocument?: boolean;
 }
 
@@ -66,7 +64,6 @@ export interface ResolveWriteContext {
   links: WriteLinks;
 }
 
-/** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
 export type WriteLinks = WriteLinkAssigner | "preassigned";
 
 export type ResolveWriteResult =
@@ -99,7 +96,6 @@ export type WritePlan =
   | {
       ok: true;
       written: readonly Block[];
-      /** Ref assignment, then block alignment and no-op detection. */
       assign(links: WriteLinks): ResolveWriteResult;
     }
   | ResolveWriteFailure;
@@ -154,7 +150,6 @@ function planCommand(
   }
 }
 
-/** Plan and assign in one go, for callers whose written content is known up front. */
 export function resolveWrite(
   ctx: ResolveWriteContext,
   params: ResolveWriteParams,
@@ -220,7 +215,6 @@ function assignScope(
   });
 }
 
-/** A scope is always a contiguous run of top-level blocks. */
 function scopeNodes(ctx: ConcreteResolveContext, scope: BlockScope): Block[] {
   return ctx.projected
     .slice(scope.startIndex, scope.startIndex + scope.blocks.length)
@@ -328,7 +322,6 @@ function planReplace(
     if (!sectionCheck.ok) return sectionCheck;
     return replaceScopeWithCopies(ctx, params, scope.scope, params.blocks);
   }
-  // Parsed content stands for itself: an empty paragraph is a block even though it spells "".
   if (params.content.length === 0 && !params.parsedContent) {
     return error("invalid_write", "replace content must not be empty; `remove` removes blocks");
   }
@@ -346,7 +339,6 @@ function planRemove(
   return { steps: [{ kind: "edits", edits: deleteEdits(params, scope.scope) }] };
 }
 
-/** The blocks a replace or remove targets; a whole-document write takes the repaired document's. */
 function writeScope(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -367,7 +359,6 @@ function normalizeParams(
   ctx: ConcreteResolveContext,
   params: ResolveWriteParams,
 ): NormalizedParams {
-  // Copied blocks stand in `content` as their markup.
   const content = params.blocks
     ? serializeReplacementBlocks(ctx, [...params.blocks])
     : (params.content ?? "");
@@ -414,7 +405,6 @@ function openAt(ctx: ConcreteResolveContext, index: number | null): string | nul
   return index === null ? null : (documentEntries(ctx)[index]?.open ?? null);
 }
 
-/** A find's content is checked against its section where its first match lands. */
 function checkFindSection(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -447,7 +437,6 @@ function validateSectionContent(
   );
 }
 
-/** `beside` is the block the content is written beside; the document's last for an append. */
 function lowerInsertPosition(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -543,10 +532,6 @@ function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
   return groups;
 }
 
-/**
- * Parse a group's spliced text with source spans, so ref assignment can tell the
- * splice's occurrences from the untouched ones around it (§5.4).
- */
 function planSplicedGroup(
   ctx: ConcreteResolveContext,
   scope: BlockScope,
@@ -591,18 +576,11 @@ function planSplicedGroup(
   }
 }
 
-/** `text` without its closing punctuation: a word carried off a sentence's end leaves its stop. */
 const unclosed = (text: string) => text.replace(/\p{P}+$/u, "");
 
-/** Whether `text` ends with `run`, its closing punctuation set aside or not. */
 const endsWithRun = (text: string, run: string) =>
   text.endsWith(run) || unclosed(text).endsWith(run);
 
-/**
- * The longest run of whole words that starts `second` and ends `first` (its closing punctuation
- * set aside or not): the same words at the facing edges of two neighbouring paragraphs. Any length:
- * a short run taken for a carry only makes a change larger, never wrong.
- */
 function edgeRun(first: string, second: string): string {
   for (let size = second.length; size > 0; size--) {
     const run = second.slice(0, size);
@@ -616,14 +594,6 @@ function edgeRun(first: string, second: string): string {
   return "";
 }
 
-/**
- * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
- * left alone, a changed block keeps its identity and is changed in place, and
- * only blocks with no counterpart are inserted or removed. Atoms (pictures,
- * hard breaks) are units of their textblock, matched as nodes, never as text. With
- * `windows`, a changed block is rewritten only inside them; otherwise it is
- * word-diffed whole.
- */
 function replaceScope(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,

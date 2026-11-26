@@ -1,8 +1,3 @@
-/**
- * What a resolved ask leaves on its asking turn, or this device's answer while it sends: one line
- * for one question or a permission request; for several questions a count of how they went, which
- * opens to each question with its answer.
- */
 import { plural, t } from "@lingui/core/macro";
 import type { QuestionAskPayload, ResolvedQuestionAnswer } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
@@ -25,7 +20,6 @@ export function AskReceipt({ threadId, turnId }: { threadId: string; turnId: str
       : permissionRequestText(ask.payload);
   return (
     <ReceiptLine receipt={receipt}>
-      {/* Separate rows keep a narrow column from cutting the request facts and answer together. */}
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-muted-foreground">{asked.title}</span>
         {asked.details.map((line) => (
@@ -75,7 +69,6 @@ function Sending({ pending }: { pending: boolean }) {
   );
 }
 
-/** Several questions: how they went, opening to each question and its answer. */
 function QuestionsReceipt({
   receipt,
   questions,
@@ -116,7 +109,6 @@ function QuestionsReceipt({
           className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)] pl-4"
         >
           {questions.map((item, index) => (
-            // Questions are fixed for the ask's life; their order is their identity.
             <li key={index}>
               <span className="text-muted-foreground">{item.question}</span>
               {answers?.[index] ? (
@@ -133,7 +125,6 @@ function QuestionsReceipt({
   );
 }
 
-/** How a set of answers went, in counts: answered, skipped, left to the timeout (unsent words included). */
 function outcomeSummary(answers: readonly ResolvedQuestionAnswer[]): string {
   const count = (kinds: ResolvedQuestionAnswer["kind"][]) =>
     answers.filter((answer) => kinds.includes(answer.kind)).length;
@@ -153,7 +144,6 @@ function answerText({ resolution }: AskReceiptFacts): string {
   switch (resolution.kind) {
     case "answers":
     case "timeout":
-      // One question's receipt; several draw through `outcomeSummary`.
       return questionAnswerText(resolution.answers[0]);
     case "cancelled":
       return t`Withdrawn`;

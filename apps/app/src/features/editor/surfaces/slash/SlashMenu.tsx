@@ -1,12 +1,3 @@
-/**
- * SlashMenu — the list `/` opens (§5.7, mockup 07).
- *
- * Rows and nothing else. The physics the writer feels — focus staying in the
- * prose, the eight-row cap, the scroll that follows the arrow keys, the fades
- * — belong to `SuggestionMenu`, which the `@` menu shares; this file decides
- * what a slash row says and when a group heading opens.
- */
-
 import { useSyncExternalStore } from "react";
 import { role } from "@/components/ui/roles";
 import { closedSuggestionMenu } from "@/core/completion";
@@ -33,9 +24,6 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   if (!menu) return null;
 
   const groupLabels = snapshot.meta?.groupLabels ?? null;
-  // Group headings answer "what is in this menu"; a filtered list is already
-  // an answer, and the mockup's state B drops them (they would also fragment,
-  // since matches sort by score rather than by group).
   const grouped = snapshot.query === "" && groupLabels !== null;
 
   return (

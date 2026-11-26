@@ -1,4 +1,3 @@
-/** Shared recovery signals; connection owners retain their own retry policy. */
 export type ConnectivityHint = "retry-now" | "suspect-offline";
 export type ConnectivitySource = object;
 export type ConnectivityHintsPort = Pick<
@@ -36,7 +35,6 @@ export class ConnectivityHints {
     const offline = () => {
       this.cancelPending();
       for (const subscriber of this.subscribers) {
-        // A new network recovery must not be suppressed by a pre-outage wake.
         subscriber.lastRetry = -Infinity;
         subscriber.listener("suspect-offline");
       }

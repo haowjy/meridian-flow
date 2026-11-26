@@ -1,12 +1,9 @@
-/** Sole acquisition and QueryCache installation owner for canonical Works snapshots. */
-
 import type { CommandDriver, CommandRecord } from "@meridian/command-driver";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { listProjectWorks } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 
-/** Resolve a known binding by row identity, including the locked No Work row. */
 export function workFromSnapshot(
   snapshot: Pick<WorksSnapshot, "works" | "noWork"> | null | undefined,
   workId: string,
@@ -16,11 +13,6 @@ export function workFromSnapshot(
   return snapshot.works.find((work) => work.id === workId && work.deletedAt === null) ?? null;
 }
 
-/**
- * What this tab's Works include, per project: a successful read started at `startedAt` has every
- * Work command settled by then. Each successful read tells the driver, so a failed refresh
- * followed by a later good one covers both records, and no other tab's read counts here.
- */
 const readObservers = new WeakMap<QueryClient, (projectId: string, startedAt: number) => void>();
 
 export function observeWorksReads(client: QueryClient, driver: CommandDriver): () => void {
@@ -50,7 +42,6 @@ export function observeWorksReads(client: QueryClient, driver: CommandDriver): (
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
 type ProjectState = {
   installedStart: number;
-  /** When the installed snapshot's read began, by the clock. */
   installedAt: number;
   inFlight: Promise<WorksSnapshot> | null;
   inFlightAt: number;
@@ -59,10 +50,8 @@ type ProjectState = {
 const states = new WeakMap<QueryClient, Map<string, ProjectState>>();
 const nextStartedByProject = new Map<string, number>();
 
-/** When a read began: its order among this project's reads, and the clock time. */
 export type WorksRequestStart = { order: number; at: number };
 
-/** Registers request start before any loader or live network work begins. */
 export function beginWorksSnapshotRequest(projectId: string): WorksRequestStart {
   const order = (nextStartedByProject.get(projectId) ?? 0) + 1;
   nextStartedByProject.set(projectId, order);
@@ -144,7 +133,6 @@ function startAcquisition(
   return acquisition;
 }
 
-/** Ordinary focus, reconnect, poll, and mounted consumers share one request. */
 export function acquireWorksSnapshot(
   client: QueryClient,
   projectId: string,
@@ -153,7 +141,6 @@ export function acquireWorksSnapshot(
   return startAcquisition(client, projectId, request, false);
 }
 
-/** A committed mutation starts a newer acquisition even when an older read is blocked. */
 export function refreshWorksSnapshot(
   client: QueryClient,
   projectId: string,
@@ -162,7 +149,6 @@ export function refreshWorksSnapshot(
   return startAcquisition(client, projectId, request, true);
 }
 
-/** Repair after an already-committed write without turning acquisition failure into command failure. */
 export function repairWorksSnapshot(
   client: QueryClient,
   projectId: string,
@@ -189,7 +175,6 @@ export function refreshWorksSnapshotSince(
   return repairWorksSnapshot(client, projectId);
 }
 
-/** A failed repair leaves the Works stale, so the next reader reads them again. */
 async function settleRepair(
   client: QueryClient,
   projectId: string,
@@ -206,7 +191,6 @@ async function settleRepair(
   }
 }
 
-/** Route data is hydration only and may never replace an equal or newer live snapshot. */
 export function seedWorksSnapshot(
   client: QueryClient,
   snapshot: WorksSnapshot,

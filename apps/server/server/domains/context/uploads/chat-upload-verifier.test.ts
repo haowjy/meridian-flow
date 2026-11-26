@@ -1,4 +1,3 @@
-/** A chat cannot attach another chat's pending upload by id. */
 import { expect, it } from "vitest";
 import { createChatUploadVerifier } from "./chat-upload-verifier.js";
 

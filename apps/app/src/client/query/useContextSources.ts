@@ -1,4 +1,3 @@
-/** The sources the account can read: the roots of the project's tree list, and the account's own (`user://`). */
 import type { ContextSource, ContextSourcesResult } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -34,7 +33,6 @@ function useAccountContextSourcesResult(enabled = true) {
   });
 }
 
-/** A source query's answer, or undefined until it has come. */
 export function useProjectContextSources(projectId: string): readonly ContextSource[] | undefined {
   return useProjectContextSourcesResult(projectId).data?.sources;
 }
@@ -43,7 +41,6 @@ export function useAccountContextSources(enabled = true): readonly ContextSource
   return useAccountContextSourcesResult(enabled).data?.sources;
 }
 
-/** The ids of the sources that ended and can be restored, in the project and the account; null until both queries have answered. */
 export function useEndedSources(projectId: string): ReadonlySet<string> | null {
   const { data: mine } = useProjectContextSourcesResult(projectId);
   const { data: yours } = useAccountContextSourcesResult();

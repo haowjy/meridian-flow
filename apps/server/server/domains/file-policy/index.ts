@@ -1,5 +1,3 @@
-/** Barrel: the file-policy domain's public surface. */
-
 export { createDrizzleFileFacts } from "./adapters/drizzle-file-facts.js";
 export {
   createLocalFileAccessChanges,

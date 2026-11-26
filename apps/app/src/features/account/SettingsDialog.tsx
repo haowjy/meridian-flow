@@ -1,17 +1,3 @@
-/**
- * SettingsDialog — the single settings surface for the authenticated app,
- * rendered as a routed overlay: setting `?settings=<section>` on any
- * authenticated route opens it. URL-addressable by construction — Back closes
- * it, refresh restores it, and a shared link lands on the exact section — while
- * the one component behaves identically over every authenticated route.
- *
- * Two presentations, one mounted Dialog and one routed mechanism:
- * - Desktop: centered modal with a left section rail.
- * - Phone (`usePhoneShell()`): full-screen takeover (fade only, no zoom) via
- *   `PhoneSettingsContent` — WebKit blanks transform-animated content under
- *   overflow clipping + radius.
- */
-
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
@@ -47,12 +33,6 @@ import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSett
 import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
 import type { AccountPreference, SettingKey } from "./useAccountSettings";
 
-/**
- * Open/close the settings overlay by patching `?settings=` on the CURRENT
- * route — the path never changes, which is what lets the overlay work
- * identically from any shell. Shared by the account menu, the ⌘, shortcut, and
- * the dialog's own rail/close affordances.
- */
 export function useSettingsNavigation() {
   const navigate = useNavigate();
   const defaultSection: SettingsSection = "preferences";
@@ -112,11 +92,6 @@ function phoneSections(): PhoneSettingsSectionItem[] {
   }));
 }
 
-/**
- * One body per section, parameterized by presentation — the phone takeover and
- * the desktop dialog render the SAME bodies; only the surrounding chrome
- * differs. This is the single place that maps a section to its content.
- */
 const SECTION_CONTENT: Record<SettingsSection, (presentation: SectionPresentation) => ReactNode> = {
   profile: (presentation) => <ProfileSection presentation={presentation} />,
   preferences: (presentation) => <PreferencesSection presentation={presentation} />,
@@ -143,7 +118,6 @@ export function SettingsDialog() {
 
   const section = search.settings;
 
-  // ⌘,/Ctrl+, — the conventional settings shortcut, app-wide.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
@@ -172,7 +146,6 @@ export function SettingsDialog() {
         </PhoneSettingsContent>
       ) : (
         <DialogContent className="@container/settings flex h-[540px] max-w-[min(48rem,calc(100%-2rem))] gap-0 overflow-hidden rounded-lg p-0">
-          {/* A container can't query itself, so the direction switch lives one level in. */}
           <div className="flex min-w-0 flex-1 flex-col @[40rem]/settings:flex-row">
             <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-ink-fill px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
               <DialogTitle className="px-2">
@@ -273,12 +246,6 @@ function SectionHeading({ title, description }: { title: ReactNode; description:
   );
 }
 
-/**
- * Sections take a `presentation` because the phone/desktop split is a shell
- * decision (coarse pointer). Phone always stacks each label above its control.
- * The desktop dialog decides by its own width: a narrow desktop window gets the
- * same stacked rows, since a `w-28` label column leaves too little control width.
- */
 type SectionPresentation = "desktop" | "phone";
 
 function rowLayout(presentation: SectionPresentation) {
@@ -326,7 +293,6 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
 }
 
 function PreferencesSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
-  // Translated control labels react to the active locale, independently of account values.
   useLingui();
   const settings = useSharedAccountSettings();
   const language = settings.preference("language");
@@ -435,7 +401,6 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
   );
 }
 
-/** Account-level display preference with an error beside its control. */
 function StatsForNerdsRow() {
   const preference = useSharedAccountSettings().preference("statsForNerds");
   const enabled = preference.value;
@@ -462,11 +427,6 @@ function StatsForNerdsRow() {
   );
 }
 
-/**
- * UsageSection — read-only usage + balance summary with a link to the
- * standalone /billing page. Intentionally minimal: subscription and extra-usage
- * purchase flows live on their own page, not inside the settings overlay.
- */
 function UsageSection() {
   return (
     <div>

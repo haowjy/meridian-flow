@@ -1,11 +1,3 @@
-/**
- * Stateful test runtime for ThreadRunController.
- *
- * The scenario owns a real thread store and an in-memory transport. Tests drive
- * public lifecycle inputs and inspect durable store/transport outcomes instead
- * of assembling action spies for each controller branch.
- */
-
 import type {
   AdmissionLookup,
   CancelTurnResponse,
@@ -82,7 +74,6 @@ class ScenarioThreadTransport implements ThreadTransport {
     };
   }
 
-  /** What the next cancels answer. */
   cancelStatus: CancelTurnResponse["status"] = "cancelled";
 
   async answerAsk(): Promise<AskAnswerOutcome> {

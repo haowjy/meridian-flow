@@ -42,9 +42,7 @@ import type { BlockTarget } from "./block-targets";
 
 export type BlockMenuProps = {
   editor: Editor;
-  /** The block the handle points at, re-resolved on every render. */
   target: BlockTarget;
-  /** The handle's own position: the menu hangs off it, not off the pointer. */
   at: { x: number; y: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -104,11 +102,6 @@ export function BlockMenu({
   );
 }
 
-/**
- * Turn into is for text blocks (§5.8). A figure, a table, a rule, or a rendered
- * diagram has no block type to change, so the row is absent rather than
- * present and refusing — the deepest form of law 5.
- */
 function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarget }) {
   if (!target.node.isTextblock || isEditorObject(target.node)) return null;
 

@@ -29,10 +29,8 @@ const SEED = ["Live seed."];
 const ADDED = ["Live seed.", "Added."];
 const reply = { text: "done" };
 
-/** One write call that inserts "Added.", then the closing reply. */
 const oneCall = (path: string) => [{ toolCalls: [insertCall("call-1", path, "Added.")] }, reply];
 
-/** What a takeover process does to a dead one's chat: the orphan sweep, then waiting for it to settle. */
 async function recover(
   start: () => Promise<Child>,
   h: Parameters<typeof state>[0],
@@ -43,7 +41,6 @@ async function recover(
   await waitForAssistantTurn(h, thread);
 }
 
-/** A write killed at `point`; the document and the result block agree afterwards, whichever side of the commit. */
 function killedAt(
   name: string,
   point: string,
@@ -74,7 +71,6 @@ const committed = {
   commands: ["done"],
 };
 
-/** Two responses of one turn each call `call-1` (some adapters number calls per response); the second is killed at `point`. */
 function reusedCallId(
   name: string,
   spec: {
@@ -345,9 +341,6 @@ const cases: ModelEditCase[] = [
       await child.script(oneCall(path));
       await send(child, h, thread);
       await child.at("command.afterClaim");
-      // Past the timeout the runtime resolves the key and waits on the held claim. With the
-      // pool at 2 (the claim's transaction and the session lock hold both connections) it waits
-      // for a connection, so no database lock waiter shows; wait out the timeout instead.
       await new Promise((done) => setTimeout(done, 2000));
       await child.release("command.afterClaim");
       await waitForAssistantTurn(h, thread);

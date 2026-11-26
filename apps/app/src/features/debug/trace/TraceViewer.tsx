@@ -1,7 +1,3 @@
-/**
- * Pop-out window for inspecting captured EventRecords without blocking the app.
- * i18n exception: this build-gated debug feature uses inline English by design.
- */
 import type { EventRecord } from "@meridian/contracts/observability";
 import { memo, useMemo, useState } from "react";
 

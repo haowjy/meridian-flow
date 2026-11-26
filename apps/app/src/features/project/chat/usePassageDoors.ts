@@ -1,4 +1,3 @@
-/** Passage doors: opens the resolved document through the door's placement, lands on the anchor, and retires it when a newer intent begins. */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { navigateToPassage } from "@/core/editor/passage-navigation";
@@ -8,13 +7,7 @@ import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-c
 import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
 
 export type PassageDoors = {
-  /** A newer intent (any door, any transcript link) retires a passage still landing, and its notice. */
   retire(): void;
-  /**
-   * Open the resolved document through `open` and land on the anchor. The open starts now,
-   * inside the follower's answer, so it is the chat's current intent; the open result decides
-   * whether the passage can land.
-   */
   land(
     passage: ContextPassageAnchor,
     documentId: string,
@@ -52,7 +45,6 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
       if (signal.aborted) return;
       if (result.kind === "stale") reportPassageChanged(documentId);
     });
-    // Passage landing is best effort: the document is the door's real promise.
     void landing.catch(() => {});
   }, []);
 

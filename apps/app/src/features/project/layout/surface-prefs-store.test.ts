@@ -1,6 +1,3 @@
-/**
- * Surface prefs store behavior.
- */
 import { afterEach, expect, it, vi } from "vitest";
 import { useProjectSurfacePrefsStore } from "./surface-prefs-store";
 

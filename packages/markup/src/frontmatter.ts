@@ -1,9 +1,6 @@
-/** Raw-text frontmatter splitting for browser manifests, without loading the codec. */
-
 export type SourceRange = { from: number; to: number };
 export type Frontmatter = SourceRange & {
   kind: "frontmatter";
-  /** YAML between delimiters, including its original line endings. */
   text: string;
 };
 export type FrontmatterSplit = {
@@ -11,7 +8,6 @@ export type FrontmatterSplit = {
   body: string;
 };
 
-/** Only a closed, leading --- block is frontmatter; YAML validity is not a syntax concern. */
 export function splitFrontmatter(source: string): FrontmatterSplit {
   const opening = /^(?:\uFEFF)?---[ \t]*\r?\n/.exec(source);
   if (!opening) return { frontmatter: null, body: source };

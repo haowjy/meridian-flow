@@ -10,14 +10,12 @@ import {
   sameValue,
 } from "./shape.js";
 
-/** What a text write needs to know to read a unit the way readers do. */
 export interface TextRules {
   rule: NodeRule;
   shape: ShapeSchema;
   visibleComment: (comment: string) => boolean;
 }
 
-/** One unit as a writer wants it read: its character and its style (marks, plus `inline`). */
 export interface WantedUnit {
   ch: string;
   style: Readonly<Record<string, unknown>>;
@@ -37,14 +35,6 @@ export function wantedUnits(items: readonly InlineItem[]): WantedUnit[] {
   return out;
 }
 
-/**
- * The one text write: replace the shown units [from, to) of `doc` with `items`, leaving the new
- * units reading exactly as `items` say. Every writer goes through it (`writeDocument`'s splice,
- * `applyOps`, the editor's typing). Hidden units in the range stay, so a write never deletes what
- * its writer could not see. The text goes in as one plain insert, and a style op is written only
- * where what Loro stored (a neighbour's expanding mark, say) differs from what is wanted, so
- * typing inside bold writes one op.
- */
 export function replaceText(
   doc: LoroDoc,
   rules: TextRules,
@@ -80,10 +70,6 @@ export function replaceUnits(
   });
 }
 
-/**
- * Bring each unit's style to its wanted one, as readers read it, writing a style op only where
- * they differ. `units[i]` gets `wanted[i]`; both are shown units in order.
- */
 export function patchStyles(
   text: LoroText,
   units: readonly TextUnit[],
@@ -109,12 +95,6 @@ export function patchStyles(
   if (delta.length > 0) text.applyDelta(delta);
 }
 
-/**
- * The style changes that make `unit` read as `want`: set what is stored differently, then clear
- * every key that would show and is not wanted, including one the normalizer hid until now (stored
- * `{code, strong}` written as plain clears both, or it would read `strong`). A key that stays
- * hidden (a comment whose body this reader cannot see) is left alone.
- */
 function stylePatch(
   unit: TextUnit,
   want: Readonly<Record<string, unknown>>,

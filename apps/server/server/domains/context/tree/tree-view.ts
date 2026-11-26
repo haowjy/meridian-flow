@@ -1,11 +1,3 @@
-/**
- * The tree view: which documents and folders a reader sees, live or in one Work's tree.
- * Readers select from `visibleDocuments(view)` / `visibleFolders(view)` (`tree-relations.ts`)
- * or ask the `TreeReader`. A node's filename is its `name`, extension included, and two siblings
- * may share it: a path walks `segment`s, the later twin's carrying `~` and the start of its id
- * (project-tree rule 14), so every path reaches one node. A document the view does not place (in Trash, deleted in the Work, or in no view) is never visible,
- * and one in no view has no place at all.
- */
 import {
   type ContextSourceId,
   type DocumentId,
@@ -60,11 +52,8 @@ export type VisibleDocument = {
   id: DocumentId;
   contextSourceId: ContextSourceId;
   folderId: FolderId | null;
-  /** The filename as the view shows it, extension included: never render it with an extension. */
   name: string;
-  /** The path segment: the name, and a later twin's `~` suffix. */
   segment: string;
-  /** What follows the last dot of the name, lowercased; empty when the name has none. */
   extension: string;
   fileType: string;
   storageUrl: string | null;
@@ -75,7 +64,6 @@ export type VisibleDocument = {
   rank: string;
   locationVersion: bigint;
   updatedAt: Date;
-  /** Source-relative path in this view. */
   path: string;
 };
 
@@ -90,7 +78,6 @@ export type VisibleFolder = {
   path: string;
 };
 
-/** A source-relative path to resolve. */
 export type PathQuery = { contextSourceId: ContextSourceId; path: string };
 
 export type PathResolution<N> = { kind: "found"; node: N } | { kind: "not_found" };
@@ -100,53 +87,26 @@ export type TreeNode =
   | { kind: "folder"; folder: VisibleFolder };
 
 export type IdentityStatus =
-  /** Visible in this view, at `address` in this view. */
   | { kind: "visible"; address: NodeAddress; existsOnlyInDraft: boolean }
-  /** In Trash, or deleted in this Work's tree; the last address it held. */
   | { kind: "deleted"; documentId: DocumentId; lastAddress: NodeAddress | null }
-  /** In no view, a missing id, or an address that can't be spelled. */
   | { kind: "gone"; documentId: DocumentId };
 
 export type DocumentLineage = {
-  /** In this view: deleted when it is in Trash or the Work's tree deleted it. */
   status: "visible" | "deleted";
-  /** Live has it in Trash, whatever this view shows. */
   inTrash: boolean;
   contextSourceId: ContextSourceId;
-  /** The document's folder and its ancestors, nearest first. */
   folders: readonly FolderLink[];
 };
 
 export interface TreeReader {
   resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
-  /**
-   * `resolvePath` for a spelling a writer or model typed: whatever holds the literal name
-   * (a folder `ch1.md`, a file kept as `binary.md`), else whatever holds the codec's alias
-   * (`ch1.md` is `ch1`).
-   */
   resolveAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
-  /**
-   * `resolveAddress` for a caller that wants a document (a link, a read): `Lore.md` reaches
-   * document `Lore` even beside a folder `Lore.md`. A folder never answers.
-   */
   resolveDocumentAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
-  /**
-   * `resolveDocumentAddress` for many addresses at once, answered in order: a fixed number of
-   * statements however many are asked.
-   */
   resolveDocumentAddresses(
     view: TreeView,
     queries: readonly PathQuery[],
   ): Promise<PathResolution<TreeNode>[]>;
-  /**
-   * The folder each path reaches with every segment, the last included, read at folder level (a
-   * folder `Kael~f1` beside a document `Kael` is `Kael`); null where none, and for the source root.
-   */
   folderIdsAt(view: TreeView, queries: readonly PathQuery[]): Promise<(FolderId | null)[]>;
-  /**
-   * One step of a walk: what this view shows at the segment `filename` directly under
-   * `parentId` (null: the source root).
-   */
   childAt(
     view: TreeView,
     at: {
@@ -164,21 +124,17 @@ export interface TreeReader {
     view: TreeView,
     ids: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, IdentityStatus>>;
-  /** Exact canonical addresses → documents visible there in this view, by `coordinatesKey`. */
   occupantsAt(
     view: TreeView,
     addresses: readonly DocumentCoordinates[],
   ): Promise<ReadonlyMap<string, DocumentId[]>>;
-  /** File facts: in this view, its folder chain; deleted, its last chain; else absent. */
   lineages(
     view: TreeView,
     ids: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, DocumentLineage>>;
-  /** Who owns the document, a project or an account, whether or not a view places it. */
   ownerOfDocument(id: DocumentId): Promise<TreeList | null>;
 }
 
-/** The key `occupantsAt` answers under. */
 export function coordinatesKey(
   at: Pick<
     DocumentCoordinates,
@@ -202,18 +158,8 @@ type NodeSlot = {
   segment: string;
 };
 
-/** One node a slot reaches, and how: `0` by its `~id`, `1` the plain child of the name, `2` a folder of the name. */
 type SlotHit = { key: number; id: string; how: number };
 
-/**
- * The node of one kind that the view shows at each slot (source, parent, segment), read as
- * `childAtSegment` in `@meridian/contracts/protocol` reads it: a `~` suffix reaches the child whose id
- * begins with it, the lowest id if two do, and one that reaches none reads as its name; a name
- * reaches the child of that name with no suffix. At a `folder` level of a path, a folder of the
- * name answers when the plain twin is a document (the lowest id). One statement for any number of
- * slots: each is a `LATERAL` probe of the relation, which keeps a Work's union planned as index
- * probes (see the store page); only a segment with a suffix scans its parent's children.
- */
 async function nodesAt(
   db: DrizzleDb,
   view: TreeView,
@@ -264,7 +210,6 @@ async function nodesAt(
   return [...(await db.execute<SlotHit>(sql.join(statements, sql` UNION ALL `)))];
 }
 
-/** Of a slot's document and folder hits, the ones it reaches best: an `~id` match over a name. */
 function best(...kinds: SlotHit[][]): SlotHit[][] {
   const top = new Map<number, number>();
   for (const hit of kinds.flat()) top.set(hit.key, Math.min(top.get(hit.key) ?? hit.how, hit.how));
@@ -275,12 +220,10 @@ type FolderWalk = {
   sourceId: ContextSourceId;
   dirs: string[];
   filename: string;
-  /** The folders the directories reached so far (null: the source root); empty when none. */
   parents: (FolderId | null)[];
   respelled: boolean;
 };
 
-/** A hit is as asked when a `~id` reached its node by id, or a name its plain child. */
 const isRespelled = (segment: string, hits: readonly SlotHit[]) =>
   hits.some((hit) => hit.how !== (readSegment(segment).suffix === undefined ? 1 : 0));
 
@@ -288,9 +231,7 @@ type PathOccupancy = {
   path: string;
   documents: DocumentId[];
   folders: FolderId[];
-  /** The folder the path's directory reaches (null: the source root); empty when it reaches none. */
   parents: (FolderId | null)[];
-  /** A segment reached its node by a fallback (a `~id` that reached none, a folder of the name): `path` is not how the tree spells it. */
   respelled: boolean;
 };
 
@@ -337,11 +278,6 @@ export function createTreeReader(db: Database): TreeReader {
     };
   }
 
-  /**
-   * Walk each query's directories one level at a time through the view's folders by segment (one
-   * statement per depth for the whole batch), narrowing `parents` to the folder each reaches. A
-   * segment reaches one folder at most.
-   */
   async function walkFolders(view: TreeView, walks: FolderWalk[]) {
     const depth = Math.max(0, ...walks.map((walk) => walk.dirs.length));
     for (let level = 0; level < depth; level += 1) {
@@ -375,12 +311,6 @@ export function createTreeReader(db: Database): TreeReader {
     respelled: false,
   });
 
-  /**
-   * The one meaning of "same path": the id of the node the view shows at each source-relative
-   * path, walked through the view's folders by segment, then one statement for the documents and
-   * one for the folders. A segment reaches one node of each kind at most; of a document and a
-   * folder the lowest id answers.
-   */
   async function pathOccupants(
     view: TreeView,
     queries: readonly PathQuery[],
@@ -433,7 +363,6 @@ export function createTreeReader(db: Database): TreeReader {
     if (ref.kind === "document") {
       const [row] = await documentRows(view, (vd) => inArray(vd.id, [ref.id]));
       if (!row) return { kind: "not_found" };
-      // Reached by a fallback: the path is the one the tree spells, not the one asked.
       const path = found.respelled
         ? chainPrefix(
             row.folderId === null
@@ -493,7 +422,6 @@ export function createTreeReader(db: Database): TreeReader {
     return { ...row, path: chainPrefix(chain).slice(0, -1) };
   }
 
-  /** The documents the view places, deleted ones included. */
   async function placedDocuments(view: TreeView, ids: readonly DocumentId[]) {
     if (ids.length === 0) return [];
     const rows = await tx().execute<{
@@ -667,8 +595,6 @@ export function createTreeReader(db: Database): TreeReader {
         walked.flatMap(({ hit }) => (hit ? [hit.id] : [])),
       ),
     );
-    // A link may leave off the extension: the one document under the reached folder that differs
-    // only by it. All the misses' folders are read at once.
     const rowOf = new Map(hitRows.map((row) => [row.id, row]));
     const misses = walked.filter(
       ({ hit, parent, at }) =>
@@ -702,7 +628,6 @@ export function createTreeReader(db: Database): TreeReader {
       );
       return loose ? { row: loose, path: null } : null;
     });
-    // A path the tree spells differently from the one asked comes from the document's own chain.
     const chains = await loadFolderChains(
       tx(),
       reached.flatMap((each) => (each && each.path === null ? [each.row.folderId] : [])),
@@ -749,9 +674,6 @@ export function createTreeReader(db: Database): TreeReader {
   };
 }
 
-/**
- * Number each distinct position once and fan hits back out to every walk that asked it.
- */
 function positions(asks: readonly (Omit<NodeSlot, "key"> & { owner: number })[]) {
   const keys = new Map<string, number>();
   const slots: NodeSlot[] = [];
@@ -778,7 +700,6 @@ function positions(asks: readonly (Omit<NodeSlot, "key"> & { owner: number })[])
   };
 }
 
-/** Of the document and the folder a segment reaches, the one with the lowest id. */
 function lowest(documents: readonly DocumentId[], folders: readonly FolderId[]): NodeRef | null {
   const [document] = documents;
   const [folder] = folders;
@@ -786,7 +707,6 @@ function lowest(documents: readonly DocumentId[], folders: readonly FolderId[]):
   return folder ? { kind: "folder", id: folder } : null;
 }
 
-/** The identity of a node a reader found. */
 export function refOf(node: TreeNode): NodeRef {
   return node.kind === "document"
     ? { kind: "document", id: node.document.id }
