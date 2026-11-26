@@ -7,6 +7,7 @@ import { browserUrl, type DevService, loopbackOrigin, resolveDevPorts } from "./
 import {
   type ClientBuild,
   clearStackState,
+  type ProcessRef,
   processStart,
   processTree,
   recordIdleStop,
@@ -40,8 +41,9 @@ const services: ReadonlyArray<{ name: DevService; pkg: string }> = [
 let generation = 0;
 let lastActiveAt = Date.now();
 let lastPublishedAt = 0;
+let runningServices: ProcessRef[] = [];
 let stopping = false;
-let restarting = false;
+let restartInFlight: Promise<void> | null = null;
 
 function log(message: string): void {
   console.log(`[dev] ${message}`);
@@ -52,6 +54,7 @@ function publish(): void {
   writeStackState(repoRoot, {
     pid: process.pid,
     processStart: processStart(process.pid) ?? "",
+    services: runningServices,
     startedAt,
     clientBuild,
     www,
@@ -75,6 +78,7 @@ function serviceEnv(): NodeJS.ProcessEnv {
 function startServices(): void {
   const env = serviceEnv();
   generation += 1;
+  runningServices = [];
   for (const { name, pkg } of services) {
     const productionApp = name === "app" && clientBuild === "production";
     const child = spawn("pnpm", ["--filter", pkg, productionApp ? "profile:dev-stack" : "dev"], {
@@ -87,49 +91,49 @@ function startServices(): void {
       stdio: ["ignore", "inherit", "inherit"],
     });
     child.once("exit", (code, signal) => {
-      if (stopping || restarting) return;
+      if (stopping || restartInFlight) return;
       void shutdown(`${name} exited (code=${code}, signal=${signal})`, 1);
     });
+    const start = child.pid === undefined ? null : processStart(child.pid);
+    if (child.pid !== undefined && start) runningServices.push({ pid: child.pid, start });
   }
   publish();
 }
 
-function servicePids(): number[] {
-  return processTree(process.pid)
-    .map((info) => info.pid)
-    .filter((pid) => pid !== process.pid);
-}
-
 async function stopServices(): Promise<void> {
-  await terminateTree(servicePids(), STOP_GRACE_MS);
+  await terminateTree(
+    processTree(process.pid).filter((info) => info.pid !== process.pid),
+    STOP_GRACE_MS,
+  );
 }
 
 async function shutdown(reason: string, code = 0): Promise<void> {
   if (stopping) return;
   stopping = true;
   log(`stopping: ${reason}`);
+  // keep: wait out a restart in flight; it sees `stopping` and starts nothing, so no service is born after the tree below is taken
+  await restartInFlight;
   await stopServices();
-  clearStackState(repoRoot);
+  clearStackState(repoRoot, process.pid);
   process.exit(code);
 }
 
 async function restart(): Promise<void> {
-  if (stopping || restarting) return;
-  restarting = true;
   log("restarting services");
   await stopServices();
+  if (stopping) return;
   await waitForFreePorts(
     services.map((service) => ports[service.name]),
     10_000,
   );
+  if (stopping) return;
   startServices();
-  restarting = false;
 }
 
 function watch(): void {
   let previous = new Map<number, number>();
   setInterval(() => {
-    if (stopping || restarting) return;
+    if (stopping || restartInFlight) return;
     if (!fs.existsSync(path.join(repoRoot, ".git"))) {
       void shutdown("checkout removed");
       return;
@@ -155,8 +159,15 @@ function watch(): void {
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGUSR2", () => {
-  restart().catch((error: unknown) =>
-    shutdown(`restart failed: ${error instanceof Error ? error.message : String(error)}`, 1),
+  if (stopping || restartInFlight) return;
+  restartInFlight = restart().then(
+    () => {
+      restartInFlight = null;
+    },
+    (error: unknown) => {
+      restartInFlight = null;
+      void shutdown(`restart failed: ${error instanceof Error ? error.message : String(error)}`, 1);
+    },
   );
 });
 

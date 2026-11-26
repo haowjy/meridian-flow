@@ -5,8 +5,9 @@ import path from "node:path";
 import { checkDevReadiness } from "./dev-readiness";
 import { resolveStackEnv } from "./dev-stack-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
-import { browserUrl, loopbackOrigin, resolveDevPorts } from "./lib/dev-ports";
+import { browserUrl, loopbackOrigin } from "./lib/dev-ports";
 import {
+  acquireStartLock,
   type ClientBuild,
   clearIdleStopRecord,
   DEV_LOG,
@@ -14,6 +15,7 @@ import {
   processStart,
   readIdleStopRecord,
   runningStack,
+  stackPorts,
   stopStack,
   waitForFreePorts,
 } from "./lib/dev-stack";
@@ -31,7 +33,7 @@ const has = (flag: string) => argv.includes(flag);
 const clientBuild: ClientBuild = has("--production-client") ? "production" : "development";
 // keep: taken before `.env` is loaded, so the stack receives only what this shell set
 const callerEnv = { ...process.env };
-const ports = resolveDevPorts(repoRoot, callerEnv);
+const ports = stackPorts(repoRoot, callerEnv);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -93,6 +95,18 @@ async function start(): Promise<void> {
     for (const line of urlLines({ clientBuild, www })) console.log(line);
     return;
   }
+  const releaseLock = acquireStartLock(repoRoot);
+  try {
+    await launch(www);
+  } finally {
+    releaseLock();
+  }
+}
+
+async function launch(www: boolean): Promise<void> {
+  if (await stopStack(repoRoot)) {
+    console.log("note: stopped services left running by a stack whose supervisor had died");
+  }
   await assertDevInfraReady();
   await waitForFreePorts([ports.app, ports.server, ...(www ? [ports.www] : [])], 0);
   const stopRecord = readIdleStopRecord(repoRoot);
@@ -143,6 +157,14 @@ async function main(): Promise<void> {
     return;
   }
   if (has("--restart") && running) {
+    if (
+      (has("--production-client") && running.clientBuild !== "production") ||
+      (has("--www") && !running.www)
+    ) {
+      throw new Error(
+        "a restart keeps the running stack's client build and services. To change them: pnpm dev --stop, then start again",
+      );
+    }
     process.kill(running.pid, "SIGUSR2");
     await waitUntilReady({
       timeoutMs: startupMs(running.clientBuild),

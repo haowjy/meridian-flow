@@ -3,7 +3,7 @@
 Verify that an edit Agent can switch its chat's Work, queue its chat's write
 mode, and send a background message to an unrelated chat. A read Agent must
 still be denied the two `work` changes. Run the stack with
-`MODEL_PROVIDER=mock pnpm dev`, discover its Portless URLs with
+`MODEL_PROVIDER=mock pnpm dev`, discover its URLs with
 `pnpm dev:urls`, and open the chats (the stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in).
 
 Use `./mf mock script '<steps>' --match '<message>'` for browser sends, or pass

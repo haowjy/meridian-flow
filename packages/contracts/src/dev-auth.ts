@@ -66,9 +66,7 @@ export function isLocalHost(host: string | null | undefined): boolean {
   );
 }
 
-// keep: every dev stack is a port on localhost, so trusting "localhost" would let any local page act as the dev user; only the page's own origin (the dev proxies forward Host unchanged) or the tailnet passes
+// keep: only the page's own origin passes (the dev proxies forward Host unchanged). Trusting a name would be wrong twice: every dev stack is "localhost", and anyone can serve a page under `*.ts.net`
 function isTrustedOrigin(origin: string, host: string | null): boolean {
-  if (!URL.canParse(origin)) return false;
-  const url = new URL(origin);
-  return url.host === host?.toLowerCase() || isTailnet(url.hostname);
+  return URL.canParse(origin) && new URL(origin).host === host?.toLowerCase();
 }

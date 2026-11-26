@@ -73,9 +73,17 @@ describe("devAuthAppliesToRequest", () => {
       false,
     ],
     [
-      "tailnet origin through the proxy",
-      req("POST", { origin: "https://laptop.tail1234.ts.net" }),
+      "the stack's own page on the tailnet",
+      new Request("https://laptop.tail1234.ts.net/api/x", {
+        method: "POST",
+        headers: { host: "laptop.tail1234.ts.net", origin: "https://laptop.tail1234.ts.net" },
+      }),
       true,
+    ],
+    [
+      "a page under someone else's tailnet name",
+      req("POST", { origin: "https://evil.tail9999.ts.net" }),
+      false,
     ],
     [
       "cross-site top-level navigation",

@@ -183,6 +183,6 @@ run `pnpm dev`.
   links to GitHub.
 - **Only tracked files are served**, plus new unignored files in this directory, so `.env` and
   `node_modules` are never shown. The server reads working-tree copies, so uncommitted edits to
-  tracked files and untracked files in this directory are served too. `pnpm dev:funnel` publishes
+  tracked files and untracked files in this directory are served too. A tunnel to the app's port publishes
   the dev server and with it all of that: don't paste a secret into a tracked file while it runs.
 - Scripts come from a CDN with pinned versions and integrity hashes. More in [AGENTS.md](AGENTS.md).

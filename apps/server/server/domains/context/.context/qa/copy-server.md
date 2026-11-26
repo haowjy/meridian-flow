@@ -12,9 +12,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
 ## Setup
 
 1. Start an owned stack on the mock model (`MODEL_PROVIDER=mock pnpm dev`) and find
-   its origins with `pnpm dev:urls`. If `./mf` refuses the checkout's routes
-   (the Portless proxy listens on a port other than 443), set `MF_SERVER_URL` and
-   `MF_APP_URL` to the two origins, and pass `--project <id>` when running several
+   its origins with `pnpm dev:urls`. Set `MF_SERVER_URL` and
+   `MF_APP_URL` to the two URLs, and pass `--project <id>` when running several
    `./mf` at once: the default-project bootstrap races.
 2. Seed with `./mf doc put` (angle brackets around any address with a space):
    `manuscript://Book/Chapter 1` linking `<Chapter 2>` (not yet written, so it mints

@@ -102,8 +102,10 @@ reports `started` only after that record names the supervisor it launched and th
 server's `/readyz` and the app both answer; if the supervisor exits first, it prints
 the end of `logs/dev.log`.
 
-The record holds the supervisor's pid, its `ps` start time, the client build, the ports,
-a generation number and the last-active time, and no environment values. A restart
+The record holds the supervisor's pid and `ps` start time, the same pair for each
+service it started, the client build, the ports, a generation number and the
+last-active time, and no environment values. `pnpm dev` holds `.meridian/dev-start.lock`
+while it starts a stack, so two starts cannot overwrite each other's record. A restart
 bumps the generation, which is how `pnpm dev:restart` knows the new services are the
 ones answering. The production-client mode runs the app's `profile:dev-stack` script in
 place of `vite dev`; that script builds the client and fronts the built server with the
@@ -113,21 +115,24 @@ The browser reaches the server only through the app's port. The dev proxies (Vit
 `server.proxy`, `api-http-dev-proxy-plugin.ts`, the production-client gateway) forward
 the `Host` header unchanged, because the dev sign-in rule in
 `@meridian/contracts/dev-auth` accepts an `Origin` only when it equals the request's
-`Host` or is a tailnet name. Rewriting `Host` to the server's port would sign every
-browser request out; trusting `localhost` as an origin would let any local page act as
-the dev user.
+`Host`. Rewriting `Host` to the server's port would sign every browser request out.
+Trusting a name instead would be wrong: every dev stack is `localhost`, so any local
+page could act as the dev user, and anyone can serve a page under `*.ts.net`.
 
 ## Stopping and cleanup
 
-`pnpm dev --stop` reads the record, takes the supervisor's process tree, sends the
-supervisor `SIGTERM` and waits for it; whatever in that tree is still alive after 15 s
-gets `SIGKILL`. The supervisor does the same to its services with a 5 s grace. Both
-find processes by parentage from `ps`, since pnpm puts each script in a process group
-of its own.
+`pnpm dev --stop` reads the record, takes the process trees of the supervisor and of
+each recorded service, sends the supervisor `SIGTERM` and waits for it; whatever in
+those trees is still alive after 15 s gets `SIGKILL`. The supervisor does the same to
+its services with a 5 s grace. Both find processes by parentage from `ps`, since pnpm
+puts each script in a process group of its own, and both check a pid's start time
+again before each signal. A stop that arrives during a restart waits for the restart
+to notice and start nothing, so no service is born after the tree is taken.
 
-Nothing sweeps for orphans. A stack whose checkout is removed stops itself, and a
-supervisor killed with `SIGKILL` leaves services that hold the checkout's ports, which
-the next `pnpm dev` reports by port.
+Nothing sweeps for orphans. A stack whose checkout is removed stops itself. A
+supervisor killed outright (`SIGKILL`, the OOM killer) leaves its services running;
+the record still names them, so `pnpm dev --stop` stops them and the next `pnpm dev`
+stops them before it starts.
 
 Removing a worktree is `wt remove`. Its `post-remove` hook runs `pnpm dev:gc-dbs`, which
 drops every project database that no live worktree, connection, running test or manual

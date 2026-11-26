@@ -12,8 +12,8 @@ This folder documents the first deployment shape for Meridian Flow's v3 stack:
 | `/ws/*` | server |
 
 Browser clients should use same-origin relative HTTP/WS paths when an ingress
-combines the app and server. Portless dev keeps services on separate
-`*.localhost` origins to exercise the real proxy/TLS path.
+combines the app and server. In dev the app's port proxies the server-owned
+paths, so the browser sees one origin there too.
 
 Reference ingress config: [`nginx.same-origin.example.conf`](./nginx.same-origin.example.conf).
 

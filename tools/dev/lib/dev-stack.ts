@@ -2,13 +2,20 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import type { DevPorts } from "./dev-ports";
+import { type DevPorts, resolveDevPorts } from "./dev-ports";
 
 export type ClientBuild = "development" | "production";
+
+// keep: a pid alone can be reused by an unrelated process; the `ps` start time beside it is what makes it the same process
+export interface ProcessRef {
+  pid: number;
+  start: string;
+}
 
 export interface DevStackState {
   pid: number;
   processStart: string;
+  services: ProcessRef[];
   startedAt: string;
   clientBuild: ClientBuild;
   www: boolean;
@@ -17,14 +24,14 @@ export interface DevStackState {
   lastActiveAt: string;
 }
 
-export interface ProcessInfo {
-  pid: number;
+export interface ProcessInfo extends ProcessRef {
   rssKb: number;
   cpuCentiseconds: number;
 }
 
 const STATE_FILE = path.join(".meridian", "dev-stack.json");
 const IDLE_STOP_FILE = path.join(".meridian", "dev-idle-stopped");
+const START_LOCK_FILE = path.join(".meridian", "dev-start.lock");
 export const DEV_LOG = path.join("logs", "dev.log");
 
 function ps(args: string[]): string {
@@ -32,7 +39,8 @@ function ps(args: string[]): string {
     return execFileSync("ps", args, {
       cwd: "/",
       encoding: "utf8",
-      env: { ...process.env, LC_ALL: "C" },
+      // keep: `lstart` is printed in the caller's locale and timezone; pin both or two shells disagree on a process's identity
+      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
       stdio: ["ignore", "pipe", "ignore"],
     });
   } catch (error) {
@@ -63,14 +71,24 @@ export function writeStackState(checkout: string, state: DevStackState): void {
   fs.renameSync(temporary, file);
 }
 
-export function clearStackState(checkout: string): void {
+// keep: with `ownerPid`, only that supervisor's record is removed; a supervisor that lost a start race must not delete the winner's
+export function clearStackState(checkout: string, ownerPid?: number): void {
+  if (ownerPid !== undefined && readStackState(checkout)?.pid !== ownerPid) return;
   fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
 }
 
-// keep: a pid alone can be reused by an unrelated process; the recorded start time is what makes it this stack
+function isSameProcess(ref: ProcessRef): boolean {
+  return processStart(ref.pid) === ref.start;
+}
+
 export function runningStack(checkout: string): DevStackState | null {
   const state = readStackState(checkout);
-  return state && processStart(state.pid) === state.processStart ? state : null;
+  return state && isSameProcess({ pid: state.pid, start: state.processStart }) ? state : null;
+}
+
+// keep: a running stack's ports come from its record; `DEV_PORT_BASE` set only in the shell that started it is not visible to anyone else
+export function stackPorts(checkout: string, env: NodeJS.ProcessEnv = process.env): DevPorts {
+  return runningStack(checkout)?.ports ?? resolveDevPorts(checkout, env);
 }
 
 function parseCpuCentiseconds(time: string): number {
@@ -92,29 +110,30 @@ function linuxCpuCentiseconds(pid: number): number | null {
 
 // keep: pnpm starts each script in a process group of its own, so the stack is found by parentage, not by group
 export function processTree(rootPid: number): ProcessInfo[] {
-  const byParent = new Map<number, ProcessInfo[]>();
-  let root: ProcessInfo | undefined;
-  for (const line of ps(["-A", "-o", "pid=,ppid=,rss=,time="]).split("\n")) {
-    const [pidField, parentField, rss, time] = line.trim().split(/\s+/);
-    if (!time) continue;
-    const pid = Number(pidField);
-    const info: ProcessInfo = {
-      pid,
-      rssKb: Number(rss),
-      // keep: Linux `ps` reports whole CPU seconds, too coarse to tell an idle stack from a used one
-      cpuCentiseconds:
-        (process.platform === "linux" ? linuxCpuCentiseconds(pid) : null) ??
-        parseCpuCentiseconds(time),
-    };
-    if (pid === rootPid) root = info;
+  type Row = ProcessRef & { rssKb: number; time: string };
+  const byParent = new Map<number, Row[]>();
+  let root: Row | undefined;
+  for (const line of ps(["-A", "-o", "pid=,ppid=,rss=,time=,lstart="]).split("\n")) {
+    const [pidField, parentField, rss, time, ...start] = line.trim().split(/\s+/);
+    if (start.length === 0) continue;
+    const row: Row = { pid: Number(pidField), start: start.join(" "), rssKb: Number(rss), time };
+    if (row.pid === rootPid) root = row;
     const parent = Number(parentField);
-    byParent.set(parent, [...(byParent.get(parent) ?? []), info]);
+    byParent.set(parent, [...(byParent.get(parent) ?? []), row]);
   }
   if (!root) return [];
   const tree: ProcessInfo[] = [];
   const pending = [root];
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    tree.push(next);
+    tree.push({
+      pid: next.pid,
+      start: next.start,
+      rssKb: next.rssKb,
+      // keep: Linux `ps` reports whole CPU seconds, too coarse to tell an idle stack from a used one
+      cpuCentiseconds:
+        (process.platform === "linux" ? linuxCpuCentiseconds(next.pid) : null) ??
+        parseCpuCentiseconds(next.time),
+    });
     pending.push(...(byParent.get(next.pid) ?? []));
   }
   return tree;
@@ -129,10 +148,11 @@ function isAlive(pid: number): boolean {
   }
 }
 
-export function signalProcesses(pids: readonly number[], signal: NodeJS.Signals): void {
-  for (const pid of pids) {
+function signalProcesses(refs: readonly ProcessRef[], signal: NodeJS.Signals): void {
+  for (const ref of refs) {
+    if (!isSameProcess(ref)) continue;
     try {
-      process.kill(pid, signal);
+      process.kill(ref.pid, signal);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
@@ -165,27 +185,49 @@ export async function waitForFreePorts(ports: readonly number[], timeoutMs: numb
 }
 
 // keep: take the tree before signalling; a child whose parent has exited is reparented and no longer found by parentage
-export async function terminateTree(pids: readonly number[], graceMs: number): Promise<void> {
-  signalProcesses(pids, "SIGTERM");
+export async function terminateTree(refs: readonly ProcessRef[], graceMs: number): Promise<void> {
+  signalProcesses(refs, "SIGTERM");
   const deadline = Date.now() + graceMs;
-  while (pids.some(isAlive) && Date.now() < deadline) await sleep(200);
-  signalProcesses(pids.filter(isAlive), "SIGKILL");
+  while (refs.some((ref) => isAlive(ref.pid)) && Date.now() < deadline) await sleep(200);
+  signalProcesses(refs, "SIGKILL");
 }
 
+// keep: the record names the services as well as the supervisor, so a stack whose supervisor was killed can still be stopped
 export async function stopStack(checkout: string): Promise<boolean> {
-  const state = runningStack(checkout);
-  if (!state) {
-    clearStackState(checkout);
-    return false;
+  const state = readStackState(checkout);
+  if (!state) return false;
+  const supervisor = { pid: state.pid, start: state.processStart };
+  const supervisorAlive = isSameProcess(supervisor);
+  const roots = [...(supervisorAlive ? [supervisor] : []), ...state.services.filter(isSameProcess)];
+  const stack = new Map<number, ProcessRef>();
+  for (const root of roots) for (const info of processTree(root.pid)) stack.set(info.pid, info);
+  if (supervisorAlive) {
+    // The supervisor stops its own services on SIGTERM; the rest of the tree is the fallback.
+    signalProcesses([supervisor], "SIGTERM");
+    const deadline = Date.now() + 15_000;
+    while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
-  const tree = processTree(state.pid).map((info) => info.pid);
-  // The supervisor stops its own services on SIGTERM; the rest of the tree is the fallback.
-  signalProcesses([state.pid], "SIGTERM");
-  const deadline = Date.now() + 15_000;
-  while (isAlive(state.pid) && Date.now() < deadline) await sleep(200);
-  await terminateTree(tree, 0);
+  await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
   clearStackState(checkout);
-  return true;
+  return stack.size > 0;
+}
+
+// keep: two `pnpm dev` runs that both pass the port check would each start a supervisor and overwrite each other's record
+export function acquireStartLock(checkout: string): () => void {
+  const file = path.join(checkout, START_LOCK_FILE);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    fs.writeFileSync(file, String(process.pid), { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const owner = Number(fs.readFileSync(file, "utf8"));
+    if (isAlive(owner)) {
+      throw new Error(`another pnpm dev (pid ${owner}) is starting this checkout's stack`);
+    }
+    fs.rmSync(file, { force: true });
+    return acquireStartLock(checkout);
+  }
+  return () => fs.rmSync(file, { force: true });
 }
 
 export function recordIdleStop(checkout: string, idleMinutes: number): void {

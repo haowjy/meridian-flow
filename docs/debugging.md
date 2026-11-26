@@ -309,7 +309,7 @@ messages. Plain `tail` and `send`'s live output don't draw queued rows.
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,
   or in `--project <id>`.
-- `MF_SERVER_URL` targets a stack other than this worktree's Portless routes;
+- `MF_SERVER_URL` targets a stack other than this worktree's own;
   add `MF_COOKIE` when that stack needs a session cookie. A 401 from a local
   stack means `DEV_AUTH_BYPASS=1` is not set in `.env`.
 
@@ -613,8 +613,8 @@ part to 32 KiB of UTF-8; Raw remains exact up to the request capture ceiling.
 
 ## Consume Server Events
 
-For an LLM or script, prefer `./mf log`. It resolves the current worktree's
-live Portless routes, sends `MF_COOKIE` when set, and never writes a cookie
+For an LLM or script, prefer `./mf log`. It finds the current worktree's
+running stack, sends `MF_COOKIE` when set, and never writes a cookie
 jar:
 
 ```bash

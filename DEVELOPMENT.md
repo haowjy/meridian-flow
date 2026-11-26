@@ -239,7 +239,7 @@ WebSocket paths to the server's port.
 The services listen on `127.0.0.1` only. To reach one from another device, forward
 its app port: an SSH tunnel (`ssh -L <port>:localhost:<port> <host>`), or Tailscale
 (`tailscale serve --bg --https=<port> localhost:<port>`, after checking
-`tailscale serve status`). The dev sign-in bypass accepts a tailnet host; anyone on
+`tailscale serve status`). The dev sign-in bypass accepts a tailnet host, so anyone on
 the tailnet then acts as the dev user.
 
 ### After a reboot

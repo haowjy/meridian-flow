@@ -3,7 +3,7 @@
 What runs when a writer uses Meridian Flow. Follow the numbers for one chat message: the browser
 sends it (1), the server asks a model for a reply (2), saves the reply and the model's edits in
 Postgres (3), and streams both back (4). The other boxes are what that path depends on. **Nothing
-is deployed yet**: under `pnpm dev` each process sits behind a Portless HTTPS route, and the plan is
+is deployed yet**: under `pnpm dev` each process listens on its own `localhost` port, and the plan is
 on the [hosting page](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md).
 Step by step: [a message becomes an edit](flows/message-becomes-edit.md).
 
@@ -144,7 +144,7 @@ Credit grants come from the webhook and balances from the ledger in Postgres, ne
 
 `./mf`: the command-line client for debugging and for agents.
 
-Uses the same HTTP routes, thread socket client and view model as the app. It talks to the current worktree's `pnpm dev` server, found through its Portless route, or to the one `MF_SERVER_URL` names.
+Uses the same HTTP routes, thread socket client and view model as the app. It talks to the current worktree's `pnpm dev` server, found through the stack's record, or to the one `MF_SERVER_URL` names.
 
 - Kind: client
 - Paths: `tools/mf/src/main.ts`, `tools/mf/src/core/session.ts`

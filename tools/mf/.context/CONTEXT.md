@@ -13,7 +13,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 
 - **Layout.** `src/core/` is the domain-free framework (`CommandSpec`/`CommandGroup`
   parsing, `output.ts`, the `EXIT` contract in `cli-error.ts`, `session.ts` for
-  Portless discovery, the optional `MF_COOKIE` and bounded requests) and
+  dev stack discovery, the optional `MF_COOKIE` and bounded requests) and
   imports no group. `src/commands/<group>/` holds one group each; a new group is
   listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
   never `main.ts`. Command tests run the real CLI against `src/test-support/wire.ts`,
@@ -146,7 +146,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 ## Following a run
 
 `transport.ts` composes one `ThreadSocketClient` per command with the session's
-cookie and Portless CA. The shared client owns connected gating, replay, dedupe,
+cookie. The shared client owns connected gating, replay, dedupe,
 gaps and reconnect with the package's default socket deadlines. Each subscribe names a
 request id, and its acknowledgement echoes that id and the accepted `after` cursor. Replay
 failures retry that thread alone without dropping healthy subscriptions. `toError` keeps
@@ -236,4 +236,4 @@ contains. It carries no run identity: `turn.started` has only the turn id.
 JSON fixtures live in `fixtures/`; TypeScript in `src/`. The root Vitest project
 list includes this package's config once; `pnpm test` runs every CLI test, and the
 package's Nx test target is for focused runs only. Cached Nx `typecheck` and `test`
-include the shared Portless helpers and the root shim as inputs.
+include the shared `tools/dev` helpers and the root shim as inputs.

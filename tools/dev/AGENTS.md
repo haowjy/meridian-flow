@@ -11,8 +11,8 @@ this directory never imports application packages. The `./mf` CLI lives in
   running stack's record; never hard-code a port or pick a free one at start.
 - A stack is found and stopped through its record, `.meridian/dev-stack.json`
   (`lib/dev-stack.ts`): the supervisor's pid plus its `ps` start time. `runningStack`
-  treats a record whose start time doesn't match as stale, so a reused pid is never
-  signalled.
+  treats a record whose start time doesn't match as stale, and every signal checks the
+  target's start time first, so a reused pid is not signalled.
 - `DEV_DATABASES` in `lib/dev-env.ts` is the only database registry. Resolve
   worktree URLs through `applyDevEnvToProcess()` and administer databases
   through `lib/dev-db.ts`. Never regex-edit a URL, fall back to a shared

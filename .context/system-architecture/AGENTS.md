@@ -18,7 +18,7 @@ that varies by project goes in `map.config.mjs`, a plain object the browser impo
 - The viewer's colours are `packages/design-tokens`, read when the viewer loads (the config's `tokens`):
   a token change shows in the map with nothing to copy.
 - `pnpm dev` serves the viewer through the engine's Vite plugin (registered in `apps/app/vite.config.ts`). It
-  serves any git-tracked file at `/architecture/repo/<path>` for the viewer's links; `pnpm dev:funnel`
-  publishes that too, which is fine while the repo is public. If it becomes private, set `serveSource: false`.
+  serves any git-tracked file at `/architecture/repo/<path>` for the viewer's links; a tunnel
+  to the app's port publishes that too, which is fine while the repo is public. If it becomes private, set `serveSource: false`.
 - Routes, the Read | Map views and the doc view are described in the engine's
   [.context/CONTEXT.md](../../tools/architecture-map/.context/CONTEXT.md).
