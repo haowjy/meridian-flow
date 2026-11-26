@@ -150,7 +150,7 @@
     "apps/server/server/domains/mcp/domain/token-cipher.test.ts": 3,
     "apps/server/server/domains/notices/adapters/drizzle-notice-port.db.test.ts": 3,
     "apps/server/server/domains/observability/causal-context.test.ts": 2,
-    "apps/server/server/domains/observability/safe-event.test.ts": 19,
+    "apps/server/server/domains/observability/safe-event.test.ts": 20,
     "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts": 10,
     "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts": 1,
     "apps/server/server/domains/projects/project-bootstrap-readiness.db.test.ts": 2,
