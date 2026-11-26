@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { validateDbName } from "./dev-db";
@@ -54,9 +54,14 @@ export function resolveMainCheckoutRoot(repoRoot: string): string {
   return path.dirname(path.isAbsolute(commonDir) ? commonDir : path.resolve(repoRoot, commonDir));
 }
 
+// keep: compare directories by device and inode, never by path text; on a disk that ignores letter case git and Node can spell one directory two ways
+function isSameDirectory(a: string, b: string): boolean {
+  const [first, second] = [statSync(a), statSync(b)];
+  return first.dev === second.dev && first.ino === second.ino;
+}
+
 export function isMainCheckout(repoRoot: string): boolean {
-  const mainRoot = resolveMainCheckoutRoot(repoRoot);
-  return realpathSync(repoRoot) === realpathSync(mainRoot);
+  return isSameDirectory(repoRoot, resolveMainCheckoutRoot(repoRoot));
 }
 
 function readEnvFile(envPath: string): Record<string, string> {
@@ -107,16 +112,11 @@ function databaseSlug(checkoutRealpath: string): string {
 }
 
 function liveLinkedWorktrees(repoRoot: string): string[] {
-  const mainRoot = realpathSync(resolveMainCheckoutRoot(repoRoot));
-  return listCheckoutPaths(repoRoot).flatMap((worktreePath) => {
-    try {
-      const worktree = realpathSync(worktreePath);
-      return worktree === mainRoot ? [] : [worktree];
-    } catch {
-      // Git still lists a worktree whose directory is gone.
-      return [];
-    }
-  });
+  const mainRoot = resolveMainCheckoutRoot(repoRoot);
+  // Git still lists a worktree whose directory is gone.
+  return listCheckoutPaths(repoRoot)
+    .filter((worktree) => existsSync(worktree) && !isSameDirectory(worktree, mainRoot))
+    .map((worktree) => realpathSync(worktree));
 }
 
 // keep: two worktrees whose directories share a name would share one database; refuse instead of letting either write to the other's
@@ -124,7 +124,7 @@ function resolveOwnDatabaseSlug(repoRoot: string): string {
   const checkout = realpathSync(repoRoot);
   const slug = databaseSlug(checkout);
   const twin = liveLinkedWorktrees(repoRoot).find(
-    (other) => other !== checkout && databaseSlug(other) === slug,
+    (other) => !isSameDirectory(other, checkout) && databaseSlug(other) === slug,
   );
   if (twin) {
     throw new Error(
