@@ -34,9 +34,7 @@ Domain runtime lives in `apps/server/server/domains/`, not in package route hand
 
 ```bash
 pnpm install
-pnpm dev:infra       # start the Postgres Docker container (postgres:16 + pg_bigm)
-pnpm bootstrap       # create the DB and install the baseline
-pnpm dev
+pnpm dev             # starts Postgres (postgres:16 + pg_bigm), sets up the database, starts the app
 ```
 
 Each checkout's dev stack has its own ports: `pnpm dev:urls` prints its `http://localhost:<port>` URLs.

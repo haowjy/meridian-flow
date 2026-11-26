@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { checkDevReadiness } from "./dev-readiness";
-import { assertDevInfraReady } from "./lib/dev-infra";
+import { prepareDevDatabases } from "./lib/dev-infra";
 import { browserUrl, type DevPorts, loopbackOrigin, resolveDevPorts } from "./lib/dev-ports";
 import {
   acquireStartLock,
@@ -32,7 +32,15 @@ if (unknown.length > 0) {
 const has = (flag: string) => argv.includes(flag);
 
 type StackSummary = Pick<DevStackState, "clientBuild" | "www" | "ports" | "tailnetHost">;
-type Requested = { clientBuild: ClientBuild; www: boolean; tailscale: boolean };
+type Wanted = { clientBuild: ClientBuild; www: boolean; tailscale: boolean };
+
+function lacks(running: DevStackState, wanted: Wanted): string[] {
+  return [
+    ...(wanted.clientBuild !== running.clientBuild ? ["the production client"] : []),
+    ...(wanted.www && !running.www ? ["www"] : []),
+    ...(wanted.tailscale && !running.tailnetHost ? ["the tailnet address"] : []),
+  ];
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -104,13 +112,15 @@ function stackEnv(): NodeJS.ProcessEnv {
   );
 }
 
-async function start(requested: Requested): Promise<DevStackState> {
+async function start(wanted: Wanted): Promise<DevStackState> {
   if (!runningStack(repoRoot) && (await stopStack(repoRoot))) {
     console.log("note: stopped services left running by a stack whose supervisor had died");
   }
-  await assertDevInfraReady();
+  for (const { database, created } of await prepareDevDatabases(repoRoot)) {
+    if (created) console.log(`note: created database "${database}"`);
+  }
   const ports = resolveDevPorts(repoRoot);
-  await waitForFreePorts([ports.app, ports.server, ...(requested.www ? [ports.www] : [])], 0);
+  await waitForFreePorts([ports.app, ports.server, ...(wanted.www ? [ports.www] : [])], 0);
   const stopRecord = readIdleStopRecord(repoRoot);
   if (stopRecord) {
     console.log(`note: ${stopRecord}`);
@@ -122,9 +132,9 @@ async function start(requested: Requested): Promise<DevStackState> {
     "bun",
     [
       path.join(repoRoot, "tools/dev/dev-supervisor.ts"),
-      ...(requested.clientBuild === "production" ? ["--production-client"] : []),
-      ...(requested.www ? ["--www"] : []),
-      ...(requested.tailscale ? ["--tailscale"] : []),
+      ...(wanted.clientBuild === "production" ? ["--production-client"] : []),
+      ...(wanted.www ? ["--www"] : []),
+      ...(wanted.tailscale ? ["--tailscale"] : []),
     ],
     {
       cwd: repoRoot,
@@ -142,7 +152,7 @@ async function start(requested: Requested): Promise<DevStackState> {
   fs.closeSync(logFd);
   return waitUntilReady({
     ports,
-    timeoutMs: startupMs(requested.clientBuild),
+    timeoutMs: startupMs(wanted.clientBuild),
     supervisorAlive: () => !exited,
     isCurrent: (state) => state.pid === supervisor.pid,
   });
@@ -155,43 +165,38 @@ async function main(): Promise<void> {
     return;
   }
   const running = runningStack(repoRoot);
-  const restart = has("--restart") && running !== null;
-  const requested: Requested = {
-    // A restart keeps the running stack's client build unless the flag names the other one.
-    clientBuild: has("--production-client")
-      ? "production"
-      : restart
-        ? running.clientBuild
+  // keep: a flag asks for more and never takes away. Typed against a running stack, a plain `pnpm dev` reports it as it is; a flag the stack lacks starts it again with that added. Only `pnpm dev --stop` removes anything
+  const wanted: Wanted = {
+    clientBuild:
+      has("--production-client") || running?.clientBuild === "production"
+        ? "production"
         : "development",
-    www: has("--www"),
-    tailscale: has("--tailscale"),
+    www: has("--www") || running?.www === true,
+    tailscale: has("--tailscale") || running?.tailnetHost !== undefined,
   };
 
   if (has("--urls")) {
     report(
       running ? "running" : "not running",
-      running ?? { ...requested, ports: resolveDevPorts(repoRoot) },
+      running ?? { ...wanted, ports: resolveDevPorts(repoRoot) },
     );
     return;
   }
-  if (!running) {
+  const missing = running ? lacks(running, wanted) : [];
+  if (!running || missing.length > 0) {
     const releaseLock = acquireStartLock(repoRoot);
     try {
-      report("started", await start(requested));
+      if (running) {
+        console.log(`note: starting the stack again to add ${missing.join(" and ")}`);
+        await stopStack(repoRoot);
+      }
+      report("started", await start(wanted));
     } finally {
       releaseLock();
     }
     return;
   }
-  if (
-    running.clientBuild !== requested.clientBuild ||
-    (requested.www && !running.www) ||
-    (requested.tailscale && !running.tailnetHost)
-  ) {
-    throw new Error(
-      `a stack is already running with the ${running.clientBuild} client${running.www ? " and www" : ""}${running.tailnetHost ? ", published on the tailnet" : ""}. To change that, stop it first: pnpm dev --stop`,
-    );
-  }
+  const restart = has("--restart");
   if (restart) process.kill(running.pid, "SIGUSR2");
   const ready = await waitUntilReady({
     ports: running.ports,

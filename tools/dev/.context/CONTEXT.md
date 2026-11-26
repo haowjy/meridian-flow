@@ -123,11 +123,22 @@ Browser URLs are `http://localhost:<port>`; processes reach each other on
 `http://127.0.0.1:<port>`, where every service binds. There is no proxy, certificate
 or per-worktree hostname.
 
-`pnpm dev` (`dev.ts`) checks Postgres and the ports and starts `dev-supervisor.ts`
-detached with the shell's environment, less the variables pnpm and Nx set for the
-command itself. Nothing in `dev.ts` loads `.env` into that environment
-(`assertDevInfraReady` fills a copy), or the values would outlive a restart that is
-meant to read the file again. The supervisor loads `.env` through `applyDevEnvToProcess` each time it
+`pnpm dev` (`dev.ts`) sets up what the stack needs instead of checking for it:
+`prepareDevDatabases` (`lib/dev-infra.ts`) starts the Postgres container if it is down,
+creates the checkout's database if it is missing and installs the baseline if the
+database has none. `pnpm bootstrap` and `pnpm db:reset` call the same function. Each
+step is safe to repeat, so nothing here asks the developer to run a command first. The
+one stop is a different installed baseline, because replacing it erases data.
+
+A flag typed against a running stack adds to it: `dev.ts` works out what the stack
+lacks (the production client, www, the tailnet address) and, if anything, stops the
+stack and starts it again with that added. It never refuses a flag and never removes
+what is running; only `pnpm dev --stop` removes.
+
+`dev.ts` then checks the ports and starts `dev-supervisor.ts` detached with the
+shell's environment, less the variables pnpm and Nx set for the command itself.
+Nothing in `dev.ts` loads `.env` into that environment (`prepareDevDatabases` fills a
+copy), or the values would outlive a restart that is meant to read the file again. The supervisor loads `.env` through `applyDevEnvToProcess` each time it
 starts the services, sets `PORT`, `MERIDIAN_API_ORIGIN`, `MERIDIAN_APP_ORIGIN` and, with
 `--www`, `MERIDIAN_WWW_ORIGIN`, and writes `.meridian/dev-stack.json`. `pnpm dev`
 reports `started` only after that record names the supervisor it launched and the

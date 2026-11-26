@@ -36,7 +36,6 @@
     "check:i18n": "node tools/ci/check-i18n-catalogs.mjs",
     "check:debug-probes": "node tools/ci/check-debug-probes.mjs",
     "dev:db:ensure": "bun tools/dev/ensure-db.ts",
-    "dev:db:prepare": "bun tools/dev/prepare-db.ts",
     "dev:db:drop": "bun tools/dev/drop-db.ts",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.mts",
     "smoke:app-dev-transform": "bun tools/dev/smoke-app-dev-transform.ts",

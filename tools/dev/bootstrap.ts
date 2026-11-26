@@ -1,45 +1,16 @@
-import { execSync } from "node:child_process";
 import { resolve } from "node:path";
-import { ensureDatabaseForUrl } from "./lib/dev-db.ts";
-import { applyDevEnvToProcess, DEV_DATABASES } from "./lib/dev-env.ts";
-import { ensureDevInfraUp } from "./lib/dev-infra.ts";
+import { prepareDevDatabases } from "./lib/dev-infra.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
-applyDevEnvToProcess(repoRoot);
 
-const NEXT_STEP = "Next: open the app; the dev user is provisioned on first sign-in";
-
-async function ensureDevDatabaseReady(): Promise<void> {
-  for (const db of DEV_DATABASES) {
-    const databaseUrl = process.env[db.envVar];
-    if (!databaseUrl) continue;
-    const { targetDb, created } = await ensureDatabaseForUrl(databaseUrl);
-    console.log(`bootstrap: ${db.label} database "${targetDb}" ${created ? "created" : "ready"}`);
-  }
-}
-
-async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-
-  if (!databaseUrl) {
-    throw new Error(
-      "bootstrap: DATABASE_URL is not set, so database preparation cannot run. " +
-        "Copy .env.example to .env in the main checkout, set DATABASE_URL there, " +
-        "and run `pnpm dev:infra`.",
-    );
-  }
-
-  console.log("bootstrap: ensuring local Postgres container is up…");
-  ensureDevInfraUp(repoRoot);
-  await ensureDevDatabaseReady();
-
-  console.log("bootstrap: running db:migrate…");
-  execSync("pnpm db:migrate", { cwd: repoRoot, stdio: "inherit" });
-
-  console.log(`\nDone.\n${NEXT_STEP}`);
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+prepareDevDatabases(repoRoot)
+  .then((prepared) => {
+    for (const { database, created } of prepared) {
+      console.log(`bootstrap: database "${database}" ${created ? "created" : "ready"}`);
+    }
+    console.log("Done. `pnpm dev` does this too; the dev user is provisioned on first sign-in");
+  })
+  .catch((error: unknown) => {
+    console.error(error instanceof Error ? `bootstrap: ${error.message}` : error);
+    process.exit(1);
+  });

@@ -44,19 +44,6 @@ async function baselineStatus(
   );
 }
 
-export async function currentBaselineStatus(input: {
-  databaseUrl: string;
-  migrationsDirectory: string;
-}): Promise<"pending" | "current"> {
-  const baseline = readBaseline(input.migrationsDirectory);
-  const client = postgres(input.databaseUrl, { max: 1, connect_timeout: 5 });
-  try {
-    return await baselineStatus(client, baseline, input.databaseUrl);
-  } finally {
-    await client.end();
-  }
-}
-
 export const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
 
 interface ErrorDetails {

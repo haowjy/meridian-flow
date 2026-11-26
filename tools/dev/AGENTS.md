@@ -29,8 +29,8 @@ this directory never imports application packages. The `./mf` CLI lives in
   changes under another project name and port, never recreate it from a branch you
   are still checking. Only `pnpm dev:infra:upgrade`, run from a checkout that has
   merged `main`, moves it to a new image
-  ([DEVELOPMENT.md](../../DEVELOPMENT.md)); `pnpm dev:infra` and bootstrap start a
-  missing server and never touch a running one.
+  ([DEVELOPMENT.md](../../DEVELOPMENT.md)); `pnpm dev`, `pnpm dev:infra` and bootstrap
+  start a missing server and never touch a running one.
 - Change schemas with `pnpm db:generate` plus `pnpm db:reset`, never `push`.
   The pre-deploy baseline rule is in [database guidance](../../packages/database/AGENTS.md).
 - No secret value appears in a command line, stdout or `.meridian/dev-stack.json`.
