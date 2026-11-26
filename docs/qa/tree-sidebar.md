@@ -7,7 +7,7 @@ recipe is not a current pass claim.
 
 ## Setup
 
-1. In an owned worktree, run `pnpm dev:db:prepare` and `pnpm dev`.
+1. In an owned worktree, run `pnpm dev`.
    Discover its URLs with `pnpm dev:urls`.
 2. Create an isolated project:
 

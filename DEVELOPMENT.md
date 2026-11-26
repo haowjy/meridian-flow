@@ -57,10 +57,8 @@ mise install                  # pinned Node, Bun and Python from .tool-versions
 eval "$(mise activate bash)"  # or add this line to ~/.bashrc
 pnpm install
 cp .env.example .env          # DEV_AUTH_BYPASS=1 needs no WorkOS keys; fill them in for real login
-pnpm dev:infra                # start the Postgres + pg_bigm Docker container (:54422) if not running
 pnpm exec lefthook install --reset-hooks-path
-pnpm bootstrap                # create the DB and install the baseline
-pnpm dev
+pnpm dev                      # starts Postgres, creates this checkout's database, installs the baseline, starts the stack
 pnpm dev:urls
 ```
 
@@ -73,8 +71,7 @@ git worktree add ../meridian-flow.worktrees/<slug> -b h/<branch>
 cd ../meridian-flow.worktrees/<slug>
 pnpm install
 pnpm exec lefthook install --reset-hooks-path   # once per worktree
-pnpm bootstrap                                  # scoped DB + migrate; skips if infra already up
-pnpm dev
+pnpm dev                                        # creates and sets up the worktree's own database on first run
 ```
 
 | Concern | Behavior |
@@ -83,7 +80,7 @@ pnpm dev
 | `DATABASE_URL` | Derived as `meridian_<worktree directory name>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
 | Ports | Each checkout's own block, kept as `DEV_PORT_BASE` in its `.env.local` (chosen the first time `pnpm dev` or `pnpm dev:urls` runs in a worktree); `pnpm dev:urls` prints them |
-| `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
+| `pnpm dev:infra` | Shared — starts Postgres if it is not running and healthy, as the container already is; never recreates it. `pnpm dev` does this itself |
 | `pnpm dev:infra:upgrade` | Shared — recreates the container onto the image tag in your checkout's compose file. Run it from a checkout that has merged `main`; an older branch's compose file would flip the server back to the image it knows |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
@@ -102,14 +99,14 @@ Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm dev:infra` | Start the Postgres Docker container (`:54422`) if it is not running and healthy; a running container is left alone, so any branch's `bootstrap` is safe |
+| `pnpm dev:infra` | Start the Postgres Docker container (`:54422`) if it is not running and healthy. It is never recreated, so any branch's `pnpm dev` or `bootstrap` is safe |
 | `pnpm dev:infra:upgrade` | Build the image and recreate the container onto the tag in `docker-compose.yml`; the data volume stays. The one command that moves the shared server to a new image (e.g. after merging `main` that bumps the pg_bigm tag, or from the older plain `postgres:16`) |
 | `pnpm db:check-extensions` | Prove pg_bigm is preloaded and the search extensions install and serve a 1-character Han `LIKE` (rolled back) |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm db:generate` | Regenerate the baseline from schema and SQL inputs |
 | `pnpm db:studio` | Drizzle Kit Studio |
 | `tools/dev/psql [args…]` | Run `psql` against this checkout's database |
-| `pnpm bootstrap` | Ensure DB + install baseline |
+| `pnpm bootstrap` | What `pnpm dev` does before it starts the stack, on its own: start Postgres if it is down, create the checkout's database, install the baseline |
 | `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, any database with a connection, active tests, reserved manual-test names, and reserved databases |
 
 ### Resetting a dev database
@@ -227,6 +224,17 @@ pnpm dev:restart            # restart the services in place, same environment
 pnpm dev --stop             # stop this checkout's stack
 pnpm dev:stacks             # every checkout's running stack, its memory and idle time
 ```
+
+`pnpm dev` needs no setup step before it. It starts the Postgres container if it is
+down, creates this checkout's database if it is missing and installs the baseline if
+the database has none. It stops only when a different baseline is installed, because
+replacing one erases the database: run `pnpm db:reset`.
+
+A flag adds to a running stack. `pnpm dev --www`, `--tailscale` or
+`pnpm dev:production-client` against a stack that lacks it stops the stack and starts
+it again with that added, in the environment of the shell you typed it in. A plain
+`pnpm dev` never changes a running stack; it prints what is up. To take something away,
+`pnpm dev --stop` and start again.
 
 `pnpm dev` starts one background supervisor (`tools/dev/dev-supervisor.ts`) that
 runs the services and writes their output to `logs/dev.log`. It records itself in

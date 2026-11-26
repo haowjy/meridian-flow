@@ -8,7 +8,7 @@ instead of copying it.
 
 ## Setup
 
-An owned stack (`pnpm dev`, `pnpm bootstrap` first on a fresh worktree). In a throwaway project
+An owned stack (`pnpm dev`). In a throwaway project
 seed `manuscript://Notes` and `manuscript://Shelf/Item` first, then `manuscript://Chapter 1`
 with two long paragraphs (each three or more lines), a link line
 (`[the notes](<manuscript://Notes>) and some words`), a 2×2 table and thirty filler paragraphs.

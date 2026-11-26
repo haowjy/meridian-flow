@@ -9,19 +9,15 @@ const MAX_SLUG_LENGTH = 48;
 
 export interface DevDatabase {
   readonly envVar: string;
-  readonly migrateScript: string;
   readonly label: string;
-  readonly migrationsDir?: string;
-  readonly catchUpHint?: string;
+  readonly migrationsDir: string;
 }
 
 export const DEV_DATABASES: readonly DevDatabase[] = [
   {
     envVar: "DATABASE_URL",
-    migrateScript: "pnpm db:migrate",
     label: "Meridian local Postgres",
     migrationsDir: "packages/database/src/migrations",
-    catchUpHint: "pnpm db:migrate",
   },
 ];
 

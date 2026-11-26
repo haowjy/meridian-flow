@@ -28,7 +28,7 @@ pnpm typecheck
 pnpm test   # non-DB tests; use pnpm test:db from the repo root for DB coverage
 ```
 
-**Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (ensure database, then install baseline).
+**Fresh clone:** `pnpm dev` starts Postgres, creates the database and installs the baseline before it starts the stack. `pnpm bootstrap` does the same without starting a stack.
 
 ## Auth boundary
 

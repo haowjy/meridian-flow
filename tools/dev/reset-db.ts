@@ -1,11 +1,9 @@
 #!/usr/bin/env bun
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
 import { formatPgError, parseTargetDatabase, resetSchemaForUrl } from "./lib/dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./lib/dev-env";
-import { ensureDevInfraUp } from "./lib/dev-infra";
+import { ensureDevInfraUp, prepareDevDatabases } from "./lib/dev-infra";
 
 async function confirmReset(targetDb: string, yes: boolean): Promise<void> {
   if (yes) return;
@@ -43,11 +41,7 @@ async function main(): Promise<void> {
   }
 
   console.log("▸ Installing database baseline…");
-  execFileSync("bun", [path.join(repoRoot, "tools/dev/prepare-db.ts")], {
-    cwd: repoRoot,
-    stdio: "inherit",
-    env: process.env,
-  });
+  await prepareDevDatabases(repoRoot);
 }
 
 main().catch((err: unknown) => {
