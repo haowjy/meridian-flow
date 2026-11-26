@@ -17,16 +17,16 @@ import { APP_SSR_NO_EXTERNAL } from "./src/server/ssr-no-external";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoLogsDir = path.join(repoRoot, "logs");
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command, mode, isPreview }) => {
   const env = loadEnv(mode, repoRoot, "");
   for (const [key, value] of Object.entries(env)) {
     if (process.env[key] === undefined) {
       process.env[key] = value;
     }
   }
-  // keep: whatever starts the dev server names the API server (`pnpm dev` does). Builds and tests serve no requests, so they run without one
+  // keep: whatever starts the dev server names the API server (`pnpm dev` does). Builds, tests and `vite preview` proxy nothing, so they run without one
   const apiDevOrigin = readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN);
-  if (command === "serve" && !process.env.VITEST && !apiDevOrigin) {
+  if (command === "serve" && !isPreview && !process.env.VITEST && !apiDevOrigin) {
     throw new Error(
       "MERIDIAN_API_ORIGIN is not set. Start the app with `pnpm dev`, which sets it.",
     );
