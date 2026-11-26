@@ -103,7 +103,9 @@ async function waitUntilReady({
     }
     await sleep(500);
   }
-  throw new Error(`not ready after ${timeoutMs / 1000} s: ${errors.join("; ")}\n${logTail()}`);
+  throw new Error(
+    `not ready after ${timeoutMs / 1000} s: ${errors.join("; ")}\n${logTail()}\nThe stack is still running and may yet come up: run \`pnpm dev\` again to keep waiting, or \`pnpm dev --stop\`.`,
+  );
 }
 
 const startupMs = (build: ClientBuild) => (build === "production" ? 180_000 : 60_000);
