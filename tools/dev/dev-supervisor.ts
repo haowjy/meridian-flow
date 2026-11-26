@@ -5,6 +5,7 @@ import path from "node:path";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 import { browserUrl, type DevService, loopbackOrigin, resolveDevPorts } from "./lib/dev-ports";
 import {
+  browserPorts,
   type ClientBuild,
   clearStackState,
   type ProcessRef,
@@ -16,6 +17,7 @@ import {
   waitForFreePorts,
   writeStackState,
 } from "./lib/dev-stack";
+import { publishOnTailnet, tailnetUrl, unpublishFromTailnet } from "./lib/dev-tailscale";
 
 const POLL_MS = 15_000;
 const ACTIVE_CENTISECONDS_PER_POLL = 30;
@@ -38,6 +40,7 @@ const services: ReadonlyArray<{ name: DevService; pkg: string }> = [
   ...(www ? [{ name: "www" as const, pkg: "@meridian/www" }] : []),
 ];
 
+let tailnetHost: string | undefined;
 let generation = 0;
 let lastActiveAt = Date.now();
 let lastPublishedAt = 0;
@@ -58,6 +61,7 @@ function publish(): void {
     startedAt,
     clientBuild,
     www,
+    tailnetHost,
     ports,
     generation,
     lastActiveAt: new Date(lastActiveAt).toISOString(),
@@ -68,8 +72,11 @@ function serviceEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...launchEnv };
   applyDevEnvToProcess(repoRoot, env);
   env.MERIDIAN_API_ORIGIN = loopbackOrigin(ports.server);
-  env.MERIDIAN_APP_ORIGIN = browserUrl(ports.app);
-  if (www) env.MERIDIAN_WWW_ORIGIN = browserUrl(ports.www);
+  // keep: the app and the marketing site link to each other; a page opened over the tailnet needs links that work from that device
+  const pageOrigin = (port: number) =>
+    tailnetHost ? tailnetUrl(tailnetHost, port) : browserUrl(port);
+  env.MERIDIAN_APP_ORIGIN = pageOrigin(ports.app);
+  if (www) env.MERIDIAN_WWW_ORIGIN = pageOrigin(ports.www);
   env.APP_DEBUG ??= "1";
   env.HOST = "127.0.0.1";
   return env;
@@ -114,7 +121,13 @@ async function shutdown(reason: string, code = 0): Promise<void> {
   // keep: wait out a restart in flight; it sees `stopping` and starts nothing, so no service is born after the tree below is taken
   await restartInFlight;
   await stopServices();
-  clearStackState(repoRoot, process.pid);
+  try {
+    if (tailnetHost) unpublishFromTailnet(tailnetHost, browserPorts({ ports, www }));
+    clearStackState(repoRoot, process.pid);
+  } catch (error) {
+    // keep: the record stays, so the next `pnpm dev` or `pnpm dev --stop` removes the routes
+    log(`tailnet routes left in place: ${error instanceof Error ? error.message : String(error)}`);
+  }
   process.exit(code);
 }
 
@@ -171,6 +184,15 @@ process.on("SIGUSR2", () => {
   );
 });
 
+if (process.argv.includes("--tailscale")) {
+  try {
+    tailnetHost = publishOnTailnet(browserPorts({ ports, www }));
+  } catch (error) {
+    log(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  log(`published on the tailnet as ${tailnetHost}`);
+}
 log(`starting ${services.map((service) => `${service.name}:${ports[service.name]}`).join(" ")}`);
 startServices();
 watch();

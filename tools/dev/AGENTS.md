@@ -8,7 +8,12 @@ this directory never imports application packages. The `./mf` CLI lives in
 
 - A checkout's ports come only from `resolveDevPorts` in `lib/dev-ports.ts`. The
   launcher, the app's Vite config, `./mf` and the browser tests all call it or read the
-  running stack's record; never hard-code a port or pick a free one at start.
+  running stack's record; never hard-code a port or pick a free one at start. A
+  worktree's base port is `DEV_PORT_BASE` in its `.env.local`, written once by
+  `pinWorktreePortBase`; to move a stack, change that line.
+- Only the supervisor publishes a stack on the tailnet (`lib/dev-tailscale.ts`), and it
+  removes only routes that point at its own ports. Never run `tailscale serve reset`,
+  and never replace a route that points anywhere else.
 - A stack is found and stopped through its record, `.meridian/dev-stack.json`
   (`lib/dev-stack.ts`): the supervisor's pid plus its `ps` start time. `runningStack`
   treats a record whose start time doesn't match as stale, and every signal checks the

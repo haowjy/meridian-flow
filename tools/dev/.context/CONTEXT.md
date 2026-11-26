@@ -81,13 +81,21 @@ every DB file.
 
 ## Stack and readiness
 
-A checkout is identified by its path. `resolveDevPorts` (`lib/dev-ports.ts`) turns the
-path into a block of ports: the main checkout, whose `.git` is a directory, gets 20000;
-a linked worktree gets `20010 + (sha256(path) % 799) * 10`. App, server and www take the
-block's first three ports. `DEV_PORT_BASE`, from the shell or the checkout's
-`.env.local`, replaces the base. Nothing is registered, so there is no route to go
-stale and no owner to verify. A taken port fails the start with the port named; the
-launcher never moves to a free one, because every reader computes the same ports.
+A checkout's ports are a block of ten, of which app, server and www take the first
+three. `resolveDevPorts` (`lib/dev-ports.ts`) reads the block's base: `DEV_PORT_BASE`
+from the shell, else from the checkout's `.env.local`, else 20000 for the main checkout
+(whose `.git` is a directory) and `20010 + (sha256(path) % 799) * 10` for a linked
+worktree.
+
+A worktree's base is chosen once. `pnpm dev` and `pnpm dev:urls` call
+`pinWorktreePortBase`, which does nothing when `.env.local` already has a base.
+Otherwise it starts at the hashed block, skips any block within ten ports of a base in
+another checkout's `.env.local`, and appends `DEV_PORT_BASE` to the worktree's
+`.env.local`. The file is the only record, so moving a stack is editing that number,
+and there is no registry to go stale. A taken port fails the start with the port named;
+the launcher never moves to a free one, because every reader has to find the same
+ports. The main checkout is never written to: a tool that copies ignored files from it
+into a new worktree would copy the base too.
 
 Browser URLs are `http://localhost:<port>`; processes reach each other on
 `http://127.0.0.1:<port>`, where every service binds. There is no proxy, certificate
@@ -118,6 +126,24 @@ the `Host` header unchanged, because the dev sign-in rule in
 `Host`. Rewriting `Host` to the server's port would sign every browser request out.
 Trusting a name instead would be wrong: every dev stack is `localhost`, so any local
 page could act as the dev user, and anyone can serve a page under `*.ts.net`.
+
+`pnpm dev --tailscale` makes the supervisor publish the app port, and the www port with
+`--www`, through `tailscale serve --bg --https=<port> http://127.0.0.1:<port>` before it
+starts the services (`lib/dev-tailscale.ts`). The tailnet URL is
+`https://<machine>.<tailnet>.ts.net:<port>`, the same port number as on localhost: a
+machine has one tailnet name and one certificate, so a stack can't have a name of its
+own, and a path prefix would be stripped before the request reaches the app.
+`tailscale serve` forwards the browser's `Host`, so the sign-in rule above holds there.
+The record's `tailnetHost` is set while the routes exist, and the supervisor passes the
+tailnet origins as `MERIDIAN_APP_ORIGIN` and `MERIDIAN_WWW_ORIGIN`, so the links between
+the app and the marketing site work from the other device.
+
+A route belongs to the stack only when it is the single `/` handler on that port,
+proxies to the stack's own `127.0.0.1:<port>`, and is not a Funnel. Publishing checks
+every port first and fails on any other route; stopping removes only the stack's own.
+The supervisor removes them as it stops. If that fails it leaves the record in place,
+and `stopStack` removes the routes of any record that names a `tailnetHost`, which also
+covers a supervisor that was killed.
 
 ## Stopping and cleanup
 

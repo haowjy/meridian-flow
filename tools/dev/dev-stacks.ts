@@ -1,13 +1,9 @@
 #!/usr/bin/env bun
-import { resolveCurrentRepoRoot, runGit } from "./lib/dev-env";
+import { listCheckoutPaths, resolveCurrentRepoRoot } from "./lib/dev-env";
 import { processTree, runningStack } from "./lib/dev-stack";
 
 const rows: string[][] = [["CHECKOUT", "APP PORT", "MEMORY", "IDLE", "CLIENT"]];
-for (const line of runGit(resolveCurrentRepoRoot(), ["worktree", "list", "--porcelain"]).split(
-  "\n",
-)) {
-  if (!line.startsWith("worktree ")) continue;
-  const checkout = line.slice("worktree ".length);
+for (const checkout of listCheckoutPaths(resolveCurrentRepoRoot())) {
   const stack = runningStack(checkout);
   if (!stack) continue;
   const rssKb = processTree(stack.pid).reduce((total, info) => total + info.rssKb, 0);

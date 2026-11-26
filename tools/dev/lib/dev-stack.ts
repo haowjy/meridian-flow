@@ -3,6 +3,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { type DevPorts, resolveDevPorts } from "./dev-ports";
+import { unpublishFromTailnet } from "./dev-tailscale";
 
 export type ClientBuild = "development" | "production";
 
@@ -19,6 +20,8 @@ export interface DevStackState {
   startedAt: string;
   clientBuild: ClientBuild;
   www: boolean;
+  // Set while the stack is published on the tailnet (`pnpm dev --tailscale`).
+  tailnetHost?: string;
   ports: DevPorts;
   generation: number;
   lastActiveAt: string;
@@ -100,6 +103,11 @@ export function runningStack(checkout: string): DevStackState | null {
 // keep: a running stack's ports come from its record; `DEV_PORT_BASE` set only in the shell that started it is not visible to anyone else
 export function stackPorts(checkout: string, env: NodeJS.ProcessEnv = process.env): DevPorts {
   return runningStack(checkout)?.ports ?? resolveDevPorts(checkout, env);
+}
+
+// The ports a browser opens; the server is reached through the app's.
+export function browserPorts(stack: Pick<DevStackState, "ports" | "www">): number[] {
+  return [stack.ports.app, ...(stack.www ? [stack.ports.www] : [])];
 }
 
 function parseCpuCentiseconds(time: string): number {
@@ -193,7 +201,7 @@ export async function waitForFreePorts(ports: readonly number[], timeoutMs: numb
     if (busy.length === 0) return;
     if (Date.now() >= deadline) {
       throw new Error(
-        `port ${busy.join(", ")} is in use on 127.0.0.1. Find what holds it with \`lsof -nP -iTCP:${busy[0]} -sTCP:LISTEN\`, or set DEV_PORT_BASE in this checkout's .env.local to move the stack.`,
+        `port ${busy.join(", ")} is in use on 127.0.0.1. Find what holds it with \`lsof -nP -iTCP:${busy[0]} -sTCP:LISTEN\`, or move this stack by changing DEV_PORT_BASE in this checkout's .env.local.`,
       );
     }
     await sleep(250);
@@ -229,6 +237,8 @@ export async function stopStack(checkout: string): Promise<boolean> {
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
   // Only this stack's record: a start that overlapped this stop has written its own.
   clearStackState(checkout, state.pid);
+  // The supervisor removes its own tailnet routes as it stops; this covers one that was killed.
+  if (state.tailnetHost) unpublishFromTailnet(state.tailnetHost, browserPorts(state));
   return stack.size > 0;
 }
 

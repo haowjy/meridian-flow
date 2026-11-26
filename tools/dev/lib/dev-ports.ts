@@ -10,15 +10,7 @@ const MAIN_CHECKOUT_BASE = 20_000;
 const BLOCK_SIZE = 10;
 const WORKTREE_BLOCKS = 799;
 
-function overrideBase(checkout: string, env: NodeJS.ProcessEnv): number | undefined {
-  let raw = env.DEV_PORT_BASE;
-  if (raw === undefined) {
-    try {
-      raw = parseEnv(fs.readFileSync(path.join(checkout, ".env.local"), "utf8")).DEV_PORT_BASE;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-  }
+function parseBase(raw: string | undefined): number | undefined {
   if (raw === undefined || raw === "") return undefined;
   const base = Number(raw);
   if (!Number.isInteger(base) || base < 1024 || base > 65_535 - BLOCK_SIZE) {
@@ -27,19 +19,57 @@ function overrideBase(checkout: string, env: NodeJS.ProcessEnv): number | undefi
   return base;
 }
 
+function envLocalBase(checkout: string): string | undefined {
+  try {
+    return parseEnv(fs.readFileSync(path.join(checkout, ".env.local"), "utf8")).DEV_PORT_BASE;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return undefined;
+  }
+}
+
+// A linked worktree's `.git` is a file; only the main checkout has the directory.
+function isMain(checkout: string): boolean {
+  return fs.statSync(path.join(checkout, ".git"), { throwIfNoEntry: false })?.isDirectory() ?? true;
+}
+
+function hashedBlock(checkout: string): number {
+  return createHash("sha256").update(checkout).digest().readUInt32BE(0) % WORKTREE_BLOCKS;
+}
+
+function blockBase(block: number): number {
+  return MAIN_CHECKOUT_BASE + BLOCK_SIZE * (1 + block);
+}
+
 export function resolveDevPorts(
   checkoutPath: string,
   env: NodeJS.ProcessEnv = process.env,
 ): DevPorts {
   const checkout = fs.realpathSync(checkoutPath);
-  // A linked worktree's `.git` is a file; only the main checkout has the directory.
-  const isMain =
-    fs.statSync(path.join(checkout, ".git"), { throwIfNoEntry: false })?.isDirectory() ?? true;
-  const hashed = createHash("sha256").update(checkout).digest().readUInt32BE(0) % WORKTREE_BLOCKS;
   const base =
-    overrideBase(checkout, env) ??
-    (isMain ? MAIN_CHECKOUT_BASE : MAIN_CHECKOUT_BASE + BLOCK_SIZE * (1 + hashed));
+    parseBase(env.DEV_PORT_BASE) ??
+    parseBase(envLocalBase(checkout)) ??
+    (isMain(checkout) ? MAIN_CHECKOUT_BASE : blockBase(hashedBlock(checkout)));
   return { app: base, server: base + 1, www: base + 2 };
+}
+
+// keep: a worktree's base is chosen once and kept in its `.env.local`, so a clash is fixed by editing that number. The choice starts at the path's hash and skips blocks the repository's other checkouts have already taken
+export function pinWorktreePortBase(checkoutPath: string, otherCheckouts: readonly string[]): void {
+  const checkout = fs.realpathSync(checkoutPath);
+  if (isMain(checkout) || parseBase(envLocalBase(checkout)) !== undefined) return;
+  const taken = otherCheckouts.map((other) => Number(envLocalBase(other)));
+  let block = hashedBlock(checkout);
+  while (taken.some((base) => Math.abs(base - blockBase(block)) < BLOCK_SIZE)) {
+    block = (block + 1) % WORKTREE_BLOCKS;
+  }
+  const file = path.join(checkout, ".env.local");
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  fs.appendFileSync(
+    file,
+    `${existing === "" || existing.endsWith("\n") ? "" : "\n"}` +
+      "# This worktree's dev ports: app, then server (+1) and www (+2). Chosen by `pnpm dev`; change it if something else holds them.\n" +
+      `DEV_PORT_BASE=${blockBase(block)}\n`,
+  );
 }
 
 export function browserUrl(port: number): string {

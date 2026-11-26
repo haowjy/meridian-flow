@@ -82,7 +82,7 @@ pnpm dev
 | `.env` | Read from the main checkout (no copy into the worktree); `.env.local` here overrides it, except `DATABASE_URL` |
 | `DATABASE_URL` | Derived as `meridian_<slug>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
-| Ports | Each checkout's own block, computed from its path; `pnpm dev:urls` prints them |
+| Ports | Each checkout's own block. A worktree's is chosen the first time `pnpm dev` or `pnpm dev:urls` runs there and kept as `DEV_PORT_BASE` in its `.env.local`; `pnpm dev:urls` prints them |
 | `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
 | `pnpm dev:infra:upgrade` | Shared — recreates the container onto the image tag in your checkout's compose file. Run it from a checkout that has merged `main`; an older branch's compose file would flip the server back to the image it knows |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
@@ -206,16 +206,19 @@ pnpm test:all       # unit + managed DB suites in one Vitest run (requires Postg
 
 ## Dev server
 
-Each checkout's stack runs on its own `localhost` ports, computed from the
-checkout's path ([`tools/dev/lib/dev-ports.ts`](tools/dev/lib/dev-ports.ts)). The
-main checkout uses 20000 (app), 20001 (server) and 20002 (www); a linked worktree
-gets a block of its own between 20010 and 27999. If two checkouts ever hash to the
-same block, the second `pnpm dev` fails naming the busy port: set
-`DEV_PORT_BASE=<port>` in that checkout's `.env.local`.
+Each checkout's stack runs on its own `localhost` ports
+([`tools/dev/lib/dev-ports.ts`](tools/dev/lib/dev-ports.ts)). The main checkout uses
+20000 (app), 20001 (server) and 20002 (www). A linked worktree gets a block of its
+own between 20010 and 27999: the first `pnpm dev` or `pnpm dev:urls` there picks one
+from a hash of the worktree's path, skips blocks this repository's other checkouts
+already hold, and writes it to the worktree's `.env.local` as `DEV_PORT_BASE=<port>`.
+From then on that line is the worktree's port. If another program holds it, `pnpm dev`
+fails naming the busy port: change the number in `.env.local`.
 
 ```bash
 pnpm dev                    # start the app and server; prints the URLs when both answer
 pnpm dev --www              # also run the marketing site
+pnpm dev --tailscale        # also publish the stack on your tailnet (see below)
 pnpm dev:production-client  # serve the built client instead of Vite's dev client
 pnpm dev:urls               # this checkout's URLs, and whether the stack is up
 pnpm dev:restart            # restart the services in place, same environment
@@ -236,11 +239,16 @@ WebSocket paths to the server's port.
 
 ### Opening a stack from another device
 
-The services listen on `127.0.0.1` only. To reach one from another device, forward
-its app port: an SSH tunnel (`ssh -L <port>:localhost:<port> <host>`), or Tailscale
-(`tailscale serve --bg --https=<port> localhost:<port>`, after checking
-`tailscale serve status`). The dev sign-in bypass accepts a tailnet host, so anyone on
-the tailnet then acts as the dev user.
+The services listen on `127.0.0.1` only. `pnpm dev --tailscale` also publishes the
+stack on your tailnet with `tailscale serve`, on the same port numbers:
+`https://<machine>.<tailnet>.ts.net:<app port>`, and the www port with `--www`. The
+URLs are printed with the others. The routes last as long as the stack: any stop
+removes them, an idle stop included. A port that Tailscale already serves for something
+else is never replaced; the start fails and names it. The dev sign-in bypass accepts a
+tailnet host, so anyone on the tailnet then acts as the dev user.
+
+Without Tailscale, forward the app port over SSH:
+`ssh -L <port>:localhost:<port> <host>`.
 
 ### After a reboot
 

@@ -4,10 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { checkDevReadiness } from "./dev-readiness";
 import { resolveStackEnv } from "./dev-stack-env";
+import { listCheckoutPaths } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
-import { browserUrl, loopbackOrigin } from "./lib/dev-ports";
+import { browserUrl, loopbackOrigin, pinWorktreePortBase } from "./lib/dev-ports";
 import {
   acquireStartLock,
+  browserPorts,
   type ClientBuild,
   clearIdleStopRecord,
   DEV_LOG,
@@ -19,8 +21,17 @@ import {
   stopStack,
   waitForFreePorts,
 } from "./lib/dev-stack";
+import { tailnetUrl } from "./lib/dev-tailscale";
 
-const FLAGS = ["--stop", "--restart", "--urls", "--print", "--production-client", "--www"];
+const FLAGS = [
+  "--stop",
+  "--restart",
+  "--urls",
+  "--print",
+  "--production-client",
+  "--www",
+  "--tailscale",
+];
 
 const repoRoot = fs.realpathSync(path.resolve(import.meta.dirname, "../.."));
 const argv = process.argv.slice(2);
@@ -33,17 +44,28 @@ const has = (flag: string) => argv.includes(flag);
 const clientBuild: ClientBuild = has("--production-client") ? "production" : "development";
 // keep: taken before `.env` is loaded, so the stack receives only what this shell set
 const callerEnv = { ...process.env };
+if (!has("--print") && !callerEnv.DEV_PORT_BASE) {
+  pinWorktreePortBase(repoRoot, listCheckoutPaths(repoRoot));
+}
 const ports = stackPorts(repoRoot, callerEnv);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function urlLines(stack: { clientBuild: ClientBuild; www: boolean }): string[] {
+type StackSummary = Pick<DevStackState, "clientBuild" | "www" | "tailnetHost">;
+
+function urlLines(stack: StackSummary): string[] {
+  const { tailnetHost } = stack;
   return [
     `app     ${browserUrl(ports.app)}`,
     `server  ${browserUrl(ports.server)}`,
     ...(stack.www ? [`www     ${browserUrl(ports.www)}`] : []),
     ...(stack.clientBuild === "development"
       ? [`map     ${browserUrl(ports.app)}/architecture/`]
+      : []),
+    ...(tailnetHost
+      ? browserPorts({ ports, www: stack.www }).map(
+          (port) => `tailnet ${tailnetUrl(tailnetHost, port)}${port === ports.www ? " (www)" : ""}`,
+        )
       : []),
     `logs    ${DEV_LOG}`,
   ];
@@ -65,15 +87,16 @@ async function waitUntilReady({
   timeoutMs: number;
   supervisorAlive: () => boolean;
   isCurrent: (state: DevStackState | null) => boolean;
-}): Promise<void> {
+}): Promise<DevStackState> {
   const deadline = Date.now() + timeoutMs;
   const origins = { app: loopbackOrigin(ports.app), server: loopbackOrigin(ports.server) };
   let errors = ["the services have not started"];
   while (Date.now() < deadline) {
     if (!supervisorAlive()) throw new Error(`the stack exited.\n${logTail()}`);
-    if (isCurrent(runningStack(repoRoot))) {
+    const state = runningStack(repoRoot);
+    if (state && isCurrent(state)) {
       const readiness = await checkDevReadiness(origins);
-      if (readiness.ok) return;
+      if (readiness.ok) return state;
       errors = readiness.errors;
     }
     await sleep(500);
@@ -83,7 +106,7 @@ async function waitUntilReady({
 
 const startupMs = (build: ClientBuild) => (build === "production" ? 180_000 : 60_000);
 
-function report(headline: string, stack: { clientBuild: ClientBuild; www: boolean }): void {
+function report(headline: string, stack: StackSummary): void {
   console.log(`${headline}: ${stack.clientBuild} client`);
   for (const line of urlLines(stack)) console.log(line);
 }
@@ -91,7 +114,9 @@ function report(headline: string, stack: { clientBuild: ClientBuild; www: boolea
 async function start(): Promise<void> {
   const www = has("--www");
   if (has("--print")) {
-    console.log(`[dry-run] would start ${clientBuild} client${www ? " with www" : ""}`);
+    console.log(
+      `[dry-run] would start ${clientBuild} client${www ? " with www" : ""}${has("--tailscale") ? ", published on the tailnet" : ""}`,
+    );
     for (const line of urlLines({ clientBuild, www })) console.log(line);
     return;
   }
@@ -122,6 +147,7 @@ async function launch(www: boolean): Promise<void> {
       path.join(repoRoot, "tools/dev/dev-supervisor.ts"),
       ...(clientBuild === "production" ? ["--production-client"] : []),
       ...(www ? ["--www"] : []),
+      ...(has("--tailscale") ? ["--tailscale"] : []),
     ],
     {
       cwd: repoRoot,
@@ -137,12 +163,12 @@ async function launch(www: boolean): Promise<void> {
   });
   supervisor.unref();
   fs.closeSync(logFd);
-  await waitUntilReady({
+  const started = await waitUntilReady({
     timeoutMs: startupMs(clientBuild),
     supervisorAlive: () => !exited,
     isCurrent: (state) => state?.pid === supervisor.pid,
   });
-  report("started", { clientBuild, www });
+  report("started", started);
 }
 
 async function main(): Promise<void> {
@@ -159,10 +185,11 @@ async function main(): Promise<void> {
   if (has("--restart") && running) {
     if (
       (has("--production-client") && running.clientBuild !== "production") ||
-      (has("--www") && !running.www)
+      (has("--www") && !running.www) ||
+      (has("--tailscale") && !running.tailnetHost)
     ) {
       throw new Error(
-        "a restart keeps the running stack's client build and services. To change them: pnpm dev --stop, then start again",
+        "a restart keeps the running stack's client build, services and tailnet routes. To change them: pnpm dev --stop, then start again",
       );
     }
     process.kill(running.pid, "SIGUSR2");
@@ -175,9 +202,13 @@ async function main(): Promise<void> {
     return;
   }
   if (running) {
-    if (running.clientBuild !== clientBuild || (has("--www") && !running.www)) {
+    if (
+      running.clientBuild !== clientBuild ||
+      (has("--www") && !running.www) ||
+      (has("--tailscale") && !running.tailnetHost)
+    ) {
       throw new Error(
-        `a stack is already running with the ${running.clientBuild} client${running.www ? " and www" : ""}. Stop it first: pnpm dev --stop`,
+        `a stack is already running with the ${running.clientBuild} client${running.www ? " and www" : ""}${running.tailnetHost ? ", published on the tailnet" : ""}. Stop it first: pnpm dev --stop`,
       );
     }
     await waitUntilReady({

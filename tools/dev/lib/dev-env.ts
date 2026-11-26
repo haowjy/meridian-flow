@@ -99,15 +99,20 @@ export function resolveCheckoutSessionIdentity(checkoutPath: string): SessionIde
   });
 }
 
+export function listCheckoutPaths(repoRoot: string): string[] {
+  return runGit(repoRoot, ["worktree", "list", "--porcelain"])
+    .split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => line.slice("worktree ".length));
+}
+
 export function resolveLiveWorktreeDatabaseNames(
   repoRoot: string,
   baseDbNames: readonly string[],
 ): Set<string> {
   const mainRoot = realpathSync(resolveMainCheckoutRoot(repoRoot));
   const live = new Set<string>();
-  for (const line of runGit(repoRoot, ["worktree", "list", "--porcelain"]).split("\n")) {
-    if (!line.startsWith("worktree ")) continue;
-    const worktreePath = line.slice("worktree ".length);
+  for (const worktreePath of listCheckoutPaths(repoRoot)) {
     let worktreeRealpath: string;
     try {
       worktreeRealpath = realpathSync(worktreePath);

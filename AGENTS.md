@@ -88,7 +88,7 @@ would break silently, at the line it guards. No file headers, no decision ids.
 ## Dev environment
 
 Start with `pnpm dev` and find URLs with `pnpm dev:urls`. Each checkout's stack runs on
-its own `localhost` ports, computed from the checkout's path: never assume a port. Setup is in [DEVELOPMENT.md](DEVELOPMENT.md), tool
+its own `localhost` ports, and a worktree's are set in its `.env.local`: never assume a port. Setup is in [DEVELOPMENT.md](DEVELOPMENT.md), tool
 rules in [tools/dev/AGENTS.md](tools/dev/AGENTS.md). After installing, upgrading or
 patching a package, run `pnpm dev:restart`: the dev server doesn't watch `node_modules`. A dev stack belongs to the
 session that started it.
