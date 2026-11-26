@@ -1,5 +1,5 @@
 import { chromium } from "@playwright/test";
-import { resolveAppUrl } from "./portless";
+import { resolveAppUrl } from "./dev-urls";
 
 const APP_URL = resolveAppUrl();
 const PROJECT_ID = process.env.PROJECT_ID;

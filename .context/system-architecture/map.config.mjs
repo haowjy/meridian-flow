@@ -92,8 +92,8 @@ export default {
   nav: { journeys: "Journeys", machines: "State machines", dependencies: "Dependencies" },
 
   // What the dev server shows in the viewer. true: any tracked file opens at its repo path.
-  // false: only the pages directory and the Markdown matched by `docs`. `pnpm dev:funnel`
-  // publishes the dev server, so false is for a private repository.
+  // false: only the pages directory and the Markdown matched by `docs`. A tunnel to
+  // the app's port publishes the dev server, so false is for a private repository.
   serveSource: true,
   docs: ["**/.context/**/*.md"],
 };

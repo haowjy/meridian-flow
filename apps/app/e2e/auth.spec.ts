@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { resolveServerUrl } from "./portless";
+import { resolveServerUrl } from "./dev-urls";
 
 const SERVER_URL = resolveServerUrl();
 

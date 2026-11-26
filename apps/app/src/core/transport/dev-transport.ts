@@ -1,52 +1,16 @@
 /**
- * dev-transport — resolves the server origin and WebSocket URLs for the dev
- * portless environment.
+ * dev-transport — builds the WebSocket URLs the app opens.
  *
- * Maps the app's `*.app.meridian.localhost` / `ts.net` host to its paired server
- * origin and builds same-origin/threads WS URLs (worktree-aware). Pure URL
- * resolution; shared by both transports. No socket logic of its own.
+ * They are always same-origin as the page. In dev, Vite's `server.proxy` upgrades
+ * these paths to the server at `MERIDIAN_API_ORIGIN`, so the browser never needs
+ * the server's own port.
  */
-const APP_HOST_SUFFIX = ".app.meridian.localhost";
-const BARE_APP_HOST = "app.meridian.localhost";
-const BARE_SERVER_HOST = "server.meridian.localhost";
-const TS_NET_SUFFIX = ".ts.net";
-
 export type BrowserLocationLike = {
   protocol: string;
   hostname: string;
   port: string;
   host: string;
 };
-
-/** Build the localhost server origin the vite proxy forwards to. Worktree-aware. */
-export function resolveApiDevOriginFallback(worktreePrefix?: string): string {
-  return worktreePrefix
-    ? `https://${worktreePrefix}.${BARE_SERVER_HOST}`
-    : `https://${BARE_SERVER_HOST}`;
-}
-
-/** Map app portless host to paired server origin (https). Falls back when host is unknown. */
-export function resolveApiDevOriginForAppHost(appHost: string, fallback: string): string {
-  const [rawHost] = appHost.toLowerCase().split(":");
-  const host = rawHost ?? "";
-  if (!host || host === BARE_APP_HOST) {
-    return fallback;
-  }
-
-  if (host.endsWith(APP_HOST_SUFFIX)) {
-    const prefix = host.slice(0, host.length - APP_HOST_SUFFIX.length);
-    if (!prefix) {
-      return fallback;
-    }
-    return `https://${prefix}.${BARE_SERVER_HOST}`;
-  }
-
-  if (host.endsWith(TS_NET_SUFFIX)) {
-    return fallback;
-  }
-
-  return fallback;
-}
 
 /**
  * WS path duplicated from @meridian/contracts/protocol to avoid pulling contracts
@@ -55,13 +19,6 @@ export function resolveApiDevOriginForAppHost(appHost: string, fallback: string)
  */
 const THREADS_WS_PATH = "/api/threads/ws";
 
-/**
- * WebSocket URL for thread events — always same-origin as the app page.
- *
- * Portless assigns dynamic ts.net ports per worktree/mode; the browser must not
- * hardcode an API port. Vite `server.proxy` upgrades `/api/threads/ws` to the
- * paired server origin (`resolveApiDevOriginForAppHost` / `MERIDIAN_API_ORIGIN`).
- */
 export function buildThreadsWsUrl(location: BrowserLocationLike = window.location): string {
   return buildSameOriginWsUrl(THREADS_WS_PATH, location);
 }

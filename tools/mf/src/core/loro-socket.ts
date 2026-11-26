@@ -54,7 +54,6 @@ export class LoroSocket {
   static open(session: Session): Promise<LoroSocket> {
     const ws = new WebSocket(`${session.serverUrl.replace(/^http/, "ws")}${LORO_WS_PATH}`, {
       ...(session.cookie ? { headers: { Cookie: session.cookie } } : {}),
-      ...(session.ca ? { ca: session.ca } : {}),
     });
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

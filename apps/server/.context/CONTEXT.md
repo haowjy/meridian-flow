@@ -251,8 +251,8 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
   A real-Postgres suite with another suffix remains outside the gate until it
   is renamed and registered. The combined `pnpm test:all` run includes this
   same DB project; do not duplicate its manifest or lifecycle.
-- **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
-  so tests exercise the real proxy/TLS path.
+- **Browser/runtime checks** should go through the app URL from `pnpm dev:urls`,
+  not the server's own port, so tests exercise the app's same-origin proxy.
 
 ## Cross-module links
 

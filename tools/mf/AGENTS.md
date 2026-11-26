@@ -16,9 +16,8 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   tree-list and document-room clients (`project-tree`, `agent-edit`, `markup`,
   `prosemirror-schema`, `document-model`, `loro-prosemirror`): a tree change has no route, so `./mf` writes the list as the browser
   does. From
-  `tools/dev`, only the Portless route contract: `portless-prefix.ts`,
-  `portless-routes.ts`, `portlessCa` in `dev-readiness.ts` and `resolveCheckoutRouteUrls` in
-  `dev-session-state.ts`, so `./mf` finds the stack the way `pnpm dev` registers it.
+  `tools/dev`, only `lib/dev-ports.ts` and `lib/dev-stack.ts`, so `./mf` finds the stack
+  from the record `pnpm dev` writes.
 - Keep `src/core/` domain-free. Command groups can import another group's helpers, never
   `main.ts`.
 - Set `process.exitCode`, never call `process.exit()`, which can truncate piped output.

@@ -13,7 +13,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 
 - **Layout.** `src/core/` is the domain-free framework (`CommandSpec`/`CommandGroup`
   parsing, `output.ts`, the `EXIT` contract in `cli-error.ts`, `session.ts` for
-  Portless discovery, the optional `MF_COOKIE` and bounded requests) and
+  dev stack discovery, the optional `MF_COOKIE` and bounded requests) and
   imports no group. `src/commands/<group>/` holds one group each; a new group is
   listed in `GROUPS` in `src/main.ts`. A group may import another group's helper,
   never `main.ts`. Command tests run the real CLI against `src/test-support/wire.ts`,
@@ -34,11 +34,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `@meridian/thread-client`, plus the tree and document-room clients `doc` needs
   (`@meridian/project-tree`, `@meridian/agent-edit`,
   `@meridian/markup`, `@meridian/prosemirror-schema`, `@meridian/document-model`,
-  `@meridian/loro-prosemirror`). Portless discovery uses the route contract
-  `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
-  `portlessCa` in `dev-readiness.ts`, and `resolveCheckoutRouteUrls` in
-  `dev-session-state.ts`, which finds an active session's routes by its recorded
-  identity rather than the current branch). Duplicating that discovery here would
+  `@meridian/loro-prosemirror`). `./mf` finds the server from the record
+  `pnpm dev` writes (`runningStack` in `../dev/lib/dev-stack.ts`), so it uses the ports the
+  running stack was started with. Duplicating that discovery here would
   drift from `pnpm dev`, so the allowed list was widened deliberately; its
   transitive `tools/dev` imports are Node-only. Never import `apps/`.
 - **Success claims require validated evidence.** Every domain-success claim printed by
@@ -148,7 +146,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 ## Following a run
 
 `transport.ts` composes one `ThreadSocketClient` per command with the session's
-cookie and Portless CA. The shared client owns connected gating, replay, dedupe,
+cookie. The shared client owns connected gating, replay, dedupe,
 gaps and reconnect with the package's default socket deadlines. Each subscribe names a
 request id, and its acknowledgement echoes that id and the accepted `after` cursor. Replay
 failures retry that thread alone without dropping healthy subscriptions. `toError` keeps
@@ -238,4 +236,4 @@ contains. It carries no run identity: `turn.started` has only the turn id.
 JSON fixtures live in `fixtures/`; TypeScript in `src/`. The root Vitest project
 list includes this package's config once; `pnpm test` runs every CLI test, and the
 package's Nx test target is for focused runs only. Cached Nx `typecheck` and `test`
-include the shared Portless helpers and the root shim as inputs.
+include the shared `tools/dev` helpers and the root shim as inputs.

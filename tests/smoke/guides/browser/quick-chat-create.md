@@ -6,7 +6,7 @@ Meridian Flow project graph and routes to the agent project.
 ## Preconditions
 
 - `pnpm dev:infra`, `pnpm bootstrap`, and `pnpm dev` are running.
-- `APP_URL` is the portless app origin.
+- `APP_URL` is the app URL from `pnpm dev:urls`.
 - The stack runs with `DEV_AUTH_BYPASS=1`, so the browser is signed in as the dev user.
 
 ## Steps

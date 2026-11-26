@@ -1,6 +1,6 @@
 # Browser smoke runbooks
 
-Manual/agent-executed e2e playbooks for the portless Meridian Flow dev stack.
+Manual/agent-executed e2e playbooks for the Meridian Flow dev stack.
 They complement automated Playwright specs and are useful when an agent needs to
 verify real browser behavior, console output, WebSocket state, and database rows.
 
@@ -12,15 +12,14 @@ verify real browser behavior, console output, WebSocket state, and database rows
    pnpm dev:infra
    pnpm bootstrap
    pnpm dev
-   pnpm portless:list
+   pnpm dev:urls
    ```
 
-2. Use the portless app URL printed by `pnpm portless:list`, for example:
+2. Use the URLs printed by `pnpm dev:urls`, for example:
 
    ```bash
-   export APP_URL="https://<branch-prefix>.app.meridian.localhost"
-   export SERVER_URL="https://<branch-prefix>.server.meridian.localhost"
-   export NODE_EXTRA_CA_CERTS="$HOME/.portless/ca.pem"
+   export APP_URL="http://localhost:<app port>"
+   export SERVER_URL="http://localhost:<server port>"
    ```
 
 3. Open the app. With `DEV_AUTH_BYPASS=1` in `.env` there is no login step; you are the dev user:

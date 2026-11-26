@@ -18,7 +18,7 @@ function moduleFrom(packageDir, specifier) {
 if (!SHARED_DB_SERVER_URL || DATABASE_URL !== SHARED_DB_SERVER_URL || !SHARED_DB_SERVER_PREFIX) {
   fail("DATABASE_URL changed between the launcher and its child");
 }
-if (!PORT) fail("a child runs under Portless, which assigns PORT");
+if (!PORT) fail("the launcher assigns PORT");
 const port = Number(PORT);
 const prefix = SHARED_DB_SERVER_PREFIX;
 

@@ -1,5 +1,5 @@
 import { defineConfig } from "@playwright/test";
-import { resolveAppUrl } from "./portless";
+import { resolveAppUrl } from "./dev-urls";
 
 export default defineConfig({
   testDir: ".",

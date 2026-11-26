@@ -3,6 +3,7 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - PID-derived test databases and ancestor-process ownership
+ * - A worktree's database is named from its directory, not from what is checked out
  */
 
 import { execFileSync } from "node:child_process";
@@ -12,7 +13,7 @@ import path, { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ALLOW_MAIN_DATABASE, resolveDatabaseAdminTarget } from "./dev-db-target";
 import {
-  resolveCheckoutSessionIdentity,
+  applyDevEnvToProcess,
   resolveLiveWorktreeDatabaseNames,
   resolveWorktreeDatabaseName,
 } from "./dev-env";
@@ -105,23 +106,33 @@ describe("resolveDatabaseAdminTarget", () => {
   }
 
   describe("resolveLiveWorktreeDatabaseNames", () => {
-    it("includes the database a detached checkout's own stack would use", () => {
+    it("names a worktree's database from its directory and refuses a second one with that name", () => {
       const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-dbs-")));
       roots.push(root);
       const main = join(root, "main");
       git(root, "init", "-q", main);
       git(main, "config", "user.email", "t@example.com");
       git(main, "config", "user.name", "t");
-      git(main, "config", "core.abbrev", "9");
       git(main, "commit", "-q", "--allow-empty", "-m", "init");
-      const detached = join(root, "probe");
-      git(main, "worktree", "add", "-q", "--detach", detached);
+      writeFileSync(join(main, ".env"), `DATABASE_URL=${BASE_DATABASE_URL}\n`);
+      const probe = join(root, "Probe.One");
+      git(main, "worktree", "add", "-q", "--detach", probe);
+      const databaseOf = (checkout: string) => {
+        const env: NodeJS.ProcessEnv = {};
+        applyDevEnvToProcess(checkout, env);
+        return new URL(env.DATABASE_URL ?? "").pathname;
+      };
 
-      const { slug } = resolveCheckoutSessionIdentity(detached);
-      const live = resolveLiveWorktreeDatabaseNames(main, ["meridian"]);
+      expect(databaseOf(probe)).toBe("/meridian_probe-one");
+      git(probe, "switch", "-q", "-c", "feat/other");
+      expect(databaseOf(probe)).toBe("/meridian_probe-one");
+      expect(resolveLiveWorktreeDatabaseNames(main, ["meridian"])).toEqual(
+        new Set(["meridian_probe-one"]),
+      );
 
-      expect(slug).toMatch(/^detached-[0-9a-f]{9}-/);
-      expect(live).toContain(`meridian_${slug}`);
+      const twin = join(root, "elsewhere", "probe-one");
+      git(main, "worktree", "add", "-q", "--detach", twin);
+      expect(() => databaseOf(probe)).toThrow("have the same directory name");
     });
   });
 }

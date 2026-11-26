@@ -6,8 +6,8 @@ current pass claim.
 
 ## Setup
 
-1. In an owned worktree, run `pnpm dev`; discover its HTTPS origins with
-   `pnpm portless:list`.
+1. In an owned worktree, run `pnpm dev`; discover its URLs with
+   `pnpm dev:urls`.
 2. Seed a project with `./mf`: Manuscript `Book 1/Part Two/Act 1` (empty) and
    `Book 1/Part Two/Act 2` holding `chapter-1`, `chapter-2`, `chapter-3`; a KB
    folder `characters` holding `keeper` and `mara`; a named Work with a chat

@@ -1,4 +1,3 @@
-import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { lingui } from "@lingui/vite-plugin";
@@ -11,31 +10,27 @@ import { architectureMapPlugin } from "../../tools/architecture-map/vite-plugin.
 import { resolveReleaseId } from "../../tools/release/release-id.mjs";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
-import { createPortlessHttpsAgent, resolvePortlessServerOrigin } from "./dev/portless-dev-helpers";
 import { linguiMacroBabelPlugin } from "./dev/vite-plugins";
 import { readOptionalEnvString } from "./src/core/env";
-import {
-  resolveApiDevOriginFallback,
-  resolveApiDevOriginForAppHost,
-} from "./src/core/transport/dev-transport";
 import { APP_SSR_NO_EXTERNAL } from "./src/server/ssr-no-external";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoLogsDir = path.join(repoRoot, "logs");
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command, mode, isPreview }) => {
   const env = loadEnv(mode, repoRoot, "");
   for (const [key, value] of Object.entries(env)) {
     if (process.env[key] === undefined) {
       process.env[key] = value;
     }
   }
-  const apiDevOrigin =
-    readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN) ??
-    readOptionalEnvString(env.MERIDIAN_API_ORIGIN) ??
-    resolvePortlessServerOrigin(repoRoot) ??
-    resolveApiDevOriginFallback();
-  const portlessHttpsAgent = createPortlessHttpsAgent();
+  // keep: whatever starts the dev server names the API server (`pnpm dev` does). Builds, tests and `vite preview` proxy nothing, so they run without one
+  const apiDevOrigin = readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN);
+  if (command === "serve" && !isPreview && !process.env.VITEST && !apiDevOrigin) {
+    throw new Error(
+      "MERIDIAN_API_ORIGIN is not set. Start the app with `pnpm dev`, which sets it.",
+    );
+  }
 
   return {
     server: {
@@ -47,24 +42,13 @@ export default defineConfig(({ command, mode }) => {
       },
       strictPort: true,
       allowedHosts: [".localhost", ".ts.net"],
-      proxy: {
-        "/api/threads/ws": {
-          target: apiDevOrigin,
-          changeOrigin: true,
-          ws: true,
-          agent: portlessHttpsAgent,
-          router: (req: IncomingMessage) =>
-            resolveApiDevOriginForAppHost(req.headers.host ?? "", apiDevOrigin),
-        },
-        "/ws/loro": {
-          target: apiDevOrigin,
-          changeOrigin: true,
-          ws: true,
-          agent: portlessHttpsAgent,
-          router: (req: IncomingMessage) =>
-            resolveApiDevOriginForAppHost(req.headers.host ?? "", apiDevOrigin),
-        },
-      },
+      proxy: apiDevOrigin
+        ? {
+            // keep: no `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
+            "/api/threads/ws": { target: apiDevOrigin, ws: true },
+            "/ws/loro": { target: apiDevOrigin, ws: true },
+          }
+        : undefined,
     },
     resolve: {
       dedupe: ["loro-crdt"],
@@ -75,7 +59,7 @@ export default defineConfig(({ command, mode }) => {
       tsconfigPaths: true,
     },
     plugins: [
-      apiHttpDevProxyPlugin(apiDevOrigin, portlessHttpsAgent),
+      ...(apiDevOrigin ? [apiHttpDevProxyPlugin(apiDevOrigin)] : []),
       architectureMapPlugin(path.join(repoRoot, ".context/system-architecture/map.config.mjs")),
       linguiMacroBabelPlugin(),
       tailwindcss(),

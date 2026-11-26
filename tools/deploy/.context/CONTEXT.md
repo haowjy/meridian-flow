@@ -25,7 +25,7 @@ Stubs are loud on purpose: a green deployment run must not imply that real infra
 
 `MERIDIAN_WWW_ORIGIN` on `@meridian/app` is the switch: unset, signed-out `/` goes to sign-in and log out to `/login`, so the app can deploy before the page. Why signed-out visitors land on the page is in the KB's [Public Site](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/public-site.md).
 
-1. Register the sign-out redirects in WorkOS (Redirects → Sign-out redirects): the production and staging landing URLs and `https://web.meridian.localhost`, plus a worktree's own dev prefix when that stack needs real log out. Try log out once afterwards: what WorkOS does with an unregistered URL is unconfirmed.
+1. Register the sign-out redirects in WorkOS (Redirects → Sign-out redirects): the production and staging landing URLs and the main checkout's `http://localhost:20002`, plus a worktree's own www port when that stack needs real log out. Try log out once afterwards: what WorkOS does with an unregistered URL is unconfirmed.
 2. Deploy `@meridian/www`; on staging set `MERIDIAN_APP_ORIGIN` to the staging app.
 3. Only then set `MERIDIAN_WWW_ORIGIN`. Open the www address first and check it serves the page: while the apex and www domains still redirect to the app, setting it makes signed-out `/` a redirect loop.
 

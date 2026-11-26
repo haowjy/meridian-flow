@@ -796,7 +796,6 @@ it("keeps a sibling live on the same socket while a replay retries", async () =>
   const transport = createThreadClient({
     serverUrl: wire.baseUrl,
     cookie: COOKIE,
-    ca: undefined,
     request: async () => {
       throw new Error("no HTTP expected");
     },

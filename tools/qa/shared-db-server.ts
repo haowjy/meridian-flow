@@ -4,16 +4,11 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "../dev/lib/dev-db";
 import { fillDevEnv, resolveCurrentRepoRoot, resolveDevLogDir } from "../dev/lib/dev-env";
-import { resolveCheckoutPortlessPrefix } from "../dev/portless-prefix";
-import {
-  expectedPortlessName,
-  expectedServiceOrigin,
-  resolvePortlessProxyPort,
-} from "../dev/portless-routes";
+import { browserUrl, loopbackOrigin, resolveDevPorts } from "../dev/lib/dev-ports";
 
-const SERVER_SUFFIX = ".server.meridian";
 const SERVE_CHILD = resolve(import.meta.dirname, "shared-db-serve.mjs");
-const USAGE = "usage: bun tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian";
+const USAGE =
+  "usage: bun tools/qa/shared-db-server.ts <database-url> <app-port>  (the server takes <app-port>+1)";
 
 const repoRoot = resolveCurrentRepoRoot(import.meta.dirname);
 
@@ -22,20 +17,19 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function parseArgs(argv: readonly string[]): { databaseUrl: string; prefix: string } {
-  const [databaseUrl, name, ...rest] = argv;
-  if (!databaseUrl || !name || rest.length > 0) fail(USAGE);
+function parseArgs(argv: readonly string[]): { databaseUrl: string; appPort: number } {
+  const [databaseUrl, port, ...rest] = argv;
+  if (!databaseUrl || !port || rest.length > 0) fail(USAGE);
   if (!isLocalDevPostgres(databaseUrl)) {
     fail(`refusing ${new URL(databaseUrl).host}: only the local dev Postgres is a target`);
   }
-  const prefix = name.endsWith(SERVER_SUFFIX) ? name.slice(0, -SERVER_SUFFIX.length) : "";
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(prefix)) {
-    fail(`the route name must be <prefix>${SERVER_SUFFIX}, so the app can pair a host with it`);
+  const appPort = Number(port);
+  if (!Number.isInteger(appPort) || appPort < 1024 || appPort > 65_534) fail(USAGE);
+  const own = Object.values(resolveDevPorts(repoRoot));
+  if (own.includes(appPort) || own.includes(appPort + 1)) {
+    fail(`${appPort} and ${appPort + 1} overlap this checkout's own dev stack ports`);
   }
-  if (prefix === resolveCheckoutPortlessPrefix(repoRoot)) {
-    fail(`${name} is this checkout's own dev stack route`);
-  }
-  return { databaseUrl, prefix };
+  return { databaseUrl, appPort };
 }
 
 async function printIdentity(databaseUrl: string): Promise<void> {
@@ -51,16 +45,13 @@ async function printIdentity(databaseUrl: string): Promise<void> {
 }
 
 async function launch(): Promise<void> {
-  const { databaseUrl, prefix } = parseArgs(process.argv.slice(2));
+  const { databaseUrl, appPort } = parseArgs(process.argv.slice(2));
   await printIdentity(databaseUrl);
 
-  const serverName = expectedPortlessName("server", prefix);
-  const appName = expectedPortlessName("app", prefix);
+  const prefix = `shared-${appPort}`;
   const env: NodeJS.ProcessEnv = { ...process.env };
   fillDevEnv(repoRoot, env);
-  const proxyPort = resolvePortlessProxyPort(env);
-  const serverOrigin = expectedServiceOrigin("server", prefix, proxyPort);
-  const appOrigin = expectedServiceOrigin("app", prefix, proxyPort);
+  const serverOrigin = loopbackOrigin(appPort + 1);
   Object.assign(env, {
     DATABASE_URL: databaseUrl,
     SHARED_DB_SERVER_URL: databaseUrl,
@@ -68,7 +59,7 @@ async function launch(): Promise<void> {
     MERIDIAN_API_ORIGIN: serverOrigin,
     NODE_ENV: "development",
     APP_DEBUG: env.APP_DEBUG ?? "1",
-    LOG_DIR: resolve(resolveDevLogDir(repoRoot), "..", `events-${serverName}`),
+    LOG_DIR: resolve(resolveDevLogDir(repoRoot), "..", `events-${prefix}`),
   });
 
   const children: ChildProcess[] = [];
@@ -82,15 +73,16 @@ async function launch(): Promise<void> {
       }
     }
   };
-  for (const [name, mode] of [
-    [serverName, "server"],
-    [appName, "app"],
+  for (const [mode, port] of [
+    ["server", appPort + 1],
+    ["app", appPort],
   ] as const) {
-    const child = spawn(
-      "pnpm",
-      ["exec", "portless", "--name", name, "--force", "node", SERVE_CHILD, mode],
-      { cwd: repoRoot, env, stdio: "inherit", detached: true },
-    );
+    const child = spawn("node", [SERVE_CHILD, mode], {
+      cwd: repoRoot,
+      env: { ...env, PORT: String(port) },
+      stdio: "inherit",
+      detached: true,
+    });
     child.on("exit", (code) => {
       stopAll("SIGTERM");
       if (children.every((each) => each.exitCode !== null || each.signalCode !== null)) {
@@ -102,7 +94,7 @@ async function launch(): Promise<void> {
   process.on("SIGINT", () => stopAll("SIGINT"));
   process.on("SIGTERM", () => stopAll("SIGTERM"));
   console.log(`shared-db-server: server ${serverOrigin}`);
-  console.log(`shared-db-server: tab    ${appOrigin}`);
+  console.log(`shared-db-server: tab    ${browserUrl(appPort)}`);
 }
 
 launch().catch((cause: unknown) =>

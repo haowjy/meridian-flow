@@ -87,12 +87,12 @@ What belongs to the account and the operator: credits, settings, and the safe ev
 
 ## routes
 
-The front door: Nitro file routes, startup, request observability and CORS.
+The front door: Nitro file routes, startup and request observability.
 
 The startup plugin boots the process and, in a built server, ends it on a boot failure. A route authenticates, runs the domain's gate and returns `@meridian/contracts` shapes only. A route that touches a document also asks file policy.
 
 - Kind: module
-- Paths: `apps/server/server/routes`, `apps/server/server/plugins`, `apps/server/server/middleware`
+- Paths: `apps/server/server/routes`, `apps/server/server/plugins`
 - Docs: [server CONTEXT](../../apps/server/.context/CONTEXT.md), [server AGENTS](../../apps/server/AGENTS.md)
 - Drift: the startup plugin imports `routes/ws/loro`, so plugins depend on routes.
 

@@ -20,8 +20,7 @@ export function createThreadClient(session: Session): ThreadSocketClient {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return new ThreadSocketClient({
     url: () => url.toString(),
-    webSocketFactory: (address) =>
-      new WebSocket(address, { headers: { cookie: session.cookie }, ca: session.ca }),
+    webSocketFactory: (address) => new WebSocket(address, { headers: { cookie: session.cookie } }),
     toError: (error) =>
       error.retryable
         ? new Error(`Thread socket error: ${error.message}`)

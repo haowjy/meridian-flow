@@ -1,7 +1,7 @@
 # Editor schema fence
 
 Start the owned worktree with `pnpm dev` and discover its HTTPS URL with
-`pnpm portless:list`. The stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in. Open a seeded
+`pnpm dev:urls`. The stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in. Open a seeded
 manuscript in the Editor.
 
 A normal document has no fence. For a visual probe, supply a fixture

@@ -2,8 +2,8 @@
 
 These checks cover runtime control, compaction, failure, handoff, history and
 document-link behaviour that a database test cannot show. Use an owned
-`MODEL_PROVIDER=mock pnpm dev --no-tailscale` stack and the routes from
-`pnpm portless:list`.
+`MODEL_PROVIDER=mock pnpm dev` stack and the routes from
+`pnpm dev:urls`.
 
 ## Setup
 
@@ -114,9 +114,9 @@ real-model run.
 ## RP-5: Kill the server mid-summary
 
 Queue a delayed summary, compact, and send a message while compaction is
-pending. Verify the server wrapper and Nitro child belong to this checkout
-through `pnpm portless:list` and `/proc/<pid>/cwd`, then kill only the verified
-Nitro PID. Restart with `MODEL_PROVIDER=mock pnpm dev --restart --no-tailscale`.
+pending. Find this checkout's Nitro child by its port
+(`lsof -nP -iTCP:<server port from pnpm dev:urls> -sTCP:LISTEN -t`), then kill only that
+PID. The stack stops as a whole when a service dies, so start it again: `MODEL_PROVIDER=mock pnpm dev`.
 Do not enqueue the compact again.
 
 Expect the consumed compaction to fail with interrupted/recovery metadata and not

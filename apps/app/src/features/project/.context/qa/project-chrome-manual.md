@@ -1,7 +1,7 @@
 # Project chrome and shell: manual checks
 
 Run these against an owned worktree and stack. Discover URLs with
-`pnpm portless:list`. Use the mock model.
+`pnpm dev:urls`. Use the mock model.
 
 ## Work rows: the Undo affordance
 

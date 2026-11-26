@@ -6,7 +6,7 @@ receipt state. Run each with a fresh thread and confirm the browser last.
 ## Setup
 
 Follow [Runtime probes](runtime-probes.md#setup): use a disposable
-worktree, `MODEL_PROVIDER=mock pnpm dev`, `pnpm portless:list`, and explicit
+worktree, `MODEL_PROVIDER=mock pnpm dev`, `pnpm dev:urls`, and explicit
 `MF_SERVER_URL` and `MF_APP_URL` as the browser URL. Set `E` to a directory under the work item's
 `evidence/`.
 

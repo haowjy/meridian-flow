@@ -11,11 +11,24 @@ repo values. The base database has one source, the main `.env`, so the
 main-database guard, `gc-dbs`, `run-db-tests` and the loader cannot disagree
 about which database is main. No build config runs the loader, and
 `shared-db-server` loads server configs in-process and passes its own URL as
-given (it uses only the fill step). The stack's services start through
-`with-dev-env.ts`, so one loader feeds the panes. `tools/dev/psql` hands `psql`
+given (it uses only the fill step). The dev supervisor calls the same loader each
+time it starts the services. `tools/dev/psql` hands `psql`
 its connection as `PG*` variables, never argv. CI and deploy migrations reach the
 loader through `db:migrate` with no file defining the URL. Failure to derive a
 scoped database is loud, never a fallback.
+
+A linked worktree's database is `<base>_<directory name>`, lowercased with other
+characters turned into hyphens. It follows the directory, so the branch checked out
+there doesn't matter and a running stack never points at a database its checkout no
+longer names. Two worktrees whose directories share a name would share a database, so
+the loader refuses to run in either.
+
+Ports and the database name identify a worktree by two different rules, on purpose. A
+port is chosen once and stored in the worktree's `.env.local`, where it can be edited,
+because a port clash is loud: the second stack fails to bind. A database name is
+derived on every run and never stored, because a database clash is silent: two
+worktrees would write to the same data. A stored name copied from one worktree to
+another would do exactly that, so don't make the database name a setting.
 
 `db:migrate` resolves the checkout the same way and
 refuses a registered main database unless a human passes `--allow-main-database`;
@@ -79,172 +92,107 @@ dependency-resolution inputs bypass selection and run the full suite, as does
 test:db`; `pnpm test:db` and the manually dispatched CI `db-tests` job always run
 every DB file.
 
-## Session and readiness
+## Stack and readiness
 
-`applyDevEnvToProcess(repoRoot)` precedes `createDevSessionCommand`. The
-tmux command line, `.meridian/dev-session.json` and display output are one
-string and hold no secrets. The internal SSR
-API origin is the paired worktree server origin, not the public app URL.
-The production-client profiling mode uses the same session plan and Portless
-routes. Its app command builds the client, runs the built Nitro server with
-local dev auth enabled, and fronts it with the app-owned route inventory so
-server-owned HTTP and WebSocket paths remain same-origin. Portless's
-`NODE_EXTRA_CA_CERTS` is mandatory for the Nitro SSR fetch and the gateway's
-HTTPS upstream. The persisted session identity records the client build, so
-reuse refuses a development/production mismatch and `pnpm dev:restart`
-preserves the running build as well as its transport mode. Session metadata
-from before client-build identity existed reads as `development`; every new
-launch writes the field.
+A checkout's ports are a block of ten, of which app, server and www take the first
+three. The block's base has one source: `DEV_PORT_BASE` in the checkout's `.env.local`,
+read by `resolveDevPorts` (`lib/dev-ports.ts`). When the line is missing, the main
+checkout (whose `.git` is a directory) gets 20000, and a linked worktree is given a
+block on the spot: `20010 + (sha256(path) % 799) * 10`, moved past any block within ten
+ports of a base in another checkout's `.env.local`, and appended to the worktree's
+`.env.local`. So no reader ever sees a guess that a later choice could contradict, and
+the hash matters only for that first choice. Moving a stack is editing the number.
+There is no shell override and no registry to go stale. A taken port fails the start
+with the port named; the launcher never moves to a free one. The main checkout is never
+written to: a tool that copies ignored files from it into a new worktree would copy the
+base too.
 
-`resolveCheckoutPortlessPrefix` owns hostname derivation for startup, `./mf`,
-and browser tests. Only the primary checkout gets bare names. Linked detached
-checkouts include their session slug and path hash, so equal commits cannot
-alias each other. Commands use Portless named mode, not its branch inference;
-session metadata retains the prefix used by a running stack across Git changes.
-`pnpm dev` sessions run on one private tmux socket (`meridian-flow-dev`,
-`lib/dev-tmux-socket.ts`) shared by all checkouts. It keeps `--stop`, the orphan
-sweep and `dev:stacks` off the human's own server while still seeing every
-checkout's stack; cleanup readiness lists panes on both servers. The store passes
-tmux the environment from before the dev-env loader ran, so a server it starts
-never holds loaded secrets. A restart reads the running session's environment
-(`sessionEnv`, `show-environment -s`, whose quoting survives newlines) and fills in
-each variable the restarting shell doesn't set, before the mode and `.env` are
-applied: the stack keeps what it was started with, the checks see the same values,
-and the keys the plan computes (`COMPUTED_STACK_KEYS`) are derived afresh. The session is the only copy, since
-`.meridian/dev-session.json` holds no values; after the session dies there is
-nothing to keep. `legacyDefaultServerHasSession` refuses a start while
-an old default-server stack of this checkout runs (read-only `-L default`).
-`dev-session-state.ts` validates the checkout-bound launch record and discovers
-its live tmux session. Startup, `./mf`, and browser discovery use that active
-identity, not current HEAD; Git derives only the next launch's identity. A
-single resolved `DevSessionPlan` supplies commands, ports and verification
-expectations. New/reused sessions share one readiness-and-publication pipeline.
-Each launch command begins with `cd <checkout> &&` and tmux clients run from
-`$HOME`: a session lands in its own checkout even when the server's cwd has been
-deleted (tmux then silently ignores `new-session -c`).
+Readers follow one rule. Code that talks to a stack reads its record, through
+`runningStack` or `requireRunningStack` (`lib/dev-stack.ts`): `pnpm dev` for a stack
+that is already up, `./mf`, Playwright and the QA probes. With no stack they fail
+saying so, not with a refused connection. Only code that starts a stack or has to stay
+clear of its ports calls `resolveDevPorts`: the launcher, the supervisor and
+`tools/qa/shared-db-server.ts`. The app's Vite config reads `MERIDIAN_API_ORIGIN`,
+which whoever starts the dev server sets, and refuses to serve without it.
+`pnpm dev --stop` reads only the record, so a mistyped base can't keep a stack from
+being stopped.
 
-Portless is the URL source of truth. `resolvePortlessProxyPort` reads the port the running proxy recorded in `proxy.port` under `PORTLESS_STATE_DIR` (default `~/.portless`), falling back to `PORTLESS_PORT` before a proxy has written one. Every route expectation, readiness probe, internal SSR origin and `./mf` discovery uses that one value. Hosts carry the port only when it is not Portless's default 443, so default-port URLs stay bare. `pnpm dev` reports `started` only after
-expected routes, real HTTP readiness probes, and (when enabled) verified
-Tailscale bindings pass. Startup failures identify the repository-relative
-portless log. Tailscale cleanup probes target liveness and turns off individual
-stale routes; it never calls a global reset or removes a live route. `--restart`
-owns its configured ports: after tmux teardown it SIGTERMs every discovered
-holder, waits briefly, then SIGKILLs stragglers, with discovery never gated on
-tmux, cwd, or ancestry; a bound port it cannot inspect aborts startup loudly.
-Fixed app backend ports sit in 20000-27999, below Linux's ephemeral range, so
-an outgoing connection's source port can never hold one; a port busy with no
-listener is reported as such.
-`--force` requests restart semantics too. Both explicitly take over expected
-Portless hostnames with warnings identifying the old PID, cwd when inspectable,
-and backend port; ordinary startup refuses occupied names. Takeover uses
-Portless's route-locked `--force` registration, not a global proxy reset.
-Readiness requires positive route PIDs with cwd evidence inside this checkout,
-and exact configured backend ports, before HTTP probes may pass.
+Browser URLs are `http://localhost:<port>`; processes reach each other on
+`http://127.0.0.1:<port>`, where every service binds. There is no proxy, certificate
+or per-worktree hostname.
 
-`pnpm dev:stacks` reports each running stack's memory and idle time; it stops
-nothing unless given `--reap-idle <minutes> --yes`, because a stack belongs to
-the session that started it. Stopping a stack leaves its database and worktree
-alone. The measurement behind it is in the header of `dev-stacks.ts`.
+`pnpm dev` (`dev.ts`) checks Postgres and the ports and starts `dev-supervisor.ts`
+detached with the shell's environment, less the variables pnpm and Nx set for the
+command itself. Nothing in `dev.ts` loads `.env` into that environment
+(`assertDevInfraReady` fills a copy), or the values would outlive a restart that is
+meant to read the file again. The supervisor loads `.env` through `applyDevEnvToProcess` each time it
+starts the services, sets `PORT`, `MERIDIAN_API_ORIGIN`, `MERIDIAN_APP_ORIGIN` and, with
+`--www`, `MERIDIAN_WWW_ORIGIN`, and writes `.meridian/dev-stack.json`. `pnpm dev`
+reports `started` only after that record names the supervisor it launched and the
+server's `/readyz` and the app both answer; if the supervisor exits first, it prints
+the end of `logs/dev.log`.
 
-App boot smokes trust only a live spawned child and the exact shared route
-contract. A foreign listener or generic non-5xx response is not evidence of a
-successful boot.
+The record holds the supervisor's pid and `ps` start time, the same pair for each
+service it started, the client build, the ports, a generation number and the
+last-active time, and no environment values. `pnpm dev` holds `.meridian/dev-start.lock`
+while it starts a stack, so two starts cannot overwrite each other's record. A restart
+bumps the generation, which is how `pnpm dev:restart` knows the new services are the
+ones answering. The production-client mode runs the app's `profile:dev-stack` script in
+place of `vite dev`; that script builds the client and fronts the built server with the
+app-owned route inventory, so server-owned HTTP and WebSocket paths stay same-origin.
 
-## Cleanup and CLI
+The browser reaches the server only through the app's port. The dev proxies (Vite's
+`server.proxy`, `api-http-dev-proxy-plugin.ts`, the production-client gateway) forward
+the `Host` header unchanged, because the dev sign-in rule in
+`@meridian/contracts/dev-auth` accepts an `Origin` only when it equals the request's
+`Host`. Rewriting `Host` to the server's port would sign every browser request out.
+Trusting a name instead would be wrong: every dev stack is `localhost`, so any local
+page could act as the dev user, and anyone can serve a page under `*.ts.net`.
 
-Worktree cleanup is target-first and commit-bound. It refuses the primary,
-current, dirty, locked, detached, live, or insufficiently evidenced target;
-revalidates ownership, liveness, and the planned ref OID before destructive
-steps; and performs targeted stop, database removal, worktree removal, work-item
-completion, and ref deletion in that order. Targeted eligibility is the planned
-commit contained in another surviving ref (the branch's own local and
-remote-tracking refs never count, resolved against the configured remote names:
-a pushed branch is not merged) or one exact merged pull request, whichever base
-branch it merged into. Containment proves preservation, not completion: the work
-survives in the named ref, and the plan, the readiness gate, and the human
-confirmation are what judge the lane finished. Containment is revalidated
-against its ref before every action, symbolic refs never count as containers (an
-alias can point at the deleted branch), and a remote-tracking candidate must
-still exist upstream and still contain the commit when planning checks it (a
-branch that moved is refreshed once), so a deleted or reset integration branch
-cannot be cited. PR evidence rests on
-GitHub's merge record rather than a local ref. Worktree deletion executes one run at a
-time per repository: a second run refuses while one is executing, because two
-runs' containment refs can be each other's branches, and a stale lock refuses
-too rather than risking two owners; an interrupted run can leave a stale lock
-that the refusal's message names for deletion. Batch cleanup needs explicit risk
-acknowledgement and an exact merged PR into the base branch, and keeps refusing
-duplicate exact records (ancestry alone is not enough).
-A shell or a pane on the human's tmux server whose cwd is in the checkout never
-blocks cleanup: the tool leaves it alive and prints its PID or pane ID so its
-owner can `cd` out of the deleted directory. Target-only `--force` also permits
-managed dev-stack and Nx shutdown despite cwd occupants, then rechecks that only
-known shell/tmux executables remain before dropping the database and removing
-the checkout. Unknown processes, unreadable attributed processes, live dev
-sessions, inspection failures, active work items and dirty state still block. Force does
-not bypass merge evidence, branch/HEAD revalidation or structural protections,
-and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
-Never infer staleness from a branch name, and add no cleanup
-script that bypasses the shared resolver in `lib/worktree-cleanup.ts`; batch
-staleness needs an exact merged PR, while targeted cleanup's containment is
-confirmed by the human at the prompt. Prune a side-lane
-branch when it merges into its integration branch: containment, or the lane's
-own merged PR, proves it then, and either proof survives only while the
-integration ref or the PR record does. Once the integration branch is
-squash-merged and its ref deleted, a lane with no PR of its own has no automatic
-proof left, and
-[`WORKTREE-CLEANUP.md`](../WORKTREE-CLEANUP.md) reconstructs evidence for the
-targeted `--manually-verified <reason>` path. That path replaces only automatic
-eligibility discovery; every structural, readiness, and commit-movement guard
-still applies.
+`pnpm dev --tailscale` makes the supervisor publish the app port, and the www port with
+`--www`, through `tailscale serve --bg --https=<port> http://127.0.0.1:<port>` before it
+starts the services (`lib/dev-tailscale.ts`). The tailnet URL is
+`https://<machine>.<tailnet>.ts.net:<port>`, the same port number as on localhost: a
+machine has one tailnet name and one certificate, so a stack can't have a name of its
+own, and a path prefix would be stripped before the request reaches the app.
+`tailscale serve` forwards the browser's `Host`, so the sign-in rule above holds there.
+The record's `tailnetHost` is set while the routes exist, and the supervisor passes the
+tailnet origins as `MERIDIAN_APP_ORIGIN` and `MERIDIAN_WWW_ORIGIN`, so the links between
+the app and the marketing site work from the other device.
 
-The `./mf` CLI is [`tools/mf`](../../mf/.context/CONTEXT.md). It reads this
-directory's Portless route contract (see [`AGENTS.md`](../AGENTS.md)).
+A route belongs to the stack only when it is the single `/` handler on that port,
+proxies to the stack's own `127.0.0.1:<port>`, and is not a Funnel. Publishing checks
+every port first and fails on any other route; stopping removes only the stack's own.
 
-### Missing-checkout sessions
+A route never exists without a record that names it. The supervisor writes the record
+with `tailnetHost` before it publishes the first route. Teardown is one function,
+`retireStack` (`lib/dev-stack.ts`): it removes the stack's routes, then the record, and
+throws with the record kept when Tailscale doesn't answer. The supervisor calls it as
+it stops. `stopStack` calls it for a record that is still there once the processes are
+gone, which is a supervisor that was killed or could not reach Tailscale.
+The next `pnpm dev` runs `stopStack` first, so it can't start a stack on a port that an
+old route still publishes. One case is not covered: a removed checkout takes its record
+with it, so if Tailscale fails at that moment the route stays until someone removes it
+with `tailscale serve --https=<port> off`.
 
-`lib/worktree-cleanup-orphans.ts` discovers from tmux rather than Git alone, so
-unregistered/deleted worktrees remain visible. `pnpm dev` runs this sweep before
-start/reuse, but not for `--print` or `--stop`. The independent `--orphans` cleanup
-mode requires confirmation or `--yes` and supports `--dry-run`; it needs no PR,
-branch-merge evidence, database access, or Meridian work-item discovery.
+## Stopping and cleanup
 
-A candidate must have a managed session name with the SHA-256 path hash from
-`session-identity.ts`, a missing session creation directory, and every pane cwd
-still under that directory. A registered locked checkout is protected.
-Unregistered candidates must be immediate children of the primary checkout's
-sibling `<repo>.worktrees/` directory; arbitrary missing paths do not prove repo
-ownership. Existing directories, dangling symlinks, and inspection failures are
-not deletion evidence.
+`pnpm dev --stop` reads the record, takes the process trees of the supervisor and of
+each recorded service, sends the supervisor `SIGTERM` and waits for it; whatever in
+those trees is still alive after 15 s gets `SIGKILL`. The supervisor does the same to
+its services with a 5 s grace. Both find processes by parentage from `ps`, since pnpm
+puts each script in a process group of its own, and both check a pid's start time
+again before each signal. A stop that arrives during a restart waits for the restart
+to notice and start nothing, so no service is born after the tree is taken.
 
-Git discovery uses the canonical `runGit` boundary, ignoring inherited `GIT_*`
-repository overrides. Discovery and execution use the same session authorization
-rules. Before each shutdown phase, execution rechecks repository/lock/path
-ownership and all remaining panes against the original plan: original panes may
-exit during TERM, but newly added or relocated panes refuse teardown.
+Nothing sweeps for orphans. A stack whose checkout is removed stops itself. A
+supervisor killed outright (`SIGKILL`, the OOM killer) leaves its services running;
+the record still names them, so `pnpm dev --stop` stops them and the next `pnpm dev`
+stops them before it starts.
 
-`owned-process-tree.ts` captures same-user descendants, sends SIGTERM, and extends
-the owned set during the bounded grace period through still-valid captured
-ancestors. Captured detached/reparented children stay owned by PID, UID, start time
-and command; an unobserved process never becomes owned by cwd alone. After the
-fully authorized exact tmux session is closed, survivors are quiesced with
-SIGSTOP and repeated descendant censuses until the stopped set is stable, then
-force-killed. Quiescence must follow session closure because tmux resumes stopped
-pane leaders. On refusal/error, this invocation's paused survivors receive
-SIGCONT; processes already stopped by someone else are not resumed. Zombies count
-as exited. A final identity/descendant census always runs before tmux teardown,
-even if signaling/logging crossed the grace deadline. A present PID whose
-UID/start/command identity changed refuses cleanup, rather than being silently
-dropped; this includes exec during shutdown. A fresh
-plan may authorize its replacement only while session ownership remains provable.
-Resumption skips changed identities without stranding other matching survivors.
-Processes that fork and reparent before an identity or ancestry can be captured
-remain unprovable and are left alone.
-
-`portless-maintenance.ts` runs shared route pruning independently of teardown.
-Failures produce a warning and retry command, never a startup failure. Executing
-`--orphans` retries maintenance even when no sessions remain; dry-run/cancellation
-never touches routes. No branch, worktree, database, or work-item state is deleted.
+Removing a worktree is `wt remove`. Its `post-remove` hook runs `pnpm dev:gc-dbs`, which
+drops every project database that no live worktree, connection, running test or manual
+label claims.
 
 ## Migration and observability helpers
 

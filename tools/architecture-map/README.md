@@ -78,7 +78,7 @@ disk on each request), and `repo/<path>`: any file git tracks, as text
 uncommitted edits show; untracked files are refused except new unignored ones under `pagesDir`. Ignored
 files (`.env`, `node_modules`), anything with `..` in it, and binary files are refused. `index.html` is sent
 with a Content-Security-Policy (scripts only from the server and the pinned CDN), so a script inside a
-rendered Markdown file does not run; `serve.mjs` also answers only to `localhost` and `127.0.0.1` on its port. `pnpm dev:funnel`-style tunnels that
+rendered Markdown file does not run; `serve.mjs` also answers only to `localhost` and `127.0.0.1` on its port. Tunnels that
 publish the dev server also publish what it serves, so on a private repository set `serveSource: false`.
 
 ## What the check catches

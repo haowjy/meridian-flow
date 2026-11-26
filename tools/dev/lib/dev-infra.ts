@@ -37,9 +37,11 @@ export class DevInfraNotReadyError extends Error {
 
 export async function assertDevInfraReady(): Promise<void> {
   const repoRoot = resolveCurrentRepoRoot();
-  applyDevEnvToProcess(repoRoot);
+  // keep: fills a copy. `pnpm dev` hands its own environment to the stack, and `.env` values baked into it would outlive a restart that is meant to read the file again
+  const env = { ...process.env };
+  applyDevEnvToProcess(repoRoot, env);
 
-  const active = DEV_DATABASES.map((db) => ({ db, dbUrl: process.env[db.envVar] })).filter(
+  const active = DEV_DATABASES.map((db) => ({ db, dbUrl: env[db.envVar] })).filter(
     (entry): entry is { db: (typeof DEV_DATABASES)[number]; dbUrl: string } => Boolean(entry.dbUrl),
   );
 
