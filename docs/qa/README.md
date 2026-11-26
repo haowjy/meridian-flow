@@ -107,13 +107,11 @@ editing recovery still lack dedicated, cataloged script-backed writer checks.
 The recipes below and in linked pages do not certify those workflows today.
 Script automation and catalog repairs are tracked in [#726](https://github.com/haowjy/meridian-flow/issues/726).
 
-Run on an owned worktree and database. Discover HTTPS routes with
-`pnpm portless:list` and confirm they carry your worktree's prefix before any
-`./mf seed` or send, then pass `MF_SERVER_URL` explicitly (recipes use `MF_APP_URL` as the browser URL). A
-detached-HEAD checkout has no prefix: when another checkout holds the unprefixed
-routes, `pnpm dev` still reports `started` with that checkout's URLs, and `./mf`
-writes into its database ([#615](https://github.com/haowjy/meridian-flow/issues/615)).
-Put a comparison base on a throwaway branch instead. Never target another
+Run on an owned worktree and database. Discover its URLs with
+`pnpm dev:urls` before any
+`./mf seed` or send, then pass `MF_SERVER_URL` explicitly (recipes use `MF_APP_URL` as the browser URL). Each
+checkout has its own ports, computed from its path, so two checkouts never share a
+URL. Never target another
 worktree's process or clear its mock queue. Stop only your stack with
 `pnpm dev --stop` when finished; never `pkill` or `killall` by pattern, which
 matches every worktree's stack.
@@ -139,7 +137,7 @@ server. With your stack running (`pnpm dev`), note the count of
 same filesystem as the store file, so not `/tmp` when that is tmpfs). Remove the
 link afterwards. Wait 10 seconds.
 Expect no new `startup.complete` and no `[nitro] Server built` in
-`logs/portless.log`. Then edit a server source file: one rebuild is expected.
+`logs/dev.log`. Then edit a server source file: one rebuild is expected.
 Without the stack running, this cannot be checked.
 
 ## Document intake
@@ -148,8 +146,8 @@ DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
 ## Import
 
-Start the owned stack with `pnpm dev`; discover HTTPS origins with
-`pnpm portless:list`. The upload-first server and app switch together: do not use
+Start the owned stack with `pnpm dev`; discover URLs with
+`pnpm dev:urls`. The upload-first server and app switch together: do not use
 the old landing UI or old plan/finish probe scripts to certify the new protocol.
 
 For the upload-phase server slice, use an authenticated browser against the
@@ -324,7 +322,7 @@ Three harness artifacts have produced false defects. Rule them out first.
 ## Project export
 
 1. Start an owned worktree with `pnpm dev` and discover its HTTPS routes with
-   `pnpm portless:list`. Seed links across Manuscript and Knowledge, a
+   `pnpm dev:urls`. Seed links across Manuscript and Knowledge, a
    binary image, case-only siblings, two Works with Scratch and Uploads, and a
    No Work chat with Scratch. Seed `documents.metadata.properties` directly
    as `{ "format": "yaml", "text": "..." }`.

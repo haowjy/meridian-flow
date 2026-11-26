@@ -271,7 +271,7 @@ the default is `claude-opus-5-5`.
 
 ```bash
 pnpm dev
-pnpm portless:list
+pnpm dev:urls
 THREAD=$(./mf thread create --title 'Current Claude probe')
 ./mf thread send "$THREAD" 'Describe a moonlit mountain in one sentence. Do not use tools.' --json
 ./mf thread view "$THREAD" --json

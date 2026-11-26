@@ -39,7 +39,7 @@ pnpm bootstrap       # create the DB and install the baseline
 pnpm dev
 ```
 
-Dev is portless: use `pnpm portless:list` for live `https://*.localhost` URLs instead of hard-coded raw ports.
+Each checkout's dev stack has its own ports: `pnpm dev:urls` prints its `http://localhost:<port>` URLs.
 
 ## Verification
 

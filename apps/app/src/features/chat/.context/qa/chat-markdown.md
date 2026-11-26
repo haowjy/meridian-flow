@@ -1,7 +1,7 @@
 # Chat document rendering
 
 Start an owned stack with `MODEL_PROVIDER=mock pnpm dev`, discover its app URL
-with `pnpm portless:list`, then use `./mf doc put` and a scoped `./mf mock script`
+with `pnpm dev:urls`, then use `./mf doc put` and a scoped `./mf mock script`
 to place the same Markdown in a manuscript and a settled assistant reply.
 Include nested and ordered lists, a quote, a table with aligned cells, inline
 marks, a link, and a TypeScript fence.

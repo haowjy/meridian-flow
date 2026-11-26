@@ -10,7 +10,7 @@ tree's own drag is [Row selection and drag](../../../../../../../../docs/qa/row-
 ## Setup
 
 1. An owned stack on the mock model (`MODEL_PROVIDER=mock pnpm dev`; origins from
-   `pnpm portless:list`; `pnpm bootstrap` first on a fresh worktree). Seed with `./mf doc put
+   `pnpm dev:urls`; `pnpm bootstrap` first on a fresh worktree). Seed with `./mf doc put
    --text`: `manuscript://Book/Act 1/Prologue`, `…/Act 2/Chapter 2`, `…/Notes/Ideas`,
    `kb://Lore/Magic`, `user://Templates/Style guide`, and `manuscript://Book/Links` holding
    `[the prologue](<manuscript://Book/Act 1/Prologue>)`. Open Chapter 2, then Prologue (main shows Prologue).

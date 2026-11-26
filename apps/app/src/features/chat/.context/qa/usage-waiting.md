@@ -1,7 +1,7 @@
 # Saved messages waiting for usage
 
 Use an owned worktree with `MODEL_PROVIDER=mock pnpm dev`. Discover its HTTPS
-URLs with `pnpm portless:list`. Use `./mf project list --json` to find the dev
+URLs with `pnpm dev:urls`. Use `./mf project list --json` to find the dev
 account and project, then `./mf thread create` and one successful send to make
 an existing chat. Query this checkout's database with `tools/dev/psql`;
 never use another checkout's database.

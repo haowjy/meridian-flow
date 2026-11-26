@@ -18,7 +18,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | DebugOverlay → **LLM Calls** | Inspect gateway calls plus Markdown, Raw, and Debug request views | [Inspect Model Context](#inspect-model-context) |
 | DebugOverlay → **Streams** | Client Loro-room (`wire.loro`) and thread-socket (`wire.thread`) traces; toggle in the server feed | [Durable Logs](#durable-logs) |
 | `logs/events/*.jsonl` + `jq` | Post-restart forensics; best-effort mirror | [Consume Server Events](#consume-server-events) |
-| `logs/portless.log` | Authoritative interleaved stdout | [Durable Logs](#durable-logs) |
+| `logs/dev.log` | Authoritative interleaved stdout | [Durable Logs](#durable-logs) |
 
 ## Strategies
 
@@ -37,18 +37,15 @@ Start from your symptom in [Strategies](#strategies), or scan the
   production client against the same dev server and database:
 
   ```bash
-  MODEL_PROVIDER=mock pnpm dev:production-client --no-tailscale
+  MODEL_PROVIDER=mock pnpm dev:production-client
   ```
 
   This builds the app, serves its hashed production assets at the checkout's
-  usual Portless app URL, and keeps the dev auth bypass, same-origin `/api`, and
-  WebSocket routes connected to that checkout's dev server. Portless supplies
-  its CA through `NODE_EXTRA_CA_CERTS`; the launcher refuses to run without it
-  rather than disabling TLS verification. A running stack records which client
-  build it serves and refuses reuse with the other build. Use `pnpm
-  dev:production-client --restart --no-tailscale` to switch from the development
-  client or rebuild after source changes. `pnpm dev:restart` keeps the current
-  client build. Stop it with `pnpm dev --stop`.
+  usual app URL, and keeps the dev auth bypass, same-origin `/api`, and
+  WebSocket routes connected to that checkout's dev server. A running stack
+  records which client build it serves and refuses reuse with the other build:
+  run `pnpm dev --stop` first to switch. `pnpm dev:restart` keeps the current
+  client build and rebuilds it after source changes.
   Record the commit, browser version, fixture, sample count, host load, and
   whether each number came from `pnpm dev` or `pnpm dev:production-client`.
 - **The server stalls** (acks stop, requests hang, the editor goes offline).
@@ -538,7 +535,7 @@ If the signal would help another agent tomorrow, use structured observability
 instead of `console.log`.
 
 - Server diagnostics go through `EventSink` / `emitEvent`.
-- Stdout is authoritative and lands interleaved in `logs/portless.log` during
+- Stdout is authoritative and lands interleaved in `logs/dev.log` during
   local dev. The dev stack pins `LOG_DIR` to the absolute repo-root
   `logs/events/` directory, so its best-effort daily JSONL mirror lands at
   8 MiB segments under `logs/events/` regardless of each service's working
@@ -553,9 +550,9 @@ instead of `console.log`.
   `logs/`. A reload during a long-running turn is a bug, not expected dev
   behavior. A rebuild can also come from inside the checkout (a source edit).
   These are written by the dev stack and are not watched inputs:
-  `logs/portless.log`, `logs/events/**`, `.meridian/dev-session.json`, and
+  `logs/dev.log`, `logs/events/**`, `.meridian/dev-stack.json`, and
   Nitro output under `apps/server/node_modules/.nitro/dev/**`.
-  `logs/portless.log` shows a rebuild (`[nitro] Server built` followed by a
+  `logs/dev.log` shows a rebuild (`[nitro] Server built` followed by a
   fresh `startup.complete`) but not what triggered it. Before blaming product
   code, confirm the running Nitro process belongs to this checkout and config,
   then capture the triggering path with a recursive `inotifywait` over the
@@ -650,7 +647,7 @@ Servers with the debug gate open and the `local` event provider retain up to
 For direct `curl` access, a stack with `DEV_AUTH_BYPASS=1` needs no cookie:
 
 ```bash
-SERVER_URL=https://<lane>.server.meridian.localhost
+SERVER_URL=http://localhost:<server port from pnpm dev:urls>
 ```
 
 `GET /api/debug/events` returns newest first. Filters are `eventId` (exact),
@@ -742,15 +739,14 @@ node tools/ci/check-debug-probes.mjs
 rm -f auth.cookies
 ```
 
-3. Stop this worktree's dev stack through its owner. This removes its tmux
-   session on the private `meridian-dev` server and prunes its Portless and
-   Tailscale routes without touching another lane:
+3. Stop this worktree's dev stack through its owner. It ends only the processes
+   this checkout's stack started:
 
 ```bash
 pnpm dev:stop
 ```
 
-Do not manually kill shared Portless or reset Tailscale. Searchable JSONL is
+Searchable JSONL is
 ignored, bounded, and useful after a restart, so routine debugging does not need
 to delete `logs/events/`.
 
@@ -762,13 +758,13 @@ through the guarded owner command:
 pnpm dev:db:drop -- --yes
 ```
 
-After a PR merges or a lane is abandoned, clean the linked worktree, database,
-dev session, branch, and work item together. Run this from a checkout you are
-not removing and inspect the plan before confirming it:
+After a PR merges or a lane is abandoned, remove the worktree from a checkout you
+are not removing. worktrunk refuses a dirty or unmerged one, the stack stops
+itself once its checkout is gone, and the repository's `post-remove` hook drops
+the database:
 
 ```bash
-pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
-pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
+wt remove <branch>
 ```
 
 [mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#every-exit-is-proven-a-failure-or-unproven

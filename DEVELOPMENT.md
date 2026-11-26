@@ -6,7 +6,7 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 ## Environment
 
-Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. A variable the shell sets wins even when its value is empty, and so does a key in `.env.local`: `LIVE_TEST_MODEL=` in either turns off a main-`.env` setting. This holds for `pnpm dev` too: it starts the stack's tmux session with your shell's environment (minus a few keys that are per-checkout or per-process, named in [`tools/dev/dev-stack-env.ts`](tools/dev/dev-stack-env.ts): `DATABASE_URL`, `PORT`, `PATH`, `TMUX*`, `npm_*`), so `COMPACTION_SUMMARIZER_MODEL=foo pnpm dev` reaches the server. A stack keeps the environment it started with, through a restart too: `pnpm dev --restart` and `pnpm dev:restart` bring back every variable the running stack has that the restarting shell doesn't set (they print the names), so `MODEL_PROVIDER=mock pnpm dev` then a bare `pnpm dev:restart` stays on the mock, and a value the restarting shell sets wins. To drop a variable, `pnpm dev --stop`, then start again without it. A stack that is no longer running (stopped, or stopped for idling) has nothing to keep: start it again with the variables. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` gets no repo env, and a bare `vite dev` in `apps/app` reads only its own checkout's `.env*` files (Vite `loadEnv`), so a linked worktree gets none of the main `.env`.
+Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. A variable the shell sets wins even when its value is empty, and so does a key in `.env.local`: `LIVE_TEST_MODEL=` in either turns off a main-`.env` setting. This holds for `pnpm dev` too: the stack gets your shell's environment (minus the keys named in [`tools/dev/dev-stack-env.ts`](tools/dev/dev-stack-env.ts): `DATABASE_URL`, `PORT`, `INIT_CWD`, `npm_*`, `NX_*`), so `COMPACTION_SUMMARIZER_MODEL=foo pnpm dev` reaches the server. `pnpm dev:restart` restarts the services with the environment the stack started with and reads the `.env` files again, so `MODEL_PROVIDER=mock pnpm dev` then `pnpm dev:restart` stays on the mock. To change or drop a shell variable, `pnpm dev --stop`, then start again with the environment you want. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` gets no repo env, and a bare `vite dev` in `apps/app` reads only its own checkout's `.env*` files (Vite `loadEnv`), so a linked worktree gets none of the main `.env`.
 
 Set `DATABASE_URL` only in the main `.env`: the main checkout uses that database and each linked worktree gets `<name>_<slug>` on the same server (`:54422`). Setting it in `.env.local`, or leaving another checkout's URL in your shell, is an error.
 
@@ -34,7 +34,7 @@ and model-call consumption still work against the local credit ledger.
 To exercise checkout or webhooks, set Stripe test-mode values in the main
 checkout's `.env`: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the
 `STRIPE_PRICE_PLAN_*` entries used by the billing catalog. Run the Stripe CLI to
-forward test webhooks to the local portless server route, then use Stripe test
+forward test webhooks to the server URL from `pnpm dev:urls`, then use Stripe test
 cards / test subscriptions.
 
 ## First-time setup (main checkout)
@@ -61,7 +61,7 @@ pnpm dev:infra                # start the Postgres + pg_bigm Docker container (:
 pnpm exec lefthook install --reset-hooks-path
 pnpm bootstrap                # create the DB and install the baseline
 pnpm dev
-pnpm portless:list
+pnpm dev:urls
 ```
 
 ## Linked worktree
@@ -82,6 +82,7 @@ pnpm dev
 | `.env` | Read from the main checkout (no copy into the worktree); `.env.local` here overrides it, except `DATABASE_URL` |
 | `DATABASE_URL` | Derived as `meridian_<slug>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
+| Ports | Each checkout's own block, computed from its path; `pnpm dev:urls` prints them |
 | `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
 | `pnpm dev:infra:upgrade` | Shared — recreates the container onto the image tag in your checkout's compose file. Run it from a checkout that has merged `main`; an older branch's compose file would flip the server back to the image it knows |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
@@ -97,7 +98,7 @@ not an app bug.
 
 ## Local database
 
-Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`. Local dev can skip it: `DEV_AUTH_BYPASS=1` makes every request the dev user (`DEV_AUTH_USER_ID`, default `test`, email `<id>@example.com`), refused outside `NODE_ENV=development` and by `pnpm dev --funnel`. Set it to `0` to test real login.
+Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `postgres:16` plus `pg_bigm` (btree_gin and pg_trgm are contrib), with `pg_bigm` preloaded. Writer search needs all three. Compose is `tools/dev/docker-compose.yml`. App schema is Drizzle in `packages/database`. Auth is WorkOS AuthKit with app-owned `public.users`. Local dev can skip it: `DEV_AUTH_BYPASS=1` makes every request the dev user (`DEV_AUTH_USER_ID`, default `test`, email `<id>@example.com`), refused outside `NODE_ENV=development`. Set it to `0` to test real login.
 
 | Command | Purpose |
 |---------|---------|
@@ -133,67 +134,21 @@ prefixes are reserved from worktree slugs.
 
 ## Worktree cleanup
 
-Merged or finished work leaves several linked resources behind. `pnpm dev:prune-worktrees` tears them down safely:
+Remove a finished worktree from another checkout:
 
 ```bash
-pnpm dev:prune-worktrees -- --target <value> --dry-run # inspect one work id, path, branch, or PR
-pnpm dev:prune-worktrees -- --target <value>           # clean that target after confirmation
+wt remove <branch>
 ```
 
-Targeted cleanup runs in order: stop dev stack → drop database → remove git
-worktree → optionally mark a linked Meridian work item done → delete the local
-branch. Eligibility is bound to the planned branch commit and revalidated before
-every action. Targeted cleanup accepts the commit contained in another surviving
-local or remote-tracking ref (own refs resolved against the configured remote
-names, symbolic refs excluded, remote-tracking candidates verified against their
-remote before the check), or an exact merged PR into any base branch; each
-matched PR's head commit and repository owner must match. Batch cleanup still requires an exact merged PR into
-the detected base branch and keeps refusing duplicate exact records. Executing
-cleanups are serialized per repository, so two runs cannot each treat the other's
-branch as the surviving ref; a stale lock refuses rather than being taken over.
-The resolver refuses primary/current or locked worktrees, the detected base
-branch, commits no other ref contains (unless an exact merged PR or manual
-evidence covers them), dirty worktrees, and refs that move after planning.
+worktrunk refuses a dirty or unmerged worktree and deletes the merged branch. The
+checkout's dev stack stops itself within 15 seconds of the checkout disappearing,
+however it was removed. The repository's `post-remove` hook
+([`.config/wt.toml`](.config/wt.toml)) then runs `pnpm dev:gc-dbs -- --yes`, which
+drops every database whose worktree no longer exists. worktrunk asks once per
+machine to approve that hook; `--yes` answers it for an agent.
 
-Batch cleanup is advanced and not yet trusted for routine use. It requires an
-explicit acknowledgement:
-
-```bash
-pnpm dev:prune-worktrees -- --auto --acknowledge-batch-risk --dry-run
-```
-
-Automatic cleanup skips any worktree that is dirty, carries an active Meridian
-work item, has a live dev session, or has a process attributed to it. A readable
-process cwd inside the target blocks it; when cwd is unreadable, a cmdline
-reference to the target path blocks only that target. Because an active work
-item is a skip reason, mark it done before `--auto`; auto cleanup then runs four
-actions (stop dev, drop database, remove worktree, delete branch) rather than the
-targeted path's optional fifth `meridian work done` action.
-
-### Orphan dev sessions
-
-Deleting a checkout directly can leave its dev tmux session and dev servers
-running. `pnpm dev` cleans up these abandoned stacks before starting or reusing a
-stack. `--print` and `--stop` never sweep other checkouts. To inspect the cleanup
-plan before stopping anything:
-
-```bash
-pnpm dev:prune-worktrees -- --orphans --dry-run
-pnpm dev:prune-worktrees -- --orphans          # confirm interactively; --yes skips the prompt
-```
-
-Only sessions created by the dev launcher on the `meridian-dev` tmux server
-qualify: their names include a hash of the checkout path, that path must be
-missing, and every terminal pane must still point inside it. Live checkouts, locked Git registrations, other repositories,
-and unrelated terminals are left alone. Branches, databases and work items are
-never deleted. A refusal means ownership could not be proved; inspect the
-reported session and PID before retrying, rather than killing by name or path.
-
-Portless maps local HTTPS names to dev servers. Cleanup also removes its stale
-routes; a route-maintenance failure warns without undoing process cleanup.
-Rerun `--orphans --yes` to retry that maintenance even when no sessions remain.
-Dry-run and cancelled plans never change routes. The detailed ownership and
-shutdown contracts are in [the dev-tool context](tools/dev/.context/CONTEXT.md).
+After removing a worktree any other way (`git worktree remove`, deleting the
+folder), run `pnpm dev:gc-dbs -- --yes` yourself.
 
 Details: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md), [packages/database/README.md](packages/database/README.md).
 
@@ -251,50 +206,46 @@ pnpm test:all       # unit + managed DB suites in one Vitest run (requires Postg
 
 ## Dev server
 
-Portless + tmux (not raw `localhost:3000`). See [AGENTS.md — Dev environment](AGENTS.md#dev-environment).
-
-Dev stacks run on the private tmux server `meridian-dev`, not the default one.
-Attach with `tmux -L meridian-dev attach -t <session>`; `pnpm dev` prints the
-exact command. The default server holds the machine owner's live shells.
+Each checkout's stack runs on its own `localhost` ports, computed from the
+checkout's path ([`tools/dev/lib/dev-ports.ts`](tools/dev/lib/dev-ports.ts)). The
+main checkout uses 20000 (app), 20001 (server) and 20002 (www); a linked worktree
+gets a block of its own between 20010 and 27999. If two checkouts ever hash to the
+same block, the second `pnpm dev` fails naming the busy port: set
+`DEV_PORT_BASE=<port>` in that checkout's `.env.local`.
 
 ```bash
-pnpm dev                  # start (tailscale serve by default)
-pnpm dev --no-tailscale   # local-only (no Tailscale exposure)
-pnpm dev --funnel         # public internet via Tailscale Funnel
-pnpm dev --print          # dry-run: print the session plan (the command holds no secrets)
-pnpm dev --stop           # stop this worktree's tmux session + prune routes
-pnpm dev:stacks           # list every checkout's stack, its memory and idle time (idle stacks stop themselves after 60 min)
-pnpm dev:restart          # stop + restart, keeping the mode, client build and environment
-pnpm dev --restart        # stop + restart in the mode its flags name; keeps the environment
-pnpm portless:list        # live localhost HTTPS URLs
+pnpm dev                    # start the app and server; prints the URLs when both answer
+pnpm dev --www              # also run the marketing site
+pnpm dev:production-client  # serve the built client instead of Vite's dev client
+pnpm dev:urls               # this checkout's URLs, and whether the stack is up
+pnpm dev:restart            # restart the services in place, same environment
+pnpm dev --stop             # stop this checkout's stack
+pnpm dev:stacks             # every checkout's running stack, its memory and idle time
+pnpm dev --print            # dry run: print what would start
 ```
 
-Dev sessions run on their own tmux socket, `meridian-flow-dev`, shared by all
-checkouts and separate from your own tmux server. Attach with
-`tmux -L meridian-flow-dev attach -t <session>` (`pnpm dev` prints the command)
-and list with `tmux -L meridian-flow-dev ls`. If an older `pnpm dev` left a stack
-on your default server, `pnpm dev` refuses to start and prints the command that
-stops it.
+`pnpm dev` starts one background supervisor (`tools/dev/dev-supervisor.ts`) that
+runs the services and writes their output to `logs/dev.log`. It records itself in
+`.meridian/dev-stack.json`, which is how `--stop`, `./mf` and `pnpm dev:stacks`
+find the stack. The supervisor stops the whole stack when a service exits, when
+the checkout is removed, or after `DEV_IDLE_STOP_MINUTES` (default 60, `0` turns
+it off) without work.
 
-Restart terminates this worktree's owned tmux session, then owns its configured
-fixed ports. It also stops a stack started before dev moved to `meridian-dev`,
-which still lives on the default server. It logs each remaining holder by PID
-and command, sends SIGTERM, waits briefly, and sends SIGKILL to stragglers. An
-uninspectable bound port still aborts startup with diagnostics.
+The browser talks only to the app URL: Vite proxies the server's HTTP and
+WebSocket paths to the server's port.
+
+### Opening a stack from another device
+
+The services listen on `127.0.0.1` only. To reach one from another device, forward
+its app port: an SSH tunnel (`ssh -L <port>:localhost:<port> <host>`), or Tailscale
+(`tailscale serve --bg --https=<port> localhost:<port>`, after checking
+`tailscale serve status`). The dev sign-in bypass accepts a tailnet host; anyone on
+the tailnet then acts as the dev user.
 
 ### After a reboot
 
-The HTTPS proxy and Postgres must both be running before `pnpm dev`. Set each
-up once per machine and both start at boot:
-
-- **Proxy:** `pnpm exec portless service install` installs `portless.service`,
-  which serves 443 on loopback (`127.0.0.1`, `::1`) only, so a Tailscale Serve
-  entry on 443 (on the tailnet address) can run beside it. If `pnpm dev` reports
-  a missing proxy or missing routes, read `journalctl -u portless -b`. Don't stop
-  the service's proxy with `portless proxy stop`: it exits cleanly, so systemd
-  doesn't restart it; use `sudo systemctl restart portless`.
-- **Postgres:** the container restarts with Docker (`restart: unless-stopped`).
-  If it is missing, run `pnpm dev:infra`.
+Postgres must be running before `pnpm dev`. The container restarts with Docker
+(`restart: unless-stopped`); if it is missing, run `pnpm dev:infra`.
 
 ## Workstation: wrapped ripgrep
 
@@ -305,13 +256,13 @@ On the maintainer's workstation, `rg` is a memory-capped wrapper; run
 
 With several dev worktrees plus an editor running, the kernel inotify watch
 budget can run out; Vite then dies mid-HMR with
-`ENOSPC: System limit for number of file watchers reached` and the app drops
-off portless. Raise the limit and restart the dev session:
+`ENOSPC: System limit for number of file watchers reached` and the stack
+stops. On Linux, raise the limit and start it again:
 
 ```bash
 sudo sysctl fs.inotify.max_user_watches=1048576
 # persist: echo fs.inotify.max_user_watches=1048576 | sudo tee /etc/sysctl.d/60-inotify.conf
-pnpm dev --restart
+pnpm dev
 ```
 
 Editors are the biggest consumers (a long-running Cursor/VS Code can hold

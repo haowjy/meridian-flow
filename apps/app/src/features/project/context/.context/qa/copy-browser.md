@@ -8,7 +8,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
 ## Setup
 
 1. Start an owned stack (`MODEL_PROVIDER=mock pnpm dev` for steps that seed a draft) and find
-   its origins with `pnpm portless:list`. Sign in with the dev user.
+   its origins with `pnpm dev:urls`. Sign in with the dev user.
 2. Seed with `./mf doc put --text`: `manuscript://Book/Act 1/Chapter 1`, `manuscript://Book/Act 1/Prologue`,
    `manuscript://Book/Act 2/Chapter 2`, `manuscript://Book/Notes/Ideas`,
    `kb://characters/Hero`, `user://Templates/Style guide`. Create a Work with

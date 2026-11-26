@@ -100,7 +100,7 @@ Use the crash controller with an armed file while starting an ask:
 
 ```bash
 ARM=/tmp/ask-pending-arm; : > "$ARM"
-HOOK_CRASH_AT=ask.pending HOOK_CRASH_ARM="$ARM" pnpm dev --no-tailscale
+HOOK_CRASH_AT=ask.pending HOOK_CRASH_ARM="$ARM" pnpm dev
 ```
 
 After worker restart, stale repair cancels the uncommitted ask and the chat is

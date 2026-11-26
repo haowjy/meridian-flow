@@ -14,7 +14,7 @@ count changes nothing.
 
 Run from the tested checkout with `./mf` authenticated and a default project.
 Start `MODEL_PROVIDER=mock LIVE_TEST_MODEL= pnpm dev` and discover its URL with
-`pnpm portless:list`. Create a private mock-bound agent, a fresh document, a
+`pnpm dev:urls`. Create a private mock-bound agent, a fresh document, a
 fresh chat, and a fresh Work for each Draft case. Auto-apply uses
 `./mf thread create --agent <agent>`; Draft mode uses
 `./mf thread create --work <work>` with `aiWriteMode: "draft"`.

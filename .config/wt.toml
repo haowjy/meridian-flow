@@ -1,0 +1,6 @@
+# Project hooks for worktrunk (`wt`). worktrunk asks once per machine to approve them.
+
+# A removed worktree's dev stack stops itself; its database is dropped here.
+# `gc-dbs` drops every database whose worktree no longer exists and keeps any with a connection.
+[post-remove]
+databases = "pnpm dev:gc-dbs -- --yes"

@@ -24,5 +24,5 @@ as `$BASE` in guides, or set `PORT` before starting to bind a fixed port.
 | `run.ts` | CLI runner — starts server, runs a quick self-test, exits |
 | `guides/` | Markdown playbooks for manual/agent-run smoke checks |
 
-Full wired-stack flows still use the portless dev stack and the app/server smoke
+Full wired-stack flows still use the `pnpm dev` stack and the app/server smoke
 scripts under `apps/*`.

@@ -2,8 +2,8 @@
 
 Checks the circle between the landing page and the app. `DEV_AUTH_BYPASS=1` has no
 signed-out state, so set `DEV_AUTH_BYPASS=0` in the worktree's `.env.local` and run
-`pnpm dev --restart`. `MERIDIAN_WWW_ORIGIN` is exported in the default tailscale mode,
-not with `--no-tailscale`, which runs no www.
+`pnpm dev --stop`, then `pnpm dev --www`: `MERIDIAN_WWW_ORIGIN` is set only when the
+stack runs www.
 
 | Start | Expect |
 |---|---|

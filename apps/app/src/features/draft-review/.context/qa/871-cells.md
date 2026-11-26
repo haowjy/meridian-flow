@@ -7,7 +7,7 @@ documents; `agent-browser` drives the writer's typing.
 
 ```bash
 MODEL_PROVIDER=mock pnpm dev
-pnpm portless:list
+pnpm dev:urls
 P=$(./mf project default --json | jq -r .projectId)
 ```
 

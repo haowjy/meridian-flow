@@ -7,8 +7,8 @@ recipe is not a current pass claim.
 
 ## Setup
 
-1. In an owned worktree, run `pnpm dev:db:prepare` and `pnpm dev --no-tailscale`.
-   Discover its HTTPS origins with `pnpm portless:list`.
+1. In an owned worktree, run `pnpm dev:db:prepare` and `pnpm dev`.
+   Discover its URLs with `pnpm dev:urls`.
 2. Create an isolated project:
 
    ```bash

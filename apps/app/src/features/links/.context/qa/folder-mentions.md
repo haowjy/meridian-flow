@@ -4,7 +4,7 @@ Checks that `@` can mention a folder in the composer and the Editor, and that a
 folder chip opens the drill-in menu inside its folder, wherever the folder now
 lives.
 
-Use this checkout's `pnpm dev` stack and the URLs from `pnpm portless:list`.
+Use this checkout's `pnpm dev` stack and the URLs from `pnpm dev:urls`.
 The stack runs with `DEV_AUTH_BYPASS=1`, so the app opens signed in. Seed a chat with `./mf seed tools/mf/fixtures/basic.json`,
 then a folder with one document and an empty subfolder:
 

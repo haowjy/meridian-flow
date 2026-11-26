@@ -6,15 +6,13 @@ this directory never imports application packages. The `./mf` CLI lives in
 
 ## Rules
 
-- Dev sessions live on the private tmux socket in `lib/dev-tmux-socket.ts`
-  (`-L meridian-flow-dev`). Build every dev-session tmux call from
-  `devTmuxArgs`; a bare `tmux` reaches the human's own sessions. Only the
-  worktree-cleanup readiness check (to list panes) and the legacy-stack guard in
-  `dev-tmux.ts` (a read-only `has-session`) read the human's server.
-- Portless's proxy port comes only from `resolvePortlessProxyPort` in
-  `portless-routes.ts`. Route expectations, readiness, the internal SSR API
-  origin and `./mf` all pass that value; never hard-code a port, and leave
-  default-443 URLs bare.
+- A checkout's ports come only from `resolveDevPorts` in `lib/dev-ports.ts`. The
+  launcher, the app's Vite config, `./mf` and the browser tests all call it or read the
+  running stack's record; never hard-code a port or pick a free one at start.
+- A stack is found and stopped through its record, `.meridian/dev-stack.json`
+  (`lib/dev-stack.ts`): the supervisor's pid plus its `ps` start time. `runningStack`
+  treats a record whose start time doesn't match as stale, so a reused pid is never
+  signalled.
 - `DEV_DATABASES` in `lib/dev-env.ts` is the only database registry. Resolve
   worktree URLs through `applyDevEnvToProcess()` and administer databases
   through `lib/dev-db.ts`. Never regex-edit a URL, fall back to a shared
@@ -27,19 +25,15 @@ this directory never imports application packages. The `./mf` CLI lives in
   missing server and never touch a running one.
 - Change schemas with `pnpm db:generate` plus `pnpm db:reset`, never `push`.
   The pre-deploy baseline rule is in [database guidance](../../packages/database/AGENTS.md).
-- No secret value appears in the tmux command, stdout or
-  `.meridian/dev-session.json`: services get secrets from `with-dev-env.ts`,
-  which loads them at startup. Keep the pane's exports non-secret and inside
-  the subshell. Report `started` only after readiness and
-  verified routes pass.
-- Stop and clean up by target. Never stop dev servers by pattern
-  (`pkill -f "pnpm dev"`, `killall node` match every worktree's stack), never
-  reset all Tailscale routes, and never infer staleness from a branch name.
-  Cleanup removes only what it can prove is merged; when it refuses a branch
-  you believe is safe, follow [`WORKTREE-CLEANUP.md`](WORKTREE-CLEANUP.md).
-- Orphan teardown requires path/pane ownership and process identity, never cwd
-  or a name prefix alone. Inspect orphans with
-  `pnpm dev:prune-worktrees -- --orphans --dry-run`.
+- No secret value appears in a command line, stdout or `.meridian/dev-stack.json`.
+  The supervisor loads `.env` when it starts the services and passes it only through
+  their environment. Report `started` only after the server's `/readyz` and the app
+  answer.
+- Stop by recorded pid. Never stop dev servers by pattern (`pkill -f "pnpm dev"`,
+  `killall node` match every worktree's stack) or by whatever holds a port.
+- `dev-ports.ts` and `dev-stack.ts` are imported by `tools/mf`, `apps/app/vite.config.ts`
+  and `apps/app/e2e`. Keep them free of import-time side effects, with Node built-ins
+  as their only runtime dependencies.
 - Scripts run under `bun` (`#!/usr/bin/env bun`, `bun tools/dev/x.ts` in `package.json`), not
   tsx. Bun is pinned in `.tool-versions`. Vite, Nitro and Vitest stay on Node: don't use
   `bunx --bun` for them.
@@ -49,53 +43,47 @@ this directory never imports application packages. The `./mf` CLI lives in
   `smoke:project-domain`, `tests/smoke` and the tests that start server code use `tsx` (a root
   dev dependency) or plain `node`; `tools/qa/shared-db-server.ts` is a Bun launcher whose Nitro
   and Vite children (`shared-db-serve.mjs`) run on Node. Nitro fails on Bun (crossws).
-- `tools/mf` and `apps/app/e2e` import the Portless helpers
-  ([the list](../mf/AGENTS.md)). Keep those free of import-time side effects, with
-  Node built-ins as their only runtime dependencies.
 - DB tests use owned databases and rollback or FK-ordered reset. Never add
   per-case truncation or share a managed database between workers.
 - Keep `pnpm dev:production-client`'s API and WebSocket ownership in the app
   launcher; do not add a second route inventory here.
 
-## Idle stacks and memory
+## The supervisor
+
+`pnpm dev` starts `dev-supervisor.ts` detached, in a session of its own, and returns
+once the stack answers. The supervisor runs each service with `pnpm --filter <pkg> dev`
+and sends their output to `logs/dev.log`.
+
+- **It finds its services by parentage, not process group.** pnpm starts each script in
+  a group of its own, so `processTree` walks parent pids from `ps`. Take the tree before
+  signalling: a process whose parent has exited is reparented and drops out of it.
+- **It stops the whole stack** when a service exits, when the checkout's `.git` is gone
+  (checked every 15 s), and after `DEV_IDLE_STOP_MINUTES` (default 60, `0` turns it off)
+  without work. "Work" is the service processes burning CPU, summed per pid, which a
+  page load, an `./mf` call or an edit does and an untouched stack does not.
+- **`pnpm dev:restart` sends it `SIGUSR2`.** It restarts the services with the
+  environment it was started with and reads `.env` again. That is why a stack started
+  with `MODEL_PROVIDER=mock` stays on the mock: nothing stores the values, the
+  supervisor still holds them.
+- **Why a stack stopped:** the reason is the last `[dev]` line in `logs/dev.log`. An
+  idle stop also leaves `.meridian/dev-idle-stopped`; `pnpm dev` prints and clears it,
+  and `./mf` prints it while the stack is down.
+- **CPU time comes from `ps` on macOS and `/proc/<pid>/stat` on Linux**, where `ps`
+  reports whole seconds, too coarse to tell an idle stack from a used one.
 
 A stack costs 1.5–3.5 GB, so forgotten ones exhaust the machine. `pnpm dev:stacks`
-lists every checkout's stack with its memory and idle time. Each stack runs a watcher
-(`dev-idle-watch.ts`, tmux window `idle-watch`) that stops it with `pnpm dev --stop`
-after `DEV_IDLE_STOP_MINUTES` (default 60, `0` turns it off) without work; the next
-`pnpm dev` starts it cleanly. "Work" is the stack's process tree burning CPU (summed per
-pid), which a page load, an `./mf` call or an edit does and an untouched stack does not;
-pane output does not track use. `lib/dev-idle.ts` holds the rule, and
-`pnpm dev:stacks --reap-idle <minutes>` uses it too.
-
-- **The mark lives on the tmux session** (user option `@last-active`), so it dies with
-  the stack. A stack with no live `idle-watch` window shows `unwatched` (started with
-  `0`, watcher crashed, or started before the watcher existed) and is never reaped:
-  restart it to get a watcher.
-- **The watcher runs under `bun`**, ~20 MB resident; under tsx it was ~360 MB and under
-  plain `node` ~60 MB. It lives as long as the stack, so keep it light: a few `node:` imports,
-  no workspace packages.
-- **Why a stack stopped:** the watcher logs the `--stop` outcome to `logs/dev-idle-stop.log`
-  and leaves `.meridian/dev-idle-stopped`; `pnpm dev` prints and clears it, and
-  `pnpm dev:stacks` and `./mf` print it while the stack is down.
-
-Don't stop a stack you didn't start. `pnpm dev` also warns, never blocks, and lists the
-stacks when `MemAvailable` is under `DEV_LOW_MEMORY_GB` (default 8).
+lists every checkout's stack with its memory and idle time. Don't stop a stack you
+didn't start.
 
 ## Cleaning up
 
-1. Stop the dev stack with `pnpm dev --stop`.
-2. End anything still running from the checkout: the Nx daemon, `agent-browser`
-   sessions, watchers.
-3. Remove the worktree, its database and its merged branch with
-   `pnpm dev:prune-worktrees -- --target <branch|path>`, `--dry-run` first. Run it
-   in the foreground and read its exit. Don't wait on it with
-   `until ! pgrep -f "prune-worktrees..."`: the pattern matches the waiting shell's own
-   command line, so the loop never ends.
-4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
-   `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
-
-Run `pnpm dev:gc-dbs` after a batch of cleanups.
+1. End anything still running from the checkout: the Nx daemon, `agent-browser`
+   sessions, watchers. The dev stack stops itself once the checkout is gone;
+   `pnpm dev --stop` stops it now.
+2. Remove the worktree, its merged branch and its database with `wt remove <branch>`
+   from another checkout. The `post-remove` hook in `.config/wt.toml` runs
+   `pnpm dev:gc-dbs -- --yes`.
+3. After removing a worktree any other way, run `pnpm dev:gc-dbs -- --yes`.
 
 A worktree's database is named from its branch. After switching a worktree's branch,
 restart its stack (`pnpm dev:restart`): the running stack keeps the old branch's database,
