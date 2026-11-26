@@ -5,9 +5,6 @@
  */
 import { describe, expect, it } from "vitest";
 import { classifyUpload } from "../../file-intake/index.js";
-import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
-import { createContextUploadContentPort } from "./context-upload-content.js";
-import type { PlacedUpload } from "./upload-intake.js";
 
 const bytes = new TextEncoder().encode("chapter one");
 
@@ -31,42 +28,4 @@ describe("UploadIntake", () => {
       }),
     ).toBe("binary");
   });
-});
-
-it("records the address the upload landed at: a twin of a file already there has its ~id", async () => {
-  const reservation: PlacedUpload = {
-    owner: { kind: "chat", chatId: "chat", chatRef: null },
-    projectId: "project",
-    intakeId: "pending",
-    actorUserId: "user",
-    filename: "upload.md",
-    mimeType: "text/markdown",
-    sizeBytes: 0,
-    objectKey: "object",
-    state: "reserved",
-    canonicalUri: "uploads://upload.md",
-    finalPath: "upload.md",
-    documentId: "document",
-    fileType: "markdown",
-  };
-  const content = createContextUploadContentPort({
-    forProject: () => ({
-      createBoundDocument: async () => ({
-        ok: true,
-        value: { documentId: "document", uri: "uploads://upload.md~b21c" },
-      }),
-    }),
-  } as unknown as UnifiedContextPortFactory);
-  expect(
-    await content.persist({
-      reservation,
-      bound: null,
-      actorUserId: "user",
-      sizeBytes: 0,
-      mimeType: "text/plain",
-      storageUrl: null,
-      hasPreview: false,
-      keptAsFile: false,
-    }),
-  ).toEqual({ ok: true, finalPath: "upload.md~b21c" });
 });

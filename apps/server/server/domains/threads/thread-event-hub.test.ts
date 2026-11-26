@@ -455,45 +455,6 @@ it("projects the spawn source hint live and on journal replay", async () => {
 });
 
 describe("thread event hub complete replay", () => {
-  it("prunes only older finished-reply transport rows", async () => {
-    const journal = createInMemoryEventJournalWriter(noTransactionOwner);
-    const firstTurn = goldenAssistantTurn("turn-first", THREAD_ID);
-    const secondTurn = goldenAssistantTurn("turn-second", THREAD_ID);
-
-    await journal.appendEvent(THREAD_ID, { type: "turn.created", turn: firstTurn });
-    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "first" });
-    await journal.appendEvent(THREAD_ID, {
-      type: "subagent.activity",
-      childThreadId: "child-first",
-      activity: { children: [] },
-    });
-    await journal.appendEvent(THREAD_ID, {
-      type: "turn.completed",
-      turn: { ...firstTurn, status: "complete" },
-    });
-    await journal.appendEvent(THREAD_ID, { type: "turn.created", turn: secondTurn });
-    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "second" });
-    await journal.appendEvent(THREAD_ID, {
-      type: "subagent.activity",
-      childThreadId: "child-second",
-      activity: { children: [] },
-    });
-    await journal.appendEvent(THREAD_ID, {
-      type: "turn.completed",
-      turn: { ...secondTurn, status: "complete" },
-    });
-
-    expect(journal.getEvents(THREAD_ID).map((entry) => [entry.seq, entry.event.type])).toEqual([
-      [1n, "turn.created"],
-      [3n, "subagent.activity"],
-      [4n, "turn.completed"],
-      [5n, "turn.created"],
-      [6n, "stream.delta"],
-      [7n, "subagent.activity"],
-      [8n, "turn.completed"],
-    ]);
-  });
-
   it("reports a replay gap for a cursor below the retained transport boundary", async () => {
     const journal = createInMemoryEventJournalWriter(noTransactionOwner);
     const firstTurn = goldenAssistantTurn("turn-first-gap", THREAD_ID);

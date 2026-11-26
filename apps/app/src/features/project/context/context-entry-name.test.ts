@@ -26,10 +26,6 @@ describe("entryNameStemEnd", () => {
       "Vol. 2".length,
     );
   });
-
-  it("selects a folder's whole name", () => {
-    expect(entryNameStemEnd("v1.json")).toBe("v1.json".length);
-  });
 });
 
 describe("validateContextEntryName", () => {

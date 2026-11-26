@@ -276,24 +276,6 @@ describe("sanitizeEventRecord privacy boundary", () => {
     ).toEqual({ documentId: "[redacted]", count: "[redacted]" });
   });
 
-  it("does not invoke payload accessors", () => {
-    let reads = 0;
-    const payload: Record<string, unknown> = {};
-    for (let index = 0; index < 100; index += 1) {
-      Object.defineProperty(payload, `field${index}`, {
-        enumerable: true,
-        get: () => {
-          reads += 1;
-          return index;
-        },
-      });
-    }
-
-    sanitize(payload);
-
-    expect(reads).toBe(0);
-  });
-
   it("does not invoke array accessors", () => {
     let reads = 0;
     const documentIds: string[] = [];

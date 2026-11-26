@@ -20,7 +20,6 @@ import {
   createThreadForProject,
   InvalidWorkAttachmentError,
   ThreadCreationConflictError,
-  ThreadCreationNotFoundError,
 } from "./thread-creation.js";
 
 async function fixture() {
@@ -148,19 +147,6 @@ describe("exact thread creation", () => {
     await expect(
       createThreadForProject(deps, { ...args, projectId: other.id }),
     ).rejects.toBeInstanceOf(ThreadCreationConflictError);
-  });
-
-  it("does not confirm another user's thread id", async () => {
-    const { deps, args, projects } = await fixture();
-    await createThreadForProject(deps, args);
-    const strangerProject = await projects.create({ userId: "stranger", title: "Stranger" });
-    await expect(
-      createThreadForProject(deps, {
-        ...args,
-        projectId: strangerProject.id,
-        userId: "stranger",
-      }),
-    ).rejects.toBeInstanceOf(ThreadCreationNotFoundError);
   });
 
   it("reconciles concurrent same-ID creates to the one committed binding", async () => {

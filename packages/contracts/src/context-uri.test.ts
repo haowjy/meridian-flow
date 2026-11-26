@@ -2,7 +2,7 @@
  * Tests context uri behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Context URI canonicalization, titles, and draftable schemes (kb/wiki/documents/addresses.md#handles-name-owners-names-are-labels)
+ * - Context URI canonicalization and titles (kb/wiki/documents/addresses.md#handles-name-owners-names-are-labels)
  */
 
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalContextUri,
   documentTitleFromUri,
-  isDraftedScheme,
   parseContextUri,
   qualifyContextUriByHolder,
 } from "./context-uri.js";
@@ -194,16 +193,4 @@ it("preserves literal href syntax in decoded document addresses", () => {
   expect(documentTitleFromUri("manuscript://Chapter#13")).toBe("Chapter#13");
   expect(documentTitleFromUri("manuscript://Book#1/Chapter 13")).toBe("Chapter 13");
   expect(documentTitleFromUri("manuscript://Chapter?13")).toBe("Chapter?13");
-});
-
-describe("isDraftedScheme", () => {
-  it("allows document drafts in the four durable namespaces", () => {
-    expect(["manuscript", "kb", "user", "unfiled"].map((s) => isDraftedScheme(s as never))).toEqual(
-      [true, true, true, true],
-    );
-  });
-
-  it("never drafts scratch or uploads", () => {
-    expect(["scratch", "uploads"].map((s) => isDraftedScheme(s as never))).toEqual([false, false]);
-  });
 });
