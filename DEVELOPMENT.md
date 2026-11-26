@@ -8,7 +8,7 @@ See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cur
 
 Secrets and provider keys live in **`.env` on the main git checkout** (copy from [`.env.example`](.env.example)). Linked worktrees do not get their own `.env`, and no repo value is exported into your shell. Every dev entry point (`pnpm dev`, `pnpm bootstrap`, `db:*`, `pnpm test:db`, Playwright, the smoke scripts) loads its own env at startup through `applyDevEnvToProcess` ([`tools/dev/lib/dev-env.ts`](tools/dev/lib/dev-env.ts)): the checkout's own `.env.local` (gitignored, per-checkout overrides) first, then the main checkout's `.env`, each filling only variables the shell has not set. A variable the shell sets wins even when its value is empty, and so does a key in `.env.local`: `LIVE_TEST_MODEL=` in either turns off a main-`.env` setting. This holds for `pnpm dev` too: the stack gets your shell's environment (minus the keys named in [`tools/dev/dev-stack-env.ts`](tools/dev/dev-stack-env.ts): `DATABASE_URL`, `PORT`, `INIT_CWD`, `npm_*`, `NX_*`), so `COMPACTION_SUMMARIZER_MODEL=foo pnpm dev` reaches the server. `pnpm dev:restart` restarts the services with the environment the stack started with and reads the `.env` files again, so `MODEL_PROVIDER=mock pnpm dev` then `pnpm dev:restart` stays on the mock. To change or drop a shell variable, `pnpm dev --stop`, then start again with the environment you want. `pnpm dev` is the supported way to run the stack: a bare `nitro dev` gets no repo env, and a bare `vite dev` in `apps/app` reads only its own checkout's `.env*` files (Vite `loadEnv`), so a linked worktree gets none of the main `.env`.
 
-Set `DATABASE_URL` only in the main `.env`: the main checkout uses that database and each linked worktree gets `<name>_<slug>` on the same server (`:54422`). Setting it in `.env.local`, or leaving another checkout's URL in your shell, is an error.
+Set `DATABASE_URL` only in the main `.env`: the main checkout uses that database and each linked worktree gets `<name>_<worktree directory name>` on the same server (`:54422`), whatever branch is checked out in it. Setting it in `.env.local`, or leaving another checkout's URL in your shell, is an error.
 
 For `psql`, run `tools/dev/psql [psql args…]`. It targets this checkout's database through `PG*` variables set for `psql` alone, so nothing stays in your shell or shows in `ps`.
 
@@ -80,7 +80,7 @@ pnpm dev
 | Concern | Behavior |
 |---------|----------|
 | `.env` | Read from the main checkout (no copy into the worktree); `.env.local` here overrides it, except `DATABASE_URL` |
-| `DATABASE_URL` | Derived as `meridian_<slug>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
+| `DATABASE_URL` | Derived as `meridian_<worktree directory name>` from the main `.env` (main checkout keeps `meridian`); a different one in your shell throws |
 | Postgres | One Docker container on `:54422`; each worktree gets its own database |
 | Ports | Each checkout's own block. A worktree's is chosen the first time `pnpm dev` or `pnpm dev:urls` runs there and kept as `DEV_PORT_BASE` in its `.env.local`; `pnpm dev:urls` prints them |
 | `pnpm dev:infra` | Shared — starts Postgres only if it is not already running and healthy; never touches a running server |
@@ -130,7 +130,7 @@ Cleanup logs live in `.meridian/db-test-cleanup/<owner-pid>.log`.
 `pnpm dev:gc-dbs -- --yes` recognizes managed names and can reclaim leftovers
 (or in-flight cleanup) only after the owning test process has stopped. Manually named test
 databases that must survive GC use `<base>_test-manual-<label>`; test lifecycle
-prefixes are reserved from worktree slugs.
+prefixes are reserved from worktree directory names.
 
 ## Worktree cleanup
 

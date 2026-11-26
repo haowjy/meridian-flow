@@ -17,6 +17,12 @@ its connection as `PG*` variables, never argv. CI and deploy migrations reach th
 loader through `db:migrate` with no file defining the URL. Failure to derive a
 scoped database is loud, never a fallback.
 
+A linked worktree's database is `<base>_<directory name>`, lowercased with other
+characters turned into hyphens. It follows the directory, as the ports do, so the
+branch checked out there doesn't matter and a running stack never points at a database
+its checkout no longer names. Two worktrees whose directories share a name would share
+a database, so the loader refuses to run in either.
+
 `db:migrate` resolves the checkout the same way and
 refuses a registered main database unless a human passes `--allow-main-database`;
 its managed-test bypass accepts only a local disposable database whose owner

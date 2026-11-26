@@ -1,9 +1,11 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
-import { resolveSessionIdentity, type SessionIdentity } from "../session-identity";
 import { validateDbName } from "./dev-db";
+
+const MAX_SLUG_LENGTH = 48;
 
 export interface DevDatabase {
   readonly envVar: string;
@@ -91,12 +93,45 @@ function rewriteDatabaseName(url: string, dbName: string): string {
   return rewritten.toString();
 }
 
-export function resolveCheckoutSessionIdentity(checkoutPath: string): SessionIdentity {
-  return resolveSessionIdentity({
-    branchName: runGit(checkoutPath, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    detachedHeadRef: runGit(checkoutPath, ["rev-parse", "--short", "HEAD"]),
-    repoRootRealpath: realpathSync(checkoutPath),
+// keep: a worktree's database follows its directory, as its ports do, so switching branch inside it keeps its data
+function databaseSlug(checkoutRealpath: string): string {
+  const name =
+    path
+      .basename(checkoutRealpath)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "worktree";
+  if (name.length <= MAX_SLUG_LENGTH) return name;
+  const suffix = createHash("sha256").update(name).digest("hex").slice(0, 6);
+  return `${name.slice(0, MAX_SLUG_LENGTH - suffix.length - 1)}-${suffix}`;
+}
+
+function liveLinkedWorktrees(repoRoot: string): string[] {
+  const mainRoot = realpathSync(resolveMainCheckoutRoot(repoRoot));
+  return listCheckoutPaths(repoRoot).flatMap((worktreePath) => {
+    try {
+      const worktree = realpathSync(worktreePath);
+      return worktree === mainRoot ? [] : [worktree];
+    } catch {
+      // Git still lists a worktree whose directory is gone.
+      return [];
+    }
   });
+}
+
+// keep: two worktrees whose directories share a name would share one database; refuse instead of letting either write to the other's
+function resolveOwnDatabaseSlug(repoRoot: string): string {
+  const checkout = realpathSync(repoRoot);
+  const slug = databaseSlug(checkout);
+  const twin = liveLinkedWorktrees(repoRoot).find(
+    (other) => other !== checkout && databaseSlug(other) === slug,
+  );
+  if (twin) {
+    throw new Error(
+      `${checkout} and ${twin} have the same directory name, so both would use the database named for "${slug}". Move one of them to a directory with another name.`,
+    );
+  }
+  return slug;
 }
 
 export function listCheckoutPaths(repoRoot: string): string[] {
@@ -110,19 +145,10 @@ export function resolveLiveWorktreeDatabaseNames(
   repoRoot: string,
   baseDbNames: readonly string[],
 ): Set<string> {
-  const mainRoot = realpathSync(resolveMainCheckoutRoot(repoRoot));
   const live = new Set<string>();
-  for (const worktreePath of listCheckoutPaths(repoRoot)) {
-    let worktreeRealpath: string;
-    try {
-      worktreeRealpath = realpathSync(worktreePath);
-    } catch {
-      continue;
-    }
-    if (worktreeRealpath === mainRoot) continue;
-    const { slug } = resolveCheckoutSessionIdentity(worktreeRealpath);
+  for (const worktree of liveLinkedWorktrees(repoRoot)) {
     for (const baseDbName of baseDbNames) {
-      live.add(resolveWorktreeDatabaseName(baseDbName, slug));
+      live.add(resolveWorktreeDatabaseName(baseDbName, databaseSlug(worktree)));
     }
   }
   return live;
@@ -163,12 +189,12 @@ export function applyDevEnvToProcess(
     const baseDbName = databaseNameFromUrl(fileUrl);
     const expected = isMainCheckout(repoRoot)
       ? baseDbName
-      : resolveWorktreeDatabaseName(baseDbName, resolveCheckoutSessionIdentity(repoRoot).slug);
+      : resolveWorktreeDatabaseName(baseDbName, resolveOwnDatabaseSlug(repoRoot));
     const actual = databaseNameFromUrl(env[db.envVar] || fileUrl);
     if (actual !== baseDbName && actual !== expected) {
       throw new Error(
         `${db.envVar} names database "${actual}" but this checkout's is "${expected}". ` +
-          `It is left over from another checkout or a branch switch: unset ${db.envVar} in this shell` +
+          `It is left over from another checkout: unset ${db.envVar} in this shell` +
           `, and run \`pnpm dev --restart\` if a dev stack is running.`,
       );
     }

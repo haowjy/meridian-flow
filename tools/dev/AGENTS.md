@@ -90,9 +90,10 @@ didn't start.
    `pnpm dev:gc-dbs -- --yes`.
 3. After removing a worktree any other way, run `pnpm dev:gc-dbs -- --yes`.
 
-A worktree's database is named from its branch. After switching a worktree's branch,
-restart its stack (`pnpm dev:restart`): the running stack keeps the old branch's database,
-which no name claims once it stops.
+A worktree's database is named from its directory (`meridian_<directory name>`), so it
+stays the same whatever branch is checked out there. Two worktrees whose directories
+share a name would share a database; every dev command in either refuses to run until
+one is moved.
 
 Contracts for databases, sessions, cleanup evidence and migrations:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

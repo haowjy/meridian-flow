@@ -10,8 +10,3 @@
   `lib/dev-env.ts` `resolveDevLogDir` resolves `LOG_DIR` (honoring any absolute
   override); moving one without the other lets JSONL mirror writes rebuild Nitro
   and orphan in-flight replies. Export one typed dev-runtime path both consume.
-
-- Name a worktree's database from its checkout path instead of its branch. Ports already
-  come from the path; the database is the last thing tied to the branch, which is why a
-  stack must be restarted after its worktree switches branch (`session-identity.ts`,
-  `resolveWorktreeDatabaseName` in `lib/dev-env.ts`). Changing it reruns the full DB suite.
