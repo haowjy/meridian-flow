@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ALLOW_MAIN_DATABASE, resolveDatabaseAdminTarget } from "./dev-db-target";
+import { resolveDatabaseAdminTarget } from "./dev-db-target";
 import {
   applyDevEnvToProcess,
   resolveLiveWorktreeDatabaseNames,
@@ -59,20 +59,12 @@ afterEach(() => {
 });
 
 describe("resolveDatabaseAdminTarget", () => {
-  it("refuses the registered main database unless explicitly allowed", () => {
+  it("resolves the main checkout to the main database", () => {
     const { mainRoot } = createCheckout({ withDatabaseUrl: true });
 
-    expect(() => resolveDatabaseAdminTarget({ repoRoot: mainRoot, args: [], env: {} })).toThrow(
-      'Refusing to use registered main database "meridian"',
+    expect(resolveDatabaseAdminTarget({ repoRoot: mainRoot, args: [], env: {} }).databaseName).toBe(
+      "meridian",
     );
-
-    expect(
-      resolveDatabaseAdminTarget({
-        repoRoot: mainRoot,
-        args: [ALLOW_MAIN_DATABASE],
-        env: {},
-      }).databaseName,
-    ).toBe("meridian");
   });
 
   it("resolves a linked checkout to its worktree database", () => {

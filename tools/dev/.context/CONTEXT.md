@@ -30,9 +30,11 @@ derived on every run and never stored, because a database clash is silent: two
 worktrees would write to the same data. A stored name copied from one worktree to
 another would do exactly that, so don't make the database name a setting.
 
-`db:migrate` resolves the checkout the same way and
-refuses a registered main database unless a human passes `--allow-main-database`;
-its managed-test bypass accepts only a local disposable database whose owner
+`db:migrate` resolves the checkout the same way, the main checkout's database
+included: it installs the baseline into a database that has none, in one transaction,
+or stops, so there is nothing to guard. A refusal there made `pnpm bootstrap` fail on a
+fresh clone and left `pnpm db:reset` with an erased database it would not refill. Its
+managed-test bypass accepts only a local disposable database whose owner
 PID is a live, distinct ancestor of the command. Any other direct admin or test
 command resolves the checkout the same way before touching a database.
 
