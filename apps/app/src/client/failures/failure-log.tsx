@@ -3,7 +3,7 @@ import { createBatchedFailureLog } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 import { apiFetch } from "@/client/api/http-client";
 import { appendTraceEvent } from "@/client/trace-store";
-import { useRequestAccount } from "@/features/project/context/account-feature-context";
+import { useRequestAccount } from "@/features/project/context/request-account-context";
 
 const Context = createContext<FailureLog>(noFailureLog);
 export function FailureLogProvider({ children }: { children: ReactNode }) {

@@ -17,7 +17,7 @@ import {
 } from "react";
 import { requireReload, sendsHeld, watchDelivery } from "@/client/release/release";
 import { appendTraceEvent } from "@/client/trace-store";
-import { useRequestAccount } from "@/features/project/context/account-feature-context";
+import { useRequestAccount } from "@/features/project/context/request-account-context";
 import { createBroadcastChannel, createFetchTransport, createWebLock } from "./browser-ports";
 import { createIndexedDbJournal } from "./indexeddb-journal";
 

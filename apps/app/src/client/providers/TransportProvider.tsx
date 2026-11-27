@@ -15,7 +15,7 @@ import {
   notifyThreadSocketClose,
   notifyThreadSocketOpen,
 } from "@/core/transport/wire-tap";
-import { useRequestAccount } from "@/features/project/context/account-feature-context";
+import { useRequestAccount } from "@/features/project/context/request-account-context";
 import { useConnectivityHints } from "./ConnectivityProvider";
 
 const ThreadTransportContext = createContext<ThreadTransport | null>(null);
