@@ -84,16 +84,14 @@ export class ChatDeletes {
       status: "ready",
       place,
     };
-    const deleting = trashChat(this.ports.driver(), CHAT_DELETE_KIND, projectId, threadId);
-    const landed = deleting.catch(() => undefined);
-    const held: Held = { notice, taken, moved, landed, ended: false };
-    void deleting.then(
+    const held: Held = { notice, taken, moved, landed: Promise.resolve(), ended: false };
+    held.landed = trashChat(this.ports.driver(), CHAT_DELETE_KIND, projectId, threadId).then(
       (done) => {
         if (done) announce(t`Chat deleted`);
       },
       () => {
         if (this.held === held) this.held = null;
-        void moved.then(() => this.restoreWords(threadId, landed));
+        void moved.then(() => this.restoreWords(threadId, Promise.resolve()));
         if (!this.closed) {
           this.putBack(threadId, taken);
           this.refusal = { threadId, title };
