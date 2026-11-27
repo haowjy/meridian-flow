@@ -34,7 +34,8 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
-import { useRemovalAnswer } from "@/features/project/context/use-removal-answer";
+import { removalAnswer } from "@/features/project/context/removal-answer";
+import { useDocumentStanding } from "@/features/project/context/use-document-standing";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree } from "@/lib/focus-follow";
 import {
@@ -167,7 +168,9 @@ function ActiveSessionEditorView({
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
-  const removal = useRemovalAnswer(projectId ?? "", removed ? documentId : null);
+  const removal = removalAnswer(
+    useDocumentStanding(projectId ?? "", removed && projectId ? documentId : null),
+  );
   const documentInTrash = removal?.kind === "removed" && removal.inTrash;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
