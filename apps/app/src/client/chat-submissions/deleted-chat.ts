@@ -45,28 +45,28 @@ const ownMoves = new Map<string, OwnMove>();
 export function restoreOwnDeletedChatWords(
   accountId: string,
   threadId: string,
-  rerecord: (entries: ChatSubmission[]) => boolean,
+  rerecord: (entries: ChatSubmission[]) => Promise<boolean>,
   draft: DeletedChatPorts["draft"] = composerSessionDraft,
-) {
+): Promise<void> {
   const key = surfaceKey(accountId, threadId);
   const move = ownMoves.get(key);
-  if (!move) return;
+  if (!move) return Promise.resolve();
   ownMoves.delete(key);
-  const target = draft(accountId, { kind: "new-chat", id: move.projectId });
+  const target = () => draft(accountId, { kind: "new-chat", id: move.projectId });
   const source = draft(accountId, { kind: "chat", id: threadId });
   if (!move.unmade.length) {
-    if (target.holds(move.after) && source.prependSnapshots(move.snapshots))
-      target.withdraw(threadId, move.before);
-    return;
+    if (target().holds(move.after) && source.prependSnapshots(move.snapshots))
+      target().withdraw(threadId, move.before);
+    return Promise.resolve();
   }
-  if (!rerecord(move.unmade)) return;
-  const keep =
-    !target.holds(move.after) || (move.box !== null && !source.prependSnapshots([move.box]));
-  target.withdraw(
-    threadId,
-    keep ? target.initialDraft : move.before,
-    move.unmade.map((entry) => entry.recordId),
-  );
+  const returned = move.unmade.map((entry) => entry.recordId);
+  return rerecord(move.unmade).then((back) => {
+    if (!back) return;
+    const into = target();
+    if (into.holds(move.after) && (move.box === null || source.prependSnapshots([move.box])))
+      into.withdraw(threadId, move.before, returned);
+    else into.keepSentAgain(threadId, returned);
+  });
 }
 const surfaces = new Map<string, Set<DeletedChatSurface>>();
 const surfaceKey = (accountId: string, threadId: string) => JSON.stringify([accountId, threadId]);

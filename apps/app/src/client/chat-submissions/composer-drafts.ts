@@ -14,6 +14,7 @@ export type DeletedChatCard = {
   title: string | null;
   count: number;
   own?: boolean;
+  sentAgain?: boolean;
 };
 
 export type PendingHandBack = HandBackCommand;
@@ -175,10 +176,24 @@ export class ComposerSessionDraft {
 
   withdraw(threadId: string, before: ComposerDraftSnapshot | null, returned: string[] = []): void {
     this.commit(before, {
-      received: new Set([...this.received].filter((recordId) => !returned.includes(recordId))),
+      received: this.withoutReceipts(returned),
       notices: this.notices.filter((notice) => notice.threadId !== threadId),
       handBacks: this.handBacksPending,
     });
+  }
+
+  keepSentAgain(threadId: string, returned: string[]): void {
+    this.commit(this.current, {
+      received: this.withoutReceipts(returned),
+      notices: this.notices.map((notice) =>
+        notice.threadId === threadId ? { ...notice, sentAgain: true } : notice,
+      ),
+      handBacks: this.handBacksPending,
+    });
+  }
+
+  private withoutReceipts(returned: string[]): Set<string> {
+    return new Set([...this.received].filter((recordId) => !returned.includes(recordId)));
   }
 
   get handBacks(): readonly PendingHandBack[] {
@@ -324,7 +339,8 @@ export class ComposerSessionDraft {
               (item.title === null || typeof item.title === "string") &&
               typeof item.count === "number" &&
               item.count > 0 &&
-              (item.own === undefined || typeof item.own === "boolean"),
+              (item.own === undefined || typeof item.own === "boolean") &&
+              (item.sentAgain === undefined || typeof item.sentAgain === "boolean"),
           )
         )
           return undefined;

@@ -395,7 +395,7 @@ it("Undo of an own delete moves the words back, unless New chat was typed in sin
   );
   expect(f.target.notices).toEqual([{ threadId: "chat", title: "Arc 2", count: 2, own: true }]);
   const before = f.target.initialDraft;
-  restoreOwnDeletedChatWords("owner", "chat", () => true, f.ports.draft);
+  restoreOwnDeletedChatWords("owner", "chat", async () => true, f.ports.draft);
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
     "Existing writing",
   );
@@ -418,7 +418,7 @@ it("Undo of an own delete moves the words back, unless New chat was typed in sin
   const moved = g.target.initialDraft;
   if (!moved) throw new Error("Missing move");
   g.target.updateDraft({ text: "More", snapshot: { ...moved, revision: moved.revision + 1 } });
-  restoreOwnDeletedChatWords("owner", "chat", () => true, g.ports.draft);
+  restoreOwnDeletedChatWords("owner", "chat", async () => true, g.ports.draft);
   expect(g.target.notices).toHaveLength(1);
   expect(g.source.initialDraft).toBeNull();
   const kept = g.target.initialDraft;

@@ -659,6 +659,10 @@ msgid "<0>{name}</0>: {0}"
 msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx
+msgid "<0>{title}</0> is back and sends these words as its first message. A copy stays below."
+msgstr ""
+
+#: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
 msgstr ""
 
@@ -5622,6 +5626,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "the built-in {slug}"
+msgstr ""
+
+#: src/features/chat/DeletedChatCard.tsx
+msgid "The chat is back and sends these words as its first message. A copy stays below."
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
