@@ -165,6 +165,7 @@ import {
   type HandoffBriefs,
 } from "../domains/runtime/handoff/brief-service.js";
 import {
+  activatedSkillAuthorizer,
   type CommandResolver,
   type ConnectionsPort,
   createChildRunCoordinator,
@@ -194,7 +195,6 @@ import {
   createWriteModeSwitchPort,
   createWriterTurnProducer,
   type DeliveryProducer,
-  InvalidAdmissionError,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -210,12 +210,8 @@ import {
   type WorkContextNotices,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
-import {
-  resolveThreadUserInvocableSkills,
-  unavailableActivatedSkillSlugs,
-} from "../domains/runtime/loop/available-skills.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
-import { threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
+import { modelInfo, threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import { createModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
@@ -253,7 +249,11 @@ import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
-import { MODEL_REGISTRY, modelFor, registryTokenRateSource } from "./gateway/registry.js";
+import {
+  compactionSummarizerModel,
+  modelFor,
+  registryTokenRateSource,
+} from "./gateway/registry.js";
 import {
   addressRefusal,
   createProcessMcpClient,
@@ -704,15 +704,7 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
-  const summarizerModel =
-    environment.COMPACTION_SUMMARIZER_MODEL ?? MODEL_REGISTRY.compactionSummarizerModel;
-  if (
-    !MODEL_REGISTRY.providers.some((provider) =>
-      provider.offerings.some((offering) => offering.model.id === summarizerModel),
-    )
-  ) {
-    throw new Error(`Unknown compaction summarizer model: ${summarizerModel}`);
-  }
+  const summarizerModel = compactionSummarizerModel(environment.COMPACTION_SUMMARIZER_MODEL);
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
   const billingDomain = createBillingDomain({
     ledger: creditLedger,
@@ -977,15 +969,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     registry: toolRegistry,
     chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
-      const [binding, thread] = await Promise.all([
-        ports.agentRevisions.readThreadBinding(caller.id),
-        ports.threadRepos.threads.findById(caller.id),
-      ]);
-      const modelId =
-        (thread
-          ? threadModelId(ports.gateway, thread.overrides, binding?.configuration.model)
-          : binding?.configuration.model) ?? ports.gateway.getDefaultModel();
-      const model = ports.gateway.listModels().find((model) => model.id === modelId);
+      const modelId = await threadModelId({
+        thread: caller,
+        agentRevisions: ports.agentRevisions,
+        agentCatalog: ports.agentCatalog,
+        gateway: ports.gateway,
+      });
+      const model = modelInfo(ports.gateway, modelId);
       if (!model)
         return {
           ok: false,
@@ -1110,17 +1100,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       identities: ports.uploadIdentity,
       chats: topChats,
     }),
-    async authorizeActivatedSkills({ threadId, slugs }) {
-      const thread = await ports.threadRepos.threads.findById(threadId as never);
-      if (!thread) throw new InvalidAdmissionError("thread is unavailable");
-      const available = await resolveThreadUserInvocableSkills({
-        thread,
-        agentCatalog: ports.agentCatalog,
-        agentRevisions: ports.agentRevisions,
-      });
-      const missing = unavailableActivatedSkillSlugs(available, slugs);
-      if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
-    },
+    authorizeActivatedSkills: activatedSkillAuthorizer({
+      threads: ports.threadRepos.threads,
+      agentCatalog: ports.agentCatalog,
+      agentRevisions: ports.agentRevisions,
+    }),
     producer: admissionProducer,
   });
   const childRunDriver = createChildRunDriver({
@@ -1168,8 +1152,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       eventSink: ports.eventSink,
-      agentRevisions: ports.agentRevisions,
-      threads: ports.threadRepos.threads,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,
       modelRequestDebug: ports.modelRequestDebug,

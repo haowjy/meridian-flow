@@ -27,7 +27,7 @@ with no row and on a row with no break.
 
 | from | to | rule | example file |
 |---|---|---|---|
-| `collab` | `context` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-draft-tree-actors.ts` |
+| `collab` | `context` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-collab-lookups.ts` |
 | `collab` | `file-policy` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts` |
 | `context` | `collab` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/bound-writes.ts` |
 | `context` | `file-policy` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
@@ -102,7 +102,6 @@ imports one of them fails the check.
 | `spawn/resolve-readable-thread.ts` | `context` |
 | `spawn/thread-history.ts` | `context` |
 | `spawn/thread-ls.ts` | `context` |
-| `summary/conversation-summarizer.ts` | `packages` |
 | `tools/agent-thread-context.ts` | `packages` |
 | `tools/core-tools.ts` | `@meridian/agent-edit` |
 | `tools/core-tools.ts` | `@meridian/contracts/works` |

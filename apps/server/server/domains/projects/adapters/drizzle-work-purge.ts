@@ -14,7 +14,7 @@ import {
   uploadIntakes,
   works,
 } from "@meridian/database/schema";
-import { LIVE, type TrashEntry, type TreeWriter } from "@meridian/project-tree";
+import { LIVE, SYSTEM_ACTOR, type TrashEntry, type TreeWriter } from "@meridian/project-tree";
 import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { workDefaultDraftSql } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -52,7 +52,7 @@ function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): Documen
     for (const id of [entry.node, ...entry.cascade]) taken.nodes.add(id);
     takenBy.set(entry.node, taken);
   }
-  for (const { entry, nodes } of takenBy.values()) writer.purge("system", entry, [...nodes]);
+  for (const { entry, nodes } of takenBy.values()) writer.purge(SYSTEM_ACTOR, entry, [...nodes]);
   return inSources()
     .filter((node) => node.kind !== "folder")
     .map((node) => node.id as DocumentId);

@@ -62,7 +62,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         store,
         writes: createSourceTree({ store: treeLists, db, sourceId: async () => SOURCE_ID }),
-        actor: `user:${USER_ID}`,
+        userId: USER_ID,
         scheme: "kb",
         documentSync: {
           readAsMarkdown: async (documentId: string) =>

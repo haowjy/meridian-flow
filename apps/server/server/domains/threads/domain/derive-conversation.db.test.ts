@@ -35,9 +35,6 @@ else
       "../../runtime/summary/conversation-summarizer.js"
     );
     const { generateHandoffBrief } = await import("../../runtime/handoff/brief-request.js");
-    const { createTestAgentBinding } = await import(
-      "../../runtime/loop/__tests__/runtime-fixtures.js"
-    );
     const db = createDb(DATABASE_URL, { max: 6 });
     const repos = (
       await import("../../../test-support/thread-repositories.js")
@@ -748,8 +745,6 @@ else
       const summarizer = createConversationSummarizer({
         gateway,
         eventSink: runtime.deps.eventSink,
-        agentRevisions: createTestAgentBinding(model.id, "", () => [fixture.source.id]),
-        threads: repos.threads,
         async prefixCacheStateFor() {
           return { state: "warm", reason: "reusable_prefix" };
         },

@@ -4,15 +4,6 @@ import {
   HandoffSeedMetadataCodec,
 } from "../../threads/domain/turn-metadata.js";
 
-export function chooseSummaryPath(input: {
-  knownTooLarge: boolean;
-  hasRequestInHand: boolean;
-  cacheState: "warm" | "cold";
-}): "branch" | "rolling" {
-  if (input.knownTooLarge) return "rolling";
-  return input.hasRequestInHand && input.cacheState === "warm" ? "branch" : "rolling";
-}
-
 export function previousAttemptRejectedAsTooLarge(
   turns: readonly Turn[],
   currentTurnId: string,

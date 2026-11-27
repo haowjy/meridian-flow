@@ -1,7 +1,7 @@
 import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration";
 import { formatParsedContextUri, joinContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import { parseActor } from "../../domains/context/adapters/context-fs/tree-writes.js";
+import { readActor } from "@meridian/project-tree";
 import { parseUnifiedContextUriResult } from "../../domains/context/index.js";
 import {
   addDelta,
@@ -106,8 +106,8 @@ export async function reachShown(
   if (reached.value.kind === "gone") {
     const { why, by } = reached.value;
     if (!by) return { path, gone: { why } };
-    const who = parseActor(by);
-    if (who?.kind === "agent" && who.chatId === ctx.threadId)
+    const who = readActor(by);
+    if (who.kind === "agent" && who.threadId === ctx.threadId)
       return { path, gone: { why, by: "you" } };
     const actor = (await deps.documentRemovals.actors([by]))(by);
     return { path, gone: { why, ...(actor ? { by: actor } : {}) } };

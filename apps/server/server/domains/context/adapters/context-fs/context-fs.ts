@@ -80,7 +80,7 @@ export interface ContextFSDeps {
   links: Pick<DocumentLinkScopes, "within">;
   store: ContextDocumentStore;
   writes: SourceTree;
-  actor: string;
+  userId: string;
   arrivals?: DocumentArrivals;
   documentSync: MarkdownDocumentStore &
     Pick<CollabDomain, "refreshDocumentProjection"> &
@@ -192,7 +192,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.copy = createContextFsCopyAdapter({
       store: deps.store,
       writes: deps.writes,
-      actor: deps.actor,
+      userId: deps.userId,
       documentCreation,
       documentSync: deps.documentSync,
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),

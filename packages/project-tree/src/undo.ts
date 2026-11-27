@@ -1,4 +1,4 @@
-import type { Actor, TreeRecord, TreeRecordInput } from "./record.js";
+import { type Actor, SYSTEM_ACTOR, type TreeRecord, type TreeRecordInput } from "./record.js";
 import {
   type Change,
   labelOf,
@@ -216,7 +216,7 @@ export function undoReports(
   closed: (source: string) => boolean = () => false,
 ): Map<string, UndoReport> {
   return new Map(
-    [...takeBack(writer, "system", steps, closed, false)].map(([id, { back, sources }]) => [
+    [...takeBack(writer, SYSTEM_ACTOR, steps, closed, false)].map(([id, { back, sources }]) => [
       id,
       typeof back === "string" ? { answer: back, sources: [] } : { answer: "undoes", sources },
     ]),

@@ -1,5 +1,4 @@
-import type { ThreadId, Usage } from "@meridian/contracts/runtime";
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
+import type { Usage } from "@meridian/contracts/runtime";
 import type {
   Gateway,
   GenerateRequest,
@@ -7,14 +6,12 @@ import type {
   ModelInfo,
 } from "@meridian-flow/runtime/gateway";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { AgentRevisionStore } from "../../packages/index.js";
-import type { ThreadRepository } from "../../threads/ports/repositories.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
 import { estimateRequestTokens, outputReserveTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
-import { threadModelId } from "../loop/turn-context-assembly.js";
+import { modelInfo } from "../loop/turn-context-assembly.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type {
   ConversationSummarizer,
@@ -23,14 +20,11 @@ import type {
   SummaryResponse,
 } from "../ports/conversation-summarizer.js";
 import type { ToolRegistry } from "../tools/index.js";
-import { chooseSummaryPath } from "./summary-path.js";
 import { transcriptSegments } from "./transcript.js";
 
 export interface ConversationSummarizerDeps {
   gateway: Gateway;
   eventSink: EventSink;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
-  threads: Pick<ThreadRepository, "findById">;
   prefixCacheStateFor(input: PrefixCacheStateRequest): Promise<PrefixCacheState>;
   modelRequestDebug: ModelRequestDebugStore;
   toolRegistry: ToolRegistry;
@@ -150,30 +144,17 @@ export function createConversationSummarizer(
       const outcome = { modelResponses, summarizer };
       try {
         input.signal.throwIfAborted();
-        const models = gateway.listModels();
-        const cheapModel = models.find((model) => model.id === config.model);
-        const threadModelName =
-          input.requestInHand?.model ??
-          (!input.requestInHand && cheapModel
-            ? cheapModel.id
-            : threadModelId(
-                gateway,
-                (await deps.threads.findById(input.source.threadId as ThreadId))?.overrides ??
-                  NO_OVERRIDES,
-                (await deps.agentRevisions.readThreadBinding(input.source.threadId))?.configuration
-                  .model ?? gateway.getDefaultModel(),
-              ));
-        const threadModel = models.find((model) => model.id === threadModelName);
+        const cheapModel = gateway.listModels().find((model) => model.id === config.model);
+        const threadModel = modelInfo(gateway, input.requestInHand.model);
         if (!threadModel) throw new Error("Summary thread model is unavailable");
-        const prediction: PrefixCacheState =
-          input.requestInHand && !input.knownTooLarge
-            ? await deps.prefixCacheStateFor({
-                threadId: input.source.threadId,
-                throughTurnId: input.source.throughTurnId,
-                model: threadModel,
-                now: Date.now(),
-              })
-            : { state: "cold", reason: "summary_transcript" };
+        const prediction: PrefixCacheState = input.knownTooLarge
+          ? { state: "cold", reason: "summary_transcript" }
+          : await deps.prefixCacheStateFor({
+              threadId: input.source.threadId,
+              throughTurnId: input.source.throughTurnId,
+              model: threadModel,
+              now: Date.now(),
+            });
         const promptFor = (writerRowCutoff = false, retainedPassages: readonly string[] = []) =>
           [
             instructionText(
@@ -300,14 +281,7 @@ export function createConversationSummarizer(
         }
 
         const branchRequest = input.requestInHand;
-        if (
-          chooseSummaryPath({
-            knownTooLarge: input.knownTooLarge ?? false,
-            hasRequestInHand: branchRequest !== null,
-            cacheState: prediction.state,
-          }) === "branch" &&
-          branchRequest
-        ) {
+        if (prediction.state === "warm") {
           summarizer.path = "branch";
           summarizer.segments = 1;
           const cutoffTurn = input.source.throughTurnId

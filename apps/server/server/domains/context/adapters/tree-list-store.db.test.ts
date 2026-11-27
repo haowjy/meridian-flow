@@ -24,6 +24,7 @@ import {
   replayView,
   sourceRoot,
   TreeWriter,
+  userActor,
 } from "@meridian/project-tree";
 import { and, eq, sql } from "drizzle-orm";
 import { LoroDoc, type VersionVector } from "loro-crdt";
@@ -52,7 +53,7 @@ const MANUSCRIPT = "00000000-0000-4000-8000-000000000a04";
 const UNFILED = "00000000-0000-4000-8000-000000000a05";
 const DRAFT = "treelistbr01";
 const WORK = "00000000-0000-4000-8000-000000000a07";
-const actor = `user:${ACCOUNT}`;
+const actor = userActor(ACCOUNT);
 const list = { kind: "project", projectId: PROJECT } as const;
 
 describe("the tree list store (postgres)", () => {

@@ -7,7 +7,13 @@ import {
   canonicalLeaf,
   childAtSegment,
 } from "@meridian/contracts/protocol";
-import { childrenOf, sourceRoot, type TreeNode, type TreeProjection } from "@meridian/project-tree";
+import {
+  childrenOf,
+  sourceRoot,
+  type TreeNode,
+  type TreeProjection,
+  userActor,
+} from "@meridian/project-tree";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 import { unknownJsonResponse } from "../../core/session";
@@ -68,7 +74,7 @@ export class Trees {
     if (!opened) {
       opened = (async () => {
         const userId = await accountId(this.session);
-        const actor = `user:${userId}`;
+        const actor = userActor(userId);
         const sources = await sourcesOf(
           this.session,
           kind === "account"

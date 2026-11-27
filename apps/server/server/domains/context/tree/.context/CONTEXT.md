@@ -38,7 +38,7 @@ One window (`deletionPurgeCutoff`) for both kinds.
 
 - **Trash**: for each entry whose nodes have all been in Trash that long, one submission
   appends a `purge` record naming the delete and the nodes it covers, the ones whose content it
-  releases (`writer.purge("system", { id, node }, nodes)`). The
+  releases (`writer.purge(SYSTEM_ACTOR, { id, node }, nodes)`). The
   whole subtree goes in that submission: a folder purged while a child's row stands fails the
   deferred foreign key. It waits (nothing appended) while a node outside the entry stands inside
   it, a Work has a pending record on one of its nodes, or a Work has a reviewable change on one of
