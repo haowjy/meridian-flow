@@ -199,7 +199,7 @@ function AuthenticatedProviderTree({
   }, [user.userId]);
 
   return (
-    <FailureLogProvider accountId={user.userId}>
+    <FailureLogProvider>
       <ThreadStoreProvider>
         <TransportProvider>
           <MeridianCopilotProvider>
