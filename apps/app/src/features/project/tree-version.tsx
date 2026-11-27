@@ -11,6 +11,8 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import { useDraftCommandOwner } from "@/client/account/account-composition";
+import { useAccountId } from "@/client/account/account-context";
 import { enterScope } from "@/client/project-shell/document-views";
 import {
   useTreeVersionChoice,
@@ -29,7 +31,6 @@ import {
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
-import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
 
 export type ShellTreeVersion = {

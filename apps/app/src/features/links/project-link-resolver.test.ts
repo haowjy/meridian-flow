@@ -2,6 +2,7 @@ import { type DocumentLinkAnswer, parseLinkRef } from "@meridian/contracts";
 import { expect, it, vi } from "vitest";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
+import { createLinkSettlements } from "@/client/link-settlements";
 import {
   classifyLinkTarget,
   createLinkAnswerCache,
@@ -12,7 +13,6 @@ import {
 } from "@/core/editor/links";
 import { linkIndexOf } from "@/test-support/link-trees";
 import { followProjectLink } from "./follow-link";
-import { createLinkSettlements } from "./link-settlements";
 import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
 import type { LinkableDocument } from "./useLinkableDocuments";
 

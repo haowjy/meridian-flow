@@ -1,6 +1,4 @@
-import { AccountFeatureComposition } from "@/features/project/context/account-feature-context";
-
-export * from "@/features/project/context/account-feature-context";
+import { AccountFeatureComposition } from "@/client/account/account-composition";
 
 export function AccountFeatureTestProvider({
   accountId,

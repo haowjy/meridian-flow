@@ -43,7 +43,7 @@ vi.mock("@/client/stores", () => ({
 vi.mock("@/client/providers/TransportProvider", () => ({
   useThreadTransport: () => harness.transport,
 }));
-vi.mock("@/features/project/context/account-feature-context", () => ({
+vi.mock("@/client/account/account-context", () => ({
   useAccountEpochSignal: () => harness.accountSignal,
   useAccountId: () => "account-1",
   useOptionalAccountEpochSignal: () => harness.accountSignal,

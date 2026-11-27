@@ -1,4 +1,8 @@
 import { type ReactNode, useCallback, useMemo } from "react";
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+} from "@/client/project-shell/project-route";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -18,7 +22,6 @@ import {
 } from "@/lib/context-uri";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useLinkPlacement } from "../review-launch";
-import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 

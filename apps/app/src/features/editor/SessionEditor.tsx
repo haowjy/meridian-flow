@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useRefreshTurnCardsOnEdit } from "@/client/query/useTurnLiveLineage";
 import { useWorks } from "@/client/query/useWorks";
@@ -29,10 +30,6 @@ import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounte
 import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { useLinkableDocuments } from "@/features/links";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useDocumentStanding } from "@/features/project/context/use-document-standing";

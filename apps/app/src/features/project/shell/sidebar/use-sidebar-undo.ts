@@ -1,11 +1,11 @@
 import { userActor } from "@meridian/project-tree";
 import { type KeyboardEvent, useMemo, useRef } from "react";
+import { useAccountId } from "@/client/account/account-context";
+import { useClosedOwners } from "@/client/query/closed-owners";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { followFocusFrom } from "@/components/app/RowWord";
 import { undoLatest } from "@/core/project-tree/tree-undo";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
-import { useAccountId } from "../../context/account-feature-context";
-import { useClosedOwners } from "../../context/closed-owners";
 import { entryRowOf } from "../../context/use-tree-notice-words";
 
 const isUndoKey = (event: KeyboardEvent) =>

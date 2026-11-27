@@ -4,6 +4,8 @@ import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder as FolderIcon, Layers, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { HeldNoticeRow, HeldNoticeRows } from "@/client/draft-commands/draft-command-owner";
+import { type DraftNotice, workNoticeKey } from "@/client/draft-commands/draft-notices";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import {
   type OwnerDraftListStatus,
@@ -27,9 +29,7 @@ import {
   useSurfaceNotice,
 } from "@/features/draft-review/CommandNotice";
 import { changeSummary, DraftFileRow } from "@/features/draft-review/DraftFileRow";
-import type { HeldNoticeRow, HeldNoticeRows } from "@/features/draft-review/draft-command-owner";
 import { workDraftName } from "@/features/draft-review/draft-names";
-import { type DraftNotice, workNoticeKey } from "@/features/draft-review/draft-notices";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
   type ChangeGroup,

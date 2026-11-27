@@ -132,7 +132,7 @@ beside a document. A Send that fails after the chat was made returns its words t
 chat, where the dissolved chat reopens. The composer reports what the draft is about (`NewChatAbout`), and the side's
 name says that, not main's document.
 
-Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):
+Which documents are mounted is one list, `PresentedDocuments` (`client/project-shell/presented-documents.ts`):
 each document host registers its current descriptor there, and `shown` orders them newest on
 screen first. Besides main's and the side's document, the newest open tab shown that is off screen
 stays mounted as the kept host, hidden for a warm return, so at most three documents

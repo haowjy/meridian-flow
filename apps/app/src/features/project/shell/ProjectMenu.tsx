@@ -3,6 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, MoreHorizontal, Pencil, Settings, Upload } from "lucide-react";
 import { useState } from "react";
+import { useAccountEpochSignal } from "@/client/account/account-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +15,6 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { ExportProjectDialog } from "@/features/export/ExportProjectDialog";
-import { useAccountEpochSignal } from "../context/account-feature-context";
 export function ProjectMenu({
   projectId,
   project,

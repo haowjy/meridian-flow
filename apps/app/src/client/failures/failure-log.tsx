@@ -1,9 +1,9 @@
 import { type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import { createBatchedFailureLog } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
+import { useRequestAccount } from "@/client/account/account-context";
 import { apiFetch } from "@/client/api/http-client";
 import { appendTraceEvent } from "@/client/trace-store";
-import { useRequestAccount } from "@/features/project/context/request-account-context";
 
 const Context = createContext<FailureLog>(noFailureLog);
 export function FailureLogProvider({ children }: { children: ReactNode }) {

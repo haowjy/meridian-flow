@@ -1,5 +1,19 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { NavigationSettlement } from "./project-navigation";
+
+export type ProjectNavigationTicket = { revision: number; key: string; href: string };
+export type NavigationSettlement =
+  | { kind: "applied" | "cancelled" | "superseded" }
+  | {
+      kind: "failed";
+      error: unknown;
+      ticket: ProjectNavigationTicket;
+      stage: "before-acceptance" | "workspace-commit";
+    };
+export type PreparedWorkspaceNavigation = {
+  isCurrent(): boolean;
+  commit(): void;
+  afterCommit?: () => void;
+};
 
 export type NavigationOptions = {
   afterCommit?: () => void;

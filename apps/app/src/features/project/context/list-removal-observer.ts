@@ -1,6 +1,9 @@
+import type {
+  ContextRemovalCoordinator,
+  RemovalCommand,
+} from "@/client/project-shell/context-removal-coordinator";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import type { ContextRemovalCoordinator, RemovalCommand } from "./context-removal-coordinator";
-import type { ProjectStandings } from "./project-standings";
+import type { ProjectStandings } from "@/core/tree-list/project-standings";
 
 export type EndedSources = ReadonlySet<string>;
 

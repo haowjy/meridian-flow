@@ -1,6 +1,6 @@
 import { type SetStateAction, useCallback, useEffect, useSyncExternalStore } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import type { SectionFold } from "@/components/ui/list-section";
-import { useAccountId } from "./account-feature-context";
 import {
   pruneTreeExpansion,
   readTreeExpansion,

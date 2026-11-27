@@ -9,6 +9,7 @@ import {
 } from "react";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import { dropMainTabChat } from "@/client/project-shell/main-tabs";
+import type { NavigationOptions, NavigationSettlement } from "@/client/project-shell/project-route";
 import {
   readLastShownChat,
   useLastShownChat,
@@ -17,8 +18,6 @@ import {
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import type { ProjectDestination } from "./project-address";
-import type { NavigationSettlement } from "./project-navigation";
-import type { NavigationOptions } from "./project-route";
 
 export type ChatDisplay =
   | { kind: "new" }

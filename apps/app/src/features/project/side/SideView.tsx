@@ -9,6 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useShownDocuments } from "@/client/account/account-composition";
+import { useAccountId } from "@/client/account/account-context";
 import {
   type DraftPin,
   readDocumentView,
@@ -24,7 +26,6 @@ import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
-import { useAccountId, useShownDocuments } from "../context/account-feature-context";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";

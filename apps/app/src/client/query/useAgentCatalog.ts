@@ -1,10 +1,7 @@
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { listAgentCatalog } from "@/client/api/agents-api";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectReadEnabled } from "./project-read-gate";
 

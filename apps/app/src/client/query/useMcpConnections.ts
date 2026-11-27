@@ -2,11 +2,8 @@ import type { McpConnectionView } from "@meridian/contracts/mcp";
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useCallback } from "react";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { listMcpConnections } from "@/client/api/mcp-api";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 
 export const mcpConnectionsRoot = (accountId: string) =>
   ["account", accountId, "mcp-connections"] as const;

@@ -1,16 +1,16 @@
 import { plural } from "@lingui/core/macro";
 import type { WorkDraft } from "@meridian/contracts/drafts";
 import type { ReactNode } from "react";
-import { useDraftOnly } from "@/client/query/useOwnerDrafts";
 import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
   useOptionalPresentedDocuments,
-} from "@/features/project/context/account-feature-context";
+} from "@/client/account/account-composition";
+import { deleteNoticeKey } from "@/client/draft-commands/draft-notices";
+import { useDraftOnly } from "@/client/query/useOwnerDrafts";
 import type { ShellTreeVersion } from "@/features/project/tree-version";
 import type { DraftVersion } from "./DraftSwitcher";
 import { nextDraftName, workDraftName } from "./draft-names";
-import { deleteNoticeKey } from "./draft-notices";
 
 export function workDraftVersions(
   list: readonly WorkDraft[],

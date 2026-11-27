@@ -70,7 +70,7 @@ Asks the server for a ZIP of the live documents. Drafts are not in it.
 
 The account menu and the settings dialog.
 
-The menu, the settings dialog (with a phone variant) and the provider that caches account settings.
+The menu and the settings dialog (with a phone variant). The provider that caches account settings is in `client/account`.
 
 - Kind: feature
 - Paths: `apps/app/src/features/account`

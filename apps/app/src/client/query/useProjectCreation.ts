@@ -2,10 +2,9 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef } from "react";
-
+import { useAccountId } from "@/client/account/account-context";
 import { useCommandDriver, useCommands } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import {
   PROJECT_CREATE_KIND,
   type ProjectCreateBody,

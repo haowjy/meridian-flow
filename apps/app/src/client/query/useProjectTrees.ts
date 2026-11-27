@@ -1,9 +1,9 @@
 import type { ContextOwner, ContextSource } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
 import { buildTreeView, type TreeFile, type TreeView } from "@/core/project-tree/tree-view";
 import { type DocumentStanding, standingAcross } from "@/core/tree-list/standing";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 

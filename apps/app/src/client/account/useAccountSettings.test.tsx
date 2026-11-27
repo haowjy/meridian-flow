@@ -33,7 +33,7 @@ vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ invalidate: mocks.invalidate }),
 }));
 
-vi.mock("@/features/project/context/account-feature-context", () => ({
+vi.mock("./account-context", () => ({
   useAccountId: () => mocks.account.id,
   useAccountEpochSignal: () => mocks.account.controller.signal,
 }));

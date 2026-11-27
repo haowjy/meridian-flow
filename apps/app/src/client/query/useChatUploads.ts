@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { getChatUploadFacts } from "@/client/api/projects-api";
 import {
   authoritativeReferenceForFile,
   type DocumentReference,
   referenceSourceOf,
 } from "@/core/completion";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { useProjectContextSources } from "./useContextSources";

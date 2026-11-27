@@ -1,10 +1,10 @@
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { ownerOfSource, type ProjectTrees, useProjectTrees } from "@/client/query/useProjectTrees";
-import { useAccountId } from "@/features/project/context/account-feature-context";
-import { serverDocumentFromFile } from "@/features/project/context/open-document-from-file";
 import type { OpenDocument } from "../stores";
 import { type Lane, type MainTabs, mainTabKey, useMainTabs } from "./main-tabs";
+import { serverDocumentFromFile } from "./open-document-from-file";
 
 const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 

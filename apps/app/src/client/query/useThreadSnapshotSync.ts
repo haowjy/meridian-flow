@@ -1,12 +1,9 @@
 import { acceptsSnapshot, createThreadSync, SNAPSHOT_RETRY_MS } from "@meridian/thread-client/sync";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 import { afterCurrentDispatch } from "@/lib/after-current-dispatch";
 import { threadQueryKeys } from "./thread-query-keys";
 import {

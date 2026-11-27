@@ -11,7 +11,8 @@ client contracts, stores and server-owned runtime behavior.
   A command the server may not have received is a kind on the command driver
   (`client/commands/`, `@meridian/command-driver`), as Work commands are: the driver
   delivers it, the domain projects its unsettled records over its own data.
-- `/_authenticated` mounts one unconditional provider tree. Gating a provider by
+- `/_authenticated` mounts one unconditional provider tree, `AccountComposition`
+  (`client/account/`). Gating a provider by
   pathname drops `ThreadStoreProvider` during transitions.
 - When a shadcn primitive fits, adopt or extend its API in `components/ui/` and
   keep any deviation local. Product-specific density stays at the usage site

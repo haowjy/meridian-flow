@@ -4,7 +4,7 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEndedSources, useProjectContextSources } from "@/client/query/useContextSources";
 import { useWorks } from "@/client/query/useWorks";
 import type { ClosedOwner, ClosedOwners } from "@/core/project-tree/tree-undo";
-import { workStateIn } from "../work/work-state";
+import { workStateIn } from "./work-state";
 
 type Read = {
   works: readonly Work[] | null;

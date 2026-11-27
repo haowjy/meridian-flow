@@ -2,6 +2,8 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen } from "lucide-react";
 import { useMemo } from "react";
+import { serverDocumentFromFile } from "@/client/project-shell/open-document-from-file";
+import { useWorkState } from "@/client/query/work-state";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -10,7 +12,6 @@ import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTree
 import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
-import { serverDocumentFromFile } from "../context/open-document-from-file";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
@@ -20,7 +21,6 @@ import { treePlace, useTreeNoticeWords } from "../context/use-tree-notice-words"
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useShellTreeVersion } from "../tree-version";
 import { useOptionalMainItem } from "../views";
-import { useWorkState } from "../work/work-state";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 function useOpenDocumentId(): string | undefined {

@@ -1,10 +1,10 @@
 import type { TreeProjection } from "@meridian/project-tree";
 import { useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
 import { type TreeVersion, useTreeVersion } from "@/core/project-tree/tree-version";
-import { useAccountId } from "../account-feature-context";
 
 export type EntryActions = {
   project: TreeActions;

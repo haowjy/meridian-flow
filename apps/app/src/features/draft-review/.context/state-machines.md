@@ -35,7 +35,7 @@ stateDiagram-v2
 ## A press's Undo
 
 The browser keeps no state machine for a press, Apply, Discard or a turn's restore alike.
-`PressEntry` (`press-history.ts`) holds the press's command id and one step on the sidebar's Undo
+`PressEntry` (`client/draft-commands/press-history.ts`) holds the press's command id and one step on the sidebar's Undo
 stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`). Every Undo of it is
 `undo()`: its notice's or row's Undo, the Undo beside a turn card's `Undone`, the sidebar's Ctrl+Z, or the
 editor's. A press while one is out hears the same answer, and `undoing` says one is out. A chat

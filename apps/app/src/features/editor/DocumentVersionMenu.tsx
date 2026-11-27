@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentDraftHint } from "@meridian/contracts/drafts";
+import { useAccountId } from "@/client/account/account-context";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useDraftOnly } from "@/client/query/useOwnerDrafts";
@@ -9,7 +10,6 @@ import type { OpenDocument } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { useWorkDraftMenu } from "@/features/draft-review/work-draft-menu";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { escapeCssIdent } from "@/lib/css-selector";

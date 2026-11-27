@@ -1775,7 +1775,7 @@ msgstr ""
 msgid "Couldn't add the connection."
 msgstr ""
 
-#: src/features/draft-review/draft-command-owner.ts
+#: src/client/draft-commands/draft-command-owner.ts
 msgid "Couldn't apply"
 msgstr ""
 
@@ -1848,7 +1848,7 @@ msgstr ""
 msgid "Couldn't delete that Work"
 msgstr ""
 
-#: src/features/draft-review/draft-command-owner.ts
+#: src/client/draft-commands/draft-command-owner.ts
 msgid "Couldn't discard"
 msgstr ""
 
@@ -2090,9 +2090,9 @@ msgstr ""
 msgid "Couldn't run that skill"
 msgstr ""
 
+#: src/client/account/account-lifetime.ts
 #: src/client/commands/submit.ts
 #: src/features/agents/PackageSave.tsx
-#: src/features/project/context/account-feature-lifetime.ts
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Couldn't save"
 msgstr ""
@@ -2178,13 +2178,13 @@ msgstr ""
 msgid "Couldn't switch Work"
 msgstr ""
 
+#: src/client/draft-commands/draft-command-owner.ts
+#: src/client/draft-commands/press-history.ts
 #: src/features/agents/UndoSave.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/tool-renderers.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/draft-review/draft-command-owner.ts
-#: src/features/draft-review/press-history.ts
 msgid "Couldn't undo"
 msgstr ""
 

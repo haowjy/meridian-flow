@@ -10,14 +10,11 @@ import {
 } from "@/client/api/account-api";
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
-import {
   ACCOUNT_SETTINGS_CACHE_PREFIX,
   readAccountSettingsCache,
   writeAccountSettingsCache,
 } from "@/lib/account-settings-cache";
+import { useAccountEpochSignal, useAccountId } from "./account-context";
 export type SettingKey = keyof AccountSettings;
 export type SettingError = {
   kind: "rejected" | "ambiguous";

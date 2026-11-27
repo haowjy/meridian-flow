@@ -7,6 +7,7 @@ import {
 } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { useOptionalAccountEpochSignal } from "@/client/account/account-context";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import {
   convergeThreadWorkBinding,
@@ -15,7 +16,6 @@ import {
 import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { singleFlight } from "@/lib/single-flight";
 
 function decodeWorkProjection(

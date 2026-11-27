@@ -4,6 +4,8 @@ import type {
   TreeListRef,
 } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useOptionalTreeLists } from "@/client/account/account-composition";
+import { useAccountId } from "@/client/account/account-context";
 import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
 import { buildTreeView, type TreeView } from "@/core/project-tree/tree-view";
 import type { TreeListHandle } from "@/core/tree-list/tree-list-registry";
@@ -12,10 +14,6 @@ import type {
   TreeListSnapshot,
   TreeListStatus,
 } from "@/core/tree-list/tree-list-session";
-import {
-  useAccountId,
-  useOptionalTreeLists,
-} from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 
 export type TreeOwner = {

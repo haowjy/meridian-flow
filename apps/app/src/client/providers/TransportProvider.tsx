@@ -3,6 +3,7 @@ import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { ConnectionState, ThreadTransport } from "@meridian/thread-client";
 import { ThreadSocketClient } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { useRequestAccount } from "@/client/account/account-context";
 import { announce } from "@/client/announcements";
 import { MeridianApiError } from "@/client/api/meridian-error";
 import { cancelTurn } from "@/client/api/threads-api";
@@ -15,7 +16,6 @@ import {
   notifyThreadSocketClose,
   notifyThreadSocketOpen,
 } from "@/core/transport/wire-tap";
-import { useRequestAccount } from "@/features/project/context/request-account-context";
 import { useConnectivityHints } from "./ConnectivityProvider";
 
 const ThreadTransportContext = createContext<ThreadTransport | null>(null);

@@ -1,33 +1,115 @@
+import type { AccountSettings } from "@meridian/contracts/protocol";
+import type { ProjectId } from "@meridian/contracts/runtime";
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useInsertionEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  CommandDriverProvider,
+  combineDomains,
+  useCommands,
+} from "@/client/commands/driver-context";
+import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
+import { FailureLogProvider } from "@/client/failures/failure-log";
+import { LinkSettlementsProvider } from "@/client/link-settlements";
+import type { ContextRemovalCoordinator } from "@/client/project-shell/context-removal-coordinator";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
-import type { OpenDocument } from "@/client/stores";
+import { TransportProvider } from "@/client/providers/TransportProvider";
+import { draftCommandsDomain } from "@/client/query/draft-commands";
+import { PRESS_KIND, pressDomain } from "@/client/query/press-commands";
+import { projectDomain } from "@/client/query/project-commands";
+import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
+import { useRouteProjectId } from "@/client/query/useMcpConnections";
+import { workDomain } from "@/client/query/work-commands";
+import { type OpenDocument, ThreadStoreProvider } from "@/client/stores";
+import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { ProjectDocumentLiveOpenerContext } from "@/core/editor/project-document-live-opener-context";
+import type { ProjectStandings } from "@/core/tree-list/project-standings";
 import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
-import { LinkSettlementsProvider } from "@/features/links/link-settlements";
-import { AccountFeatureLifetime } from "./account-feature-lifetime";
-import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
-import type { ProjectStandings } from "./project-standings";
-import { RequestAccountContext } from "./request-account-context";
+import { AccountSettingsProvider } from "./AccountSettingsProvider";
+import { AccountEpochContext, RequestAccountContext, SignOutContext } from "./account-context";
+import { AccountFeatureLifetime } from "./account-lifetime";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
 const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
-const AccountEpochContext = createContext<AbortSignal | null>(null);
-const SignOutContext = createContext<(() => Promise<string>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
 const LiveDocumentRegistryAccountContext = createContext<LiveDocumentSessionRegistry | null>(null);
+
+export function AccountComposition({
+  user,
+  children,
+}: {
+  user: {
+    userId: string;
+    externalId: string;
+    accountSettings: AccountSettings | null;
+    accountSettingsReadGeneration: number;
+  };
+  children: ReactNode;
+}) {
+  return (
+    <AccountFeatureComposition accountId={user.userId} externalId={user.externalId}>
+      <AccountCommandDriver>
+        <AccountSettingsProvider
+          serverValue={user.accountSettings}
+          serverReadGeneration={user.accountSettingsReadGeneration}
+        >
+          <FailureLogProvider>
+            <ThreadStoreProvider>
+              <TransportProvider>
+                <MeridianCopilotProvider>
+                  <DensityPopoverCollisionProvider>{children}</DensityPopoverCollisionProvider>
+                </MeridianCopilotProvider>
+              </TransportProvider>
+            </ThreadStoreProvider>
+          </FailureLogProvider>
+        </AccountSettingsProvider>
+      </AccountCommandDriver>
+    </AccountFeatureComposition>
+  );
+}
+
+function AccountCommandDriver({ children }: { children: ReactNode }) {
+  const registry = useLiveDocumentSessionRegistry();
+  return (
+    <CommandDriverProvider
+      domains={(client) =>
+        combineDomains(
+          workDomain(client),
+          projectDomain(client),
+          threadOverridesDomain(client),
+          draftCommandsDomain(client),
+          pressDomain(client, (projectId, rooms) =>
+            registry.whenSentAcknowledged(projectId as ProjectId, rooms),
+          ),
+        )
+      }
+    >
+      <FollowPresses />
+      {children}
+    </CommandDriverProvider>
+  );
+}
+
+function FollowPresses() {
+  const owner = useDraftCommandOwner();
+  const presses = useCommands({ kind: PRESS_KIND });
+  const shownProject = useRouteProjectId();
+  useEffect(() => owner.followPresses(presses, shownProject), [owner, presses, shownProject]);
+  return null;
+}
 
 export function AccountFeatureComposition({
   accountId,
@@ -36,7 +118,7 @@ export function AccountFeatureComposition({
 }: {
   accountId: string;
   externalId: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const connectivityHints = useConnectivityHints();
   const desired = useRef({ accountId, externalId });
@@ -84,7 +166,7 @@ function AccountFeatureProviders({
   children,
 }: {
   lifetime: AccountFeatureLifetime;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   useInsertionEffect(() => {
     lifetime.resumeFeatureLease();
@@ -118,16 +200,9 @@ function AccountFeatureProviders({
   );
 }
 
-export function useOptionalSignOutCleanup(): (() => Promise<string>) | null {
-  return useContext(SignOutContext);
-}
-
 export function useOptionalTreeLists(): TreeListRegistry | null {
   return useContext(TreeListsAccountContext);
 }
-
-export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
-export { useAccountId, useRequestAccount } from "./request-account-context";
 
 export function useProjectStandings(): ProjectStandings {
   const standings = useContext(ProjectStandingsAccountContext);
@@ -153,16 +228,6 @@ export function useLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry {
 
 export function useOptionalLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry | null {
   return useContext(LiveDocumentRegistryAccountContext);
-}
-
-export function useAccountEpochSignal(): AbortSignal {
-  const signal = useContext(AccountEpochContext);
-  if (!signal) throw new Error("AccountFeatureComposition is required");
-  return signal;
-}
-
-export function useOptionalAccountEpochSignal(): AbortSignal | null {
-  return useContext(AccountEpochContext);
 }
 
 export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] {

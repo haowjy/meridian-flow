@@ -1,12 +1,13 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
+import type { ContextRouteRequest } from "@/client/project-shell/project-route";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadActions } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-
 import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatView } from "@/features/chat/ChatView";
 import { CreationComposer, type NewChatAbout } from "@/features/chat/CreationComposer";
@@ -18,12 +19,7 @@ import {
   useDerivationStatus,
 } from "@/features/chat/derivation/derive-conversation";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
-import type { ContextRouteRequest } from "../routing/project-route";
 import { EndedWorkNotice } from "../work/EndedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { ProjectOwnerNamesProvider } from "./ProjectOwnerNamesProvider";

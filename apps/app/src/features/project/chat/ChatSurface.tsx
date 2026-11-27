@@ -1,8 +1,8 @@
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
+import type { ContextRouteRequest } from "@/client/project-shell/project-route";
 import { cn } from "@/lib/utils";
 import { PanePlaceContext } from "../pane-place";
-import type { ContextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import { useNewChatAbout } from "../side/SideView";
 import { ChatScreen } from "./ChatScreen";

@@ -14,11 +14,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
+import { useOptionalLiveDocumentSessionRegistry } from "@/client/account/account-composition";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useShellTreeVersion } from "../tree-version";
-import { useOptionalLiveDocumentSessionRegistry } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";

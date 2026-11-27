@@ -1,17 +1,17 @@
 import { t } from "@lingui/core/macro";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useContextRemovalCoordinator,
+  useLiveDocumentSessionRegistry,
+  useProjectStandings,
+} from "@/client/account/account-composition";
+import type { ContextRemovalRoutePort } from "@/client/project-shell/context-removal-coordinator";
 import { useEndedSources } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { logInAgain } from "@/components/app/AppStatus";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
-import {
-  useContextRemovalCoordinator,
-  useLiveDocumentSessionRegistry,
-  useProjectStandings,
-} from "./account-feature-context";
-import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 import { type ListRemovalObserver, observeListRemovals } from "./list-removal-observer";
 import { useOpenProjectDocument } from "./open-project-document";
 import { openRecent } from "./RecentDocumentsLanding";

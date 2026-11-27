@@ -1,6 +1,7 @@
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { enterScope } from "@/client/project-shell/document-views";
 import {
   NO_SCOPE,
@@ -11,7 +12,6 @@ import {
 import { useWorkDrafts, type WorkDraftsState } from "@/client/query/draft-commands";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { useAccountId } from "./context/account-feature-context";
 
 export type WorkScope =
   | { status: "ready"; workId: string }

@@ -1,6 +1,7 @@
 import type { RouterHistory } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import {
   type DraftPin,
   readDocumentView,
@@ -8,7 +9,6 @@ import {
   useDocumentView,
 } from "@/client/project-shell/document-views";
 import { writeTreeVersionChoice } from "@/client/project-shell/store";
-import { useAccountId } from "./context/account-feature-context";
 import type { DraftAddressAdmission } from "./use-review-mode";
 import { useScopeDraftOwner } from "./use-work-scope";
 import { useShownDraft } from "./views";

@@ -1,8 +1,11 @@
 import { createContext, type ReactNode, useContext } from "react";
+import type {
+  ContextRouteRequest,
+  NavigationSettlement,
+  ProjectRouteCommands,
+} from "@/client/project-shell/project-route";
 import type { OpenDocument } from "@/client/stores";
 import type { ReviewTarget } from "./project-address";
-import type { NavigationSettlement } from "./project-navigation";
-import type { ContextRouteRequest, ProjectRouteCommands } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;

@@ -1,10 +1,10 @@
 import { useCallback } from "react";
-import type { TreeVersion } from "@/core/project-tree/tree-version";
-import { useShellTreeVersion } from "../tree-version";
 import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
-} from "./account-feature-context";
+} from "@/client/account/account-composition";
+import type { TreeVersion } from "@/core/project-tree/tree-version";
+import { useShellTreeVersion } from "../tree-version";
 import type { DragEntry } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
 import { runDelete } from "./entry-drag/entry-failure";

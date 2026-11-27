@@ -2,6 +2,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { JournalSwitch } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useReducer, useRef } from "react";
+import { useOptionalAccountEpochSignal } from "@/client/account/account-context";
 import {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   getChatSubmissionAccountId,
@@ -22,7 +23,6 @@ import { useOptionalThreadTransport } from "@/client/providers/TransportProvider
 import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
-import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 const NO_SWITCHES: readonly JournalSwitch[] = [];
 

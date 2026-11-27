@@ -1,7 +1,9 @@
 import { type DocumentId, type DraftId, draftItemKey } from "@meridian/contracts";
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { setDocumentView } from "@/client/project-shell/document-views";
+import { contextRouteRequest } from "@/client/project-shell/project-route";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocumentOutcome } from "@/client/stores";
@@ -11,12 +13,10 @@ import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-po
 import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import { useOpenProjectDocument } from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ReviewTarget } from "./routing/project-address";
-import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
 import { useShellTreeVersion } from "./tree-version";
 
