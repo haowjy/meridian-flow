@@ -100,7 +100,6 @@ imports one of them fails the check.
 | `spawn/child-run-coordinator.ts` | `packages` |
 | `spawn/resolve-child-invocation.ts` | `packages` |
 | `spawn/resolve-readable-thread.ts` | `context` |
-| `spawn/thread-history-contract.ts` | `@meridian/agent-edit` |
 | `spawn/thread-history.ts` | `context` |
 | `spawn/thread-ls.ts` | `context` |
 | `summary/conversation-summarizer.ts` | `packages` |

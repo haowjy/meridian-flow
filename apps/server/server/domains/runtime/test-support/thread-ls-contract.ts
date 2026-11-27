@@ -3,7 +3,7 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import { listReadableThreads } from "./thread-ls.js";
+import { listReadableThreads } from "../spawn/thread-ls.js";
 
 export function defineThreadLsContract(
   createHarness: () => Promise<{

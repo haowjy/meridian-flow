@@ -1,6 +1,6 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createInMemoryRepositories } from "../../threads/adapters/in-memory/index.js";
-import { defineThreadLsContract } from "./thread-ls-contract.js";
+import { defineThreadLsContract } from "../test-support/thread-ls-contract.js";
 
 defineThreadLsContract(async () => ({
   repos: createInMemoryRepositories(),

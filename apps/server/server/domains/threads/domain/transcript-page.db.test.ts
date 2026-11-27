@@ -19,7 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../test-support/thread-repositories.js"
     );
     const { defineTranscriptPageContract } = await import(
-      "../__conformance__/transcript-page-contract.js"
+      "../test-support/transcript-page-contract.js"
     );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
