@@ -103,13 +103,10 @@ async function main(): Promise<void> {
       throw new Error(`search failed: ${JSON.stringify(searchHit)}`);
     }
 
-    console.log("3. update");
-    const updated = await repos.projects.update(PROJECT_ID, {
-      title: "Renamed Smoke",
-      description: "About bones",
-    });
+    console.log("3. rename");
+    const updated = await repos.projects.rename(PROJECT_ID, "Renamed Smoke");
     if (updated.name !== "Renamed Smoke") {
-      throw new Error("update title failed");
+      throw new Error("rename failed");
     }
 
     console.log("4. work in project");
