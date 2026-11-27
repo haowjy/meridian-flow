@@ -298,7 +298,7 @@ export function createLoroRoomTransport({
           return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
         if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
           return end({ kind: "terminal", reason: message.appCode });
-        socket?.close(1000, "rejoin");
+        socket?.close(1000, "join-refused");
         return;
       }
       case MessageType.DocUpdate:

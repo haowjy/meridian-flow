@@ -517,8 +517,11 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   acknowledged everything the mark is written at once, as at detach and destroy. A tab closed or
   reloaded right after typing or receiving a peer's edit leaves a current mark (an unload-time
   write did not land reliably). The write merges into the stored mark by per-peer maximum
-  (`LocalCopyStore.markServer`): tabs write their own views, and none may roll another's back. Ops the copy holds beyond it are all the server can
-  lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
+  (`LocalCopyStore.markServer`): tabs write their own views, and none may roll another's back.
+  The mark is what the server acknowledged, which is not what it saved: a room saves 2 to 10 s
+  after a batch, and a server that stops in that window loses ops the mark already covers (a Join
+  sends them again, but a copy deleted meanwhile, as at sign-out, does not). Beyond that gap, ops
+  the copy holds beyond the mark are all the server can lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
   version in each text doc; a change with no words is dropped silently.
 - **Who drops.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s `retiring`)
   reads its copy beyond its mark (`LocalDocumentCopies.holds` with `storedWordsBeyond`); the copy has every

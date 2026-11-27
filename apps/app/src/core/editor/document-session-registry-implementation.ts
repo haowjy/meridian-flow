@@ -17,6 +17,7 @@ import type {
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import {
   type CopyHold,
+  copiesOpenSince,
   documentSessionPersistenceKey,
   incarnationName,
   LocalDocumentCopies,
@@ -41,6 +42,7 @@ type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
 export class DocumentSessionRegistry {
   private closeAttempt: Promise<void> | null = null;
   private readonly copies: LocalDocumentCopies;
+  private readonly copiesOpen: () => boolean;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     () => new Error("Live session teardown is unfinished"),
   );
@@ -69,6 +71,7 @@ export class DocumentSessionRegistry {
     private readonly transportFactory: DocumentSessionTransportFactory,
   ) {
     this.copies = new LocalDocumentCopies(accountId);
+    this.copiesOpen = copiesOpenSince(accountId);
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
@@ -118,33 +121,38 @@ export class DocumentSessionRegistry {
 
   async settleUnsentEdits(timeoutMs: number, { storedCopies = true } = {}): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
-    const stored = storedCopies ? await this.openStoredUnsent(deadline) : [];
-    if (!stored || stored.some((room) => !this.openSession(room))) return false;
-    const sessions = [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : []));
-    const outcome = (session: DocumentSession) => {
-      if (session.getSnapshot().status === "destroyed") return !session.hasUnacknowledgedEdits();
-      if (session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits()) return null;
-      return true;
-    };
-    const settled = sessions.map(
-      (session) =>
-        new Promise<boolean>((resolve) => {
-          const now = outcome(session);
-          if (now !== null) return resolve(now);
-          const timer = setTimeout(() => {
-            stop();
-            resolve(false);
-          }, deadline - Date.now());
-          const stop = session.subscribe(() => {
-            const settledAs = outcome(session);
-            if (settledAs === null) return;
-            clearTimeout(timer);
-            stop();
-            resolve(settledAs);
-          });
-        }),
-    );
-    return (await Promise.all(settled)).every(Boolean);
+    const seen = new Set<DocumentSession>();
+    let scanDue = storedCopies;
+    let waited = false;
+    for (;;) {
+      if (scanDue) {
+        const stored = await this.openStoredUnsent(deadline);
+        if (!stored || stored.some((room) => !this.openSession(room))) return false;
+        scanDue = false;
+      }
+      if (this.accountClosing.aborted) return false;
+      const open = new Set(
+        [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : [])),
+      );
+      for (const session of seen)
+        if (!open.has(session) && !session.replaced && session.hasUnacknowledgedEdits())
+          return false;
+      const pending = [...open].filter(
+        (session) => session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits(),
+      );
+      if (pending.length === 0) {
+        if (storedCopies && waited) {
+          waited = false;
+          scanDue = true;
+          continue;
+        }
+        return true;
+      }
+      if (Date.now() >= deadline) return false;
+      for (const session of pending) seen.add(session);
+      await nextEmit(pending, deadline);
+      waited = true;
+    }
   }
 
   private async openStoredUnsent(deadline: number): Promise<DocumentRoom[] | null> {
@@ -407,7 +415,11 @@ export class DocumentSessionRegistry {
     const hold = this.copies.hold(name);
     const session = this.createSession(
       room,
-      { kind: "indexeddb", key: name },
+      {
+        kind: "indexeddb",
+        key: name,
+        granted: hold.then(() => this.copiesOpen()),
+      },
       replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
@@ -803,4 +815,28 @@ export class DocumentSessionRegistry {
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
   }
+}
+
+function nextEmit(sessions: readonly DocumentSession[], deadline: number): Promise<void> {
+  return new Promise((resolve) => {
+    const stops: (() => void)[] = [];
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      for (const stop of stops) stop();
+      resolve();
+    };
+    const timer = setTimeout(finish, Math.max(0, deadline - Date.now()));
+    for (const session of sessions) {
+      let first = true;
+      stops.push(
+        session.subscribe(() => {
+          if (first) first = false;
+          else finish();
+        }),
+      );
+    }
+  });
 }

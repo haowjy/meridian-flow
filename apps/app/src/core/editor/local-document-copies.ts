@@ -267,6 +267,9 @@ export class LocalDocumentCopies {
   }
 
   async clearAll(): Promise<boolean> {
+    // Before any deletion: from here an account lifetime that began earlier, in any tab, opens no
+    // copy, so none is re-created behind it.
+    countSignOut(this.accountId);
     const documents = new Set(
       (await this.names()).flatMap((name) => roomOf(name, this.accountId)?.documentId ?? []),
     );
@@ -339,6 +342,24 @@ async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
     if (account) accounts.add(decodeURIComponent(account) as AccountId);
   }
   return [...accounts];
+}
+
+const SIGN_OUTS_PREFIX = "meridian:sign-outs:";
+
+function signOuts(accountId: string): number {
+  return Number(browserStorage("local")?.getItem(`${SIGN_OUTS_PREFIX}${accountId}`) ?? 0);
+}
+
+function countSignOut(accountId: string): void {
+  browserStorage("local")?.setItem(
+    `${SIGN_OUTS_PREFIX}${accountId}`,
+    String(signOuts(accountId) + 1),
+  );
+}
+
+export function copiesOpenSince(accountId: string): () => boolean {
+  const at = signOuts(accountId);
+  return () => signOuts(accountId) === at;
 }
 
 export function clearAccountCopies(accountId: AccountId): Promise<boolean> {

@@ -196,7 +196,18 @@ export function createLoroGateway(services: LoroGatewayServices) {
       }
     if (!found) {
       const removed = await services.documents.roomRemoval(documentId);
-      if (!removed) throw new JoinRefused(LORO_JOIN_ERROR.DOCUMENT_UNKNOWN);
+      if (!removed) {
+        // A create not landed yet is unknown, and the client keeps asking. A document that lives
+        // where this account can't reach it never becomes known: a refusal ends the room.
+        const lives = (await services.documents.schemaVersion(documentId)) !== null;
+        const reachable =
+          room.kind === "fork" && (await findAccess(userId, { kind: "restore", documentId }));
+        throw new JoinRefused(
+          lives && !reachable
+            ? LORO_JOIN_ERROR.PERMISSION_DENIED
+            : LORO_JOIN_ERROR.DOCUMENT_UNKNOWN,
+        );
+      }
       const history = await services.fileAccess.historyAccess({ accountId: userId }, documentId);
       throw new JoinRefused(
         history === "deleted"

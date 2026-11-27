@@ -69,7 +69,8 @@ press of a whole draft or Work, the Live room of a document only the draft holds
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
   resets the room (`resetState`); `permission-denied` ends it `unauthorized`, and `bad-auth` (a
   Join this build formed wrong) ends it `terminal`;
-  any other app code (the server hasn't seen this browser's `create` yet) closes and rejoins.
+  any other app code (`document-unknown`: the server hasn't seen this browser's `create` yet, or
+  the draft is gone for good) closes and rejoins with backoff.
 - `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
   change (`access-changed:<why>` names the cause) the room shows read-only at once and the new
   `JoinResponseOk` permission decides; for a server error the rejoin sends what the server lacks.

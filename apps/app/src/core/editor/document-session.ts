@@ -105,7 +105,7 @@ export type DocumentSessionTransportFactory = (opts: {
 export type DocumentSessionOptions = {
   room: DocumentRoom;
   live?: DocumentSession;
-  persistence: { kind: "indexeddb"; key: string } | { kind: "none" };
+  persistence: { kind: "indexeddb"; key: string; granted: Promise<boolean> } | { kind: "none" };
   transportFactory?: DocumentSessionTransportFactory;
   persistSchemaFence?: (fence: SchemaFence) => void;
   access?: DocumentSessionAccess | null;
@@ -127,6 +127,7 @@ export class DocumentSession {
 
   private store: LocalCopyStore | null = null;
   private readonly storeName: string | null;
+  private readonly persistenceGranted: Promise<boolean> | null;
   private appended = 0;
   private tabs: BroadcastChannel | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
@@ -205,6 +206,7 @@ export class DocumentSession {
       window.addEventListener("pageshow", this.onPageShow);
     }
     this.storeName = persistence.kind === "indexeddb" ? persistence.key : null;
+    this.persistenceGranted = persistence.kind === "indexeddb" ? persistence.granted : null;
     this.transportAttachedPromise = new Promise((resolve) => {
       this.resolveTransportAttached = resolve;
     });
@@ -298,7 +300,12 @@ export class DocumentSession {
   }
 
   private async loadLocalCopy(): Promise<void> {
-    if (!this.storeName || typeof indexedDB === "undefined") {
+    if (
+      !this.storeName ||
+      typeof indexedDB === "undefined" ||
+      !(await this.persistenceGranted) ||
+      this.destroyed
+    ) {
       this.localPersistenceSynced = true;
       this.recomputeStatus();
       return;

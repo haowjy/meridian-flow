@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
-import { notifyFailure } from "@/components/app/failure-toast";
+import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
 import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
 import {
   clearAccountCopies,
@@ -25,6 +25,7 @@ export class SignOutIncomplete extends Error {
   }
 }
 
+export const SIGN_OUT_FAILURE = "sign-out";
 const UNSENT_EDITS_WAIT_MS = 8_000;
 const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 
@@ -43,7 +44,7 @@ export class AccountFeatureLifetime {
   readonly opener;
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
-  private readonly signOutChannel: BroadcastChannel | null;
+  private signOutChannel: BroadcastChannel | null = null;
   private signingOut = false;
 
   constructor(
@@ -70,6 +71,7 @@ export class AccountFeatureLifetime {
       notifyFailure({ key: "unsent-typing", title: t`Couldn't save` }),
     );
     dropRetiredTabSession(accountId);
+    dismissFailure(SIGN_OUT_FAILURE);
     if (typeof window !== "undefined")
       void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
         reportError(error),
@@ -80,13 +82,6 @@ export class AccountFeatureLifetime {
       epochSignal: this.epochSignal,
     });
     this.featureLease = this.removal.createLifetimeLease();
-    this.signOutChannel =
-      typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(SIGN_OUT_CHANNEL);
-    if (this.signOutChannel)
-      this.signOutChannel.onmessage = ({ data }) => {
-        if ((data as { accountId?: string } | null)?.accountId === this.accountId)
-          void this.signedOutElsewhere();
-      };
   }
 
   private async signedOutElsewhere(): Promise<void> {
@@ -97,12 +92,27 @@ export class AccountFeatureLifetime {
     window.location.assign("/logout");
   }
 
+  // Opened here, not in the constructor: React may build a lifetime it never mounts, and that
+  // one, hearing this tab's own sign-out, would navigate away before the copies are deleted.
   resumeFeatureLease(): void {
-    if (!this.epochSignal.aborted) this.featureLease.resume();
+    if (this.epochSignal.aborted) return;
+    this.featureLease.resume();
+    if (this.signOutChannel || typeof BroadcastChannel === "undefined") return;
+    this.signOutChannel = new BroadcastChannel(SIGN_OUT_CHANNEL);
+    this.signOutChannel.onmessage = ({ data }) => {
+      if ((data as { accountId?: string } | null)?.accountId === this.accountId)
+        void this.signedOutElsewhere();
+    };
   }
 
   suspendFeatureLease(): void {
     this.featureLease.suspend();
+    this.closeSignOutChannel();
+  }
+
+  private closeSignOutChannel(): void {
+    this.signOutChannel?.close();
+    this.signOutChannel = null;
   }
 
   beginClose(): void {
@@ -123,6 +133,8 @@ export class AccountFeatureLifetime {
       this.signingOut = true;
       this.signOutChannel?.postMessage({ accountId: this.accountId });
     }
+    // No await before this abort: the wait answered from one synchronous pass, and a keystroke
+    // landing in between would be deleted unsent.
     await this.finishClose();
     if (!(await clearAccountCopies(this.accountId as AccountId)))
       throw new SignOutIncomplete("copies");
@@ -132,7 +144,7 @@ export class AccountFeatureLifetime {
     this.beginClose();
     this.featureLease.disposeIfSuspended();
     await this.registry.close();
-    this.signOutChannel?.close();
+    this.closeSignOutChannel();
   }
 }
 
