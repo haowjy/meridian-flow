@@ -127,7 +127,7 @@ function summaryText(result: GenerateResult): string {
     throw new SummaryRejection("max_tokens", "Summary exhausted its output limit");
   if (result.finishReason === "error")
     throw new SummaryRejection("provider_error", "Summary provider failed");
-  if (result.toolCalls.length || result.content.some((part) => part.type === "tool_use")) {
+  if (result.content.some((part) => part.type === "tool_use")) {
     throw new SummaryRejection("tool_use", "Summary returned tool use");
   }
   const text = result.content

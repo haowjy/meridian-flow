@@ -179,6 +179,16 @@ else
                 result: {
                   content: [
                     { type: "text", text: requests.length === 1 ? "before steer" : "after steer" },
+                    ...(requests.length === 1 && boundary === "tool"
+                      ? [
+                          {
+                            type: "tool_use" as const,
+                            toolCallId: "tool-1",
+                            toolName: "unregistered",
+                            input: {},
+                          },
+                        ]
+                      : []),
                   ],
                   toolCalls:
                     requests.length === 1 && boundary === "tool"
