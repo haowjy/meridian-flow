@@ -61,3 +61,10 @@ The owner will submit the prepared `selectionForDOM` proposal linked from the
 replacement tracker. Both GitHub trackers are archived; filing is blocked on a
 tracker account. The proposal is not an upstream issue or an endorsement. Keep
 this task until the submitted issue is linked from that contract.
+
+## Account close during a document's clearLocalCopy
+
+If the account closes while `clearLocalCopy` is waiting on a document's forks to finish
+destroying, `close` takes the same entry and retires its Live session before those forks
+finish: a fork can then read through freed Live docs. `main` before the registry rework did
+the same. Not probed; a fix makes close wait on the clear already retiring the entry.
