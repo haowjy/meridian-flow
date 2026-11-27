@@ -1,4 +1,10 @@
-import type { DocKey } from "@meridian/document-model";
+import {
+  type DocKey,
+  decodeRoomVersion,
+  encodeRoomVersion,
+  mergeVersion,
+  type RoomVersion,
+} from "@meridian/document-model";
 
 const VERSION = 1;
 const SNAPSHOTS = "snapshots";
@@ -64,6 +70,14 @@ export async function readCopy(db: IDBDatabase): Promise<LoadedCopy> {
   };
 }
 
+/** Merged into the stored mark, never over it: each tab writes its own view of the server. */
+async function mergeMark(meta: IDBObjectStore, version: RoomVersion): Promise<void> {
+  const stored = await request(meta.get(SERVER_META));
+  const merged = stored instanceof Uint8Array ? decodeRoomVersion(stored) : new Map();
+  mergeVersion(merged, version);
+  meta.put(encodeRoomVersion(merged), SERVER_META);
+}
+
 export class LocalCopyStore {
   private chain: Promise<void> = Promise.resolve();
   private closed = false;
@@ -82,10 +96,16 @@ export class LocalCopyStore {
     return readCopy(this.db);
   }
 
-  append(batch: Uint8Array): Promise<void> {
+  readMeta(key: string): Promise<unknown> {
+    return request(this.db.transaction(META, "readonly").objectStore(META).get(key));
+  }
+
+  /** One transaction: a tab closed right after a server batch must not leave it beyond the mark. */
+  append(batch: Uint8Array, server?: RoomVersion): Promise<void> {
     return this.queue(async () => {
-      const transaction = this.db.transaction(UPDATES, "readwrite");
+      const transaction = this.db.transaction(server ? [UPDATES, META] : UPDATES, "readwrite");
       transaction.objectStore(UPDATES).add(batch);
+      if (server) await mergeMark(transaction.objectStore(META), server);
       await done(transaction);
     });
   }
@@ -96,6 +116,14 @@ export class LocalCopyStore {
       const store = transaction.objectStore(SNAPSHOTS);
       for (const [key, bytes] of snapshots) store.put(bytes, key);
       transaction.objectStore(UPDATES).clear();
+      await done(transaction);
+    });
+  }
+
+  markServer(version: RoomVersion): Promise<void> {
+    return this.queue(async () => {
+      const transaction = this.db.transaction(META, "readwrite");
+      await mergeMark(transaction.objectStore(META), version);
       await done(transaction);
     });
   }

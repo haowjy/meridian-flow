@@ -10,8 +10,10 @@
 - Works mutation boundary (`projects/adapters/work-projection-mutation.ts`):
   determine what remains of [#931].
 - A closed Work's dropped create of a Work-only document: `watchBounces` marks the row and ends
-  nothing, so an open session of the document keeps rejoining its Live room, at once each time,
-  on the server's `document-unknown` until the tab closes it.
+  nothing, so an open session of the document keeps rejoining its Live room, every 10 s once the
+  backoff grows, on the server's `document-unknown` until the tab closes it; and at sign-out a
+  stored copy of it holding typing makes the wait refuse. A purged draft's fork room answers the
+  same: a tombstone of purged drafts would let the server refuse both terminally.
 - The turn inverse (`adapters/drizzle-turn-inverse.ts`, the card's Undo and the model's `undo`)
   chooses its steps from a capture read before its locks, and `commitStep` does not read the
   ledger again: an Undo of the same part committed between the two (another card press, a

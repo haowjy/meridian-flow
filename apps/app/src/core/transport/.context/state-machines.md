@@ -50,10 +50,12 @@ stateDiagram-v2
   carries the typing, is acknowledged. `DocumentSession` reads it as `offline`, `TreeListSession`
   as `unauthenticated`. Signing in from the prompt reloads the page, and the journaled press waits
   again on the reloaded rooms.
-- **A rejoin is a close and a connect.** A `JoinError` the server answers for a document it
-  doesn't know yet, a `RejoinSuggested` (an access change, or a server error), and `onJoined`
-  asking for a rejoin all close the socket with reason `rejoin`, which reconnects at once; any
-  other close waits `RETRY_MS[attempt]`. `attempt` resets to 0 on `JoinResponseOk`, so the backoff
+- **A rejoin is a close and a connect.** A `RejoinSuggested` (an access change, or a server
+  error) and `onJoined` asking for a rejoin close the socket with reason `rejoin`, which reconnects
+  at once; any other close waits `RETRY_MS[attempt]`. A `JoinError` for a document the server
+  doesn't know (its create not landed yet, or a draft gone for good) is a refusal, not a
+  suggestion: it closes with `join-refused` and backs off like any other close, so a refusal that
+  never ends costs one Join every 10 s instead of hammering the server. `attempt` resets to 0 on `JoinResponseOk`, so the backoff
   grows only across connections that never joined.
 - **`connected` comes after the Join's batch is sent.** `whenSentAcknowledged` takes the batches
   it waits on only once the room reads as connected, so the batch carrying what was typed while

@@ -21,7 +21,10 @@ stateDiagram-v2
   The room ends (`RoomError` `document-deleted`) at the purge, once the content is released
   (`drizzle-document-purge-disposal.ts`), and a Join after that is refused `document-deleted`. A
   Join for a document the server does not know yet is refused non-terminally (`document-unknown`):
-  the browser retries until its create is admitted.
+  the browser retries, with backoff, until its create is admitted. A fork whose draft is gone for
+  good (purged) gets the same answer, since nothing tells it from a draft not created yet. A
+  document that lives where the account can reach neither it nor the draft asked for is refused
+  `permission-denied` (terminal): it will never become known to this account.
 - **Held** is not a state: it stops either way out of `released`. A document is held while any
   kept view shows it (a `draft_tree_nodes` row), an unsettled record for a kept Work names it
   in the list, or a draft not yet purged has a pending fork of it

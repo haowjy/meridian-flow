@@ -15,9 +15,10 @@ import {
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useOptionalSignOutCleanup } from "@/features/project/context/account-feature-context";
-import { SignOutIncomplete } from "@/features/project/context/account-feature-lifetime";
-
-const SIGN_OUT_FAILURE = "sign-out";
+import {
+  SIGN_OUT_FAILURE,
+  SignOutIncomplete,
+} from "@/features/project/context/account-feature-lifetime";
 
 export function AccountMenu() {
   const { user, loading } = useAuth();

@@ -32,8 +32,12 @@ export class DocumentSessionTeardownOwner {
     return this.retire(session.persistenceName ?? session.roomKey, session);
   }
 
+  retiring(room: string): boolean {
+    return this.byRoom.has(room);
+  }
+
   assertAvailable(room: string): void {
-    if (this.byRoom.has(room)) throw this.unavailable();
+    if (this.retiring(room)) throw this.unavailable();
   }
 
   drainRoom(room: string): Promise<void> {
