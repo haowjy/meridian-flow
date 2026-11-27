@@ -3,7 +3,7 @@
 [CI](../../.github/workflows/ci.yml) runs on manual dispatch, or when Deploy Staging calls it,
 and its four parallel quality jobs are:
 
-- `quality-static`: lint, debug probes, negative space, slop lint, i18n, the Nx graph, the architecture map and PR-body checks.
+- `quality-static`: lint, debug probes, negative space, slop lint, the comment check, i18n, the Nx graph, the architecture map and PR-body checks.
 - `quality-typecheck`: typecheck, with runner-local Nx caching only.
 - `quality-test-1` and `quality-test-2`: the default unit test projects, using
   Vitest `--shard=1/2` and `--shard=2/2` on the same `test` script.
@@ -265,7 +265,7 @@ This keeps the check focused on new code without hiding the old debt, and
 prevents the baseline from growing. After removing findings, run:
 
 ```sh
-pnpm check:slop-lint -- --update-baseline
+pnpm check:slop-lint --update-baseline
 ```
 
 The refresh refuses to write when it sees a new finding, so a baseline can
@@ -286,3 +286,59 @@ handle or surface the error, fix the type or lint error, delete the decision ID,
 separate facts with spacing, weight or muted color in UI and with a sentence or
 parentheses in text, or wait for the event instead of the clock. A middle-dot
 finding has no exception: rewrite the text.
+
+## Comment check
+
+`pnpm check:comments` fails when a change adds a prose comment, or changes the words of one,
+in any tracked script file (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`).
+Adding one is allowed but deliberate:
+
+```sh
+pnpm check:comments --update-baseline
+```
+
+records the tree in `tools/ci/comment-baseline.txt` and prints the lines it added; the
+reviewer questions each one. The failure names each new comment and states the rule from
+`AGENTS.md`.
+
+It counts what the TypeScript parse tree calls a comment (the walk it shares with slop lint
+in `source-comments.mjs`), so `//` inside a string, template or URL is not one, and adjacent
+whole-line `//` comments are one comment. Skipped:
+
+- a comment that is only a directive a tool reads, with its argument: `/// <reference`,
+  `@vitest-environment jsdom`, `@jest-environment …`, `@vite-ignore`, `@__PURE__`,
+  `@jsxImportSource …`, `@jsxRuntime …`, `@ts-check`, `prettier-ignore`,
+  `v8`/`c8`/`istanbul ignore [next N]`, webpack magic comments, `@refresh [reset]`,
+  `@generated`. Any other words in the comment, after the directive or on another line, make
+  it prose;
+- a comment that starts with a suppression or an exception (`biome-ignore`, `@ts-ignore`,
+  `@ts-expect-error`, `@ts-nocheck`, `slop-lint: allow`), reason included: slop lint counts
+  those;
+- in a JavaScript file, a `/** */` block whose every line is a bare type tag that TypeScript
+  reads (`@type {T}`, `@param {T} name`, `@returns {T}`, `@typedef`, `@template`, `@import`
+  and the like). A description after a tag, any other tag (`@see`, `@deprecated`) or a line
+  of prose makes the whole block prose;
+- `node_modules`, `dist`, `build`, `vendor`, `migrations` and `locales` directories, and
+  `.gen` and `.generated` files.
+
+The baseline has one line per comment, `path<TAB>words`, with the words whitespace-collapsed
+and the comment markers stripped, sorted. A comment passes when its exact words are in the
+baseline as often as the tree has them, in any file, so a moved file or function passes and
+an edited comment is a new one. The check never writes: deleting a comment passes and leaves
+its line behind, which can only admit those exact words again; the next
+`--update-baseline` drops it. Per-file or per-area counts would be smaller but let one comment
+grow or stand in for another without a baseline diff.
+
+`.gitattributes` merges the baseline with `merge=union`, which only a local `git merge`
+reads: GitHub's server-side merge ignores it. When two PRs add baseline lines next to each
+other, GitHub shows the second as conflicting and refuses to merge it. Resolve it locally:
+
+```sh
+git merge origin/main     # the union driver keeps both sides' lines
+pnpm check:comments
+git push
+```
+
+A union merge never drops a line either side added. It can keep a line one side deleted (a
+stale line, harmless as above) and collapses the same line added by both sides into one,
+which makes the check fail and ask for `--update-baseline`.

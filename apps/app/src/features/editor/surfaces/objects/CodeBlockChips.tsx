@@ -22,7 +22,6 @@ import type { ObjectSurfaceTarget } from "./object-anchors";
 import { copyText } from "./object-commands";
 import type { RunVerb } from "./verb-feedback";
 
-/** Which of an object's row menus is open: the ⋯ overflow, or a code block's language chooser. */
 export type ObjectRowMenu = "overflow" | "language";
 
 export type CodeBlockChipsProps = {
