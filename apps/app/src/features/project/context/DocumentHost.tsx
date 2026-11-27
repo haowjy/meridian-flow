@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import type { Work } from "@meridian/contracts/works";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
@@ -25,6 +26,7 @@ import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
 import { EndedWorkNotice } from "../work/EndedWorkNotice";
+import { useWorkState } from "../work/work-state";
 import { useOptionalPresentedDocuments } from "./account-feature-context";
 import { ContextDocumentHost, type EditableOpenDocument } from "./ContextDocumentHost";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -34,7 +36,6 @@ import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
 import { placeTab } from "./open-document-from-file";
 import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
-import { useDocumentFreeze } from "./use-document-freeze";
 import { useDocumentLiveness } from "./use-draft-only-presentation";
 import {
   type IdentityCommitOwnership,
@@ -197,7 +198,7 @@ function EditableDocument({
   active: boolean;
   inMain: boolean;
 }) {
-  const freeze = useDocumentFreeze(projectId, document);
+  const freeze = useEndedWork(projectId, document);
   return (
     <ContextDocumentHost
       projectId={projectId}
@@ -220,7 +221,7 @@ function DesktopDocumentChrome({
   place: DocumentPlace;
   editorWorkId: string | null;
 }) {
-  const freeze = useDocumentFreeze(projectId, document);
+  const freeze = useEndedWork(projectId, document);
   const openRoute = useOpenContextRoute();
   const fileInWork =
     document.kind !== "new" &&
@@ -302,7 +303,7 @@ function PhoneEditor({
   document: EditableOpenDocument;
   children?: ReactNode;
 }) {
-  const freeze = useDocumentFreeze(projectId, document);
+  const freeze = useEndedWork(projectId, document);
   const review = useReviewMode();
   return (
     <DocumentStateSlotProvider>
@@ -357,4 +358,12 @@ export function MainDocumentStatus({ main }: { main: MainDocument }) {
       ) : null}
     </div>
   );
+}
+
+function useEndedWork(projectId: string, document: OpenDocument): Work | null {
+  const state = useWorkState(
+    projectId,
+    document.kind !== "new" && isWorkScopedScheme(document.scheme) ? document.workId : null,
+  );
+  return state.kind === "ended" ? state.work : null;
 }

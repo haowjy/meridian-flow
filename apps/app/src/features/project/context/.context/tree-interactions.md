@@ -186,7 +186,7 @@ Both offer the same destinations, and a folder cannot go inside itself in either
 lists the project's areas and, as the sidebar does, the picked Work's Scratch
 (`useScopeScratchSource`); a Scratch row's picker offers that row's own Scratch instead. Under
 None no Scratch is offered: a chat's notes live in its Files menu. Only an area that takes changes
-is a destination (`MenuArea.writable`: an ended Work's Scratch, by `useWorkSourceWritable`, and
+is a destination (`MenuArea.writable`: an ended Work's Scratch, by `useWorkState`, and
 every tree on a deleted Work's Draft take none), so it is left off the top level and offers no
 Copy here or Move here; Copy to… from a row in it still works, opening at the project root.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
@@ -232,7 +232,7 @@ lineage tree, not a menu-node projection or a mutable folder. Selected
 files open directly with their known owner. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
 operation selection. Creation is absent. One surface-owned deletion coordinator
-and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`useWorkSourceWritable`, the one answer for a Work's source, which the sidebar's Scratch pane reads too); an archived, deleted or unlisted Work's Scratch remains navigable, its rows offer only Copy to…, and its area is not `writable`. Shared rows receive explicit action capabilities from their surface. The synthetic
+and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`useWorkState` in `work/work-state.ts`, the one answer to whether a Work's documents and Scratch can be edited, which the sidebar's Scratch pane and the document host read too); an archived or deleted Work's Scratch remains navigable, its rows offer only Copy to…, and its area is not `writable`. A Work this tab hasn't listed is `unknown` and counts as editable, documents and Scratch alike, until the list says otherwise: the server never refuses the write, and the UI holds back only what it knows has ended. Shared rows receive explicit action capabilities from their surface. The synthetic
 "Earlier notes" group is navigation only, not a mutable folder.
 
 ## Selecting and dragging rows

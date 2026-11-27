@@ -1,7 +1,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { type Work, workLifecycleState } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -24,6 +24,7 @@ import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { useWorkReviewCount } from "../../tree-version";
 import { useBringWorkBack } from "../../work/EndedWorkNotice";
+import { workStateIn } from "../../work/work-state";
 import { useChangesScope } from "./ChangesSource";
 
 export function WorkScopePicker({
@@ -45,9 +46,10 @@ export function WorkScopePicker({
   const needsYou = useMemo(() => countNeedsYou(threads), [threads]);
   const active = works?.filter((work) => work.archivedAt === null) ?? [];
   const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
-  const scoped = [...(works ?? []), ...deleted].find((work) => work.id === workId) ?? null;
-  const scopedName = scoped ? nameOf(scoped) : "";
-  const ended = scoped ? workLifecycleState(scoped) : "active";
+  const state = workStateIn({ works, deleted }, workId);
+  const scoped = state.kind === "unknown" ? null : state.work;
+  const ended = state.kind === "ended" ? state : null;
+  const scopedName = ended ? nameOf(ended.work) : "";
   const noWorkScoped = workId !== null && workId === noWork?.id;
   const changes = useChangesScope(projectId, chatThreadId);
   const pending = changes.count;
@@ -72,9 +74,9 @@ export function WorkScopePicker({
                 unavailableLabel={t`None`}
                 className="min-w-0 font-medium"
               />
-              {shown === scoped && ended !== "active" ? (
+              {ended && shown === ended.work ? (
                 <LabelNote className="shrink-0">
-                  {ended === "deleted" ? <Trans>Deleted</Trans> : <Trans>Archived</Trans>}
+                  {ended.deleted ? <Trans>Deleted</Trans> : <Trans>Archived</Trans>}
                 </LabelNote>
               ) : null}
             </span>
@@ -99,10 +101,10 @@ export function WorkScopePicker({
         className="w-[var(--radix-dropdown-menu-trigger-width)]"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        {scoped && ended !== "active" ? (
+        {ended ? (
           <>
-            <DropdownMenuItem onSelect={() => void bringBack(scoped)}>
-              {ended === "deleted" ? (
+            <DropdownMenuItem onSelect={() => void bringBack(ended.work)}>
+              {ended.deleted ? (
                 <Trans>Restore {scopedName}</Trans>
               ) : (
                 <Trans>Unarchive {scopedName}</Trans>
