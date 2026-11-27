@@ -232,11 +232,14 @@ Deleted.
 (`client/account/account-composition.tsx`), around the imports provider and the page:
 Query → connectivity → account lifetime → command driver → settings → failure log →
 thread → transport → copilot → density. The lifetime (`account-lifetime.ts`) builds what one
-account holds, only from `client/` and `core/`. Every context and hook that hands it out (account
+account holds, only from `client/` and `core/`. The contexts and hooks that hand it out (account
 id, `requests`, epoch signal, sign-out, tree lists, standings, removal, the session registry,
-draft commands, presented documents) is in `account-context.tsx`, which imports the lifetime's
+draft commands, presented documents) are in `account-context.tsx`, which imports the lifetime's
 parts only as types: modules under the composition's providers import those hooks, so a hook
-that lives with a provider makes an import loop.
+that lives with a provider makes an import loop. Two sit beside the object they hand out
+instead, in modules that import nothing from the account: the live document opener's context
+next to the opener (`core/editor/project-document-live-opener-context.tsx`), and the link
+settlements' context in `client/link-settlements.ts`.
 Never gate providers by pathname; conditional light and workspace branches once
 dropped `ThreadStoreProvider` during transitions.
 Account replacement synchronously fences the old lifetime before constructing the

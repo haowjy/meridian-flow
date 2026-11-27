@@ -31,14 +31,14 @@ import { ProjectDocumentLiveOpenerContext } from "@/core/editor/project-document
 import { AccountSettingsProvider } from "./AccountSettingsProvider";
 import {
   AccountEpochContext,
-  ContextRemovalAccountContext,
+  ContextRemovalContext,
   DraftCommandsContext,
-  LiveDocumentRegistryAccountContext,
+  LiveDocumentRegistryContext,
   PresentedContext,
-  ProjectStandingsAccountContext,
+  ProjectStandingsContext,
   RequestAccountContext,
   SignOutContext,
-  TreeListsAccountContext,
+  TreeListsContext,
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
 } from "./account-context";
@@ -175,10 +175,10 @@ function LifetimeContexts({
     <AccountEpochContext.Provider value={lifetime.epochSignal}>
       <RequestAccountContext.Provider value={lifetime.requests}>
         <SignOutContext.Provider value={signOut}>
-          <TreeListsAccountContext.Provider value={lifetime.treeLists}>
-            <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-              <ProjectStandingsAccountContext.Provider value={lifetime.standings}>
-                <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
+          <TreeListsContext.Provider value={lifetime.treeLists}>
+            <ContextRemovalContext.Provider value={lifetime.removal}>
+              <ProjectStandingsContext.Provider value={lifetime.standings}>
+                <LiveDocumentRegistryContext.Provider value={lifetime.registry}>
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
@@ -188,10 +188,10 @@ function LifetimeContexts({
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
-                </LiveDocumentRegistryAccountContext.Provider>
-              </ProjectStandingsAccountContext.Provider>
-            </ContextRemovalAccountContext.Provider>
-          </TreeListsAccountContext.Provider>
+                </LiveDocumentRegistryContext.Provider>
+              </ProjectStandingsContext.Provider>
+            </ContextRemovalContext.Provider>
+          </TreeListsContext.Provider>
         </SignOutContext.Provider>
       </RequestAccountContext.Provider>
     </AccountEpochContext.Provider>

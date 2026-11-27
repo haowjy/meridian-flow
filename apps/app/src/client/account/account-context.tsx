@@ -11,12 +11,10 @@ import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 export const RequestAccountContext = createContext<RequestAccount | null>(null);
 export const AccountEpochContext = createContext<AbortSignal | null>(null);
 export const SignOutContext = createContext<(() => Promise<string>) | null>(null);
-export const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
-export const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
-export const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
-export const LiveDocumentRegistryAccountContext = createContext<LiveDocumentSessionRegistry | null>(
-  null,
-);
+export const TreeListsContext = createContext<TreeListRegistry | null>(null);
+export const ContextRemovalContext = createContext<ContextRemovalCoordinator | null>(null);
+export const ProjectStandingsContext = createContext<ProjectStandings | null>(null);
+export const LiveDocumentRegistryContext = createContext<LiveDocumentSessionRegistry | null>(null);
 export const DraftCommandsContext = createContext<DraftCommandOwner | null>(null);
 export const PresentedContext = createContext<PresentedDocuments | null>(null);
 
@@ -45,33 +43,33 @@ export function useOptionalSignOutCleanup(): (() => Promise<string>) | null {
 }
 
 export function useOptionalTreeLists(): TreeListRegistry | null {
-  return useContext(TreeListsAccountContext);
+  return useContext(TreeListsContext);
 }
 
 export function useProjectStandings(): ProjectStandings {
-  const standings = useContext(ProjectStandingsAccountContext);
+  const standings = useContext(ProjectStandingsContext);
   if (!standings) throw new Error("AccountLifetimeProvider is required");
   return standings;
 }
 
 export function useContextRemovalCoordinator(): ContextRemovalCoordinator {
-  const coordinator = useContext(ContextRemovalAccountContext);
+  const coordinator = useContext(ContextRemovalContext);
   if (!coordinator) throw new Error("AccountLifetimeProvider is required");
   return coordinator;
 }
 
 export function useOptionalContextRemovalCoordinator(): ContextRemovalCoordinator | null {
-  return useContext(ContextRemovalAccountContext);
+  return useContext(ContextRemovalContext);
 }
 
 export function useLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry {
-  const registry = useContext(LiveDocumentRegistryAccountContext);
+  const registry = useContext(LiveDocumentRegistryContext);
   if (!registry) throw new Error("AccountLifetimeProvider is required");
   return registry;
 }
 
 export function useOptionalLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry | null {
-  return useContext(LiveDocumentRegistryAccountContext);
+  return useContext(LiveDocumentRegistryContext);
 }
 
 export function useDraftCommandOwner(): DraftCommandOwner {
