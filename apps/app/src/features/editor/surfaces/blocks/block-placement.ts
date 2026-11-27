@@ -2,9 +2,6 @@ import type { Editor } from "@tiptap/core";
 import { useLayoutEffect, useState } from "react";
 
 import { draggedBlockPos } from "@/core/editor/blocks";
-// Straight at the primitive rather than through `chrome/index.ts`: that barrel
-// also carries the surface registry this lane is listed in, so the barrel route
-// is a module cycle.
 import { watchManuscriptLayout } from "@/core/editor/chrome";
 import { manuscriptOverlay } from "@/features/editor/chrome/manuscript-overlay";
 

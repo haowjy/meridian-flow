@@ -3,7 +3,7 @@ import * as threads from "@/client/query/useProjectThreads";
 import * as trees from "@/client/query/useProjectTrees";
 import * as works from "@/client/query/useWorks";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import * as chrome from "@/features/editor/chrome/chrome-surfaces";
+import * as chrome from "@/features/editor/chrome-surfaces";
 import * as references from "@/features/editor/references/useReferenceBrowserCatalog";
 import * as status from "@/features/editor/SyncStatus";
 import * as links from "@/features/links";

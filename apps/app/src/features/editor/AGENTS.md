@@ -5,9 +5,11 @@ composes live or review presentation, and `chrome/` and `surfaces/` hold the
 writer-facing controls. Schemas, Loro sessions and ProseMirror extensions belong to
 `core/editor`; pane composition to `features/project/context`.
 
-- Mount every control surface through `chrome/chrome-surfaces.tsx` and the single
-  `EditorChromeHost` in `SessionEditor`. No ad-hoc portals or surfaces in `EditorView`,
-  no selection bubbles, and contextual surfaces never become a second toolbar.
+- Mount every control surface as one entry in `chrome-surfaces.tsx`, taking the editor and
+  nothing else, through the single `EditorChromeHost` in `SessionEditor`. Pass the host
+  `active`, or hidden editors (the kept document, a closed side) paint chrome over the visible
+  one. No ad-hoc portals or surfaces in `EditorView`, no selection bubbles, and contextual
+  surfaces never become a second toolbar. `chrome/` holds only the primitives surfaces share.
 - Keep prose geometry in `editor-column.ts` and caret placement in
   `core/editor/landing`. Layout components don't answer presses or choose selection
   policy.

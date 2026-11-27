@@ -1,3 +1,4 @@
+import type { Editor } from "@tiptap/core";
 import { useSyncExternalStore } from "react";
 import { role } from "@/components/ui/roles";
 import { closedSuggestionMenu } from "@/core/completion";
@@ -8,13 +9,13 @@ import {
 } from "@/core/editor/extensions/slash";
 import { cn } from "@/lib/utils";
 
-import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
+import { SuggestionMenu } from "../../chrome";
 import { SLASH_MENU_ICONS } from "./slash-menu-icons";
 
 const NO_SUBSCRIPTION = () => () => {};
 const closed = () => closedSuggestionMenu<SlashCommandItem, SlashMenuMeta>();
 
-export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
+export function SlashMenu({ editor }: { editor: Editor }) {
   const menu = getSlashMenu(editor);
   const snapshot = useSyncExternalStore(
     menu?.subscribe ?? NO_SUBSCRIPTION,

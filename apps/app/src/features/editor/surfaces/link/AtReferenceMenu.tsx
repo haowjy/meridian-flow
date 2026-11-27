@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
+import type { Editor } from "@tiptap/core";
 import { ChevronLeft, FilePlus2, FileText, Folder, Image } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -15,11 +16,11 @@ import {
 } from "@/core/completion";
 import { getAtReferenceMenu } from "@/core/editor/extensions/at-reference";
 import { documentLocation, schemeLabel } from "@/features/project/context/context-schemes";
-import { type EditorChromeSurfaceProps, SuggestionMenu } from "../../chrome";
+import { SuggestionMenu } from "../../chrome";
 
 const NO_SUBSCRIPTION = () => () => {};
 const closed = () => closedSuggestionMenu<ReferenceMenuRow, ReferenceBrowserMeta>();
-export function AtReferenceMenu({ editor }: EditorChromeSurfaceProps) {
+export function AtReferenceMenu({ editor }: { editor: Editor }) {
   const menu = getAtReferenceMenu(editor);
   return (
     <ReferenceSuggestionMenu
@@ -37,7 +38,7 @@ export function ReferenceSuggestionMenu({
   ownerId,
   typingElement,
 }: {
-  editor: EditorChromeSurfaceProps["editor"];
+  editor: Editor;
   menu: ReturnType<typeof getAtReferenceMenu>;
   ownerId: string;
   typingElement: HTMLElement;

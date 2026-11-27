@@ -1,22 +1,18 @@
 import type { Editor } from "@tiptap/core";
 import type { ReactNode } from "react";
 
-import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
-import { FormattingMenu } from "../surfaces/formatting";
-import { ImageIngressOverlay } from "../surfaces/images";
-import { AtReferenceMenu, FollowOutcomeDialog, LinkSurfaces } from "../surfaces/link";
-import { ObjectControls } from "../surfaces/objects";
-import { ReviewChangesSurface } from "../surfaces/review/ReviewChangesSurface";
-import { SlashMenu } from "../surfaces/slash";
-import { TableChrome } from "../surfaces/table";
+import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "./surfaces/blocks";
+import { FormattingMenu } from "./surfaces/formatting";
+import { ImageIngressOverlay } from "./surfaces/images";
+import { AtReferenceMenu, FollowOutcomeDialog, LinkSurfaces } from "./surfaces/link";
+import { ObjectControls } from "./surfaces/objects";
+import { ReviewChangesSurface } from "./surfaces/review/ReviewChangesSurface";
+import { SlashMenu } from "./surfaces/slash";
+import { TableChrome } from "./surfaces/table";
 
-export type EditorChromeSurfaceProps = {
-  editor: Editor;
-};
-
-export type EditorChromeSurface = {
+type EditorChromeSurface = {
   id: string;
-  render: (props: EditorChromeSurfaceProps) => ReactNode;
+  render: (props: { editor: Editor }) => ReactNode;
 };
 
 export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
