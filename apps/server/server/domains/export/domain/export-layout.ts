@@ -72,7 +72,7 @@ export function buildExportLayout(
     }
     return parent;
   }
-  for (const folder of folders) folderOf(folder, folder.path.split("/"));
+  const treeFolders = folders.flatMap((folder) => folderOf(folder, folder.path.split("/")) ?? []);
   for (const doc of documents) {
     const parent = folderOf(doc, doc.path.split("/").slice(0, -1));
     if (parent)
@@ -105,8 +105,8 @@ export function buildExportLayout(
     }),
   );
   const roots = new Map([...rootKeys].map(([uri, key]) => [uri, pathOf.get(key) as string]));
-  const emptyFolders = [...entries].flatMap(([key, { kind, children }]) =>
-    key && kind === "folder" && children.length === 0 ? [pathOf.get(key) as string] : [],
+  const emptyFolders = treeFolders.flatMap((key) =>
+    (entries.get(key) as Entry).children.length === 0 ? [pathOf.get(key) as string] : [],
   );
   return { paths, roots, emptyFolders };
 }

@@ -35,11 +35,13 @@ more pool connections per copy; measure under concurrent copies first.
 
 ## A kept file's extension is guessed from its name
 
-A tree node stores no extension. `entryExtension` (contracts) reads a document's from
-its name with `parseDocumentFilename`, which is exact, but a kept file's (kind `file`)
-from the last dot of its name. A kept file named `Ver 1.2` with no real extension
-therefore reads as extension `2`, and renaming it to `Ver 2` stores `Ver 2.2`. Storing
-the extension on the node at upload would remove the guess.
+The tree's records carry a name, not an extension. The app's rows and the
+`tree_nodes.extension` column (written from `packages/project-tree/src/rows.ts` by
+`adapters/tree-list-rows.ts`, with the generated `stem` beside it) derive it with
+`entryExtension` (contracts): exact for a document, through `parseDocumentFilename`, but
+the last dot of the name for a kept file (kind `file`). A kept file named `Ver 1.2` with no
+real extension therefore reads as extension `2`, and renaming it to `Ver 2` stores
+`Ver 2.2`. Carrying the extension on the tree record at upload would remove the guess.
 
 ## Renaming a kept file to another type is skipped silently
 

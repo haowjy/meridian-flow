@@ -18,11 +18,14 @@ files move while it streams. Mechanism, routes and preview:
   and normalisation, as macOS and Windows unpack them.
 - The archive holds every visible folder, empty ones as directory entries: the
   inventory returns folders with their addresses beside documents, so a writer's
-  empty `Arc 2` survives a backup. Folders come before files in naming, so a
-  folder keeps a name it shares with a file.
-- Every ZIP entry is marked as made on Unix with a file mode (`zipEntry` in
-  `domain/project-export.ts`). macOS's `/usr/bin/unzip` reads an MS-DOS entry's
-  name as code page 437 and skips any accented or emoji name, exiting 0.
+  empty `Arc 2` survives a backup. Only folders in the tree ship empty; a Work or
+  chat root that exists only because a link points ahead into it does not.
+  Folders come before files in naming, so a folder keeps a name it shares with a
+  file.
+- Every ZIP entry is marked as made on Unix with a file mode, and a folder also
+  carries the MS-DOS directory bit (`zipEntry` in `domain/project-export.ts`).
+  macOS's `/usr/bin/unzip` reads an MS-DOS entry's name as code page 437, fails
+  on any accented or emoji name, leaves the file out and exits 50.
 - The snapshot adapter takes a short repeatable-read snapshot, never a transaction
   spanning a download. It reads canonical addresses through Context's public
   index (`loadDocumentAddresses`), not its private adapters.
@@ -42,4 +45,4 @@ files move while it streams. Mechanism, routes and preview:
   parser live in `packages/contracts/src/export-marker.ts`; import (server and
   app) reads it through that parser.
 
-Deferred work: [TODO](.context/TODO.md).
+Deferred work: [TODO](.context/TODO.md); later, on a trigger: [FUTURE](.context/FUTURE.md).
