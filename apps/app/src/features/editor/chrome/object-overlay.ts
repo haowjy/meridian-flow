@@ -81,6 +81,8 @@ function useRenderedNodeView(element: HTMLElement | null): HTMLElement | null {
       if (hasWrapper(element)) rerender();
     });
     observer.observe(element, { childList: true });
+    // The wrapper may have arrived in the same commit as this render, before the observer.
+    if (hasWrapper(element)) rerender();
     return () => observer.disconnect();
   }, [element, rendered]);
 
@@ -88,5 +90,11 @@ function useRenderedNodeView(element: HTMLElement | null): HTMLElement | null {
 }
 
 function hasWrapper(element: HTMLElement): boolean {
-  return element.firstElementChild?.hasAttribute("data-node-view-wrapper") === true;
+  const first = element.firstElementChild;
+  // A node view with content first holds TipTap's content element, marked as a wrapper too, until
+  // React renders the real wrapper and TipTap moves the content into it.
+  return (
+    first?.hasAttribute("data-node-view-wrapper") === true &&
+    !first.hasAttribute("data-node-view-content-react")
+  );
 }
