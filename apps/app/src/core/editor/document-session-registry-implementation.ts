@@ -2,7 +2,6 @@ import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { deferred } from "@/core/cross-context-locks";
-import { signedInSince } from "../account-sign-outs";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
   DocumentSession,
@@ -42,7 +41,6 @@ type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
 export class DocumentSessionRegistry {
   private closeAttempt: Promise<void> | null = null;
   private readonly copies: LocalDocumentCopies;
-  private readonly copiesOpen: () => boolean;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     () => new Error("Live session teardown is unfinished"),
   );
@@ -69,9 +67,9 @@ export class DocumentSessionRegistry {
     private readonly accountId: AccountId,
     private readonly accountClosing: AbortSignal,
     private readonly transportFactory: DocumentSessionTransportFactory,
+    private readonly signedIn: () => boolean,
   ) {
     this.copies = new LocalDocumentCopies(accountId);
-    this.copiesOpen = signedInSince(accountId);
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
@@ -413,7 +411,7 @@ export class DocumentSessionRegistry {
     // Named from the incarnation just read: another tab can advance the pointer in between.
     const name = incarnationName(copyKey, incarnation);
     const held = this.copies.hold(name).then(
-      (hold) => ({ hold, granted: this.copiesOpen() }),
+      (hold) => ({ hold, granted: this.signedIn() }),
       (error: unknown) => {
         reportError(error);
         return { hold: { release: () => undefined }, granted: false };

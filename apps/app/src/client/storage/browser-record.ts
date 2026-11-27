@@ -1,7 +1,7 @@
 export type RecordStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type StorageSource = "session" | "local" | (() => RecordStorage | null);
 
-export function browserStorage(tier: "session" | "local"): RecordStorage | null {
+export function browserStorage(tier: "session" | "local"): Storage | null {
   return typeof window === "undefined"
     ? null
     : window[tier === "session" ? "sessionStorage" : "localStorage"];

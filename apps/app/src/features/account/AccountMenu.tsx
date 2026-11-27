@@ -14,8 +14,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
-import { useOptionalSignOutCleanup } from "@/features/project/context/account-feature-context";
 import {
+  useOptionalAccountId,
+  useOptionalSignOutCleanup,
+} from "@/features/project/context/account-feature-context";
+import {
+  logoutHref,
   SIGN_OUT_FAILURE,
   SignOutIncomplete,
 } from "@/features/project/context/account-feature-lifetime";
@@ -25,13 +29,14 @@ export function AccountMenu() {
   const { open } = useSettingsNavigation();
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const clearBeforeSignOut = useOptionalSignOutCleanup();
+  const accountId = useOptionalAccountId();
   const [leaving, setLeaving] = useState(false);
 
   const leave = () => {
-    if (!clearBeforeSignOut) return window.location.assign("/logout");
+    if (!clearBeforeSignOut || !accountId) return window.location.assign("/logout");
     setLeaving(true);
     clearBeforeSignOut().then(
-      () => window.location.assign("/logout"),
+      () => window.location.assign(logoutHref(accountId)),
       (error: unknown) => {
         setLeaving(false);
         if (!(error instanceof SignOutIncomplete)) reportError(error);

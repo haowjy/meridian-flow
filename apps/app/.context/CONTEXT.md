@@ -18,9 +18,12 @@ boot-script preferences are separate from this envelope.
 redirect URI, and `MERIDIAN_WWW_ORIGIN`; isomorphic helpers keep guarded environment reads local instead of
 importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
 sealed `wos-session` cookie and logout clears it. `/logout` runs in the browser: it counts a
-sign-out of every account this browser has signed in, so their tabs end (Account lifetime in
-`features/project/context/.context/state-machines.md`), then loads `/end-session` as a full
-document. `/end-session` ends the session on the server; reach it only as a full document, never
+sign-out of the account its `?account=` names, or of every account this browser has signed in
+when it names none, so their tabs end (Account lifetime in
+`features/project/context/.context/state-machines.md`), then loads `/end-session` with the same
+query as a full document. Without JavaScript `/logout` ends nothing. `/end-session` ends the
+session on the server, unless `?account=` names another account than the session's (one signed
+in since), when it goes to `/`; reach it only as a full document, never
 by a client-side navigation: `signOut()` redirects to api.workos.com, which a `fetch` fails on
 CORS. It passes `returnTo` = `MERIDIAN_WWW_ORIGIN` when set, otherwise `/login` on the request
 origin, and that URL must be registered in WorkOS as a sign-out redirect. With no WorkOS session

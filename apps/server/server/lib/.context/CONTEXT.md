@@ -93,7 +93,11 @@ Journal sequence values become strings at the HTTP/WS boundary.
 The Loro room handler (`loro-ws-handler.ts`) asks file-policy for `edit`, then `read`, at a
 room's Join. A batch takes no grant of its own: it is imported as sent and acked. A refusal is a
 `JoinError` with the contract's app code, and an access change that reaches a key the room is
-registered under ends the room (`RoomError` `access-changed`), so the client joins again. The
+registered under ends the room (`RoomError` `access-changed`), so the client joins again.
+`permission-denied` is final on the client, so it answers only "exists and isn't yours": a
+document or list whose row doesn't exist yet (a create made in the browser that hasn't landed)
+answers `document-unknown`, which the client retries (`admit`, and `TreeListStore.open` for a
+list). The
 Join's `auth` (`encodeLoroJoinAuth`) also names the account the client means; one that isn't the
 socket's session's is refused `account-changed` before any access check, since the cookie is the
 browser's and a tab may hold another account's words. The client's schema version rides in the

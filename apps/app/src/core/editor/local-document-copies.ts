@@ -29,7 +29,7 @@ import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
-import { countSignOut } from "../account-sign-outs";
+import { countSignOut, countSignOutsExcept } from "../account-sign-outs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
 import { type LoadedCopy, openCopyDatabase, readCopy } from "./local-copy-store";
@@ -268,9 +268,6 @@ export class LocalDocumentCopies {
   }
 
   async clearAll(): Promise<boolean> {
-    // Before any deletion: from here an account lifetime that began earlier, in any tab, opens no
-    // copy, so none is re-created behind it.
-    countSignOut(this.accountId);
     const documents = new Set(
       (await this.names()).flatMap((name) => roomOf(name, this.accountId)?.documentId ?? []),
     );
@@ -346,13 +343,17 @@ async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
 }
 
 export function clearAccountCopies(accountId: AccountId): Promise<boolean> {
+  // Before any deletion: from here an account lifetime that began earlier, in any tab, opens no
+  // copy, so none is re-created behind it.
+  countSignOut(accountId);
   return new LocalDocumentCopies(accountId).clearAll();
 }
 
-export async function clearCopiesOfOtherAccounts(current: AccountId): Promise<void> {
+export async function endOtherAccounts(current: AccountId): Promise<void> {
+  countSignOutsExcept(current);
   if (typeof indexedDB === "undefined") return;
   const others = (await accountsWithCopies(indexedDB)).filter((account) => account !== current);
-  await Promise.all(others.map(clearAccountCopies));
+  await Promise.all(others.map((account) => new LocalDocumentCopies(account).clearAll()));
 }
 
 function memoryStorage(): RecordStorage {

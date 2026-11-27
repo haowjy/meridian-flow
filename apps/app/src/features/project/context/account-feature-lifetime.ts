@@ -1,20 +1,11 @@
 import { t } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
-import { getAuthMe } from "@/client/api/auth-api";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
-import {
-  countSignOut,
-  endOtherSignIns,
-  signedInSince,
-  watchSignOuts,
-} from "@/core/account-sign-outs";
+import { countSignOut, signedInSince, watchSignOuts } from "@/core/account-sign-outs";
 import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
-import {
-  clearAccountCopies,
-  clearCopiesOfOtherAccounts,
-} from "@/core/editor/local-document-copies";
+import { clearAccountCopies, endOtherAccounts } from "@/core/editor/local-document-copies";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
@@ -25,6 +16,10 @@ import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
+
+export function logoutHref(accountId: string): string {
+  return `/logout?${new URLSearchParams({ account: accountId })}`;
+}
 
 export class SignOutIncomplete extends Error {
   constructor(readonly left: "unsent" | "copies") {
@@ -71,8 +66,9 @@ export class AccountFeatureLifetime {
           onAccountChanged: accountChanged,
           connectivityHints,
         }),
+      this.signedIn,
     );
-    this.treeLists = new TreeListRegistry(accountId, accountChanged);
+    this.treeLists = new TreeListRegistry(accountId, this.signedIn, accountChanged);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner();
@@ -88,11 +84,8 @@ export class AccountFeatureLifetime {
     );
     dropRetiredTabSession(accountId);
     dismissFailure(SIGN_OUT_FAILURE);
-    endOtherSignIns(accountId);
     if (typeof window !== "undefined")
-      void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
-        reportError(error),
-      );
+      void endOtherAccounts(accountId as AccountId).catch((error: unknown) => reportError(error));
     this.opener = new ProjectDocumentLiveOpener({
       standings: this.standings,
       registry: this.registry,
@@ -109,20 +102,11 @@ export class AccountFeatureLifetime {
   private async signedOutElsewhere(): Promise<void> {
     if (this.endingHere || this.epochSignal.aborted) return;
     this.endingHere = true;
-    // Stored copies wait for the signing-out tab or this account's next sign-in: opening them here
-    // would race a sign-out's deletion.
+    // Stored copies wait for the signing-out tab, or for their document's next open: opening them
+    // here would race a sign-out's deletion.
     await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
     await this.finishClose();
-    window.location.assign((await this.stillSignedInHere()) ? "/logout" : "/");
-  }
-
-  /** `/logout` would end whoever is signed in now, which may be another account. */
-  private async stillSignedInHere(): Promise<boolean> {
-    try {
-      return (await getAuthMe()).user.userId === this.accountId;
-    } catch {
-      return false;
-    }
+    window.location.assign(logoutHref(this.accountId));
   }
 
   resumeFeatureLease(): void {

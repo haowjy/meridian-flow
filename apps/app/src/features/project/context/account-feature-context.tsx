@@ -168,6 +168,10 @@ export function useAccountId(): string {
   return accountId;
 }
 
+export function useOptionalAccountId(): string | null {
+  return useContext(AccountIdContext);
+}
+
 export function useOptionalAccountEpochSignal(): AbortSignal | null {
   return useContext(AccountEpochContext);
 }

@@ -74,7 +74,8 @@ press of a whole draft or Work, the Live room of a document only the draft holds
   account's) ends it `terminal` and calls `onAccountChanged`, which ends the account's lifetime.
   `loro-protocol` carries `appCode` only on an `AppError`, so an `AuthFailed` refusal
   (`permission-denied`, `bad-auth`, `account-changed`) is read from `message`;
-  any other app code (`document-unknown`: the server hasn't seen this browser's `create` yet, or
+  any other app code (`document-unknown`: the server hasn't seen this browser's `create` yet, a
+  document's or a new project's for its list, or
   the draft is gone for good) closes and rejoins with backoff.
 - `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
   change (`access-changed:<why>` names the cause) the room shows read-only at once and the new

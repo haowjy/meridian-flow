@@ -34,4 +34,8 @@ stateDiagram-v2
   reset database, a recreated account list) is replaced by an empty one, which carries nothing:
   its records name nodes that are gone. The old copy's doc is freed when the session closes.
 - `broken` keeps the copy and the writer's records on the device; nothing connects again.
+- `denied` is final, and the project's list observer reads it as every document in the list gone.
+  So the server answers `permission-denied` only for a project or account that exists and isn't
+  this account's (or a project deleted); a project with no row yet (made in this browser, its
+  create not landed) answers `document-unknown`, and the list stays `waiting` and retries.
 
