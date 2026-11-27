@@ -184,11 +184,6 @@ export function createPostgresDocumentRooms(input: {
 
   const lockRoom = (tx: DrizzleDb, room: DocumentRoom) => lockDocumentMutation(tx, room.documentId);
 
-  const inTransaction = <T>(given: DrizzleDb, work: (tx: DrizzleDb) => Promise<T>) =>
-    isInDrizzleTransaction()
-      ? work(currentDrizzleDb(given))
-      : runInDrizzleTransaction(db, () => work(currentDrizzleDb(db)));
-
   async function readRows(tx: DrizzleDb, name: string, keys?: readonly DocKey[]): Promise<Row[]> {
     const where = keys
       ? and(eq(documentSnapshots.roomKey, name), inArray(documentSnapshots.docKey, [...keys]))
@@ -787,8 +782,9 @@ export function createPostgresDocumentRooms(input: {
       return { pending };
     },
 
-    commit: (given, room, batch, origin) =>
-      inTransaction(given, async (tx) => {
+    commit: (_given, room, batch, origin) =>
+      runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
         const entries = decodeEnvelope(batch);
         await lockRoom(tx, room);
         const copy = await copyInTransaction(tx, room, freshServerPeerId());
@@ -811,8 +807,9 @@ export function createPostgresDocumentRooms(input: {
         deferUntilDrizzleCommit(land);
       }),
 
-    seed: (given, room, snapshots) =>
-      inTransaction(given, async (tx) => {
+    seed: (_given, room, snapshots) =>
+      runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
         const entries = decodeEnvelope(snapshots);
         const name = loroRoomName(room);
         await lockRoom(tx, room);

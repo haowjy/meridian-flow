@@ -307,8 +307,8 @@
 
    The class is ours, painted by a decoration object physics derives from the
    selection. ProseMirror's own `ProseMirror-selectednode` is applied once by a
-   node view's lifecycle and does not survive the document rebuild a peer's
-   write causes — see `core/editor/objects`. */
+   node view's lifecycle and does not survive a peer's write replacing the
+   node — see `core/editor/objects`. */
 .meridian-editor .meridian-object-selected {
   outline: none;
   border-radius: var(--radius-md);

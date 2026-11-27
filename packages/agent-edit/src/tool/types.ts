@@ -1,4 +1,5 @@
 import type { LinkView, ResponseAuthorship } from "@meridian/contracts";
+import type { WriteStatus } from "@meridian/contracts/protocol";
 import type { Block } from "../codec-types.js";
 import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
@@ -6,19 +7,19 @@ import type { SpliceFallback } from "../links/find-splice.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
-import type { AgentEditResultCommand, AgentEditResultV1, WriteStatus } from "./model-result.js";
+import type { AgentEditResultCommand, AgentEditResultV1 } from "./model-result.js";
 
+export type {
+  UndoOutcome,
+  WriteErrorStatus,
+  WriteStatus,
+} from "@meridian/contracts/protocol";
 export type {
   DocumentCommandName,
   ReadCommand,
   WriteCommand,
   WriteCommandName,
 } from "./command-schema.js";
-export type {
-  UndoOutcome,
-  WriteErrorStatus,
-  WriteStatus,
-} from "./model-result.js";
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type WriteOutcome = WriteOutcomeBase & { status: WriteStatus };
 

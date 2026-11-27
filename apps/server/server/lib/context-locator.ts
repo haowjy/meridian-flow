@@ -1,12 +1,10 @@
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
 import {
   type ContextError,
-  type HeldContextNodeAddress,
-  type ProjectContextAvailabilityPort,
   type ProjectContextFsScheme,
   parseUnifiedContextUri,
   type UnifiedContextPortFactory,
@@ -189,27 +187,4 @@ export function throwLocatorRefusal(refusal: LocatorRefusal): never {
   if (refusal.reason === "invalid_uri") contextErrorToHttp(refusal.error);
   if (refusal.reason === "work_missing") throwContextWorkUnavailableHttpError("work_missing");
   throw createError({ statusCode: 404, message: "Chat not found" });
-}
-
-// Authorize on the returned `address.id`, never on the id asked for: a join's forward makes the asked id name another row
-export async function locateNode(
-  deps: LocatorDeps & { availability: ProjectContextAvailabilityPort },
-  input: {
-    projectId: string;
-    userId: string;
-    node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
-  },
-): Promise<
-  Result<
-    { address: HeldContextNodeAddress; locator: ResolvedContextLocator | ChatLocator },
-    LocatorRefusal | { reason: "not_found" }
-  >
-> {
-  const held = await deps.availability.held(
-    { projectId: input.projectId as ProjectId, node: input.node },
-    { userId: input.userId },
-  );
-  if (!held || held.kind === "unreachable") return Err({ reason: "not_found" });
-  const locator = await resolveLocatorUri(deps, input.projectId, held.address.uri);
-  return locator.ok ? Ok({ address: held.address, locator: locator.value }) : locator;
 }

@@ -1,9 +1,9 @@
 /**
  * EditorChromeHost — the one place editor chrome mounts.
  *
- * `EditorView` renders this once and never learns about a surface. Surfaces
+ * `SessionEditor` renders this once and never learns about a surface. Surfaces
  * arrive through `EDITOR_CHROME_SURFACES`, which is the seam; the alternative
- * — six lanes each patching `EditorView` — is six lanes editing one file.
+ * — six lanes each patching `SessionEditor` — is six lanes editing one file.
  *
  * The host renders nothing of its own. Every surface here portals or floats,
  * so this element has no size and cannot push the manuscript around.

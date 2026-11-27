@@ -1,5 +1,6 @@
 import { OPT_IN_TOOLS, type ReasoningLevel, TOOL_CATALOG } from "@meridian/contracts/agents";
-import { canonicalizeJsonObject, sha256 } from "./helpers.js";
+import { canonicalizeJsonObject } from "../../../shared/canonical-json.js";
+import { sha256 } from "./helpers.js";
 import {
   type AgentFields,
   agentSlugOf,

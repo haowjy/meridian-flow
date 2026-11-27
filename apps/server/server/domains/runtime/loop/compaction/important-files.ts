@@ -7,6 +7,7 @@ import { documentPathKey, parseContextUri } from "@meridian/contracts";
 import type { DocumentRevisionEvidence, ReferenceOccurrence } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
+import { canonicalizeJsonObject } from "../../../../shared/canonical-json.js";
 import { modelToolSchema } from "../../tools/model-tool-schema.js";
 import type { RecordedDocuments } from "./elide.js";
 import { estimateModelPartTokens } from "./estimate.js";
@@ -61,11 +62,7 @@ interface ImportantFileCandidate {
 
 // Sort object keys before labeling; jsonb can reorder them and change pricing or replay bytes
 export function readInputLabel(input: JsonObject): string {
-  return JSON.stringify(
-    Object.fromEntries(
-      Object.entries(input).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-    ),
-  );
+  return JSON.stringify(canonicalizeJsonObject(input));
 }
 
 export function importantFileText(input: JsonObject, text: string): string {

@@ -14,8 +14,9 @@
  *   land while the pointer is down (law 9 — nothing gates a write), and the
  *   block the writer grabbed has to still be the block that lands. One held
  *   position, here, rather than one per consumer — and an `EditorAnchor`,
- *   because a remote write replaces the whole document and a mapped number
- *   would report the grabbed block deleted every time.
+ *   because a remote write is one replacement over everything that differs
+ *   (the whole document when that fails), and a mapped number inside it would
+ *   report the grabbed block deleted.
  *
  * Nothing here touches the document. The transactions carry meta only, so no
  * step reaches the room and no undo entry appears for picking a paragraph up.

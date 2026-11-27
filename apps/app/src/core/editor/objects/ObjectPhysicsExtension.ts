@@ -7,7 +7,7 @@ import {
   type Transaction,
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { isRemoteDocumentRebuild } from "../anchors";
+import { isBindingReread } from "../anchors";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
@@ -162,7 +162,7 @@ export const ObjectPhysicsExtension = Extension.create({
         key: objectPhysicsPluginKey,
 
         /**
-         * A rebuild restores a node selection by position alone, so when the
+         * A binding re-read restores a node selection by position alone, so when the
          * selected object goes (undo, a peer, an AI write) it lands on whatever
          * followed, and the next keystroke would replace that text.
          */
@@ -171,7 +171,7 @@ export const ObjectPhysicsExtension = Extension.create({
           const after = newState.selection;
           if (!(before instanceof NodeSelection) || !(after instanceof NodeSelection)) return null;
           if (after.node.type === before.node.type) return null;
-          if (!transactions.some(isRemoteDocumentRebuild)) return null;
+          if (!transactions.some(isBindingReread)) return null;
           return newState.tr.setSelection(TextSelection.near(after.$from));
         },
 

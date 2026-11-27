@@ -3,9 +3,6 @@ import { ArrowDown, ArrowUp, CopyPlus, Trash2, Type } from "lucide-react";
 
 import { isEditorObject } from "@/core/editor/objects";
 
-// Straight at the primitive, not through `chrome/index.ts`: that barrel also
-// carries the surface registry this lane is listed in, and the round trip is a
-// module cycle.
 import {
   EditorMenu,
   EditorMenuItem,

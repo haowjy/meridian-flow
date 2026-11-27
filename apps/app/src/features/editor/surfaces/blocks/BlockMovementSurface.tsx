@@ -4,10 +4,6 @@ import { GripVertical } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { followBlock, holdBlock, type NodeHold } from "@/core/editor/anchors";
-// Straight at the primitives rather than through `chrome/index.ts`: that
-// barrel also carries the surface registry this file is listed in, so the
-// barrel route is a module cycle (and a real one — Vite reported the
-// registry's own export read before initialization).
 import { CHROME_TIMING, editorChromeAttributes, hoverOwner } from "@/core/editor/chrome";
 import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 

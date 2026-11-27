@@ -213,7 +213,7 @@ describe("a picture in flight occupies its final slot", () => {
     expect(pendingUploads(editor)).toMatchObject([{ status: { kind: "uploading" } }]);
   });
 
-  it("survives a peer's write, which replaces the whole document", async () => {
+  it("survives a peer's write before it", async () => {
     const { editor, peer, sync, held } = mountPair();
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();

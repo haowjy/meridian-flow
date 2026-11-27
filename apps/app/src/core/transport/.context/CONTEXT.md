@@ -36,14 +36,10 @@ batch ends at (read from the update metadata), and merges it into the server ver
 server answers with lacks, so a batch the server imported before its `Ack` was lost is not sent
 again.
 
-## Acknowledgement and barriers
+## Acknowledgement
 
 `subscribeServerAcknowledgement` is true while the room is connected, joined, and every batch
-sent on this connection is acknowledged. `whenCurrentChangesAcknowledged()` captures the
-copy's version at the call and resolves once the server version covers it, whether through
-acks or through batches the server sent. A room's end rejects current and future barriers. A sign-in
-lapse (close 4401) is not an end: the room is `signed-out` and leaves them pending like an
-ordinary disconnect ([state machine](state-machines.md#room-connection)).
+sent on this connection is acknowledged.
 
 `whenSentAcknowledged()` is what a press waits on before it leaves (design §4): it resolves once
 every batch sent so far is acknowledged. A room that is not connected (offline, reconnecting, signed

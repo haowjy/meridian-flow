@@ -37,12 +37,12 @@ import { referenceDropOptions } from "@/features/project/context/entry-drag/refe
 import { useRemovalAnswer } from "@/features/project/context/use-removal-answer";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree } from "@/lib/focus-follow";
-import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import {
   DocumentStateSlotHost,
   DocumentToolbarSlotHost,
   useToolbarTaken,
 } from "./document-state-slot";
+import { EditorChromeHost } from "./EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";

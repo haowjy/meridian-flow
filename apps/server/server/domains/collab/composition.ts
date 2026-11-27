@@ -14,7 +14,6 @@ import { and, eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
-  type DrizzleDb,
   isInDrizzleTransaction,
   runInDrizzleTransaction,
   runOutsideDrizzleTransaction,
@@ -152,10 +151,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onForkDeleted: (room) => modelEvidence.forgetFrontiers({ room: loroRoomName(room) }),
     bounds: deps.roomBounds,
   });
-  const roomTransaction = <T>(work: (tx: DrizzleDb) => Promise<T>) =>
-    isInDrizzleTransaction()
-      ? work(currentDrizzleDb(deps.db))
-      : runInDrizzleTransaction(deps.db, () => work(currentDrizzleDb(deps.db)));
   const readLive = async (documentId: DocumentId) =>
     new LoroDocument(await rooms.read({ kind: "live", documentId }), schema);
   const roomsEnded = new Set<(documentIds: readonly DocumentId[]) => void>();
@@ -238,7 +233,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(deps.db), documentId),
     rooms,
-    transaction: roomTransaction,
+    transaction: (work) => runInDrizzleTransaction(deps.db, () => work(currentDrizzleDb(deps.db))),
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,

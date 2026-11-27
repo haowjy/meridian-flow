@@ -72,12 +72,10 @@ export type LoroRoomTransportOptions = {
 
 export type LoroRoomTransport = {
   send(batch: Uint8Array): void;
-  whenCurrentChangesAcknowledged(): Promise<void>;
   /**
    * Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or
    * signed out) is waited for until it joins and its Join's batch (what the server lacks, the
-   * typing done while away included) is acknowledged; it resolves when the room ends. A fork room never covers the Live ops its copy
-   * forwards, so a press waits on this, not on `whenCurrentChangesAcknowledged`.
+   * typing done while away included) is acknowledged; it resolves when the room ends.
    */
   whenSentAcknowledged(): Promise<void>;
   serverVersion(): RoomVersion;
@@ -135,11 +133,6 @@ export function createLoroRoomTransport({
     (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void
   >();
   const ackListeners = new Set<(acknowledged: boolean) => void>();
-  const barriers = new Set<{
-    want: RoomVersion;
-    resolve: () => void;
-    reject: (error: Error) => void;
-  }>();
   let state: RoomConnectionState = { kind: "connecting", attempt: 1 };
   let access: { access: DocumentSessionAccess; why: ClosedOwnerWhy | null } | null = null;
   let socket: WebSocket | null = null;
@@ -202,19 +195,8 @@ export function createLoroRoomTransport({
     access = { access: next, why };
     for (const listener of accessListeners) listener(next, why);
   };
-  const settleBarriers = () => {
-    for (const barrier of [...barriers])
-      if (versionCovers(server, barrier.want)) {
-        barriers.delete(barrier);
-        barrier.resolve();
-      }
-  };
   const ended = () =>
     state.kind === "reset" || state.kind === "terminal" || state.kind === "unauthorized";
-  const failBarriers = () => {
-    for (const barrier of barriers) barrier.reject(new Error(`room ${roomId} ended`));
-    barriers.clear();
-  };
 
   const transmit = (ws: WebSocket, message: ProtocolMessage) => {
     const bytes = frame(message);
@@ -265,7 +247,6 @@ export function createLoroRoomTransport({
     mergeVersion(server, received);
     if (catchUp) mergeVersion(catchUp.handed, received);
     settleSynced();
-    settleBarriers();
   };
 
   const onMessage = (message: ProtocolMessage) => {
@@ -304,7 +285,6 @@ export function createLoroRoomTransport({
         if (lacking) sendDoc(lacking);
         if (!synced) catchUp = { want: joinVersion, handed: new Map(copy.version()) };
         settleSynced();
-        settleBarriers();
         emitStatus({ kind: "connected" });
         return;
       }
@@ -346,7 +326,6 @@ export function createLoroRoomTransport({
         if (!version) return;
         unacked.delete(message.refId);
         mergeVersion(server, version);
-        settleBarriers();
         emitAck();
         return;
       }
@@ -406,7 +385,6 @@ export function createLoroRoomTransport({
       if (destroyed || ended()) return;
       if (event.code === WS_CLOSE.PERMISSION_DENIED.code) {
         emitStatus({ kind: "unauthorized", reason: event.reason, code: event.code });
-        failBarriers();
         connectivityHints?.reportDisconnected(source);
         return;
       }
@@ -424,7 +402,6 @@ export function createLoroRoomTransport({
 
   const end = (next: RoomConnectionState) => {
     emitStatus(next);
-    failBarriers();
     const ws = socket;
     socket = null;
     joined = false;
@@ -444,12 +421,6 @@ export function createLoroRoomTransport({
 
   return {
     send: sendDoc,
-    whenCurrentChangesAcknowledged() {
-      const want = copy.version();
-      if (versionCovers(server, want)) return Promise.resolve();
-      if (ended()) return Promise.reject(new Error(`room ${roomId} ended`));
-      return new Promise((resolve, reject) => barriers.add({ want, resolve, reject }));
-    },
     whenSentAcknowledged() {
       if (destroyed || ended() || acknowledged()) return Promise.resolve();
       return new Promise<void>((resolve) => {
@@ -488,7 +459,6 @@ export function createLoroRoomTransport({
       if (ws?.readyState === WebSocket.OPEN)
         transmit(ws, { type: MessageType.Leave, crdt: CrdtType.Loro, roomId });
       ws?.close(1000, "destroyed");
-      failBarriers();
     },
   };
 }

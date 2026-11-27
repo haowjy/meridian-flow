@@ -219,7 +219,7 @@ export class DocumentSessionRegistry {
     const key = sessionRoomKey(lease.room);
     this.cancelPendingTeardown(key);
     try {
-      await session.restartTransport(this.transportFactory);
+      session.restartTransport(this.transportFactory);
     } finally {
       this.scheduleTeardownIfUnretained(key);
     }
@@ -460,7 +460,7 @@ export class DocumentSessionRegistry {
     this.replacing.add(old);
     const copy = this.copyOfSession(old);
     const words = old.undeliverableWords();
-    void old.makeInert().catch(reportError);
+    old.makeInert();
     if (words) this.dropWords();
     if (refused) await this.dropCopy(incarnationName(copy.key, copy.incarnation));
     await this.copies.advance(copy.key, copy.incarnation);
@@ -492,7 +492,7 @@ export class DocumentSessionRegistry {
     const old = state.session;
     if (!old) return Promise.resolve();
     this.replacing.add(old);
-    void old.makeInert().catch(reportError);
+    old.makeInert();
     const opened = this.openCopy(old.room, this.copyOfSession(old).key, {
       session: old,
       hold: state.hold,
@@ -628,7 +628,7 @@ export class DocumentSessionRegistry {
 
   private detachUnwantedTransport(session: DocumentSession): void {
     if (session.getSnapshot().status === "detached" || this.mustKeepForUnsentEdits(session)) return;
-    void session.detachTransport().catch(reportError);
+    session.detachTransport();
   }
 
   private settleRetainedTransport(session: DocumentSession): void {

@@ -1,8 +1,5 @@
 import { t } from "@lingui/core/macro";
 
-// Straight at the primitive, not through `chrome/index.ts`: that barrel also
-// carries the surface registry this lane is listed in, and the round trip is a
-// module cycle.
 import { shortcutLabel } from "../../chrome/shortcut-label";
 
 export function blockHandleLabel(): string {

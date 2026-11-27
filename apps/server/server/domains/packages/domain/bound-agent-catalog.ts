@@ -9,6 +9,7 @@ import type {
   RetainedSkillReference,
   ThreadAgent,
 } from "@meridian/contracts/agents";
+import { canonicalizeJsonObject } from "../../../shared/canonical-json.js";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type {
   AgentRevision,
@@ -29,7 +30,7 @@ import {
   type CompiledPackage,
   isError,
 } from "./compile-package.js";
-import { agentRevisionId, canonicalizeJsonObject } from "./helpers.js";
+import { agentRevisionId } from "./helpers.js";
 import { agentPath, GRAMMAR_VERSION, skillPath } from "./mars.js";
 import {
   type AgentEntry,

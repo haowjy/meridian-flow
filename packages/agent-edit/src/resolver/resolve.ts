@@ -90,9 +90,6 @@ export function planWrite(
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
   const doc = ctx.doc;
-  // Projecting repairs the document (an element the schema can't build is deleted), so it
-  // runs before anything takes an index; every scope, hash lookup and anchor below reads
-  // this one list. The resolver does not change the document, so it stays current.
   const projected = ctx.model.projectBlocks(doc);
   const concreteCtx: ConcreteResolveContext = {
     ...hashLocateContext(ctx.model, projected),

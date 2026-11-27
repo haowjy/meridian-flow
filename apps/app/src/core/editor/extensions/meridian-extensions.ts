@@ -797,9 +797,6 @@ export const MeridianFigure = Node.create<{ projectId?: string; owner?: string }
   group: "block",
   atom: true,
   defining: true,
-  // Not draggable: PM default DnD reorders in place, which re-binds block hashes
-  // (the binding replaces the whole document). Figure drag-to-place must be reimplemented
-  // as delete+insert — see .context/TODO.md.
 
   addOptions() {
     return {
