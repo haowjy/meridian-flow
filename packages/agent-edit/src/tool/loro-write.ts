@@ -22,6 +22,7 @@ import { captureDelta } from "../content-merge/delta.js";
 import { contentMerge } from "../content-merge/merge.js";
 import type { ShownBlock } from "../frontier.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
+import { cutRevision } from "../links/cut-revision.js";
 import type { SpliceFallback } from "../links/find-splice.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import { latestRead, planningFrontiers } from "../loro-frontier.js";
@@ -224,7 +225,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   }
 
   function revision(copy: LoroDocument, scope: CommandLinks["scope"]): string {
-    return options.links.revision(
+    return cutRevision(
       { version: encodeRoomVersion(copy.docs.version()), blocks: blocksOf(copy) },
       scope,
     );

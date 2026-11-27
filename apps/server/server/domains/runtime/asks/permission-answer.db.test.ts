@@ -14,7 +14,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { projects, users, works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { WorkLockedError } from "../../projects/index.js";
@@ -81,7 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .update(works)
           .set({ goal: "partial write" })
           .where(eq(works.id, target.id));
-        deferUntilDrizzleCommit(() => {
+        runAfterDrizzleCommit(() => {
           effects.push("partial effect");
         });
         if (failure === "infrastructure") throw new Error("database disconnected");

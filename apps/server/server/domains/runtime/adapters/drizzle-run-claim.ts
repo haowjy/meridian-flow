@@ -5,7 +5,7 @@ import * as schema from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
-  deferUntilDrizzleCommit,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import {
@@ -337,7 +337,7 @@ export function createDrizzleRunClaim(
         await entry.claim.release();
         if (held.get(lease.threadId) === entry) held.delete(lease.threadId);
       };
-      if (!deferUntilDrizzleCommit(unlock)) await unlock();
+      await runAfterDrizzleCommit(unlock);
       return deleted.length > 0;
     },
   };

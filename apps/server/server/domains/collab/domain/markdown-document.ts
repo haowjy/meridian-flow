@@ -1,5 +1,6 @@
 import {
   createAgentEditCodecFactory,
+  cutRevision,
   LoroDocument,
   loroModel,
   overwriteWithAssigned,
@@ -33,7 +34,6 @@ import type {
   UpdateOrigin,
 } from "../contracts.js";
 import { mergeCodeText } from "./code-merge.js";
-import { cutRevision } from "./document-revision.js";
 import type { BoundWrite } from "./link-binding.js";
 import {
   type DocumentLinkScopes,

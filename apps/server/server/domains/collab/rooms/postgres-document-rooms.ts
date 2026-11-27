@@ -43,8 +43,8 @@ import {
 import {
   currentDrizzleDb,
   type DrizzleDb,
-  deferUntilDrizzleCommit,
   isInDrizzleTransaction,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
@@ -461,7 +461,7 @@ export function createPostgresDocumentRooms(input: {
         ...(room.kind === "live" ? { contentSeq: sql`${documents.contentSeq} + 1` } : {}),
       })
       .where(eq(documents.id, room.documentId));
-    if (room.kind === "live") deferUntilDrizzleCommit(() => input.onLiveSaved?.(room.documentId));
+    if (room.kind === "live") runAfterDrizzleCommit(() => input.onLiveSaved?.(room.documentId));
     const stored: RoomVersion = new Map(rows.map((row) => [row.docKey, docVersion(row.doc)]));
     return { bytes, docs: rows.length, stored };
   }
@@ -804,7 +804,7 @@ export function createPostgresDocumentRooms(input: {
           emitTo(room, batch, origin);
           if (restore) emitTo(room, restore, "server:restore");
         };
-        deferUntilDrizzleCommit(land);
+        runAfterDrizzleCommit(land);
       }),
 
     seed: (_given, room, snapshots) =>
@@ -825,7 +825,7 @@ export function createPostgresDocumentRooms(input: {
           if (!loaded || loaded.unloading) return emitTo(room, snapshots, "server:seed");
           importInto(loaded, snapshots, "server:seed", written.stored);
         };
-        deferUntilDrizzleCommit(land);
+        runAfterDrizzleCommit(land);
       }),
 
     subscribe(room, listener) {
