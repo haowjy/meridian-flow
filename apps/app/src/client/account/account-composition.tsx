@@ -22,6 +22,7 @@ import { LinkSettlementsProvider } from "@/client/link-settlements";
 import type { ContextRemovalCoordinator } from "@/client/project-shell/context-removal-coordinator";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
+import { chatRenameDomain } from "@/client/query/chat-rename-command";
 import { draftCommandsDomain } from "@/client/query/draft-commands";
 import { PRESS_KIND, pressDomain } from "@/client/query/press-commands";
 import { projectDomain } from "@/client/query/project-commands";
@@ -90,6 +91,7 @@ function AccountCommandDriver({ children }: { children: ReactNode }) {
           workDomain(client),
           projectDomain(client),
           threadOverridesDomain(client),
+          chatRenameDomain(client),
           draftCommandsDomain(client),
           pressDomain(client, (projectId, rooms) =>
             registry.whenSentAcknowledged(projectId as ProjectId, rooms),

@@ -5,7 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { threadQueryKeys } from "./thread-query-keys";
-import { whenRead } from "./when-read";
+import { rereadThenObserve } from "./when-read";
 
 export const THREAD_SET_OVERRIDES_KIND = "thread_set_overrides";
 
@@ -34,14 +34,6 @@ export function projectThreadOverrides(
 
 export function threadOverridesDomain(client: QueryClient): CommandDomain {
   let bound: CommandDriver | null = null;
-  const observeSettled = (threadId: string, before: number) =>
-    void bound?.observe(
-      (record) =>
-        record.kind === THREAD_SET_OVERRIDES_KIND &&
-        (record.body as ThreadSetOverridesBody).threadId === threadId &&
-        record.settledAt !== undefined &&
-        record.settledAt <= before,
-    );
   const kinds: Record<string, CommandKind> = {
     [THREAD_SET_OVERRIDES_KIND]: {
       version: 1,
@@ -52,10 +44,17 @@ export function threadOverridesDomain(client: QueryClient): CommandDomain {
       },
       onSettled: (record) => {
         const { threadId } = record.body as ThreadSetOverridesBody;
-        const queryKey = threadQueryKeys.snapshot(threadId);
         const startedAt = Date.now();
-        void whenRead(client, { queryKey }).then(() => observeSettled(threadId, startedAt));
-        void client.refetchQueries({ queryKey });
+        rereadThenObserve(
+          client,
+          bound,
+          (each) =>
+            each.kind === THREAD_SET_OVERRIDES_KIND &&
+            (each.body as ThreadSetOverridesBody).threadId === threadId &&
+            each.settledAt !== undefined &&
+            each.settledAt <= startedAt,
+          [{ queryKey: threadQueryKeys.snapshot(threadId) }],
+        );
       },
     },
   };

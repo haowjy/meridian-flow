@@ -17,7 +17,7 @@ import { submitCommand } from "@/client/commands/submit";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { refreshDraftReads } from "./useOwnerDrafts";
-import { whenRead } from "./when-read";
+import { rereadThenObserve } from "./when-read";
 
 const KINDS = {
   create: "draft_create",
@@ -111,9 +111,9 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
   const settled = (record: CommandRecord) => {
     const { projectId, workId } = record.body as DraftCommandBody;
     const since = record.settledAt ?? Date.now();
-    const queryKey = projectQueryKeys.workDrafts(projectId, workId);
-    void whenRead(client, { queryKey }).then(() => bound?.observe((each) => each.id === record.id));
-    void client.refetchQueries({ queryKey });
+    rereadThenObserve(client, bound, (each) => each.id === record.id, [
+      { queryKey: projectQueryKeys.workDrafts(projectId, workId) },
+    ]);
     void refreshDraftReads(client, projectId, new Set([undefined]), since);
   };
   const kind = (request: (body: DraftCommandBody) => HttpRequest): CommandKind => ({
@@ -136,9 +136,9 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
     },
     onSettled: (record) => {
       const { projectId } = record.body as ChatDraftBody;
-      const threads = { queryKey: projectQueryKeys.threads(projectId), exact: true };
-      void whenRead(client, threads).then(() => bound?.observe((each) => each.id === record.id));
-      void client.refetchQueries(threads);
+      rereadThenObserve(client, bound, (each) => each.id === record.id, [
+        { queryKey: projectQueryKeys.threads(projectId), exact: true },
+      ]);
       void refreshDraftReads(
         client,
         projectId,

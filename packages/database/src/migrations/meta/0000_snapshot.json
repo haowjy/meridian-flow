@@ -3933,12 +3933,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "commands_kind_valid": {
-          "name": "commands_kind_valid",
-          "value": "\"commands\".\"kind\" IN ('model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress', 'draft_create', 'draft_rename', 'draft_delete', 'draft_restore', 'chat_draft')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.document_block_rooms": {

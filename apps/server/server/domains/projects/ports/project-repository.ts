@@ -8,11 +8,6 @@ export interface CreateProjectInput {
   description?: string | null;
 }
 
-export interface UpdateProjectInput {
-  title?: string;
-  description?: string | null;
-}
-
 export interface ListProjectsOptions {
   includeDeleted?: boolean;
 }
@@ -23,8 +18,7 @@ export interface ProjectRepository {
   findLiveByOwnerSlug(userId: UserId, slug: string): Promise<Project | null>;
   listByUser(userId: UserId, opts?: ListProjectsOptions): Promise<Project[]>;
   search(userId: UserId, query: string): Promise<Project[]>;
-  update(id: ProjectId, input: UpdateProjectInput): Promise<Project>;
+  rename(id: ProjectId, title: string): Promise<Project>;
   softDelete(id: ProjectId): Promise<Project>;
   restore(id: ProjectId): Promise<Project>;
-  touch(id: ProjectId): Promise<void>;
 }

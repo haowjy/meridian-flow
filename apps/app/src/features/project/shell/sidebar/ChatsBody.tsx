@@ -5,9 +5,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Pin } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { announce, announceError } from "@/client/announcements";
+import { useRenameChat } from "@/client/query/chat-rename-command";
 import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
-import { useRenameThread } from "@/client/query/useRenameThread";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord, withGone } from "@/components/app/RowWord";
@@ -461,7 +461,7 @@ const ChatRow = memo(function ChatRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
-  const rename = useRenameThread(projectId, chat.id, (confirmed) => {
+  const rename = useRenameChat(projectId, chat.id, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
   const onPin = (value: boolean) =>

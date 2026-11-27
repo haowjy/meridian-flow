@@ -1,7 +1,7 @@
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { threads, turns } from "@meridian/database/schema";
-import { eq, inArray } from "drizzle-orm";
+import { threads } from "@meridian/database/schema";
+import { inArray } from "drizzle-orm";
 
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { loadDocumentPlacement } from "../../context/tree/tree-addresses.js";
@@ -21,14 +21,6 @@ export function createDrizzleCollabLookups(db: Database) {
         (await loadDocumentPlacement(currentDrizzleDb(db), documentId as DocumentId))?.fileType ??
         null
       );
-    },
-    async resolveTurnThreadId(turnId: TurnId): Promise<ThreadId | null> {
-      const [row] = await db
-        .select({ threadId: turns.threadId })
-        .from(turns)
-        .where(eq(turns.id, turnId))
-        .limit(1);
-      return row?.threadId ?? null;
     },
   };
 }
