@@ -8,6 +8,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as EndSessionRouteImport } from './routes/end-session'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogoutRouteImport } from './routes/logout'
@@ -22,6 +23,11 @@ import { Route as AuthenticatedPProjectIdSplatRouteImport } from './routes/_auth
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EndSessionRoute = EndSessionRouteImport.update({
+  id: '/end-session',
+  path: '/end-session',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HealthzRoute = HealthzRouteImport.update({
@@ -84,6 +90,7 @@ const AuthenticatedPProjectIdSplatRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/end-session': typeof EndSessionRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/$': typeof AuthenticatedPProjectIdSplatRoute
 }
 export interface FileRoutesByTo {
+  '/end-session': typeof EndSessionRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
@@ -111,6 +119,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/end-session': typeof EndSessionRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/end-session'
     | '/healthz'
     | '/login'
     | '/logout'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/$'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/end-session'
     | '/healthz'
     | '/login'
     | '/logout'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
+    | '/end-session'
     | '/healthz'
     | '/login'
     | '/logout'
@@ -168,6 +180,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  EndSessionRoute: typeof EndSessionRoute
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/end-session': {
+      id: '/end-session'
+      path: '/end-session'
+      fullPath: '/end-session'
+      preLoaderRoute: typeof EndSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/healthz': {
@@ -300,6 +320,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  EndSessionRoute: EndSessionRoute,
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,

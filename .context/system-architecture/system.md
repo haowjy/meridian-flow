@@ -56,7 +56,7 @@ IndexedDB holds local copies of documents and folders, and localStorage holds ea
 
 `@meridian/app`: TanStack Start on Nitro. Serves pages and owns the sign-in callback.
 
-Renders pages on the server and owns sign-in (`/login`, `/logout`, `/signup`, `/api/auth/callback`). Every other `/api/*` request and both sockets go to the server; under `pnpm dev` the Vite proxy forwards them.
+Renders pages on the server and owns sign-in (`/login`, `/logout`, `/end-session`, `/signup`, `/api/auth/callback`). Every other `/api/*` request and both sockets go to the server; under `pnpm dev` the Vite proxy forwards them.
 
 - Kind: service
 - Paths: `apps/app/src/start.ts`, `apps/app/src/server/meridian-authkit-middleware.ts`, `apps/app/vite.config.ts`

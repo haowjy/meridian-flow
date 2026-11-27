@@ -45,7 +45,7 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    that are no Loro update throw, and nothing is stored), then each record that changes a closed Work (a create, rename, move, delete or restore in its draft
    or its Scratch) is stamped `dropped` ("Work was closed"). Nothing else is judged: a name, a
    type, a place or an actor is never refused;
-3. claim the node ids the admitted creates name, each on its own (`claimNodeIdsEach`): one insert
+3. claim the node ids the admitted creates name, each on its own (`claimNodeIds` returns the refused ones): one insert
    into `tree_node_ids`, whose key is the claim. An id that is not a uuid, or that a document,
    a list or another list's node has, is a failed claim: no row, no claim, and the rest of
    the update commits. A `dropped` record makes no claim or row change either. `syncRows` also drops
@@ -93,8 +93,8 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
   has one and no default is filled in here.
 - **A client create's node id is claimed per create, and a failed claim is no refusal.** The node
   stays in the list (its writer sees it, a ghost that opens nothing) and has no row; the server's
-  own creates (`submit`) still claim all-or-nothing (`claimNodeIds`) and a taken id rolls them
-  back.
+  own creates (`submit`) use the same claim but refuse all-or-nothing: any refused id throws
+  `NodeIdRefusedError` and rolls them back.
 - **A trashed row's `trash_record` is the first delete in force that took it; `trashed_at` is
   when the server admitted it,** not when the record's author made it.
 - **The `documents` row of a created document is inserted by the admission** from the

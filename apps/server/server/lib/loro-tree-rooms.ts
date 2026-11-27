@@ -66,9 +66,7 @@ export function createTreeRooms(services: TreeRoomServices) {
   });
 
   return {
-    async open(list: TreeList, accountId: string): Promise<string | null> {
-      return (await store.open({ list, accountId }))?.listId ?? null;
-    },
+    open: (list: TreeList, accountId: string) => store.open({ list, accountId }),
 
     async sync(
       listId: string,

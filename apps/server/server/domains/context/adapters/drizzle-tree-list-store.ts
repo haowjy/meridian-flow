@@ -35,7 +35,7 @@ import type {
   TreeListStore,
 } from "../ports/tree-list-store.js";
 import { listIdOf, readConnection } from "./tree-list-facts.js";
-import { claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
+import { claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-list-rows.js";
 
 type Copy = { doc: LoroDoc; writer: TreeWriter; pending: object | null; retired: boolean };
 
@@ -244,7 +244,8 @@ export function createDrizzleTreeListStore(deps: {
     created: readonly TreeRecord[],
     claimed: readonly TreeRecord[],
   ): Promise<CommittedTreeUpdate> {
-    await claimNodeIds(tx, listId, claimed);
+    const [refused] = await claimNodeIds(tx, listId, claimed);
+    if (refused !== undefined) throw new NodeIdRefusedError(refused);
     const update = withVector(before, (from) => copy.doc.export({ mode: "update", from }));
     await writeSnapshots(tx, [{ roomKey: roomKeyOf(listId), docKey: LIST_DOC, doc: copy.doc }]);
     // Delivered at the commit, to every instance: a room on another process catches up from it.
@@ -283,16 +284,19 @@ export function createDrizzleTreeListStore(deps: {
 
   return {
     open: async ({ list, accountId }) => {
-      const listId = await listIdOf(db as DrizzleDb, list);
-      if (listId === null) return null;
-      const [owner] = await (db as DrizzleDb).execute<{ id: string }>(
+      const [row] = await (db as DrizzleDb).execute<{
+        listId: string;
+        owner: string;
+        live: boolean;
+      }>(
         list.kind === "project"
-          ? sql`SELECT id::text FROM projects
-              WHERE id = ${list.projectId}::uuid AND user_id = ${accountId}::uuid AND deleted_at IS NULL`
-          : sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid AND id = ${accountId}::uuid`,
+          ? sql`SELECT tree_list_id::text AS "listId", user_id::text AS owner,
+              deleted_at IS NULL AS live FROM projects WHERE id = ${list.projectId}::uuid`
+          : sql`SELECT tree_list_id::text AS "listId", id::text AS owner, true AS live
+              FROM users WHERE id = ${list.userId}::uuid`,
       );
-      if (!owner) return null;
-      return { listId };
+      if (!row) return "unknown";
+      return row.owner === accountId && row.live ? { listId: row.listId } : "denied";
     },
 
     readSince: async ({ listId, version }) => {
@@ -323,7 +327,7 @@ export function createDrizzleTreeListStore(deps: {
         copy.pending = owner;
         const dropped = new Set(admitted.dropped);
         const live = admitted.records.filter((record) => !dropped.has(record.id));
-        const failed = await claimNodeIdsEach(tx, listId, live);
+        const failed = await claimNodeIds(tx, listId, live);
         const made = live.filter((record) => record.type !== "create" || !failed.has(record.node));
         return { committed: await commitChange(tx, list, copy, listId, before, made, []) };
       }),

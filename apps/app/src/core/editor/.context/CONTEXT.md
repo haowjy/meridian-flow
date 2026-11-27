@@ -47,8 +47,8 @@ writing tab normally delivers first and the server's relay covers `pending` here
 sent; with a third tab, or a relay slower than 2 s, each extra tab may resend the undelivered part
 once per quiet period, which the server takes as a no-op. A session off its socket (kept for Undo,
 or detached) never sees the relay: at quiet it reads the server mark the writing tab keeps in the
-copy, and only what that leaves sets `undeliveredTabWrites`, on which the registry gives it its
-socket back and holds it until acknowledged (`deliverTabWrites`). Reconnecting on `pending` alone
+copy, and only what that leaves calls the session's `onUndeliveredTabWrites`, on which the
+registry gives it its socket back and holds it until acknowledged (`deliverTabWrites`). Reconnecting on `pending` alone
 would rejoin on every keystroke typed in another tab.
 
 The browser's local copy of a room is the IndexedDB database

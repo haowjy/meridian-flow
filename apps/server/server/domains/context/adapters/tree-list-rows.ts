@@ -156,11 +156,8 @@ async function loadDrafts(
 }
 
 export class NodeIdRefusedError extends Error {
-  constructor(
-    message: string,
-    readonly nodeId?: string,
-  ) {
-    super(message);
+  constructor(readonly nodeId: string) {
+    super("a node id that is taken or not a uuid");
   }
 }
 
@@ -174,49 +171,11 @@ export async function claimNodeIds(
   tx: DrizzleDb,
   listId: string,
   records: readonly TreeRecord[],
-): Promise<void> {
-  const ids = records.flatMap((record) => (record.type === "create" ? [record.node] : []));
-  if (ids.length === 0) return;
-  if (!ids.every(isUuid)) throw new NodeIdRefusedError("a node id that is not a uuid");
-  const claimed = [];
-  for (const batch of chunks(ids))
-    claimed.push(
-      ...(await tx
-        .insert(treeNodeIds)
-        .values(batch.map((id) => ({ id: id as DocumentId, listId: listId as DocumentId })))
-        .onConflictDoNothing({ target: treeNodeIds.id })
-        .returning({ id: treeNodeIds.id })),
-    );
-  if (claimed.length !== ids.length) {
-    const won = new Set(claimed.map((row) => row.id as string));
-    throw new NodeIdRefusedError(
-      "a node id already in use",
-      ids.find((id) => !won.has(id)),
-    );
-  }
-  for (const batch of chunks(ids)) {
-    const list = sql.join(
-      batch.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    );
-    const used = await tx.execute(sql`
-      SELECT id::text AS id FROM documents WHERE id IN (${list})
-      UNION ALL SELECT tree_list_id::text FROM projects WHERE tree_list_id IN (${list})
-      UNION ALL SELECT tree_list_id::text FROM users WHERE tree_list_id IN (${list}) LIMIT 1`);
-    if (used.length > 0)
-      throw new NodeIdRefusedError("a node id already in use", (used[0] as { id: string }).id);
-  }
-}
-
-export async function claimNodeIdsEach(
-  tx: DrizzleDb,
-  listId: string,
-  records: readonly TreeRecord[],
 ): Promise<Set<string>> {
   const ids = [
     ...new Set(records.flatMap((record) => (record.type === "create" ? [record.node] : []))),
   ];
-  const failed = new Set(ids.filter((id) => !isUuid(id)));
+  const refused = new Set(ids.filter((id) => !isUuid(id)));
   for (const batch of chunks(ids.filter(isUuid))) {
     const list = sql.join(
       batch.map((id) => sql`${id}::uuid`),
@@ -226,8 +185,8 @@ export async function claimNodeIdsEach(
       SELECT id::text AS id FROM documents WHERE id IN (${list})
       UNION ALL SELECT tree_list_id::text FROM projects WHERE tree_list_id IN (${list})
       UNION ALL SELECT tree_list_id::text FROM users WHERE tree_list_id IN (${list})`);
-    for (const row of used) failed.add(row.id);
-    const open = batch.filter((id) => !failed.has(id));
+    for (const row of used) refused.add(row.id);
+    const open = batch.filter((id) => !refused.has(id));
     if (open.length === 0) continue;
     const won = await tx
       .insert(treeNodeIds)
@@ -235,9 +194,9 @@ export async function claimNodeIdsEach(
       .onConflictDoNothing({ target: treeNodeIds.id })
       .returning({ id: treeNodeIds.id });
     const held = new Set(won.map((row) => row.id as string));
-    for (const id of open) if (!held.has(id)) failed.add(id);
+    for (const id of open) if (!held.has(id)) refused.add(id);
   }
-  return failed;
+  return refused;
 }
 
 async function dropUnowned(

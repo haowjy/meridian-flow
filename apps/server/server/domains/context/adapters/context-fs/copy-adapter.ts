@@ -1,7 +1,8 @@
+import { renderFilename } from "@meridian/contracts/protocol";
 import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EffectiveDocumentReader } from "../../../collab/index.js";
-import { joinPath, renderFilename } from "../../context/paths.js";
+import { joinPath } from "../../context/paths.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
   ContextCopyAdapter,

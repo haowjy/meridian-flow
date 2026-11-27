@@ -1,5 +1,4 @@
 import { loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
-import { copiesOpenSince } from "../editor/local-document-copies";
 import { watchBounces } from "../project-tree/tree-bounces";
 import { TreeListSession } from "./tree-list-session";
 
@@ -12,18 +11,18 @@ export class TreeListRegistry {
   >();
   private closed = false;
 
-  private readonly copiesOpen: () => boolean;
-
-  constructor(private readonly accountId: string) {
-    this.copiesOpen = copiesOpenSince(accountId);
-  }
+  constructor(
+    private readonly accountId: string,
+    private readonly signedIn: () => boolean,
+    private readonly accountChanged: () => void,
+  ) {}
 
   acquire(list: TreeListRef): TreeListHandle {
     if (this.closed) throw new Error("The account's tree lists are closed");
     const key = loroRoomName({ kind: "tree", list });
     let entry = this.sessions.get(key);
     if (!entry) {
-      const session = new TreeListSession(this.accountId, list, this.copiesOpen);
+      const session = new TreeListSession(this.accountId, list, this.signedIn, this.accountChanged);
       const unwatch = watchBounces(session, `user:${this.accountId}`);
       entry = { session, unwatch, holds: 0 };
       this.sessions.set(key, entry);

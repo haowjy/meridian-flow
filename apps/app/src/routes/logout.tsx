@@ -1,26 +1,66 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
-import { getAuth, signOut } from "@workos/authkit-tanstack-react-start";
-
-import { resolveAuthRedirectUri } from "@/server/auth-redirect-uri";
-import { getAppServerConfig } from "@/server/config";
-import { requestFromServerHeaders } from "@/server/ssr-request";
-
-const endSession = createServerFn({ method: "GET" }).handler(async () => {
-  const { landingUrl } = getAppServerConfig();
-  // With no WorkOS session, an absolute returnTo makes signOut redirect to itself forever
-  const auth = await getAuth();
-  if (!auth.user || !auth.sessionId) {
-    throw landingUrl
-      ? redirect({ href: landingUrl, reloadDocument: true })
-      : redirect({ to: "/login", reloadDocument: true });
-  }
-  const request = requestFromServerHeaders();
-  const signInUrl = request ? new URL("/login", resolveAuthRedirectUri(request)).href : undefined;
-  await signOut({ data: { returnTo: landingUrl ?? signInUrl } });
-});
+import { t } from "@lingui/core/macro";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { getAuthMe } from "@/client/api/auth-api";
+import { httpErrorStatus } from "@/client/api/http-client";
+import { Button } from "@/components/ui/button";
+import {
+  AccountFeatureLifetime,
+  SIGN_OUT_FAILURE,
+  SignOutIncomplete,
+} from "@/features/project/context/account-feature-lifetime";
 
 export const Route = createFileRoute("/logout")({
+  ssr: false,
   preload: false,
-  loader: () => endSession(),
+  component: Logout,
 });
+
+function Logout() {
+  const [failed, setFailed] = useState(false);
+  const [signOut] = useState(() => signOutOfThisBrowser(setFailed));
+  useEffect(() => void signOut(), [signOut]);
+
+  return (
+    <main className="grid min-h-svh place-items-center bg-background text-foreground">
+      <div className="flex flex-col items-center gap-3" role={failed ? "alert" : "status"}>
+        <p>{failed ? t`Couldn't log out` : t`Logging out…`}</p>
+        {failed ? (
+          <Button variant="outline" onClick={() => void signOut()}>
+            {t`Retry`}
+          </Button>
+        ) : null}
+      </div>
+    </main>
+  );
+}
+
+function signOutOfThisBrowser(setFailed: (failed: boolean) => void): () => Promise<void> {
+  let lifetime: AccountFeatureLifetime | null = null;
+  let running = false;
+  return async () => {
+    if (running) return;
+    running = true;
+    setFailed(false);
+    try {
+      const me = await signedInAccount();
+      if (!me) return window.location.replace("/end-session");
+      lifetime ??= new AccountFeatureLifetime(me.userId, me.externalId);
+      window.location.replace(await lifetime.clearForSignOut());
+    } catch (error) {
+      if (!(error instanceof SignOutIncomplete)) reportError(error);
+      console.warn(`[failure] ${SIGN_OUT_FAILURE}`, error);
+      running = false;
+      setFailed(true);
+    }
+  };
+}
+
+async function signedInAccount() {
+  try {
+    return (await getAuthMe()).user;
+  } catch (error) {
+    if (httpErrorStatus(error) === 401) return null;
+    throw error;
+  }
+}

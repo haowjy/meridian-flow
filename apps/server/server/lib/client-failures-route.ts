@@ -1,7 +1,7 @@
 import { clientFailureBatchSchema, clientFailureEvent } from "@meridian/contracts/failures";
 import { createError } from "nitro/h3";
 import type { EventSink } from "../domains/observability/index.js";
-import type { ThreadRepositories } from "./compose.js";
+import type { ThreadRepositories } from "../domains/threads/index.js";
 
 const seen = new Map<string, number>();
 const rates = new Map<string, { since: number; count: number }>();

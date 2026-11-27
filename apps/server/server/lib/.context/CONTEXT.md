@@ -8,13 +8,14 @@ provides no domain implementation. Concrete adapters are chosen in `compose.ts`;
 
 `app.ts` owns the process singleton and binds the deferred EventSink and DB.
 `compose.ts` constructs production adapters and the typed `AppServices` graph;
-`composeAppServices()` is pure service wiring. In-memory composition supplies
-explicit test adapters and the same hub aliases as production. Adapter choice,
+`composeAppServices()` is pure service wiring. There is no in-memory app: a
+unit test builds the few in-memory adapters it reads (as
+`domains/runtime/loop/__tests__/runtime-harness.ts` does). Adapter choice,
 provider configuration, and disabled behavior stay at this boundary.
 
 The live hub is process-local even though journal rows are durable. The app
 singleton keeps one `AppServices` instance across hot reload, and `hub` and
-`threadEventHub` are the same alias in production and test composition.
+`threadEventHub` are the same alias.
 
 The service graph includes runtime Gateway/orchestrator/runner/claim/tools,
 thread repositories/journal/hub/runtime, collab document sync, context ports,
@@ -90,11 +91,20 @@ Close, unsubscribe and a newer request invalidate pending acquisition; only the
 current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.
 
-The Loro room handler (`loro-ws-handler.ts`) asks file-policy for `edit`, then `read`, at a
+The room socket's route (`routes/ws/loro.ts`) sends each socket a `LORO_PING` text frame every
+30 s, so a client can tell a dead connection from a quiet one (`core/transport/.context/CONTEXT.md`,
+Liveness). The Loro room handler (`loro-ws-handler.ts`) asks file-policy for `edit`, then `read`, at a
 room's Join. A batch takes no grant of its own: it is imported as sent and acked. A refusal is a
 `JoinError` with the contract's app code, and an access change that reaches a key the room is
-registered under ends the room (`RoomError` `access-changed`), so the client joins again. The
-client's schema version rides in the Join's `auth` (`encodeLoroJoinAuth`); schema comparison
+registered under ends the room (`RoomError` `access-changed`), so the client joins again.
+`permission-denied` is final on the client, so it answers only "exists and isn't yours": a
+document or list whose row doesn't exist yet (a create made in the browser that hasn't landed)
+answers `document-unknown`, which the client retries (`admit`, and `TreeListStore.open` for a
+list). The
+Join's `auth` (`encodeLoroJoinAuth`) also names the account the client means; one that isn't the
+socket's session's is refused `account-changed` before any access check, since the cookie is the
+browser's and a tab may hold another account's words. The client's schema version rides in the
+Join's `auth` too; schema comparison
 belongs to [collab](../../domains/collab/.context/document-authority-and-schema.md#schema-admission).
 
 ## Route-specific contracts

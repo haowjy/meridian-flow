@@ -17,12 +17,19 @@ boot-script preferences are separate from this envelope.
 `src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`, the WorkOS
 redirect URI, and `MERIDIAN_WWW_ORIGIN`; isomorphic helpers keep guarded environment reads local instead of
 importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
-sealed `wos-session` cookie and logout clears it. Reach `/logout` with a
-full-document `<a href>`, never `<Link>`: `signOut()` redirects to api.workos.com,
-which a client-side navigation would `fetch` and fail on CORS. Logout passes
-`returnTo` = `MERIDIAN_WWW_ORIGIN` when set, otherwise `/login` on the request origin,
-and that URL must be registered in WorkOS as a sign-out redirect. With no WorkOS session
-`/logout` redirects there itself, because `signOut` would loop on an absolute `returnTo`.
+sealed `wos-session` cookie and logout clears it. `/logout` runs in the browser: it builds an
+account lifetime for the session's account and runs its sign-out (`clearForSignOut`: deliver,
+then delete every copy, or "Couldn't log out" with Retry), the same one the menu runs (Account
+lifetime in `features/project/context/.context/state-machines.md`), then loads `/end-session` as a
+full document. Without JavaScript `/logout` ends nothing. `/end-session?account=` names the WorkOS
+user id (`AuthMeResponse.user.externalId`); `/end-session` ends the session on the server unless
+that id isn't the session's (`getAuth().user.id`), when it goes to `/`: an account signed in
+since stays signed in. The comparison is local to the request,
+so there is no case where it can't tell; reach it only as a full document, never
+by a client-side navigation: `signOut()` redirects to api.workos.com, which a `fetch` fails on
+CORS. It passes `returnTo` = `MERIDIAN_WWW_ORIGIN` when set, otherwise `/login` on the request
+origin, and that URL must be registered in WorkOS as a sign-out redirect. With no WorkOS session
+it redirects there itself, because `signOut` would loop on an absolute `returnTo`.
 
 `MERIDIAN_WWW_ORIGIN` also receives signed-out `/`; set it only once the landing page is
 live ([go-live order][signed-out]). Other signed-out paths still go to sign-in and back,
