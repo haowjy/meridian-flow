@@ -1,8 +1,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { pendingRecords, recordsOfItem } from "@meridian/project-tree";
-import { parseActor } from "../../context/adapters/context-fs/tree-writes.js";
+import { pendingRecords, readActor, recordsOfItem } from "@meridian/project-tree";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
@@ -30,9 +29,9 @@ export function createDrizzleDraftTreeActors(db: Database, treeLists: Pick<TreeL
         recordsOfItem(projection, pending, documentId),
       );
       for (const record of records.reverse()) {
-        const who = parseActor(record.actor);
-        if (who?.kind === "agent" && who.chatId && !chats.includes(who.chatId))
-          chats.push(who.chatId);
+        const who = readActor(record.actor);
+        if (who.kind === "agent" && who.threadId && !chats.includes(who.threadId))
+          chats.push(who.threadId);
       }
       if (chats.length) actors.set(documentId, chats);
     }

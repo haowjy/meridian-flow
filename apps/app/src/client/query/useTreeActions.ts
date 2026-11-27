@@ -1,3 +1,4 @@
+import { userActor } from "@meridian/project-tree";
 import { useMemo } from "react";
 import { TreeActions } from "@/core/project-tree/tree-actions";
 import { type TreeVersion, useTreeVersion } from "@/core/project-tree/tree-version";
@@ -27,7 +28,7 @@ export function useTreeActions(
     () =>
       new TreeActions(
         () => session,
-        `user:${accountId}`,
+        userActor(accountId),
         () => acting,
         closed,
       ),

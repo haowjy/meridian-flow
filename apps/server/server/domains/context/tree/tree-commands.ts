@@ -7,6 +7,7 @@ import {
 } from "@meridian/contracts/protocol";
 import {
   type Actor,
+  type ActorOf,
   changeUndone,
   childrenOf,
   deleteCovering,
@@ -16,6 +17,7 @@ import {
   listRecords,
   type MovePlace,
   type NodeKind,
+  readActor,
   segmentOf,
   settledRecords,
   sourceIdOf,
@@ -97,11 +99,11 @@ export type TouchedNode = {
 
 export type TreeResult = Refused | Done;
 
-export function labelOf(actor: Actor): string {
-  if (actor.startsWith("user:")) return "the user";
-  if (actor.startsWith("agent:")) return "agent";
-  return "unattributed";
-}
+const LABEL: Record<ActorOf["kind"], string> = {
+  user: "the user",
+  agent: "agent",
+  other: "unattributed",
+};
 
 export type Places = {
   area: string;
@@ -136,7 +138,7 @@ function actorOfRecord(cx: Context, id: string | undefined): Actor | undefined {
 
 function noteConcurrent(cx: Context, actor: Actor | undefined, line: string) {
   if (actor === undefined || actor === cx.scope.actor) return;
-  const label = labelOf(actor);
+  const label = LABEL[readActor(actor).kind];
   cx.concurrent.set(label, [...(cx.concurrent.get(label) ?? []), line]);
 }
 
@@ -347,7 +349,7 @@ function keptTrashed(cx: Context, projection: TreeProjection, trashed: readonly 
   return trashed
     .map(
       (folder) =>
-        `${nodeUri(cx, projection, folder)}, deleted by ${labelOf(deleterOf(cx, projection, folder) ?? "")} after you last listed it`,
+        `${nodeUri(cx, projection, folder)}, deleted by ${LABEL[readActor(deleterOf(cx, projection, folder) ?? "").kind]} after you last listed it`,
     )
     .join("; ");
 }
@@ -656,7 +658,7 @@ function keptStanding(
     after.nodes.get(first)?.createdBy;
   return `${nodeUri(cx, after, holder)} with ${kept
     .map((id) => nodeUri(cx, after, after.nodes.get(id) as TreeNode))
-    .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
+    .join(", ")}, added by ${LABEL[readActor(placer ?? "").kind]} after you last listed it`;
 }
 
 function pathMatches(

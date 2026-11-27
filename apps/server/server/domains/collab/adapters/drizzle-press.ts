@@ -55,6 +55,7 @@ import {
   pendingRecords,
   restoreDiscard,
   undoApply,
+  userActor,
 } from "@meridian/project-tree";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { LoroDoc } from "loro-crdt";
@@ -511,7 +512,7 @@ export function createDrizzlePress(
           { drafts: draftIds, works: owners.works, lineages: owners.lineages },
           async (locked): Promise<PressUndoResult> => {
             const judge = await owners.judge(locked);
-            const by = `user:${envelope.accountId}`;
+            const by = userActor(envelope.accountId);
             const author = { press: envelope.commandId };
             const living = new Set<DraftId>();
             for (const draft of [...draftIds].sort())

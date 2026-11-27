@@ -6,6 +6,7 @@ import {
   isSourceRoot,
   type NodeKind,
   type PurgeRecord,
+  readActor,
   sourceIdOf,
   sourceRoot,
   type TreeRecord,
@@ -501,7 +502,7 @@ export function startReplay(
           take(record, index, sets);
           set(node, sets, index);
         }
-        if (record.actor.startsWith("user:")) node.provisional = false;
+        if (readActor(record.actor).kind === "user") node.provisional = false;
         node.lastChangedBy = record.actor;
         return;
       }

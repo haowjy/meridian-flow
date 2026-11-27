@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database";
-import { LIVE, sourceRoot } from "@meridian/project-tree";
+import { LIVE, SYSTEM_ACTOR, sourceRoot } from "@meridian/project-tree";
 import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../../collab/index.js";
@@ -78,7 +78,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         await deps.treeLists.submit({
           lists: [await treeListOfSource(tx as unknown as Database, contextSourceId)],
           make: ([{ writer }]) => {
-            writer.create(LIVE, "system", {
+            writer.create(LIVE, SYSTEM_ACTOR, {
               kind: "document",
               filetype: "markdown",
               name: "Chapter 1",

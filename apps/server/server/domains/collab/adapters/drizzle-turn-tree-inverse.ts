@@ -7,6 +7,7 @@ import {
   draftedFates,
   LIVE,
   newestDrafted,
+  SYSTEM_ACTOR,
   settledRecords,
   type TakenBack,
   type TreeWriter,
@@ -15,6 +16,7 @@ import {
   type UndoReport,
   type UndoStep,
   undoReports,
+  userActor,
 } from "@meridian/project-tree";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -240,7 +242,7 @@ export function createTurnTreeInverse(deps: {
       userId: UserId | undefined;
     },
   ): Promise<{ reversed: number }> {
-    const actor = input.userId ? `user:${input.userId}` : "system";
+    const actor = input.userId ? userActor(input.userId) : SYSTEM_ACTOR;
     const judge = await plan.owners.judge();
     let reversed = plan.undoneByCard;
     const record = (receipt: TreeReceipt, fields: Pick<TreeReceiptInput, "nodes" | "records">) =>

@@ -16,16 +16,19 @@ import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import {
   type Actor,
+  agentActor,
   type BlobRef,
   childrenOf,
   isSourceRoot,
   LIVE,
+  SYSTEM_ACTOR,
   segmentOf,
   sourceRoot,
   type TreeNode,
   type TreeProjection,
   type TreeRecordInput,
   type TreeWriter,
+  userActor,
   type View,
 } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
@@ -44,18 +47,9 @@ import {
 import { treeListOfSource } from "../tree-list-facts.js";
 
 export function actorOf(origin: WriteProvenance | undefined): Actor {
-  if (origin?.type === "agent") return `agent:${origin.threadId}/${origin.turnId}`;
-  if (origin?.type === "human") return `user:${origin.userId}`;
-  return "system";
-}
-
-export function parseActor(
-  actor: string | null | undefined,
-): { kind: "user"; userId: string } | { kind: "agent"; chatId: string } | null {
-  if (actor?.startsWith("user:")) return { kind: "user", userId: actor.slice("user:".length) };
-  if (actor?.startsWith("agent:"))
-    return { kind: "agent", chatId: actor.slice("agent:".length).split("/")[0] ?? "" };
-  return null;
+  if (origin?.type === "agent") return agentActor(origin.threadId, origin.turnId);
+  if (origin?.type === "human") return userActor(origin.userId);
+  return SYSTEM_ACTOR;
 }
 
 export function viewOfDraft(draftId: DraftId | null): View {

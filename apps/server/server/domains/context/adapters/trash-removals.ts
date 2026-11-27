@@ -2,11 +2,11 @@ import type { DocumentId, UserId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, threads, treeNodes, users } from "@meridian/database/schema";
+import { readActor } from "@meridian/project-tree";
 import { and, inArray, isNotNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { DocumentRemovals } from "../ports/document-removal.js";
-import { parseActor } from "./context-fs/tree-writes.js";
 
 type Actor = DocumentRemovalRecord["actor"];
 
@@ -18,9 +18,10 @@ export async function trashActorsOf(
   const userIds = new Set<string>();
   const chatIds = new Set<string>();
   for (const by of authors) {
-    const who = parseActor(by);
-    if (who?.kind === "user" && isUuid(who.userId)) userIds.add(who.userId);
-    if (who?.kind === "agent" && isUuid(who.chatId)) chatIds.add(who.chatId);
+    if (by === null) continue;
+    const who = readActor(by);
+    if (who.kind === "user" && isUuid(who.userId)) userIds.add(who.userId);
+    if (who.kind === "agent" && isUuid(who.threadId)) chatIds.add(who.threadId);
   }
   const names = new Map(
     userIds.size === 0
@@ -43,18 +44,19 @@ export async function trashActorsOf(
         ).map((row) => [row.id, row.title]),
   );
   return (by) => {
-    const who = parseActor(by);
-    if (who?.kind === "user" && names.has(who.userId))
+    if (by === null) return null;
+    const who = readActor(by);
+    if (who.kind === "user" && names.has(who.userId))
       return {
         kind: "user",
         userId: who.userId as UserId,
         displayName: names.get(who.userId) ?? null,
       };
-    if (who?.kind === "agent" && titles.has(who.chatId))
+    if (who.kind === "agent" && titles.has(who.threadId))
       return {
         kind: "agent",
-        chatTitle: titles.get(who.chatId)?.trim() || null,
-        chatId: who.chatId,
+        chatTitle: titles.get(who.threadId)?.trim() || null,
+        chatId: who.threadId,
       };
     return null;
   };
