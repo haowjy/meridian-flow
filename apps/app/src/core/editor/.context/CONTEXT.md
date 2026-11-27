@@ -32,6 +32,16 @@ server or another tab, arrives by `importRemote`, which calls the binding's `imp
 and so goes through its composition guard: a batch is held, as bytes, while any editor on the
 room is composing.
 
+Whether the copy holds ops the server lacks (`hasUnacknowledgedEdits`) has two parts, because two
+tabs deliver them. This tab's own ops are an edge, not recounted per keystroke (comparing room
+versions is a pass over every block's doc): a publish sets it, an acknowledged connection clears
+it. Ops another tab posted over the channel are delivered by that tab, so the session keeps
+their end version (`othersUnsent`) until the server's version covers it, which this tab sees when
+the server relays them. The transport merges a server batch into `serverVersion()` before
+`importRemote`, and the session recounts after each, so a sign-out waiting on another tab's typing
+wakes when it lands. Another tab's typing that tab never delivers (it closed offline) stays
+unsent here until this tab's next Join sends it.
+
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
 `local-copy-store.ts`): a snapshot per doc key, a log of envelope batches folded into snapshots

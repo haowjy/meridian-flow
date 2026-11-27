@@ -2,6 +2,7 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { loroRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import {
+  batchEnd,
   type DocChange,
   type DocKey,
   type DocVersion,
@@ -138,6 +139,7 @@ export class DocumentSession {
   private contentHeld = false;
   private transportAcknowledged = false;
   private unsent: boolean | null = null;
+  private readonly othersUnsent = new Map<DocKey, DocVersion>();
   private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
@@ -346,9 +348,13 @@ export class DocumentSession {
       return;
     const tabs = new BroadcastChannel(`meridian:copy:${this.storeName}`);
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
-      if (!(event.data?.batch instanceof Uint8Array)) return;
-      this.unsent = null;
-      this.importRemote(event.data.batch, false);
+      const batch = event.data?.batch;
+      if (!(batch instanceof Uint8Array)) return;
+      // Count this tab's own first: once imported, another tab's ops would read as its own.
+      this.ownUnsent();
+      this.importRemote(batch, false);
+      mergeVersion(this.othersUnsent, batchEnd(batch));
+      this.recomputeStatus();
     };
     this.tabs = tabs;
   }
@@ -392,7 +398,10 @@ export class DocumentSession {
           const entries = this.docs.exportSince(since);
           return entries.size > 0 ? encodeEnvelope(entries) : null;
         },
-        importRemote: (batch) => this.importRemote(batch),
+        importRemote: (batch) => {
+          this.importRemote(batch);
+          this.recomputeStatus();
+        },
       },
       presence: this.localPresence.store,
     });
@@ -528,6 +537,13 @@ export class DocumentSession {
   }
 
   hasUnacknowledgedEdits(): boolean {
+    const server = this.transportProvider?.serverVersion() ?? this.server;
+    if (this.othersUnsent.size > 0 && versionCovers(server, this.othersUnsent))
+      this.othersUnsent.clear();
+    return this.ownUnsent() || this.othersUnsent.size > 0;
+  }
+
+  private ownUnsent(): boolean {
     if (this.unsent === null) {
       const server = this.transportProvider?.serverVersion() ?? this.server;
       this.unsent = !versionCovers(server, this.docs.version());
