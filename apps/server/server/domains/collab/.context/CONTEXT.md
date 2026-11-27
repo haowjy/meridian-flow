@@ -196,6 +196,12 @@ schedules a derive (`onLiveSaved`); a compaction rewrites rows without bumping i
 sent but the room has not saved yet can be in a cut, and that save makes the cut stale. Recovery
 sweeps stale rooms and retries failures without advancing certification.
 
+Only a document with text is derived. A stored file (`documents.storage_url` set: an uploaded,
+imported or copied binary) has no Live text, never gets a room row, and the store's `stale`
+leaves it out; otherwise "no room" would select it on every pass, and certify would overwrite
+the file's `size_bytes` with zero. A document without storage always has text: the project tree
+refuses to create a document with an untracked filetype or rename one into it.
+
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
 `document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its block id: `text`,
