@@ -67,6 +67,11 @@ export function EditorMenu({
     dismissal: "self",
   });
 
+  // A pointer menu mounts once per opening. Kept mounted while closed, an
+  // opening that lands inside the close animation reuses the closing content,
+  // whose focus scope never takes focus again.
+  if (!trigger && !open) return null;
+
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
       {trigger ? (
