@@ -106,7 +106,7 @@ stateDiagram-v2
   session has open, one at a time, for ops beyond its saved mark (`storedOpsBeyondMark`), and
   opens a session on each, a fork's Live room first. Nothing retains it, so it takes the usual
   path: grace, `holding` while its transport reconnects and sends, then `none` once saved. The
-  account lifetime runs the pass each time it mounts signed in (`resumeFeatureLease`), and
+  account lifetime runs the pass each time it mounts signed in (`mount`), and
   sign-out's wait runs the same scan (`openStoredUnsent`). It opens nothing while the account is
   closing or after a sign-out was counted. A copy the pass can't read (a newer build's database,
   any IndexedDB error) is reported and skipped, and the scan goes on to the next; sign-out counts

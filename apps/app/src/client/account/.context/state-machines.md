@@ -17,7 +17,7 @@ stateDiagram-v2
   closing --> closed: the registry's close retires every session
 ```
 
-- **Mounting signed in delivers what stored copies hold.** `resumeFeatureLease` runs the
+- **Mounting signed in delivers what stored copies hold.** `mount` runs the
   registry's stored-copy pass (`deliverStoredCopies`): words a held session had not delivered
   when its page went away (a reload, a closed tab) reach the server on the next load in any tab
   of the account, without the writer reopening the document.
@@ -94,7 +94,7 @@ stateDiagram-v2
   here when it starts (`signedInSince`), which is what lets another account's start count it. It
   hears the count move through the `storage` event, which never fires in the tab that wrote it, so
   a tab's own sign-out, and a lifetime React builds and never mounts, can't end it; it listens
-  only while mounted (`resumeFeatureLease`), and checks the count on mounting and on a restore from
+  only while mounted (`mount`), and checks the count on mounting and on a restore from
   the back-forward cache (`pageshow`), which hears no `storage` event while cached. Hearing it, the
   lifetime ends as on a sign-out elsewhere: it waits up to 12 s for its open sessions, closes, and
   goes to `/end-session?account=<its sign-in provider id>`. The lifetime holds that id (`externalId`,
@@ -116,7 +116,7 @@ stateDiagram-v2
   named, since the header would cost it a CORS preflight. What a component built for the lifetime
   sends names that lifetime: the command driver's transport, the failure log and the thread
   socket take `requests` from the account context (`useRequestAccount`), and the socket's URL carries
-  `?account=`. Anything else names the mounted lifetime: mounting (`resumeFeatureLease`) makes it
+  `?account=`. Anything else names the mounted lifetime: mounting (`mount`) makes it
   the one `apiFetch` names (`sendRequestsAs`), and it stays named until another lifetime mounts,
   so a request sent while one account closes and the next has not mounted is refused rather than
   sent as whoever the cookie says. Each room Join carries the account in its `auth`. The server
