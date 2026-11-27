@@ -7,6 +7,7 @@ import {
   type DocKey,
   type DocVersion,
   decodeRoomVersion,
+  docCovers,
   encodeChanges,
   encodeEnvelope,
   encodeRoomVersion,
@@ -138,8 +139,7 @@ export class DocumentSession {
   private transportInitialSyncComplete = false;
   private contentHeld = false;
   private transportAcknowledged = false;
-  private unsent: boolean | null = null;
-  private readonly othersUnsent = new Map<DocKey, DocVersion>();
+  private readonly pending = new Map<DocKey, DocVersion>();
   private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
@@ -240,7 +240,7 @@ export class DocumentSession {
   }
 
   private publishBatch(batch: Uint8Array): void {
-    this.unsent = true;
+    mergeVersion(this.pending, batchEnd(batch));
     this.append(batch);
     this.contentChanged();
     if (this.inert) return;
@@ -314,6 +314,7 @@ export class DocumentSession {
       this.forwardFromLive();
       const server = loaded.meta.get(SERVER_META);
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
+      this.countStored();
       this.store = store;
       store.db.onversionchange = () => {
         this.store = null;
@@ -325,9 +326,18 @@ export class DocumentSession {
       this.recomputeStatus();
     } catch (error) {
       reportError(error);
+      this.countStored();
       this.localPersistenceSynced = true;
       this.recomputeStatus();
     }
+  }
+
+  /** The copy's stored ops beyond the server's stored mark: one pass over the document, at open. */
+  private countStored(): void {
+    const stored = [...this.docs.version()].filter(
+      ([key, version]) => !docCovers(this.server.get(key), version),
+    );
+    mergeVersion(this.pending, new Map(stored));
   }
 
   private forwardFromLive(): void {
@@ -350,10 +360,8 @@ export class DocumentSession {
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
       const batch = event.data?.batch;
       if (!(batch instanceof Uint8Array)) return;
-      // Count this tab's own first: once imported, another tab's ops would read as its own.
-      this.ownUnsent();
       this.importRemote(batch, false);
-      mergeVersion(this.othersUnsent, batchEnd(batch));
+      mergeVersion(this.pending, batchEnd(batch));
       this.recomputeStatus();
     };
     this.tabs = tabs;
@@ -428,10 +436,7 @@ export class DocumentSession {
       }),
       provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
-        if (acknowledged) {
-          this.unsent = false;
-          this.noteServerSoon();
-        }
+        if (acknowledged) this.noteServerSoon();
         this.recomputeStatus();
       }),
     );
@@ -537,18 +542,14 @@ export class DocumentSession {
   }
 
   hasUnacknowledgedEdits(): boolean {
+    // Until the copy loads, what it stores is uncounted, not absent.
+    if (!this.localPersistenceSynced) return true;
     const server = this.transportProvider?.serverVersion() ?? this.server;
-    if (this.othersUnsent.size > 0 && versionCovers(server, this.othersUnsent))
-      this.othersUnsent.clear();
-    return this.ownUnsent() || this.othersUnsent.size > 0;
-  }
-
-  private ownUnsent(): boolean {
-    if (this.unsent === null) {
-      const server = this.transportProvider?.serverVersion() ?? this.server;
-      this.unsent = !versionCovers(server, this.docs.version());
+    for (const [key, version] of this.pending) {
+      if (!docCovers(server.get(key), version)) return true;
+      this.pending.delete(key);
     }
-    return this.unsent;
+    return false;
   }
 
   canDeliverUnsentEdits(): boolean {
