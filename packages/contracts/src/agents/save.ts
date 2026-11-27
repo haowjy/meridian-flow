@@ -104,7 +104,6 @@ export const undoSaveRequestSchema = z.strictObject({
   level: levelSchema,
   saveId: z.string().refine((value): boolean => isUuid(value), "must be a canonical UUID"),
 });
-export type UndoSaveRequest = z.infer<typeof undoSaveRequestSchema>;
 export const undoSaveResponseSchema = z.object({
   undone: z.boolean(),
   reason: z.enum(["already-undone", "later-save", "not-undoable", "not-found"]).nullable(),

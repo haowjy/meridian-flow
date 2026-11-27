@@ -46,7 +46,7 @@ pnpm test   # non-DB tests; use pnpm test:db from the repo root for DB coverage
 | `price_source` | `computed` or `unknown` (usage missing); default `computed` |
 | `pricing_snapshot` | JSONB copy of the pricing data used at billing time |
 
-`output_tokens` is total billable output (includes reasoning when known). See `@meridian/contracts` (`UsageBreakdown`, `parseUsageBreakdown`).
+`output_tokens` is total billable output (includes reasoning when known). See `@meridian/contracts` (`UsageBreakdown`).
 
 ## Billing
 

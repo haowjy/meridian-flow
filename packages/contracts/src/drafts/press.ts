@@ -27,8 +27,6 @@ export type PressResult = PressAction & {
   trashed?: string[];
 };
 
-export type PressUndoRequest = { commandId: CommandId; pressCommandId: CommandId };
-
 export type PressUndoResult = {
   status: "unpressed";
   commandId: CommandId;

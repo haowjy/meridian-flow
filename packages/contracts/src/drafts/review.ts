@@ -1,4 +1,4 @@
-import type { CommandOutcome, Settlement } from "../commands/index.js";
+import type { Settlement } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { DraftId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
@@ -92,5 +92,3 @@ export interface DraftItemsResponse {
 export type ModelEditOutcome =
   | { status: "done" | "refused"; result: ModelEditCommandResult }
   | { status: "never" };
-
-export type DocumentCommandOutcome = CommandOutcome<StoredDocumentCommandResult>;

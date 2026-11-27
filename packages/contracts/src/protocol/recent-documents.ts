@@ -15,6 +15,4 @@ export type RecentDocumentItem = {
 
 export type ListRecentDocumentsResponse = { documents: RecentDocumentItem[] };
 
-export type RecordRecentDocumentRequest = { documentId: string };
-
 export type RecordRecentDocumentResponse = { recorded: boolean };

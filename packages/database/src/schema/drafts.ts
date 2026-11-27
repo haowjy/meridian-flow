@@ -53,6 +53,3 @@ export const draftIdColumn = (name: string) =>
   text(name)
     .$type<DraftId>()
     .references(() => drafts.id, { onDelete: "cascade" });
-
-export type DraftTreeNodeKind = "document" | "folder";
-export type DraftTreeParentKind = "source" | "folder";
