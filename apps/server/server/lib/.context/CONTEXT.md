@@ -103,7 +103,9 @@ answers `document-unknown`, which the client retries (`admit`, and `TreeListStor
 list). The
 Join's `auth` (`encodeLoroJoinAuth`) also names the account the client means; one that isn't the
 socket's session's is refused `account-changed` before any access check, since the cookie is the
-browser's and a tab may hold another account's words. The client's schema version rides in the
+browser's and a tab may hold another account's words. The thread socket names the account in
+its URL (`?account=`), and `resolveWsUpgradeAuth` closes a mismatch 4409 `account-changed`, a
+terminal close; a socket without it is not checked. The client's schema version rides in the
 Join's `auth` too; schema comparison
 belongs to [collab](../../domains/collab/.context/document-authority-and-schema.md#schema-admission).
 

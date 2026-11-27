@@ -4,6 +4,7 @@ import {
   imageProxyReason,
 } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
+import { apiFetch } from "@/client/api/http-client";
 
 const WEB_ADDRESS = /^(?:https?:)?\/\//i;
 
@@ -44,7 +45,7 @@ export async function loadRemoteImage(address: string): Promise<void> {
   if (current?.kind === "loading" || current?.kind === "loaded") return;
   setStatus(address, { kind: "loading" });
   try {
-    const response = await fetch(apiImageProxyPath(address));
+    const response = await apiFetch(apiImageProxyPath(address));
     if (!response.ok) {
       console.warn(
         "Remote image refused",

@@ -1,3 +1,4 @@
+import { WRONG_ACCOUNT_CODE } from "@meridian/contracts/commands";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import { isBusy, type ThreadTransport } from "@meridian/thread-client";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -45,6 +46,7 @@ type SessionFence = () => boolean;
 export function classifyWriteFailure(error: unknown): "rejected" | "ambiguous" {
   if (error instanceof HttpResponseError || isMeridianApiError(error)) {
     if (error.status === 409 && error.message.includes("admission_pending")) return "ambiguous";
+    if (isMeridianApiError(error) && error.code === WRONG_ACCOUNT_CODE) return "ambiguous";
     if (error.status === undefined || (error.status >= 400 && error.status < 500))
       return "rejected";
   }

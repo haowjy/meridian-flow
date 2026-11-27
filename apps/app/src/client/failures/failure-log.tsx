@@ -1,6 +1,7 @@
 import { type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import { createBatchedFailureLog } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
+import { apiFetch } from "@/client/api/http-client";
 import { appendTraceEvent } from "@/client/trace-store";
 
 const Context = createContext<FailureLog>(noFailureLog);
@@ -16,7 +17,7 @@ export function FailureLogProvider({
     const log = createBatchedFailureLog({
       local: appendTraceEvent,
       async send(records) {
-        const response = await fetch("/api/diagnostics/failures", {
+        const response = await apiFetch("/api/diagnostics/failures", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ accountId, records }),

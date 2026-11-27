@@ -61,7 +61,7 @@ export function CommandDriverProvider({
       driver: new CommandDriver({
         journal: createIndexedDbJournal(accountId),
         lock: createWebLock(accountId),
-        transport: createFetchTransport(accountId),
+        transport: createFetchTransport(),
         changes: createBroadcastChannel(accountId),
         online: () => navigator.onLine,
         held: sendsHeld,
