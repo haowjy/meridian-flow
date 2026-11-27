@@ -1,6 +1,8 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
+import type { ThreadRepositories } from "../../../threads/index.js";
+import type { ToolRegistry } from "../../tools/types.js";
 import {
   type FinalizedExecution,
   finalizeExecution,
@@ -18,8 +20,8 @@ export type Deliverer = { turn: Pick<Turn, "id"> };
 export type Retirement = Deliverer | { handedBackBy: string } | null;
 
 export type ExecutionSettlementDeps = PersistenceDeps & {
-  repos: import("../../../threads/index.js").ThreadRepositories;
-  toolRegistry?: Pick<import("../../tools/types.js").ToolRegistry, "getRegistration">;
+  repos: ThreadRepositories;
+  toolRegistry?: Pick<ToolRegistry, "getRegistration">;
   publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
   recoverCommands: Parameters<typeof finalizeExecution>[0]["recoverCommands"];
   publishStatus?(threadId: ThreadId): Promise<void>;

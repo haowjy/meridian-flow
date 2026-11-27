@@ -23,6 +23,7 @@ import {
   turnFailedCopy,
 } from "../../threads/index.js";
 import { askDeadline } from "../asks/ask-deadline.js";
+import type { ToolRegistry } from "../tools/types.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
@@ -146,7 +147,7 @@ export async function finalizeExecution(
       | "runTurnStartTransition"
     >;
     eventWriter: LiveEventWriter;
-    toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
+    toolRegistry?: Pick<ToolRegistry, "getRegistration">;
     recoverCommands(threadId: ThreadId, turn: Turn): Promise<void>;
   },
   input: {

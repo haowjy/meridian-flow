@@ -7,6 +7,7 @@ import type {
 import type { McpScriptCall } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  ModelThreadReportResult,
   ReturnResultCapture,
   ReturnResultOutcome,
   SpawnResult,
@@ -15,6 +16,7 @@ import type { JsonObject, JsonValue, ToolContentPart } from "@meridian/contracts
 import type { ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import type { z } from "zod";
 import type { ResultEvidence } from "../../../shared/model-evidence.js";
+import type { AskRequest, AskRequestOutcome } from "../asks/ask-service.js";
 import type { FrontierLookups } from "../ports/document-evidence.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
@@ -108,9 +110,7 @@ export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
   threadMessage(input: ThreadMessageArgs): Promise<SpawnResult | InvalidArgumentsResult>;
 }
 export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
-  threadReport(
-    input: ThreadReportArgs,
-  ): Promise<import("@meridian/contracts/spawn").ModelThreadReportResult>;
+  threadReport(input: ThreadReportArgs): Promise<ModelThreadReportResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
@@ -118,9 +118,7 @@ export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
 }
 
 export interface RequestToolHandlerContext extends ToolHandlerContext {
-  request(
-    request: import("../asks/ask-service.js").AskRequest,
-  ): Promise<import("../asks/ask-service.js").AskRequestOutcome>;
+  request(request: AskRequest): Promise<AskRequestOutcome>;
 }
 
 export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext> = (

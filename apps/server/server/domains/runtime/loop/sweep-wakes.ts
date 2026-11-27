@@ -2,9 +2,10 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
 import type { RunClaim, RunStarter } from "./ports.js";
+import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 export async function sweepWakes(input: {
-  delivery: Pick<import("./runtime-delivery.js").RuntimeDelivery, "pendingMessageThreads">;
+  delivery: Pick<RuntimeDelivery, "pendingMessageThreads">;
   authority: Pick<RunClaim, "readMany">;
   runStarter: RunStarter;
   eventSink: EventSink;

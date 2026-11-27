@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
-import type { DeliveryStore } from "../../loop/delivery/delivery-ports.js";
+import type { DeliveryLeaseStore, DeliveryStore } from "../../loop/delivery/delivery-ports.js";
 import { createRuntimeDelivery } from "../../loop/delivery/runtime-delivery.js";
-import type { Lease } from "../../loop/ports.js";
+import type { InboxProjection, Lease } from "../../loop/ports.js";
 import {
   DEFAULT_LEASE_TTL_MS,
   type ExecutionId,
@@ -147,8 +147,8 @@ export interface InMemoryRunClaimOptions {
 }
 
 export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
-  import("../../loop/delivery/delivery-ports.js").DeliveryLeaseStore & {
-    readDeliveryRun(threadId: ThreadId): import("../../loop/ports.js").InboxProjection["run"];
+  DeliveryLeaseStore & {
+    readDeliveryRun(threadId: ThreadId): InboxProjection["run"];
   } {
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;

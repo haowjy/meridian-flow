@@ -34,6 +34,7 @@ import type {
   RuntimeDelivery,
 } from "../runtime-delivery.js";
 import { createThreadControls } from "../thread-controls.js";
+import type { WorkContextReader } from "../work-context.js";
 import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../write-mode-switch.js";
 import type { HandBackStore } from "./delivery-ports.js";
 import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
@@ -49,7 +50,7 @@ export function createRuntimeDelivery(
       RunClaim,
       "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder" | "wakeRefusal"
     >;
-    workContext: import("../work-context.js").WorkContextReader;
+    workContext: WorkContextReader;
     notices: NoticePort;
     runStarter: RunStarter;
     writeModeSwitch: WriteModeSwitchPort;
