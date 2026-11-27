@@ -18,11 +18,11 @@ import {
 
 export function createDrizzleThreadWorksRepository(
   db: DrizzleDatabase,
-  workCounts: Pick<WorkProjectionMutation, "recountAfterCommit"> | null,
+  workCounts: Pick<WorkProjectionMutation, "recountAfterCommit">,
 ): ThreadWorksRepository {
   async function carry(threadId: ThreadId, workId: WorkId) {
     const moved = await carryRootDraft(db, threadId, workId);
-    if (moved.length > 0) workCounts?.recountAfterCommit({ workIds: moved, lineageRootIds: [] });
+    if (moved.length > 0) workCounts.recountAfterCommit({ workIds: moved, lineageRootIds: [] });
   }
 
   async function mutateMembership<T>(

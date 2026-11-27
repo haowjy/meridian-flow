@@ -22,7 +22,7 @@ import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn
 
 export function createDrizzleRepositories(
   db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit"> | null,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit">,
   lineageScratch: LineageScratchLifecycle,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {

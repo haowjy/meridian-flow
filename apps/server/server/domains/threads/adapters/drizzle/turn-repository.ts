@@ -113,7 +113,7 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
 
 export function createDrizzleTurnRepository(
   db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks">,
 ): TurnRepository {
   const active = () => currentDrizzleDb(db);
   const graph: TurnGraph = {
@@ -254,13 +254,7 @@ export function createDrizzleTurnRepository(
             .where(eq(schema.threads.id, row.threadId))
             .limit(1);
           if (thread?.workId) {
-            if (workActivity) await workActivity.touchWorks([thread.workId], now);
-            else {
-              await activeDb
-                .update(schema.works)
-                .set({ updatedAt: now })
-                .where(eq(schema.works.id, thread.workId));
-            }
+            await workActivity.touchWorks([thread.workId], now);
             await activeDb
               .update(schema.projects)
               .set({ updatedAt: now, lastActivityAt: now })
