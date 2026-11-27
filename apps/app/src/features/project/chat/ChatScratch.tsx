@@ -17,10 +17,10 @@ import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchTrees } from "../context/use-scratch-trees";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { treePlace, useTreeNoticeWords } from "../context/use-tree-notice-words";
-import { useWorkSourceWritable } from "../context/use-work-source-writable";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useShellTreeVersion } from "../tree-version";
 import { useOptionalMainItem } from "../views";
+import { useWorkState } from "../work/work-state";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 function useOpenDocumentId(): string | undefined {
@@ -32,7 +32,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
   const shell = useShellTreeVersion();
   const source = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchTrees(projectId, source);
-  const editable = useWorkSourceWritable(projectId, source?.owner.workId);
+  const editable = useWorkState(projectId, source?.owner.workId).kind !== "ended";
   const areas = useMemo<MoveArea[]>(
     () => [
       ...(primary.tree && source

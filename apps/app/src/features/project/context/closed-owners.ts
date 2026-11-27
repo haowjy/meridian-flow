@@ -1,9 +1,10 @@
 import type { ContextSource } from "@meridian/contracts/protocol";
-import { type Work, workLifecycleState } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEndedSources, useProjectContextSources } from "@/client/query/useContextSources";
 import { useWorks } from "@/client/query/useWorks";
 import type { ClosedOwner, ClosedOwners } from "@/core/project-tree/tree-undo";
+import { workStateIn } from "../work/work-state";
 
 type Read = {
   works: readonly Work[] | null;
@@ -47,13 +48,14 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
     },
   };
   const workClosed = (workId: string): ClosedOwner | null => {
-    const { works, deleted, nameOf } = shared.read ?? {};
-    const work = [...(works ?? []), ...(deleted ?? [])].find((one) => one.id === workId);
-    if (!work || !nameOf) return null;
-    const state = workLifecycleState(work);
-    return state === "active"
-      ? null
-      : { why: state === "deleted" ? "work_deleted" : "work_archived", owner: nameOf(work) };
+    if (!shared.read) return null;
+    const state = workStateIn(shared.read, workId);
+    return state.kind === "ended"
+      ? {
+          why: state.deleted ? "work_deleted" : "work_archived",
+          owner: shared.read.nameOf(state.work),
+        }
+      : null;
   };
   const ownerOf = ({ owner }: ContextSource): ClosedOwner | null =>
     owner.kind === "work" ? workClosed(owner.workId) : null;
