@@ -63,7 +63,9 @@ stateDiagram-v2
   the tab's mounted lifetime, which holds the open sessions and their typing. `/logout`, typed or
   opened in a new tab, runs it in a lifetime it builds for the session's account
   (`/api/auth/me`), shows "Logging out…" meanwhile and "Couldn't log out" with Retry on a
-  refusal, and only then goes to `/end-session`. A lifetime that ends because its account's count
+  refusal, and only then goes to `/end-session`. With no session (a 401) it goes straight there;
+  any other failure to learn the account is a refusal, since without it nothing can be delivered
+  or deleted. A lifetime that ends because its account's count
   moved (the owner ran in another tab) does not delete: it waits on its open sessions, closes,
   releases its holds so the owner's deletion can take them, and goes to `/end-session`. A copy
   left by a tab closed before the sign-out is a stored copy: the owner's wait reads it, delivers
