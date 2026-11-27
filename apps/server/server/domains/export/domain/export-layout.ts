@@ -3,7 +3,8 @@ import {
   DEFAULT_EXPORT_AREA_NAMES,
   type ProjectExportOptions,
 } from "@meridian/contracts";
-import { readSegment } from "@meridian/contracts/protocol";
+import { numberedName, readSegment } from "@meridian/contracts/protocol";
+import { exportFilename } from "../../context/index.js";
 import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
 export function portableName(name: string): string {
   // slop-lint: allow suppression the control range is the point of the pattern
@@ -20,22 +21,25 @@ export function buildExportLayout(
   const folders = new Map<string, string>();
   const paths = new Map<string, string>();
   const roots = new Map<string, string>();
-  function reserve(parent: string, name: string, extension = ""): string {
+  function claim(parent: string, filename: string): string | null {
     const siblings = used.get(parent) ?? new Set<string>();
     used.set(parent, siblings);
-    const stem = portableName(name);
+    const key = filename.toLocaleLowerCase("en-US");
+    if (siblings.has(key)) return null;
+    siblings.add(key);
+    return parent ? `${parent}/${filename}` : filename;
+  }
+  function reserve(parent: string, name: string, kind: "file" | "folder"): string {
+    const portable = portableName(name);
     for (let n = 1; ; n++) {
-      const filename = `${stem}${n === 1 ? "" : ` (${n})`}${extension ? `.${extension}` : ""}`;
-      if (!siblings.has(filename.toLocaleLowerCase("en-US"))) {
-        siblings.add(filename.toLocaleLowerCase("en-US"));
-        return parent ? `${parent}/${filename}` : filename;
-      }
+      const path = claim(parent, numberedName(portable, n, kind));
+      if (path) return path;
     }
   }
   function folder(key: string, parent: string, name: string): string {
     let path = folders.get(key);
     if (!path) {
-      path = reserve(parent, name);
+      path = reserve(parent, name, "folder");
       folders.set(key, path);
     }
     return path;
@@ -75,10 +79,11 @@ export function buildExportLayout(
     }
     placed.push({ doc, parent });
   }
-  for (const { doc, parent } of placed)
-    paths.set(
-      doc.id,
-      reserve(parent, doc.name, doc.fileType === "markdown" ? "md" : doc.extension),
-    );
+  const named = placed.map(({ doc, parent }) => {
+    const filename = portableName(exportFilename(doc.name, doc.extension, doc.fileType));
+    return { doc, parent, filename, path: claim(parent, filename) };
+  });
+  for (const { doc, parent, filename, path } of named)
+    paths.set(doc.id, path ?? reserve(parent, filename, "file"));
   return { paths, roots };
 }

@@ -108,6 +108,20 @@ export function renderFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
 }
 
+export function splitExtension(filename: string): { name: string; extension: string } {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 && !/\s/.test(filename.slice(dot + 1))
+    ? { name: filename.slice(0, dot), extension: filename.slice(dot + 1) }
+    : { name: filename, extension: "" };
+}
+
+export function numberedName(entry: string, n: number, kind: "file" | "folder"): string {
+  if (n === 1) return entry;
+  if (kind === "folder") return `${entry} (${n})`;
+  const { name, extension } = splitExtension(entry);
+  return renderFilename(`${name} (${n})`, extension);
+}
+
 const SUFFIX_BEFORE_EXTENSION = /~([0-9a-f]{4,})\.([^.~]+)$/i;
 
 export function canonicalLeaf(leaf: string): string {
