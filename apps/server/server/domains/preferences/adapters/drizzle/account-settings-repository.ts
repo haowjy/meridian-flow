@@ -26,7 +26,12 @@ export function createDrizzleAccountSettingsRepository({
     read,
     async update(userId, patch) {
       return db.transaction(async (tx) => {
-        await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+        // Not FOR UPDATE: that conflicts with the key-share lock every insert referencing users takes.
+        await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, userId))
+          .for("no key update");
         if (Object.keys(patch).length) {
           await tx
             .insert(userPreferences)
