@@ -98,7 +98,9 @@ export function useFenceDraft(
     const element = area.current;
     const held = caret.current;
     const found = fence();
-    if (!element || !held || !found || found.text !== source) return;
+    // Safari focuses a textarea whose selection is set, so only one the writer is in is touched.
+    if (!element || document.activeElement !== element || !held || !found || found.text !== source)
+      return;
     const at = resolveAnchorIn(editor.state, held.anchor);
     if (!at) return;
     const offset = (pos: number) => Math.min(Math.max(pos - found.start, 0), source.length);

@@ -48,7 +48,7 @@ import {
 } from "@/core/editor/objects";
 import { EditorMenu, OverlayIconRow, useEditorChrome, useNodeHold } from "@/features/editor/chrome";
 
-import { CodeBlockChips } from "./CodeBlockChips";
+import { CodeBlockChips, type ObjectRowMenu } from "./CodeBlockChips";
 import { FenceMenuItems } from "./fence-menu-items";
 import { fenceUnderPointer } from "./fence-triggers";
 import { ObjectFieldPopover } from "./ObjectFieldPopover";
@@ -86,11 +86,17 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   );
   // While the row's own menu is open, the row hangs off the object it opened on, wherever a write
   // moves it; the pointer may meanwhile be over another object.
+  // Which menu is open is read through the hold, so a hold released by a peer's delete closes it.
   const target = rowMenu === null ? approached : objectSurfaceForHold(editor.view, rowMenu);
+  const [rowMenuKind, setRowMenuKind] = useState<ObjectRowMenu>("overflow");
+  const openRowMenu = rowMenu === null ? null : rowMenuKind;
   const opensOn = useRef<number | null>(null);
   opensOn.current = target?.pos ?? null;
-  const setMenuOpen = useCallback(
-    (open: boolean) => holdRowMenu(open ? opensOn.current : null),
+  const setRowMenu = useCallback(
+    (menu: ObjectRowMenu | null) => {
+      if (menu) setRowMenuKind(menu);
+      holdRowMenu(menu ? opensOn.current : null);
+    },
     [holdRowMenu],
   );
 
@@ -182,7 +188,8 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           editor={editor}
           target={target}
           visible={visible}
-          onMenuOpenChange={setMenuOpen}
+          menu={openRowMenu}
+          onMenuChange={setRowMenu}
           run={run}
         />
       ) : null}
@@ -198,8 +205,8 @@ export function ObjectControls({ editor }: { editor: Editor }) {
             <EditorMenu
               editor={editor}
               id="object-row-menu"
-              open={rowMenu !== null}
-              onOpenChange={setMenuOpen}
+              open={openRowMenu === "overflow"}
+              onOpenChange={(open) => setRowMenu(open ? "overflow" : null)}
               align="end"
               trigger={chip}
             >
