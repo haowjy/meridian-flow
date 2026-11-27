@@ -144,8 +144,9 @@ export function useChromeLayer(
     (event: Event) => {
       event.preventDefault();
       if (!editor || editor.isDestroyed) return;
-      const successor = chrome?.layers.some((layer) => layer.id !== layerId);
-      if (successor) return;
+      // Radix calls this a task after the close, so any layer open now, this
+      // one included, opened since: reopened by the same click, it keeps focus.
+      if (chrome?.layers.length) return;
       if (editor.view.dom.closest('[aria-hidden="true"], [inert]')) return;
       const lane = returnFocusRef.current;
       if (lane) {

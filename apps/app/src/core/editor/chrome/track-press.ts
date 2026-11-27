@@ -7,9 +7,8 @@ export function pastSlop(dx: number, dy: number): boolean {
 type PressHost = {
   /**
    * The press travelled past the slop, at `at` (the move, or the release of a
-   * flick that sent none). Record `at` before doing anything that dispatches:
-   * a late lift must drop where the button came up, not where it went down.
-   * Returns the handler for every move from `at` on.
+   * flick that sent none). Returns the handler for every move from `at` on,
+   * `at` included.
    */
   lift(at: MouseEvent): (event: MouseEvent) => void;
   end(how: "click" | "drop" | "cancel", at: MouseEvent | null): void;
@@ -44,8 +43,6 @@ export function trackPress(press: PressStart, host: PressHost): () => void {
   const follow = (event: MouseEvent) => {
     if (!move && pastSlop(event.clientX - press.clientX, event.clientY - press.clientY)) {
       move = host.lift(event);
-      // The lift can end the press itself (a peer's edit in its first transaction).
-      if (ac.signal.aborted) return;
     }
     move?.(event);
   };

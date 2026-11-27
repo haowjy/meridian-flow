@@ -60,10 +60,6 @@ export function LinkMenu({
     <EditorMenu
       editor={editor}
       id="link-menu"
-      // A menu summoned at a new point is a new menu: floating-ui never sees a
-      // fixed anchor move, so the sequence keys the remount even when the
-      // writer right-clicks the same pixel twice.
-      key={menu.seq}
       at={menu.at}
       open
       onOpenChange={(next) => {

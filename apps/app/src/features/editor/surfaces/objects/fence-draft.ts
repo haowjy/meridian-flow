@@ -15,7 +15,8 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import type { Transaction } from "@tiptap/pm/state";
+import type { EditorState } from "@tiptap/pm/state";
+import type { Mappable } from "@tiptap/pm/transform";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import {
@@ -27,11 +28,16 @@ import {
   resolveNodeHold,
 } from "@/core/editor/anchors";
 
-import { useEditorRevision } from "@/features/editor/chrome";
+import { useEditorRevision, useHeldAnchor } from "@/features/editor/chrome";
 
 import { isDiagramFence } from "./object-anchors";
 
 type HeldCaret = { anchor: EditorAnchor; direction: "forward" | "backward" | "none" };
+
+function carryCaret(_state: EditorState, held: HeldCaret, mapping: Mappable): HeldCaret | null {
+  const anchor = carryAnchor(held.anchor, mapping);
+  return anchor && { ...held, anchor };
+}
 
 type TextPatch = { from: number; to: number; text: string };
 
@@ -78,7 +84,7 @@ export function useFenceDraft(
 
   const area = useRef<HTMLTextAreaElement | null>(null);
   const shown = useRef(source);
-  const caret = useRef<HeldCaret | null>(null);
+  const caret = useHeldAnchor<HeldCaret>(editor, null, carryCaret);
 
   const takeCaret = useCallback(() => {
     const element = area.current;
@@ -110,19 +116,6 @@ export function useFenceDraft(
     if (element.selectionStart === start && element.selectionEnd === end) return;
     element.setSelectionRange(start, end, held.direction);
   }, [editor, fence, source]);
-
-  useEffect(() => {
-    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
-      const held = caret.current;
-      if (!transaction.docChanged || !held) return;
-      const anchor = carryAnchor(held.anchor, transaction.mapping);
-      caret.current = anchor && { ...held, anchor };
-    };
-    editor.on("transaction", onTransaction);
-    return () => {
-      editor.off("transaction", onTransaction);
-    };
-  }, [editor]);
 
   const onChange = useCallback(
     (next: string) => {

@@ -3,7 +3,7 @@
  *
  * Two anchorings, one component. A menu the writer summoned from a control
  * hangs off that control (`trigger`); a menu the context-menu router claimed
- * hangs off the pointer (`at`), through a zero-size anchor placed where the
+ * hangs off the pointer (`at`), through a one-pixel anchor placed where the
  * click landed. Radix's DropdownMenu has no Anchor part, so that anchor is the
  * trigger — which is why anchoring lives here once instead of in six lanes.
  *
@@ -67,19 +67,13 @@ export function EditorMenu({
     dismissal: "self",
   });
 
+  // A pointer menu mounts once per opening. Kept mounted while closed, an
+  // opening that lands inside the close animation reuses the closing content,
+  // whose focus scope never takes focus again.
+  if (!trigger && !open) return null;
+
   return (
-    // A pointer menu summoned at a new point is a NEW menu. Radix positions
-    // against the anchor through floating-ui's `autoUpdate`, which watches for
-    // resizes and scrolls — moving a fixed anchor by changing its `left` is
-    // invisible to it, so a re-open without a remount lands where the last one
-    // did. The key is the fix; repositioning by hand would be a second
-    // positioning system beside the library's.
-    <DropdownMenu
-      key={at ? `${at.x},${at.y}` : "trigger"}
-      open={open}
-      onOpenChange={onOpenChange}
-      modal={false}
-    >
+    <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
       {trigger ? (
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       ) : (

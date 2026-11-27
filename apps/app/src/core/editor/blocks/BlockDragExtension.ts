@@ -13,10 +13,10 @@
  * - **The position has to survive the drag.** A peer's edit or an AI write can
  *   land while the pointer is down (law 9 — nothing gates a write), and the
  *   block the writer grabbed has to still be the block that lands. One held
- *   position, here, rather than one per consumer — and an `EditorAnchor`,
- *   because a remote write is one replacement over everything that differs
- *   (the whole document when that fails), and a mapped number inside it would
- *   report the grabbed block deleted.
+ *   position, here, rather than one per consumer — and a `NodeHold` found by
+ *   block id, because a moved block is deleted and inserted again, and a peer's
+ *   write replaces a range that can cover the block's edge: a mapped number
+ *   would report the grabbed block deleted.
  *
  * Nothing here touches the document. The transactions carry meta only, so no
  * step reaches the room and no undo entry appears for picking a paragraph up.
@@ -26,7 +26,7 @@ import { extentOf, nestNodes } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { carryAnchor, holdBlock, type NodeHold, resolveBlockHold } from "../anchors";
+import { carryHold, holdBlock, type NodeHold, resolveBlockHold } from "../anchors";
 import { EXTENSION_PRIORITY } from "../extension-priority";
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
@@ -59,15 +59,17 @@ export function endBlockDrag(editor: Editor): void {
 }
 
 /**
- * Where the held block is now, or null when no gesture has one.
+ * Where the held block is now and whether it is lifted, or null when no
+ * gesture has one or its block is gone.
  *
  * Resolved on read rather than in the plugin's `apply`: the Loro binding this
  * asks is the one belonging to the state in hand, and inside `apply` the
  * binding may still be describing the document the transaction replaced.
  */
-export function draggedBlockPos(state: EditorState): number | null {
+export function draggedBlock(state: EditorState): { pos: number; lifted: boolean } | null {
   const held = blockDragPluginKey.getState(state);
-  return held ? (resolveBlockHold(state, held.hold)?.from ?? null) : null;
+  const at = held && resolveBlockHold(state, held.hold);
+  return at ? { pos: at.from, lifted: held.lifted } : null;
 }
 
 export const BlockDragExtension = Extension.create({
@@ -85,17 +87,16 @@ export const BlockDragExtension = Extension.create({
             const message = transaction.getMeta(blockDragPluginKey) as BlockDragMessage | undefined;
             if (message !== undefined) return message;
             if (!current) return null;
-            const carried = carryAnchor(current.hold, transaction.mapping);
-            return carried ? { ...current, hold: carried } : null;
+            const hold = carryHold(current.hold, transaction.mapping);
+            return hold ? { ...current, hold } : null;
           },
         },
 
         props: {
           decorations(state) {
-            const held = blockDragPluginKey.getState(state);
+            const held = draggedBlock(state);
             if (!held?.lifted) return null;
-            const pos = draggedBlockPos(state);
-            if (pos === null || !state.doc.nodeAt(pos)) return null;
+            const { pos } = held;
             const index = state.doc.resolve(pos).index(0);
             const [from, to] = extentOf(nestNodes(state.doc.content.content), index);
             const decorations: Decoration[] = [];

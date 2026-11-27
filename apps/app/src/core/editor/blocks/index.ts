@@ -2,7 +2,7 @@ export {
   BLOCK_LIFTED_CLASS,
   BlockDragExtension,
   beginBlockDrag,
-  draggedBlockPos,
+  draggedBlock,
   endBlockDrag,
   liftBlockDrag,
 } from "./BlockDragExtension";
