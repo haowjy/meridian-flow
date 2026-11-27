@@ -60,7 +60,7 @@ export async function reverseTurnCard(
     AppServices,
     | "documentSync"
     | "threadRepos"
-    | "works"
+    | "workRepo"
     | "stopThreads"
     | "contextPorts"
     | "fileAccess"
@@ -89,7 +89,7 @@ export async function reverseTurnCard(
           blocks: app.threadRepos.blocks,
           turns: app.threadRepos.turns,
           threads: app.threadRepos.threads,
-          works: app.works,
+          works: app.workRepo,
           workContextNotices: app.workContextNotices,
           stopThreads: app.stopThreads,
           transaction: (operation) => runInDrizzleSavepoint(getDb(), operation),
@@ -101,7 +101,7 @@ export async function reverseTurnCard(
     ...input,
     alongside: {
       workIds: receiptWorkIds,
-      lockNamespaces: () => app.works.lockRestoreNamespaces(receiptWorkIds),
+      lockNamespaces: () => app.workRepo.lockRestoreNamespaces(receiptWorkIds),
       run: alongsideRun,
     },
   });

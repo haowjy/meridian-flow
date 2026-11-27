@@ -268,6 +268,7 @@ import { createChatMedia } from "./runtime-host/chat-media.js";
 import { createConnections } from "./runtime-host/connections.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
+import { resolveWorkMembership } from "./work-attachment.js";
 
 export type AppServices = {
   projectExport: ProjectExport;
@@ -293,9 +294,7 @@ export type AppServices = {
   projectWakeHub: ProjectWakeHub;
   documentLinks: DocumentLinkResolver;
   linkScopes: DocumentLinkScopes;
-  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
-  works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
@@ -382,7 +381,6 @@ export type ProductionAppPorts = {
   documentArrivals: DocumentArrivals;
   organizeWake: OrganizeWakeHub;
   projects: ProjectBootstrapRepository;
-  works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
@@ -771,7 +769,6 @@ export async function createProductionAppPorts(input: {
     exportSnapshot: createDrizzleExportSnapshotStore(db),
     linkScopes: documentLinks,
     projects,
-    works: workRepo,
     projectRepo,
     users,
     workRepo,
@@ -1149,16 +1146,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       subagentThreads: ports.threadRepos.threads,
       transaction: ports.threadRepos.transaction,
     },
-    resolveWorkMembership: async (input) => {
-      const { resolveWorkMembership } = await import("./work-attachment.js");
-      return resolveWorkMembership(
-        {
-          workRepo: ports.workRepo,
-          threadWorks: ports.threadRepos.threadWorks,
-        },
+    resolveWorkMembership: (input) =>
+      resolveWorkMembership(
+        { workRepo: ports.workRepo, threadWorks: ports.threadRepos.threadWorks },
         input,
-      );
-    },
+      ),
     eventWriter: threadEventHub,
     readActivity,
     agentRevisions: ports.agentRevisions,
@@ -1277,7 +1269,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     commands: createCommandStore(ports.db),
     treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
-    linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     openImports: (userId) => listOpenImports(ports.db, userId),
     importOrganizer,
@@ -1300,7 +1291,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentLinks: ports.documentLinks,
     linkScopes: ports.linkScopes,
     projects: ports.projects,
-    works: ports.works,
     projectRepo: ports.projectRepo,
     users: ports.users,
     workRepo: ports.workRepo,
