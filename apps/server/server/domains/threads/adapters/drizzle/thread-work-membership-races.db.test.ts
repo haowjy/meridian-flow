@@ -28,7 +28,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
       "../../../projects/index.js"
     );
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });

@@ -1,9 +1,9 @@
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import type { ThreadDocument, ThreadDocumentRepository } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 function mapThreadDocument(row: typeof schema.threadDocuments.$inferSelect): ThreadDocument {
   return {

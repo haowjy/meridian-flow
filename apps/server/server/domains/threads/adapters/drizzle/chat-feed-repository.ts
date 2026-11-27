@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
 import type { ProjectChatFeedRepository } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {
   chatFeedRowsSql,
   mapProjectChatRow,

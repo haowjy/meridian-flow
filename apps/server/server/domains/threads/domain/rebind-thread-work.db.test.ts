@@ -18,7 +18,7 @@ else
     const { eq } = await import("drizzle-orm");
     const { createDrizzleProjectWorkRepository } = await import("../../projects/index.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { rebindThreadWork } = await import("./rebind-thread-work.js");
     const db = createDb(DATABASE_URL, { max: 4 });

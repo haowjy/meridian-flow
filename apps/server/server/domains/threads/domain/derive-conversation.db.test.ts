@@ -40,7 +40,7 @@ else
     );
     const db = createDb(DATABASE_URL, { max: 6 });
     const repos = (
-      await import("../adapters/drizzle/repositories.js")
+      await import("../../../test-support/thread-repositories.js")
     ).createDrizzleRepositoriesForTest(db);
     const revisions = createDrizzleAgentRevisionStore(db);
     const eventWriter = createQuietDrizzleJournalWriter(db);

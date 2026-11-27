@@ -38,7 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleRunClaim } = await import("./drizzle-run-claim.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../../threads/adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
 
@@ -512,7 +512,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       async function assistant() {
         const { createDrizzleRepositoriesForTest } = await import(
-          "../../threads/adapters/drizzle/repositories.js"
+          "../../../test-support/thread-repositories.js"
         );
         const repos = createDrizzleRepositoriesForTest(db);
         return {

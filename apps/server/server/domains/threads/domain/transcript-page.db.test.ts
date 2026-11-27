@@ -16,7 +16,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../test-support/drizzle-reset.js"
     );
     const { createDrizzleRepositoriesForTest } = await import(
-      "../adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { defineTranscriptPageContract } = await import(
       "../__conformance__/transcript-page-contract.js"

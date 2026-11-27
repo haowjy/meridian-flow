@@ -1,6 +1,6 @@
 import * as schema from "@meridian/database/schema";
+import { currentDrizzleDb, type DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
 import type { ThreadUserStateRepository } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzleThreadUserStateRepository(
   db: DrizzleDatabase,

@@ -14,7 +14,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
     const {
       expectChatFeedCursorAcrossFilterContract,
       expectChatFeedSearchSemanticsContract,

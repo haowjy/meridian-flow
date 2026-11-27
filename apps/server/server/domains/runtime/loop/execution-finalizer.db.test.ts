@@ -32,7 +32,7 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { journalEventsByThread } = await import("../../../test-support/journal-events.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../../threads/adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { finalizeExecution } = await import("./execution-finalizer.js");
 

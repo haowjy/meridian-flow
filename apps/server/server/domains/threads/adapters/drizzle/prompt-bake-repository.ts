@@ -1,9 +1,9 @@
 import type { PromptBakeId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
 import type { PromptBakeRepository } from "../../ports/repositories.js";
 import { mapPromptBake } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzlePromptBakeRepository(db: DrizzleDatabase): PromptBakeRepository {
   return {
