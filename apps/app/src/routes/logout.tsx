@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  AccountFeatureLifetime,
+  AccountLifetime,
   SIGN_OUT_FAILURE,
   SignOutIncomplete,
 } from "@/client/account/account-lifetime";
@@ -36,7 +36,7 @@ function Logout() {
 }
 
 function signOutOfThisBrowser(setFailed: (failed: boolean) => void): () => Promise<void> {
-  let lifetime: AccountFeatureLifetime | null = null;
+  let lifetime: AccountLifetime | null = null;
   let running = false;
   return async () => {
     if (running) return;
@@ -45,7 +45,7 @@ function signOutOfThisBrowser(setFailed: (failed: boolean) => void): () => Promi
     try {
       const me = await signedInAccount();
       if (!me) return window.location.replace("/end-session");
-      lifetime ??= new AccountFeatureLifetime(me.userId, me.externalId);
+      lifetime ??= new AccountLifetime(me.userId, me.externalId);
       window.location.replace(await lifetime.clearForSignOut());
     } catch (error) {
       if (!(error instanceof SignOutIncomplete)) reportError(error);

@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
-} from "@/client/account/account-composition";
+} from "@/client/account/account-context";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
 import { useShellTreeVersion } from "../tree-version";
 import type { DragEntry } from "./entry-drag/entry";

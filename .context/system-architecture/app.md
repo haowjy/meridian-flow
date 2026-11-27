@@ -106,7 +106,7 @@ HTTP clients, React Query hooks, the thread store and the transport provider. `a
 - Kind: module
 - Paths: `apps/app/src/client`
 - Docs: [app CONTEXT](../../apps/app/.context/CONTEXT.md), [chat-submissions CONTEXT](../../apps/app/src/client/chat-submissions/.context/CONTEXT.md), [recents CONTEXT](../../apps/app/src/client/recents/.context/CONTEXT.md)
-- Machines: [chat submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md), [release](../../apps/app/src/client/release/.context/state-machines.md)
+- Machines: [chat submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md), [release](../../apps/app/src/client/release/.context/state-machines.md), [account](../../apps/app/src/client/account/.context/state-machines.md)
 - Drift: No written dependency rule covers the app's layers. `client` imports `features` in one place (chat submissions' `whenDerived` from `features/chat`), and `core` imports `client` and `components`.
 
 ## core

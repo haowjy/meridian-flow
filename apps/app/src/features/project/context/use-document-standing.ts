@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
-import { useProjectStandings } from "@/client/account/account-composition";
+import { useProjectStandings } from "@/client/account/account-context";
 import type { DocumentStanding } from "@/core/tree-list/standing";
 
 const WAITING: DocumentStanding = { kind: "waiting" };

@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
-import { useOptionalLiveDocumentSessionRegistry } from "@/client/account/account-composition";
+import { useOptionalLiveDocumentSessionRegistry } from "@/client/account/account-context";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";

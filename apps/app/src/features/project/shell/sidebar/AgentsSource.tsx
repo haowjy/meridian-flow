@@ -11,7 +11,7 @@ import {
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { BookOpen, Bot, FilePlus, FolderPlus, Plus } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
-import { useLiveDocumentSessionRegistry } from "@/client/account/account-composition";
+import { useLiveDocumentSessionRegistry } from "@/client/account/account-context";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
 import { RowWord } from "@/components/app/RowWord";

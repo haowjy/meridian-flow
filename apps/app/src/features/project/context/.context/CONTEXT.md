@@ -63,7 +63,7 @@ rename, move or delete in its draft or its Scratch): it comes back as a settleme
 every replay leaves the record out, and the row says so (`core/project-tree/tree-bounces.ts`,
 the tree's notice words). A tree action returns what it made and is never refused.
 
-The close of `AccountFeatureLifetime` releases the lists with the rest of the account's state.
+The close of `AccountLifetime` releases the lists with the rest of the account's state.
 ## Visible Editor ownership
 
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by

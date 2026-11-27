@@ -27,7 +27,7 @@ document fits. Only links omit the extension; the tree's `findPath` does not. Ad
 
 **A settlement is a fact the client keeps.** The resolve endpoint marks an ahead ref's answer
 `settled: true` when it came through the ref's settlement. The resolver records it in the
-account's memo (`AccountFeatureLifetime.linkSettlements`), outside every generation and shared
+account's memo (`AccountLifetime.linkSettlements`), outside every generation and shared
 by every surface, and it is never cleared while the account lives. Settled `gone` records only
 "settled, identity unknown", because it may mean the document is unreachable in that scope; a
 later settled `document` teaches the id, and an id once learned is never replaced. From then

@@ -5,7 +5,7 @@ plus its sync status, per list, per account. Every screen that shows a name or a
 through `client/query/useProjectTree.ts` (a source's tree from the replay) and writes it through
 `core/project-tree/tree-actions.ts` (records appended to this copy).
 
-- Read a list through `TreeListRegistry.acquire` (owned by `AccountFeatureLifetime.treeLists`) and
+- Read a list through `TreeListRegistry.acquire` (owned by `AccountLifetime.treeLists`) and
   its session's `getSnapshot()`. After the copy is replaced the snapshot's `doc` is a new document: never
   hold one across a render.
 - The copy is stored per list in IndexedDB (`core/editor/local-copy-store.ts`: a snapshot and a
