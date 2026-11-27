@@ -1,19 +1,17 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { memo, useMemo, useState } from "react";
-
-import { Button } from "@/components/ui/button";
-
-import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
-import { JsonTree } from "../JsonTree";
-import { TraceExport } from "./TraceExport";
-import { StreamList, TraceFilters } from "./TraceFilters";
-import { TraceTable } from "./TraceTable";
 import {
   clearTraceEvents,
   filterTraceEntries,
   getTraceSnapshot,
   type TraceFilters as TraceFilterState,
-} from "./trace-store";
+} from "@/client/trace-store";
+import { Button } from "@/components/ui/button";
+import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
+import { JsonTree } from "../JsonTree";
+import { TraceExport } from "./TraceExport";
+import { StreamList, TraceFilters } from "./TraceFilters";
+import { TraceTable } from "./TraceTable";
 import { useTraceStore } from "./use-trace-store";
 
 const EMPTY_FILTERS: TraceFilterState = {

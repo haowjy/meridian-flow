@@ -10,12 +10,12 @@ import {
   recordChatSubmission,
 } from "@/client/chat-submissions";
 import { MemorySubmissionLock } from "@/client/chat-submissions/adapters/memory-lock";
-import { composerSessionDraft } from "@/client/composer-drafts";
-import { scenarioGate, ThreadRunScenario } from "@/client/copilot/test-support/ThreadRunScenario";
 import {
   plainComposerDoc,
   serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
+} from "@/client/chat-submissions/composer-document";
+import { composerSessionDraft } from "@/client/chat-submissions/composer-drafts";
+import { scenarioGate, ThreadRunScenario } from "@/client/copilot/test-support/ThreadRunScenario";
 import { useChatSubmissions } from "./useChatSubmissions";
 
 (

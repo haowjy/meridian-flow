@@ -18,6 +18,22 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type ComposerDraftChange,
+  type ComposerDraftSnapshot,
+  type ComposerPendingUploadAttrs,
+  type ComposerReferenceAttrs,
+  ComposerReferenceNode,
+  ComposerSkillNode,
+  type ComposerSubmitEnvelope,
+  ComposerUploadNode,
+  composerReferenceContent,
+  composerSelection,
+  pickedReferenceAttrs,
+  plainComposerDoc,
+  restoreComposerSelection,
+  serializeComposerDraft,
+} from "@/client/chat-submissions/composer-document";
 import { FailureCard } from "@/components/app/FailureCard";
 import { IconButton } from "@/components/ui/icon-button";
 import type {
@@ -49,35 +65,9 @@ import {
   composerSkillCommandItems,
   matchComposerChatCommand,
 } from "./command";
-import {
-  type ComposerDraftChange,
-  type ComposerDraftSnapshot,
-  type ComposerPendingUploadAttrs,
-  type ComposerReferenceAttrs,
-  ComposerReferenceNode,
-  ComposerSkillNode,
-  type ComposerSubmitEnvelope,
-  ComposerUploadNode,
-  composerReferenceContent,
-  composerSelection,
-  pickedReferenceAttrs,
-  plainComposerDoc,
-  restoreComposerSelection,
-  serializeComposerDraft,
-} from "./composer-document";
 import { useComposerPlaceholder } from "./placeholders";
 import { type DroppedEntry, useFileDrop } from "./use-file-drop";
 import { useLiveReferences } from "./useLiveReferences";
-
-export type {
-  ComposerDraftChange,
-  ComposerDraftRevision,
-  ComposerDraftSnapshot,
-  ComposerOwnedUpload,
-  ComposerSelection,
-  ComposerSubmitEnvelope,
-} from "./composer-document";
-export { serializeComposerDraft } from "./composer-document";
 
 export type ComposerUploadScope = { kind: "chat"; projectId: string; chatId: string };
 

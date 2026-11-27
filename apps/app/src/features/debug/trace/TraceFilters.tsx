@@ -1,9 +1,7 @@
 import type { EventRecord } from "@meridian/contracts/observability";
-
+import type { TraceFilters as TraceFilterState } from "@/client/trace-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-import type { TraceFilters as TraceFilterState } from "./trace-store";
 
 const ALL_MESSAGE_CLASSES = "__all_message_classes__";
 const BOTH_DIRECTIONS = "__both_directions__";

@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { QueryClient } from "@tanstack/react-query";
+import { announce, announceError } from "@/client/announcements";
 import {
   cleanDeletedChat,
   restoreOwnDeletedChatWords,
@@ -11,7 +12,6 @@ import {
   deleteProjectChat,
   restoreProjectChat,
 } from "@/client/query/delete-project-chat";
-import { announce, announceError } from "@/client/stores";
 import type { ChatNavigation } from "../../routing/chat-navigation";
 
 export type ChatDeleteNotice = {

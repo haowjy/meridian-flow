@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { focusMain } from "@/features/editor/focus-on-open";
 import { MainSurface } from "@/features/editor/MainSurface";
-import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { useClock } from "@/hooks/use-clock";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { RecencyGroupedList } from "../RecencyGroupedList";
@@ -34,7 +34,7 @@ function ChatsLanding({ projectId }: { projectId: string }) {
   const chat = useChatNavigation();
   const [search, setSearch] = useState<string | null>(null);
   const feed = useProjectChatFeed(projectId, false, search);
-  const now = useMinuteClock();
+  const now = useClock(60_000);
   const startChat = () => void chat.openNewChat();
 
   if (

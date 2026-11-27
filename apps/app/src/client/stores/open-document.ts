@@ -79,3 +79,9 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
 export function isEditorOpenDocument(tab: OpenDocument): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }
+
+export type OpenDocumentOutcome =
+  | { kind: "committed"; documentId: string }
+  | { kind: "trashed"; documentId: string }
+  | { kind: "cancelled" }
+  | { kind: "refused"; reason: "gone" | "lookup-failed"; name?: string };

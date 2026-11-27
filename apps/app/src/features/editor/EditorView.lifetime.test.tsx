@@ -75,7 +75,7 @@ function Harness({ initial }: { initial: SurfaceProps }) {
 function ExactLiveEditor(props: SurfaceProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThreadStoreProvider now={0}>
+      <ThreadStoreProvider>
         <I18nProvider i18n={i18n}>
           <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
         </I18nProvider>

@@ -1,7 +1,7 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import type { PersistedContractFailure } from "@meridian/thread-client";
+import { appendTraceEvent } from "@/client/trace-store";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { appendTraceEvent } from "../debug/trace/trace-store";
 
 const reported = new Set<string>();
 

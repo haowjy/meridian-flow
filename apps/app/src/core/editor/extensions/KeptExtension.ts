@@ -4,7 +4,7 @@ import { Extension } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { type EditorState, Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { announce } from "@/client/stores/thread-store/announcements";
+import { announce } from "@/client/announcements";
 
 function decorate(doc: Node, kept: ReadonlySet<string>): DecorationSet {
   const decorations: Decoration[] = [];

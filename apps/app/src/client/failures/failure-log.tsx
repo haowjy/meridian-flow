@@ -1,7 +1,7 @@
 import { type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import { createBatchedFailureLog } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
-import { appendTraceEvent } from "@/features/debug/trace/trace-store";
+import { appendTraceEvent } from "@/client/trace-store";
 
 const Context = createContext<FailureLog>(noFailureLog);
 export function FailureLogProvider({

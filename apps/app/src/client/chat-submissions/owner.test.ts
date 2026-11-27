@@ -13,16 +13,13 @@ import {
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import { MemorySubmissionLock } from "@/client/chat-submissions/adapters/memory-lock";
-import { ComposerSessionDraft, composerSessionDraft } from "@/client/composer-drafts";
 import {
   defaultSendResponse,
   scenarioGate,
   ThreadRunScenario,
 } from "@/client/copilot/test-support/ThreadRunScenario";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
+import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
+import { ComposerSessionDraft, composerSessionDraft } from "./composer-drafts";
 import { ChatSubmissionOwner } from "./owner";
 
 vi.mock("@/client/api/threads-api", async (actual) => ({

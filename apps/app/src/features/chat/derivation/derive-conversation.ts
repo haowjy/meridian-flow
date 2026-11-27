@@ -5,9 +5,9 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
+import { makeOptimisticThread } from "@/client/chat-submissions/optimistic-thread";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import type { InheritedView } from "./inherited-view";
 
 export type DerivationKind = "fork" | "handoff";

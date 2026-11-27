@@ -1,8 +1,8 @@
 import { type RefObject, useEffect, useRef } from "react";
 
-import { announce } from "@/client/stores";
+import { announce } from "@/client/announcements";
 
-import type { ComposerHandle } from "@/components/app/composer";
+import type { ComposerHandle } from "@/features/chat/composer";
 import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";
 
 export function useThreadNavigationAnnounce(

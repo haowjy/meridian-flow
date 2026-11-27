@@ -3,6 +3,11 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type ComposerReferenceAttrs,
+  composerReferenceContent,
+  pickedReferenceAttrs,
+} from "@/client/chat-submissions/composer-document";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -26,11 +31,6 @@ import { twinSuffix } from "@/core/project-tree/tree-view";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
-import {
-  type ComposerReferenceAttrs,
-  composerReferenceContent,
-  pickedReferenceAttrs,
-} from "./composer-document";
 
 export type ComposerReferenceRuntime = {
   onOpen?: (reference: DocumentReference) => void;

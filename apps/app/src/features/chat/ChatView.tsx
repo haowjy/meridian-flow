@@ -37,15 +37,15 @@ import {
   useThreadAsks,
   useThreadStore,
 } from "@/client/stores";
-import {
-  type ComposerChatCommand,
-  type ComposerHandle,
-  useFileDrop,
-} from "@/components/app/composer";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import type { AgentChoice } from "@/features/agents/AgentPicker";
 import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
 import { DEFAULT_AGENT_NAME } from "@/features/agents/constants";
+import {
+  type ComposerChatCommand,
+  type ComposerHandle,
+  useFileDrop,
+} from "@/features/chat/composer";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
 import {

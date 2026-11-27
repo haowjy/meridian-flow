@@ -1,6 +1,6 @@
 import type { EventRecord, TraceStreamRef } from "@meridian/contracts/observability";
 
-import { clearTraceEvents, getTraceSnapshot, subscribeToTraceEvents } from "./trace-store";
+import { clearTraceEvents, getTraceSnapshot, subscribeToTraceEvents } from "@/client/trace-store";
 
 export interface AgentTraceFilter {
   transport?: TraceStreamRef["transport"];

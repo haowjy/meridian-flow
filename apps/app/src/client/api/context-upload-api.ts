@@ -5,7 +5,6 @@ import {
   type UploadStart,
 } from "@meridian/contracts/protocol";
 
-import type { ComposerUploadPort } from "@/components/app/composer";
 import { fileTooLargeMessage } from "@/lib/upload-limit";
 
 import { UploadRefusedError, uploadFileDirect } from "./direct-upload";
@@ -58,15 +57,3 @@ export function uploadContextFile(
       ),
   });
 }
-
-export const chatUploadPort: ComposerUploadPort = {
-  intake: ({ file, intakeId, scope, signal }) =>
-    uploadContextFile({
-      projectId: scope.projectId,
-      scheme: "uploads",
-      query: { chatId: scope.chatId },
-      intakeId,
-      file,
-      signal,
-    }),
-};

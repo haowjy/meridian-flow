@@ -35,7 +35,7 @@ sequenceDiagram
   collab-->>core-transport: 15. push to open rooms
 ```
 
-1. **Send.** [chat](../app-conversation.md#chat) calls the optimistic send helper `lib/send-project-chat.ts`, which shows the message at once and keeps it in the send journal in `localStorage` until the server confirms.
+1. **Send.** [chat](../app-conversation.md#chat) calls the optimistic send helper `features/chat/send-project-chat.ts`, which shows the message at once and keeps it in the send journal in `localStorage` until the server confirms.
 2. **Post.** [client](../app.md#client) posts to `routes/api/threads/[threadId]/messages.post.ts` with a `submissionId`, so a retry is the same message.
 3. **Admit.** The route checks the thread belongs to the writer, then calls `app.userTurnAdmission.admit` ([runtime](../server-conversation.md#runtime), `admission/user-turn-admission.ts`). A replay of the same `submissionId` returns the first answer.
 4. **Save.** In one transaction `admission/writer-turn-producer.ts` saves the writer's turn through [threads](../server-conversation.md#threads) repositories, appends the message to the thread's durable inbox and wakes the thread. No run starts here. After the commit, `loop/delivery/delivery-service.ts` calls `runStarter.start(threadId)`, which claims the thread and starts the run's drain; the drain creates the assistant turn. If that call is lost, the recovery scheduler's sweep (`sweepWakes`) finds threads with pending messages and starts them the same way.

@@ -1,5 +1,5 @@
 import { Trans } from "@lingui/react/macro";
-import type { DeletedChatCard as Notice } from "@/client/composer-drafts";
+import type { DeletedChatCard as Notice } from "@/client/chat-submissions/composer-drafts";
 import { FailureCard } from "@/components/app/FailureCard";
 
 export function DeletedChatCard({ notice, onDismiss }: { notice: Notice; onDismiss(): void }) {

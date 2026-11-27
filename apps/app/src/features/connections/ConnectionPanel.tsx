@@ -13,6 +13,7 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
+import { useClock } from "@/hooks/use-clock";
 import {
   actionLabel,
   addressRefusal,
@@ -72,7 +73,7 @@ function StandingSentence({
   shadowName: string | null;
   onAction: (action: ConnectionAction) => void;
 }) {
-  const now = useNow(30_000);
+  const now = useClock(30_000);
   const checked = connection.checkedAt ? timeAgo(connection.checkedAt, now) : null;
   const action = standingAction(standing);
   let sentence: string;
@@ -366,13 +367,4 @@ function ToolsPart({
       )}
     </div>
   );
-}
-
-function useNow(stepMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), stepMs);
-    return () => window.clearInterval(timer);
-  }, [stepMs]);
-  return now;
 }

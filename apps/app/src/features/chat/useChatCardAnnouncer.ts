@@ -1,6 +1,6 @@
 import type { ChatCard } from "@meridian/thread-client";
 import { useEffect, useRef } from "react";
-import { announceErrors, clearAnnouncement } from "@/client/stores";
+import { announceErrors, clearAnnouncement } from "@/client/announcements";
 import { chatCardText } from "./chat-card-copy";
 
 export function useChatCardAnnouncer(

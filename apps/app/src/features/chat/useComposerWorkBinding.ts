@@ -1,16 +1,16 @@
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useAnnouncement } from "@/client/announcements";
 import { isMeridianApiError } from "@/client/api/http-client";
 import { ThreadWorkOutcomeUnconfirmedError } from "@/client/query/thread-work-binding-cache";
 import { type NormalizedCommit, useRebindThreadWork } from "@/client/query/useRebindThreadWork";
 import { useWorks } from "@/client/query/useWorks";
-import { useAnnouncement } from "@/client/stores";
 import {
   type WorkCatalogView,
   type WorkPickerOperation,
   workFailureCopy,
-} from "@/components/app/work-composer-controls";
+} from "@/features/chat/composer/work-controls";
 import {
   type ComposerWorkBindingState,
   initialComposerWorkBindingState,

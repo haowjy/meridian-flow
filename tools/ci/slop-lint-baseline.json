@@ -13,7 +13,7 @@
         "count": 3
       },
       {
-        "path": "apps/app/src/client/composer-drafts.ts",
+        "path": "apps/app/src/client/chat-submissions/composer-drafts.ts",
         "line": "} catch {",
         "count": 1
       },
@@ -33,12 +33,12 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/components/app/composer/Composer.tsx",
+        "path": "apps/app/src/features/chat/composer/Composer.tsx",
         "line": "const recorded = await Promise.resolve(onSubmit(envelope)).catch(() => false);",
         "count": 1
       },
       {
-        "path": "apps/app/src/components/app/composer/placeholders.ts",
+        "path": "apps/app/src/features/chat/composer/placeholders.ts",
         "line": "} catch {",
         "count": 2
       },
@@ -123,7 +123,7 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/debug/trace/trace-store.ts",
+        "path": "apps/app/src/client/trace-store.ts",
         "line": "} catch {",
         "count": 1
       },
@@ -285,7 +285,7 @@
     ],
     "suppression": [
       {
-        "path": "apps/app/src/components/app/composer/ComposerReferenceMenu.tsx",
+        "path": "apps/app/src/features/chat/composer/ComposerReferenceMenu.tsx",
         "line": "// biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.",
         "count": 1
       },

@@ -13,7 +13,7 @@ import { ListLine } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { useClock } from "@/hooks/use-clock";
 import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { GoneWord } from "./GoneWord";
@@ -62,7 +62,7 @@ export function WorkCollection({
   deletion: WorkDeletion;
 }) {
   const { works, deleted, creations, nameOf, isError, isFetching, refetch } = useWorks(projectId);
-  const now = useMinuteClock();
+  const now = useClock(60_000);
   const { restore } = useWorkMutations(projectId);
   const restoring = useRestoringWorkIds(projectId);
   const failures = useWorkCommandFailures(projectId, WORK_ROW_OPERATIONS);

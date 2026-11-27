@@ -17,7 +17,7 @@ import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/Comm
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { focusMain } from "@/features/editor/focus-on-open";
 import { MainSurface } from "@/features/editor/MainSurface";
-import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { useClock } from "@/hooks/use-clock";
 import { cn } from "@/lib/utils";
 import { RecencyGroupedList } from "../RecencyGroupedList";
 import { relativeTime } from "../relative-time";
@@ -46,7 +46,7 @@ export function RecentDocumentsLanding({
   const recent = useRecentDocuments(projectId);
   const project = useProject(projectId);
   const openDocument = useOpenProjectDocument(projectId);
-  const now = useMinuteClock();
+  const now = useClock(60_000);
   const deleteEntries = useDeleteContextEntries(projectId, "main", LIVE_VERSION);
   const discarded = useDocumentNotice(projectId, null);
   const discardNotice = discarded ? <DraftNoticeLine notice={discarded} className="px-0" /> : null;

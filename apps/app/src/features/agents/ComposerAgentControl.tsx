@@ -8,7 +8,7 @@ import {
   ComposerCurrentValueStatus,
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
-} from "@/components/app/composer-toolbar";
+} from "@/features/chat/composer/toolbar";
 import { cn } from "@/lib/utils";
 import {
   type AgentChoice,

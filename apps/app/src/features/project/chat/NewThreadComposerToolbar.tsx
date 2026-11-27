@@ -4,21 +4,21 @@ import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
+import type { AgentChoice } from "@/features/agents/AgentPicker";
+import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
+import type { CreationAgent } from "@/features/agents/creation-agent";
 import {
   ComposerCurrentValueTrigger,
   ComposerToolbar,
   type ComposerToolbarControl,
   createComposerToolbarModel,
-} from "@/components/app/composer-toolbar";
-import { WorkIdentity } from "@/components/app/WorkIdentity";
+} from "@/features/chat/composer/toolbar";
 import {
   deriveWorkPickerViewModel,
   useWriteModeToolbarControl,
   WorkPickerPanel,
-} from "@/components/app/work-composer-controls";
-import type { AgentChoice } from "@/features/agents/AgentPicker";
-import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
-import type { CreationAgent } from "@/features/agents/creation-agent";
+} from "@/features/chat/composer/work-controls";
 
 export function NewThreadComposerToolbar({
   projectId,

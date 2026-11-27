@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
 
 import { expect, it } from "vitest";
-import { ComposerSessionDraft, type PendingHandBack } from "@/client/composer-drafts";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
+import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
+import { ComposerSessionDraft, type PendingHandBack } from "./composer-drafts";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 

@@ -1,8 +1,11 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect } from "react";
+import type {
+  ComposerDraftSnapshot,
+  ComposerReferenceAttrs,
+} from "@/client/chat-submissions/composer-document";
 import type { AuthoritativeReference } from "@/core/completion";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
-import type { ComposerDraftSnapshot, ComposerReferenceAttrs } from "./composer-document";
 
 export function useLiveReferences(
   editor: Editor | null,

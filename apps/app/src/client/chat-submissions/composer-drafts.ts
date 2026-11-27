@@ -1,11 +1,11 @@
 import { type HandBackCommand, type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
-import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
+import { browserRecord, isRecord, type StorageSource } from "@/client/storage/browser-record";
+import type { ComposerDraftChange, ComposerDraftSnapshot } from "./composer-document";
 import {
   composerDocEnd,
   parseRestorableComposerDraft,
   serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
-import { browserRecord, isRecord, type StorageSource } from "./storage/browser-record";
+} from "./composer-document";
 
 export type ComposerDraftScope = { kind: "chat" | "new-chat" | "side-new-chat"; id: string };
 

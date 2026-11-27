@@ -6,7 +6,7 @@ import { type TrashEntry, useDocumentTrash } from "@/client/query/useDocumentTra
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { useClock } from "@/hooks/use-clock";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { schemeLocation } from "../../context/context-schemes";
@@ -34,7 +34,7 @@ export function TrashSource({
   const query = useDocumentTrash(projectId);
   const { restored, restore } = useDocumentTrashRestore();
   const trash = useTrashNavigation();
-  const now = useMinuteClock();
+  const now = useClock(60_000);
   const listed = query.data?.entries;
   const place = useMemo<NoticePlace>(() => {
     const held = new Set([...(listed ?? []).map(trashKey), ...restored.map(({ key }) => key)]);

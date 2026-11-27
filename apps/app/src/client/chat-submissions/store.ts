@@ -14,10 +14,7 @@ import {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Occurrence } from "@meridian/thread-client";
 import { browserRecord } from "@/client/storage/browser-record";
-import {
-  type ComposerDraftSnapshot,
-  parseRestorableComposerDraft,
-} from "@/components/app/composer/composer-document";
+import { type ComposerDraftSnapshot, parseRestorableComposerDraft } from "./composer-document";
 
 export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 3;
 export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v3:";
