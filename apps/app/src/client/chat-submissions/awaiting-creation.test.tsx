@@ -62,7 +62,7 @@ it("reads creation synchronously on reload and updates on local writes, storage 
     await act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <ThreadStoreProvider now={0}>
+          <ThreadStoreProvider>
             <Reader />
           </ThreadStoreProvider>
         </QueryClientProvider>,

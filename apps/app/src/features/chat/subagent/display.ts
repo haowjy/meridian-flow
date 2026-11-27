@@ -1,4 +1,5 @@
-import { createElement, useSyncExternalStore } from "react";
+import { createElement } from "react";
+import { useClock } from "@/hooks/use-clock";
 import { i18n } from "@/lib/i18n";
 import { liveToolActivityLabel } from "../command-descriptor";
 import type { SubagentRunStatus } from "./run-model";
@@ -36,36 +37,9 @@ export function formatSubagentElapsed(
     : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function useSubagentClock(): number {
-  return useSyncExternalStore(subscribeClock, readClock, readClock);
-}
-
 export function Elapsed({ startedAt }: { startedAt?: string | null }) {
-  const now = useSubagentClock();
+  const now = useClock(1000);
   return createElement("span", null, formatSubagentElapsed(startedAt, null, now));
-}
-
-let clockNow = Date.now();
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-const clockListeners = new Set<() => void>();
-function readClock(): number {
-  return clockNow;
-}
-function subscribeClock(listener: () => void): () => void {
-  clockListeners.add(listener);
-  if (clockTimer === null) {
-    clockTimer = setInterval(() => {
-      clockNow = Date.now();
-      for (const subscriber of clockListeners) subscriber();
-    }, 1000);
-  }
-  return () => {
-    clockListeners.delete(listener);
-    if (!clockListeners.size && clockTimer !== null) {
-      clearInterval(clockTimer);
-      clockTimer = null;
-    }
-  };
 }
 
 export function subagentCurrentToolLabel(toolName: string, input: unknown): string {

@@ -2,10 +2,15 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getProject, listProjects } from "@/client/api/projects-api";
-import { mergeApiProjects } from "@/client/stores";
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { pendingProjectTitles } from "./useRenameProject";
+
+function mergeApiProjects(prev: Project[] | null, apiProjects: Project[]): Project[] {
+  const apiIds = new Set(apiProjects.map((project) => project.id));
+  const optimisticOnly = (prev ?? []).filter((project) => !apiIds.has(project.id));
+  return [...optimisticOnly, ...apiProjects];
+}
 
 function useProjectListQuery() {
   const queryClient = useQueryClient();

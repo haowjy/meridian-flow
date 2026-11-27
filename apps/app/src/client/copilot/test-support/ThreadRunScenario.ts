@@ -98,7 +98,6 @@ class ScenarioThreadTransport implements ThreadTransport {
 
 export class ThreadRunScenario {
   readonly store = createThreadStore({
-    now: 0,
     threadCache: createThreadCache(new QueryClient()),
   });
   readonly transport = new ScenarioThreadTransport();

@@ -7,7 +7,7 @@ it("keeps a failed optimistic writer row local instead of invalidating server tr
   const client = new QueryClient();
   const key = ["threads", "thread-1", "snapshot"];
   client.setQueryData(key, { turns: [] });
-  const store = createThreadStore({ now: 0, threadCache: createThreadCache(client) });
+  const store = createThreadStore({ threadCache: createThreadCache(client) });
   const row = store.getState().appendUserTurn("thread-1", [{ type: "text", text: "Keep it" }]);
   store.getState().patchTurnStatus("thread-1", row.id, "error");
   await Promise.resolve();
@@ -44,7 +44,7 @@ it("a warm switch joins from the cached snapshot without rewinding the list row"
   const { createThreadCache } = await import("./thread-cache");
   const { createThreadSync } = await import("@meridian/thread-client/sync");
   const client = new QueryClient();
-  const store = createThreadStore({ now: 0, threadCache: createThreadCache(client) });
+  const store = createThreadStore({ threadCache: createThreadCache(client) });
   const listKey = ["projects", "project-1", "threads"];
   const idle = {
     version: "0",

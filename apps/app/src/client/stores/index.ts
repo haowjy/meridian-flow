@@ -7,16 +7,6 @@ export {
   replaceOwner,
   type ServerOpenDocument,
 } from "./open-document";
-export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
-export {
-  loadProjectList,
-  mergeApiProjects,
-  type ProjectStoreApi,
-  ProjectStoreProvider,
-  type ProjectStoreSeed,
-  useProjectActions,
-  useProjectStore,
-} from "./project-store";
 export {
   announce,
   announceError,
