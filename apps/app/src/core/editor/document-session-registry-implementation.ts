@@ -694,6 +694,7 @@ export class DocumentSessionRegistry {
   }
 
   private retire(room: Room): void {
+    // slop-lint: allow swallowed-error a failed destroy stays with the teardown owner, which retries it and reports it at close
     void this.retireSession(room)
       .then(async (slot) => {
         if (!slot) return;
