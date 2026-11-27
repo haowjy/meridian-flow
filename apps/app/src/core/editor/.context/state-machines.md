@@ -108,9 +108,14 @@ stateDiagram-v2
   path: grace, `holding` while its transport reconnects and sends, then `none` once saved. The
   account lifetime runs the pass each time it mounts signed in (`resumeFeatureLease`), and
   sign-out's wait runs the same scan (`openStoredUnsent`). It opens nothing while the account is
-  closing or after a sign-out was counted. A room that refuses for good (access removed, the
-  document purged, bytes the server can't read) is opened once per pass: it ends, its hold ends
-  and it retires, and the words stay in the copy until the next pass.
+  closing or after a sign-out was counted. A copy the pass can't read (a newer build's database,
+  any IndexedDB error) is reported and skipped, and the scan goes on to the next; sign-out counts
+  it as unsent and refuses. A room that refuses for good (access removed, the document purged,
+  bytes the server can't read) is opened once per pass: it ends, its hold ends and it retires,
+  and the words stay in the copy until the next pass. A copy the server's history has moved past
+  (`history-cutoff`) is the exception: the replacement path drops its words with "Couldn't save",
+  moves the room to a fresh copy, and so the toast can appear on load with the document not open
+  and not named.
 - **`none` after a retirement is not available until the destroy finishes.** `retire` and
   `retireRoom` take the session out of the slot and hand it to the teardown owner, which calls
   `destroy` at once. Until that finishes, `admit` and opening the room throw (`assertAvailable`)

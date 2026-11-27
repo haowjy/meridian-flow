@@ -139,12 +139,13 @@ export class DocumentSessionRegistry {
   }
 
   async deliverStoredCopies(): Promise<void> {
-    const unsent = await this.storedUnsent();
+    const { unsent } = await this.storedUnsent();
     for (const room of withLiveRooms(unsent)) this.openToDeliver(room);
   }
 
   private async openStoredUnsent(deadline: number): Promise<DocumentRoom[] | null> {
-    const unsent = await this.storedUnsent();
+    const { unsent, unreadable } = await this.storedUnsent();
+    if (unreadable) return null;
     const rooms = withLiveRooms(unsent);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const drained = await Promise.race([
@@ -165,13 +166,20 @@ export class DocumentSessionRegistry {
     return unsent;
   }
 
-  private async storedUnsent(): Promise<DocumentRoom[]> {
+  private async storedUnsent(): Promise<{ unsent: DocumentRoom[]; unreadable: boolean }> {
     const unsent: DocumentRoom[] = [];
+    let unreadable = false;
     // One at a time: holding every copy's bytes at once costs their sum.
-    for (const { name, room } of await this.copies.currentCopies())
-      if (!this.openSession(room) && (await this.copies.holds(name, storedOpsBeyondMark)))
-        unsent.push(room);
-    return unsent;
+    for (const { name, room } of await this.copies.currentCopies()) {
+      if (this.openSession(room)) continue;
+      try {
+        if (await this.copies.holds(name, storedOpsBeyondMark)) unsent.push(room);
+      } catch (error) {
+        reportError(error);
+        unreadable = true;
+      }
+    }
+    return { unsent, unreadable };
   }
 
   private openToDeliver(room: DocumentRoom): void {
