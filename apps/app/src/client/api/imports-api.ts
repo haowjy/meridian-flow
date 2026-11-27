@@ -8,7 +8,13 @@ import type {
   ImportSummary,
 } from "@meridian/contracts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
-import { readResponsePayload } from "./http-client";
+import {
+  accountFor,
+  accountHeaders,
+  answeredFor,
+  apiFetch,
+  readResponsePayload,
+} from "./http-client";
 
 export class ImportRequestError extends Error {
   readonly name = "ImportRequestError";
@@ -43,7 +49,7 @@ function requestError(status: number, payload: unknown) {
 async function request<T>(url: string, init: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await apiFetch(url, init);
   } catch (cause) {
     if (init.signal?.aborted) throw cause;
     throw new ImportRequestError(0, null, undefined, "The request did not get an answer.");
@@ -77,8 +83,12 @@ export function sendImportFiles(
       reject(new DOMException("Aborted", "AbortError"));
       return;
     }
+    const url = `${importsPath(projectId, importId)}/files`;
+    const account = accountFor(url);
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${importsPath(projectId, importId)}/files`);
+    xhr.open("POST", url);
+    for (const [name, value] of Object.entries(accountHeaders(account)))
+      xhr.setRequestHeader(name, value);
     xhr.responseType = "json";
     xhr.timeout = 600000;
     xhr.setRequestHeader(
@@ -93,10 +103,11 @@ export function sendImportFiles(
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress?.((bytes * event.loaded) / event.total);
     };
-    xhr.onload = () =>
-      xhr.status >= 200 && xhr.status < 300
-        ? resolve(xhr.response as ImportFilesResult)
-        : reject(requestError(xhr.status, xhr.response));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.response as ImportFilesResult);
+      answeredFor(account, xhr.status, xhr.response);
+      reject(requestError(xhr.status, xhr.response));
+    };
     xhr.onerror = xhr.ontimeout = () => reject(requestError(0, null));
     xhr.onabort = () => reject(new DOMException("Aborted", "AbortError"));
     xhr.onloadend = () => signal?.removeEventListener("abort", abort);

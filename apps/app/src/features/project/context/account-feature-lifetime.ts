@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { type AccountId, ROOM_SAVE_MAX_WAIT_MS } from "@meridian/contracts/protocol";
+import { type RequestAccount, sendRequestsAs } from "@/client/api/http-client";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
@@ -42,6 +43,11 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signedIn: () => boolean;
+  private readonly accountChanged = (): void => {
+    countSignOut(this.accountId);
+    void this.signedOutElsewhere();
+  };
+  readonly requests: RequestAccount;
   private stopWatchingSignOuts: (() => void) | null = null;
   private signingOut = false;
   private signOutRunning = false;
@@ -53,7 +59,7 @@ export class AccountFeatureLifetime {
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.signedIn = signedInSince(accountId);
-    const accountChanged = () => this.accountChanged();
+    this.requests = { id: accountId, changed: this.accountChanged };
     this.registry = new DocumentSessionRegistry(
       accountId as AccountId,
       this.epochSignal,
@@ -61,12 +67,12 @@ export class AccountFeatureLifetime {
         createLoroRoomTransport({
           ...options,
           account: accountId,
-          onAccountChanged: accountChanged,
+          onAccountChanged: this.accountChanged,
           connectivityHints,
         }),
       this.signedIn,
     );
-    this.treeLists = new TreeListRegistry(accountId, this.signedIn, accountChanged);
+    this.treeLists = new TreeListRegistry(accountId, this.signedIn, this.accountChanged);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner();
@@ -92,11 +98,6 @@ export class AccountFeatureLifetime {
     this.featureLease = this.removal.createLifetimeLease();
   }
 
-  private accountChanged(): void {
-    countSignOut(this.accountId);
-    void this.signedOutElsewhere();
-  }
-
   private async signedOutElsewhere(): Promise<void> {
     // This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
     if (this.endingHere || this.signOutRunning || this.epochSignal.aborted) return;
@@ -110,6 +111,7 @@ export class AccountFeatureLifetime {
 
   resumeFeatureLease(): void {
     if (this.epochSignal.aborted) return;
+    sendRequestsAs(this.requests);
     this.featureLease.resume();
     this.stopWatchingSignOuts ??= watchSignOuts(
       this.signedIn,

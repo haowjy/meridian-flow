@@ -57,6 +57,7 @@ import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridia
 
 import type { HttpResult } from "@meridian/thread-client";
 import {
+  apiFetch,
   deleteJson,
   deleteRequest,
   getJson,
@@ -178,7 +179,7 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
 
 export async function postCommand(path: string, body: unknown): Promise<HttpResult> {
   try {
-    const response = await fetch(path, {
+    const response = await apiFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

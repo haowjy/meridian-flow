@@ -12,6 +12,11 @@ import {
 } from "../../../lib/ws-thread-handler.js";
 import { resolveWsUpgradeAuth, type WsDeferredClose } from "../../../lib/ws-upgrade-auth.js";
 
+const DEFERRED_CLOSE_MESSAGES: Record<WsDeferredClose["reason"], string> = {
+  [WS_CLOSE.AUTH_FAILED.reason]: "Authentication failed",
+  [WS_CLOSE.AUTH_ERROR.reason]: "Internal server error",
+  [WS_CLOSE.ACCOUNT_CHANGED.reason]: "This socket was opened for another account",
+};
 const sessions = new WeakMap<WsPeer, ReturnType<typeof createThreadWebSocketSession>>();
 const pingIntervals = new WeakMap<WsPeer, ReturnType<typeof setInterval>>();
 
@@ -69,10 +74,7 @@ export default defineWebSocketHandler(() => ({
           kind: "error",
           error: {
             code: context.close.reason,
-            message:
-              context.close.reason === WS_CLOSE.AUTH_FAILED.reason
-                ? "Authentication failed"
-                : "Internal server error",
+            message: DEFERRED_CLOSE_MESSAGES[context.close.reason],
             retryable: false,
             source: "system",
           },

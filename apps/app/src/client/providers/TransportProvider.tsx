@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { ConnectionState, ThreadTransport } from "@meridian/thread-client";
 import { ThreadSocketClient } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
@@ -14,6 +15,7 @@ import {
   notifyThreadSocketClose,
   notifyThreadSocketOpen,
 } from "@/core/transport/wire-tap";
+import { useRequestAccount } from "@/features/project/context/request-account-context";
 import { useConnectivityHints } from "./ConnectivityProvider";
 
 const ThreadTransportContext = createContext<ThreadTransport | null>(null);
@@ -21,11 +23,12 @@ const ThreadTransportContext = createContext<ThreadTransport | null>(null);
 export function TransportProvider({ children }: { children: ReactNode }) {
   const connectivityHints = useConnectivityHints();
   const failureLog = useFailureLog();
+  const account = useRequestAccount();
   const [transport] = useState(
     () =>
       new ThreadSocketClient({
         failureLog,
-        url: buildThreadsWsUrl,
+        url: () => `${buildThreadsWsUrl()}?${new URLSearchParams({ account: account.id })}`,
         webSocketFactory: (url) => new WebSocket(url),
         onServer: ({ release, protocol }) => observeServer({ release, protocol }),
         connectivity: connectivityHints,
@@ -51,6 +54,8 @@ export function TransportProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let said: string | null = null;
     return transport.onConnectionState((state) => {
+      if (state.kind === "terminal" && state.code === WS_CLOSE.ACCOUNT_CHANGED.code)
+        account.changed();
       const trouble = connectionTrouble(state);
       if (trouble && trouble !== said) {
         said = trouble;

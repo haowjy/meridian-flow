@@ -1,6 +1,7 @@
 import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
 
+import { apiFetch } from "@/client/api/http-client";
 import { DIAGRAM_PREVIEW_SELECTOR } from "@/core/editor/diagrams";
 import type { ObjectSurfaceField } from "@/core/editor/objects";
 import {
@@ -144,7 +145,7 @@ export function renderedDiagramSvg(element: HTMLElement): string | null {
 
 export async function copyImageFrom(url: string): Promise<void> {
   if (!url) throw new ExportError("unreadable");
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) throw new ExportError("unreadable");
   const blob = await response.blob();
 
@@ -156,7 +157,7 @@ export async function copyImageFrom(url: string): Promise<void> {
 
 export async function downloadImageFrom(url: string, filename?: string): Promise<void> {
   if (!url) throw new ExportError("unreadable");
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) throw new ExportError("unreadable");
   const objectUrl = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");

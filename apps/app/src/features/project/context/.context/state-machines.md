@@ -42,7 +42,7 @@ browser ending elsewhere close it.
 stateDiagram-v2
   [*] --> open
   open --> closing: sign-out or an account switch aborts epochSignal
-  open --> closing: the sign-in ended elsewhere (the count moved, or a Join answered account-changed)
+  open --> closing: the sign-in ended elsewhere (the count moved, or the server refused a request for another account)
   closing --> closing: the close fails; the next close tries again
   closing --> closed: the registry's close retires every session
 ```
@@ -111,12 +111,12 @@ stateDiagram-v2
   deletion can still slip through. So a copy open in another tab is deleted once that tab lets
   go, and no lifetime that began before the sign-out opens or re-creates one after it; a sign-in
   afterwards starts a lifetime that may.
-- **The count is the one signal that a lifetime's account is no longer the browser's.** The
-  cookie is the browser's, so a tab can't know from its own requests which account they go out
-  as. Three things count a sign-out: the sign-out (`clearAccountCopies`, before it deletes, from
+- **The count is how every tab hears that a lifetime's account is no longer the browser's.** The
+  cookie is the browser's, so a tab learns it only from the server refusing what it named, or
+  from the count. Three things count a sign-out: the sign-out (`clearAccountCopies`, before it deletes, from
   the menu or `/logout`); a lifetime's start, for every other account, before it deletes their
-  copies (`endOtherAccounts`, which also runs when `/logout` builds its lifetime); and a Join the server answers `account-changed` (each Join names the
-  account, and the server compares it with the socket's session). A lifetime records its account
+  copies (`endOtherAccounts`, which also runs when `/logout` builds its lifetime); and the server
+  refusing something this lifetime sent for its account (next bullet). A lifetime records its account
   here when it starts (`signedInSince`), which is what lets another account's start count it. It
   hears the count move through the `storage` event, which never fires in the tab that wrote it, so
   a tab's own sign-out, and a lifetime React builds and never mounts, can't end it; it listens
@@ -132,9 +132,33 @@ stateDiagram-v2
   may already be the new account's. Between the count
   moving and the event's task running, a session that opens gets no copy and runs from memory; the
   lifetime then ends.
+- **Everything a lifetime sends names its account, and the server compares it with the
+  session.** The lifetime's one `requests` (its id and its `accountChanged`) is what is named.
+  Every request goes out through `apiFetch` in `http-client.ts`, which adds
+  `x-meridian-account` for a same-origin URL and, on a 409 `wrong_account`, runs the named
+  account's `changed`; the import upload's XHR, which needs upload progress, uses the same two
+  steps (`accountFor` and `accountHeaders`, then `answeredFor`). An `<a download>` or `<img src>`
+  can't carry a header, and another origin's URL (signed storage, a pasted web address) is never
+  named, since the header would cost it a CORS preflight. What a component built for the lifetime
+  sends names that lifetime: the command driver's transport, the failure log and the thread
+  socket take `requests` from the account context (`useRequestAccount`), and the socket's URL carries
+  `?account=`. Anything else names the mounted lifetime: mounting (`resumeFeatureLease`) makes it
+  the one `apiFetch` names (`sendRequestsAs`), and it stays named until another lifetime mounts,
+  so a request sent while one account closes and the next has not mounted is refused rather than
+  sent as whoever the cookie says. Each room Join carries the account in its `auth`. The server
+  checks the header once, in `requireAppUser`, and answers 409 `wrong_account`; the thread
+  socket's upgrade closes it 4409 `account-changed`; the Join is refused `account-changed`. Each
+  runs the `accountChanged` of the account it named: count a sign-out of the account, then end
+  as on a sign-out elsewhere. A request with no account (sent before any lifetime mounted: the
+  first page's loaders, `/logout`, `./mf`, probes) is not checked, and neither is
+  `/api/auth/me`, which is how a tab learns the account. Server-side loaders run with no lifetime
+  and send none: they render for the request's cookie, which is the account the page then mounts.
+  A chat message refused this way stays in the account's chat journal unanswered, not rejected
+  (`classifyWriteFailure`), so it is posted when that account's next lifetime drives its chat,
+  and never as another account; a command stays in the account's command journal, paused.
 - **A full `localStorage` degrades the signal, not the app.** A count or record that can't be
-  written is reported and skipped: a tab that misses it keeps its lifetime, and the server's Join
-  check is what still keeps its words from going out as another account. A sign-out whose count
+  written is reported and skipped: a tab that misses it keeps its lifetime, and the server's
+  account check is what still keeps its words from going out as another account. A sign-out whose count
   can't be written still deletes; a lifetime in another tab that began earlier may then re-create
   a copy it opens.
 - **Words a lifetime ended this way holds undelivered** stay in that account's stored copies.

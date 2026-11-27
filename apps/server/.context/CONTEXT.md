@@ -232,7 +232,9 @@ model-request debug projection testable with Vitest without booting Nitro.
 1. Add a file under `server/routes/api/` (Nitro file-based routing).
 2. Authenticate with `requireAppUser(event)` from `server/lib/auth-gate.ts`. It answers 409
    `wrong_account` before anything runs when the request's `x-meridian-account` header names
-   another account than the signed-in one (a request without the header is not checked).
+   another account than the signed-in one (a request without the header is not checked). The
+   app names it on every request it sends from a mounted account lifetime, so this is the one
+   place a route is checked: a route that resolves the session some other way skips it.
 3. Destructure needed services from the composed app aggregate.
 4. Run the domain gate for the resource: project/thread/document access.
 5. Call the domain API and return `@meridian/contracts/*` wire shapes only.
