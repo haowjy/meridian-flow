@@ -7,7 +7,6 @@ import {
   storedHref,
 } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
-import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
 import {
   type FormEvent,
@@ -40,7 +39,7 @@ import {
   resolveLinkDraft,
 } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
-import { EditorPopover } from "@/features/editor/chrome";
+import { EditorPopover, useHeldAnchor } from "@/features/editor/chrome";
 import { useEditorScope } from "@/features/editor/editor-scope";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { ReferenceSuggestionMenu } from "./AtReferenceMenu";
@@ -58,21 +57,7 @@ export function LinkForm({
   const [draft] = useState(() => resolveLinkDraft(editor));
   // The commit reads the range from here, never from render state: an open
   // form outlives the positions it was opened with.
-  const draftRef = useRef(draft);
-  const close = surface.closeForm;
-
-  useEffect(() => {
-    const followDocument = ({ transaction }: { transaction: Transaction }) => {
-      if (!transaction.docChanged) return;
-      const moved = mapLinkDraft(editor.state, draftRef.current, transaction.mapping);
-      draftRef.current = moved ?? draftRef.current;
-      if (!moved) close();
-    };
-    editor.on("transaction", followDocument);
-    return () => {
-      editor.off("transaction", followDocument);
-    };
-  }, [editor, close]);
+  const draftRef = useHeldAnchor(editor, draft, mapLinkDraft, surface.closeForm);
 
   return (
     <EditorPopover
@@ -106,7 +91,7 @@ function LinkFields({
 }: {
   editor: Editor;
   draft: LinkDraft;
-  readDraft: () => LinkDraft;
+  readDraft: () => LinkDraft | null;
   onClose: () => void;
 }) {
   const [text, setText] = useState(draft.text);
@@ -229,11 +214,14 @@ function LinkFields({
       setInvalid(true);
       return;
     }
-    const result = commitLinkDraft(editor, readDraft(), {
-      text,
-      href: normalized,
-      ...(selected && !choosing ? { ref: selected.ref } : {}),
-    });
+    const current = readDraft();
+    const result = current
+      ? commitLinkDraft(editor, current, {
+          text,
+          href: normalized,
+          ...(selected && !choosing ? { ref: selected.ref } : {}),
+        })
+      : "refused";
     if (result === "invalid") {
       setInvalid(true);
       return;
@@ -311,7 +299,10 @@ function LinkFields({
             size="sm"
             className="mr-auto"
             onClick={() => {
-              const result = commitLinkDraft(editor, readDraft(), { text, href: "" });
+              const current = readDraft();
+              const result = current
+                ? commitLinkDraft(editor, current, { text, href: "" })
+                : "refused";
               if (result === "refused") setRefused(true);
               else onClose();
             }}

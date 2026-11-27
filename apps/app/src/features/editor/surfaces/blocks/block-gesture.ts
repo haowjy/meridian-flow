@@ -1,6 +1,6 @@
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
+import { beginBlockDrag, draggedBlock, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
 import { type EditorChrome, type PressStart, trackPress } from "@/core/editor/chrome";
 import { endUndoStep } from "@/core/editor/editor-history";
 
@@ -18,7 +18,6 @@ type Gesture = {
   pointerId: number;
   source: DragSource;
   pointerY: number;
-  lifted: boolean;
   endDrag: (() => void) | null;
   capture: HTMLElement | null;
   stop: () => void;
@@ -60,11 +59,11 @@ export function useBlockMovementGesture({
       gesture.stop();
 
       releasePointerCapture(gesture.capture, gesture.pointerId);
-      const held = editor.isDestroyed ? null : draggedBlockPos(editor.state);
+      const held = editor.isDestroyed ? null : draggedBlock(editor.state);
 
-      if (commit && held !== null && !editor.isDestroyed) {
-        if (gesture.lifted) dropHeldBlock(editor, held, gesture.pointerY);
-        else if (gesture.source === "handle") onHandleClickRef.current(held);
+      if (commit && held !== null) {
+        if (held.lifted) dropHeldBlock(editor, held.pos, gesture.pointerY);
+        else if (gesture.source === "handle") onHandleClickRef.current(held.pos);
       }
 
       if (!editor.isDestroyed) endBlockDrag(editor);
@@ -84,25 +83,25 @@ export function useBlockMovementGesture({
       capture: HTMLElement | null,
     ) => {
       capture?.setPointerCapture?.(press.pointerId);
-      // Built before `beginBlockDrag`: its transaction can end the gesture.
+      beginBlockDrag(editor, pos);
       const gesture: Gesture = {
         pointerId: press.pointerId,
         source,
         pointerY: press.clientY,
-        lifted: false,
         endDrag: null,
         capture,
         stop: trackPress(press, {
-          lift: (at) => {
+          lift: () => {
             // Only now is it a drag. A press that never travelled is a click, and
             // telling the kernel otherwise would blank every surface on the page
-            // for the length of a menu press. `pointerY` is set first: the lift
-            // dispatches, and the drop belongs where the pointer is now.
-            gesture.pointerY = at.clientY;
-            gesture.lifted = true;
+            // for the length of a menu press.
             gesture.endDrag = chrome.beginDrag(() => finishGesture(false));
             liftBlockDrag(editor);
             return (event) => {
+              if (draggedBlock(editor.state) === null) {
+                finishGesture(false);
+                return;
+              }
               gesture.pointerY = event.clientY;
               setSeamIndex(seamIndexAtPointer(editor.view, event.clientY));
             };
@@ -112,7 +111,6 @@ export function useBlockMovementGesture({
       };
       gestureRef.current = gesture;
       setActive(true);
-      beginBlockDrag(editor, pos);
     },
     [editor, finishGesture],
   );
@@ -120,19 +118,15 @@ export function useBlockMovementGesture({
   useEffect(() => {
     const onTransaction = () => {
       const gesture = gestureRef.current;
-      if (!gesture) return;
-
-      if (draggedBlockPos(editor.state) === null) {
-        finishGesture(false);
-      } else if (gesture.lifted) {
-        setSeamIndex(seamIndexAtPointer(editor.view, gesture.pointerY));
-      }
+      const held = draggedBlock(editor.state);
+      if (!gesture || !held?.lifted) return;
+      setSeamIndex(seamIndexAtPointer(editor.view, gesture.pointerY));
     };
     editor.on("transaction", onTransaction);
     return () => {
       editor.off("transaction", onTransaction);
     };
-  }, [editor, finishGesture]);
+  }, [editor]);
 
   useEffect(() => {
     if (!editable || !chrome) return;

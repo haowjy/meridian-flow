@@ -7,7 +7,7 @@
  * is that plumbing, once, so a lane's own file is about its surface.
  *
  * **Elements are geometry, holds are identity.** A node view is replaced by
- * every remote write, so an element read this frame is the right way to measure
+ * any write that covers it, so an element read this frame is the right way to measure
  * where something is drawn and the wrong way to remember what it was. Resolve a
  * hold to a position and that position to DOM at the moment of measuring, or of
  * running a verb, and never the other way around.
@@ -18,41 +18,74 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import type { Transaction } from "@tiptap/pm/state";
-import { useCallback, useEffect, useState } from "react";
+import type { EditorState, Transaction } from "@tiptap/pm/state";
+import type { Mappable } from "@tiptap/pm/transform";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
-import { followNode, holdNode, type NodeHold, sameHold } from "@/core/editor/anchors";
+import {
+  followHold,
+  type HoldResolver,
+  holdNode,
+  type NodeHold,
+  resolveNodeHold,
+  sameHold,
+} from "@/core/editor/anchors";
 
 export type TakeNodeHold = (pos: number | null) => void;
 
-export function useNodeHold(editor: Editor): [NodeHold | null, TakeNodeHold] {
+export function useNodeHold(
+  editor: Editor,
+  resolve: HoldResolver = resolveNodeHold,
+): [NodeHold | null, TakeNodeHold] {
   const [hold, setHold] = useState<NodeHold | null>(null);
+
+  useDocumentMapping(editor, (mapping) => {
+    setHold((current) => {
+      if (current === null) return null;
+      const next = followHold(editor.state, current, mapping, resolve);
+      return sameHold(current, next) ? current : next;
+    });
+  });
+
+  const take = useCallback<TakeNodeHold>(
+    (pos) => {
+      const held = pos === null || editor.isDestroyed ? null : holdNode(editor.state, pos);
+      const next = held && resolve(editor.state, held) ? held : null;
+      setHold((current) => (sameHold(current, next) ? current : next));
+    },
+    [editor, resolve],
+  );
+
+  return [hold, take];
+}
+
+export function useHeldAnchor<Anchor>(
+  editor: Editor,
+  initial: Anchor | null,
+  follow: (state: EditorState, anchor: Anchor, mapping: Mappable) => Anchor | null,
+  onLost?: () => void,
+): RefObject<Anchor | null> {
+  const held = useRef(initial);
+  useDocumentMapping(editor, (mapping) => {
+    if (held.current === null) return;
+    held.current = follow(editor.state, held.current, mapping);
+    if (held.current === null) onLost?.();
+  });
+  return held;
+}
+
+function useDocumentMapping(editor: Editor, onMapping: (mapping: Mappable) => void): void {
+  const latest = useRef(onMapping);
+  latest.current = onMapping;
 
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
       if (!transaction.docChanged || editor.isDestroyed) return;
-      setHold((current) => {
-        if (current === null) return null;
-        const next = followNode(editor.state, current, transaction.mapping);
-        return sameHold(current, next) ? current : next;
-      });
+      latest.current(transaction.mapping);
     };
     editor.on("transaction", onTransaction);
     return () => {
       editor.off("transaction", onTransaction);
     };
   }, [editor]);
-
-  const take = useCallback<TakeNodeHold>(
-    (pos) => {
-      setHold((current) => {
-        if (pos === null) return null;
-        const next = editor.isDestroyed ? null : holdNode(editor.state, pos);
-        return sameHold(current, next) ? current : next;
-      });
-    },
-    [editor],
-  );
-
-  return [hold, take];
 }

@@ -1,7 +1,7 @@
 import type { Editor } from "@tiptap/core";
 import { useLayoutEffect, useState } from "react";
 
-import { draggedBlockPos } from "@/core/editor/blocks";
+import { draggedBlock } from "@/core/editor/blocks";
 import { watchManuscriptLayout } from "@/core/editor/chrome";
 import { manuscriptOverlay } from "@/features/editor/chrome/manuscript-overlay";
 
@@ -55,9 +55,9 @@ function samePlacement(a: BlockChromePlacement, b: BlockChromePlacement): boolea
 }
 
 function restingSeam(editor: Editor, seamIndex: number): boolean {
-  const held = draggedBlockPos(editor.state);
+  const held = draggedBlock(editor.state);
   if (held === null) return false;
-  const source = blockAt(editor.state.doc, held);
+  const source = blockAt(editor.state.doc, held.pos);
   if (source === null) return false;
   const run = blockRun(editor.state.doc, source);
   return seamIndex >= run.index && seamIndex <= run.endIndex;

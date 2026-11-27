@@ -111,10 +111,6 @@ export function resolveNodeHold(state: EditorState, hold: NodeHold): AnchorRange
   return { from: at.from, to: at.from + node.nodeSize };
 }
 
-export function followNode(state: EditorState, hold: NodeHold, mapping: Mappable): NodeHold | null {
-  return followHold(state, hold, mapping, resolveNodeHold);
-}
-
 export function holdBlock(state: EditorState, pos: number): NodeHold | null {
   if (pos < 0 || pos > state.doc.content.size) return null;
   return state.doc.resolve(pos).depth === 0 ? holdNode(state, pos) : null;
@@ -123,14 +119,6 @@ export function holdBlock(state: EditorState, pos: number): NodeHold | null {
 export function resolveBlockHold(state: EditorState, hold: NodeHold): AnchorRange | null {
   const at = resolveNodeHold(state, hold);
   return at && state.doc.resolve(at.from).depth === 0 ? at : null;
-}
-
-export function followBlock(
-  state: EditorState,
-  hold: NodeHold,
-  mapping: Mappable,
-): NodeHold | null {
-  return followHold(state, hold, mapping, resolveBlockHold);
 }
 
 export function sameHold(one: NodeHold | null, other: NodeHold | null): boolean {
@@ -144,15 +132,21 @@ export function sameHold(one: NodeHold | null, other: NodeHold | null): boolean 
   );
 }
 
-function followHold(
+export type HoldResolver = (state: EditorState, hold: NodeHold) => AnchorRange | null;
+
+export function carryHold(hold: NodeHold, mapping: Mappable): NodeHold | null {
+  // A node's edges have no Loro cursor, and a peer's batch replaces one range that can cover an
+  // edge; a held id is found where it is now instead.
+  return hold.identity === null ? carryAnchor(hold, mapping) : hold;
+}
+
+export function followHold(
   state: EditorState,
   hold: NodeHold,
   mapping: Mappable,
-  resolve: (state: EditorState, hold: NodeHold) => AnchorRange | null,
+  resolve: HoldResolver,
 ): NodeHold | null {
-  // A node's edges have no Loro cursor, and a peer's batch replaces one range that can cover an
-  // edge; a held id is found where it is now instead.
-  const carried = hold.identity === null ? carryAnchor(hold, mapping) : hold;
+  const carried = carryHold(hold, mapping);
   const at = carried && resolve(state, carried);
   return at && { ...anchorRange(state, at), identity: hold.identity, nodeType: hold.nodeType };
 }

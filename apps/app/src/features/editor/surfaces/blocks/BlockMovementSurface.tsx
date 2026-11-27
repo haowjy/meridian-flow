@@ -3,7 +3,7 @@ import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { followBlock, holdBlock, type NodeHold, resolveBlockHold } from "@/core/editor/anchors";
+import { holdBlock, type NodeHold, resolveBlockHold } from "@/core/editor/anchors";
 import { CHROME_TIMING, editorChromeAttributes, hoverOwner } from "@/core/editor/chrome";
 import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 
@@ -13,6 +13,7 @@ import {
   useChromeSuppressed,
   useEditorChrome,
 } from "../../chrome/useEditorChrome";
+import { type TakeNodeHold, useNodeHold } from "../../chrome/useNodeHold";
 import { BlockMenu } from "./BlockMenu";
 import { blockHandleLabel } from "./block-copy";
 import {
@@ -47,20 +48,21 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   // ONE hold, deliberately: the hover intent used to keep its own copy, and a
   // copy that changes do not carry is a handle that walks back onto a block a
   // peer moved out from under it.
-  const [anchorHold, setAnchorHold] = useState<NodeHold | null>(null);
+  const [anchorHold, takeAnchor] = useNodeHold(editor, resolveBlockHold);
   const [hovered, setHovered] = useState(false);
-  const [menuHold, setMenuHold] = useState<NodeHold | null>(null);
+  const [menuHold, takeMenu] = useNodeHold(editor, resolveBlockHold);
 
   const editable = editor.isEditable;
   const targetPos = (menuHold ?? anchorHold)?.from ?? null;
   const targetPosRef = useRef<number | null>(null);
   targetPosRef.current = targetPos;
 
-  const gesture = useBlockMovementGesture({
-    editor,
-    editable,
-    onHandleClick: (pos) => openBlockMenuAt(editor, pos, setMenuHold),
-  });
+  const openMenu = useCallback(
+    (pos: number) => openBlockMenuAt(editor, pos, takeMenu),
+    [editor, takeMenu],
+  );
+
+  const gesture = useBlockMovementGesture({ editor, editable, onHandleClick: openMenu });
   useBlockMovementKeymap(editor, BLOCK_MOVEMENT_SURFACE_ID);
 
   useEffect(() => {
@@ -78,10 +80,10 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       onSettle: (hold) => {
         setHovered(hold !== null);
         const at = hold && resolveBlockHold(editor.state, hold);
-        if (at) setAnchorHold(holdBlock(editor.state, at.from));
+        if (at) takeAnchor(at.from);
       },
     });
-  }, [chrome, editable, editor, gesture.inFlight]);
+  }, [chrome, editable, editor, gesture.inFlight, takeAnchor]);
 
   useEffect(() => {
     // A gesture keeps its anchor whatever the pointer is doing: the kernel
@@ -90,34 +92,22 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     // — the browser would report lost capture and the drag would end on its
     // own first frame.
     if (anchorHold === null || hovered || menuHold !== null || gesture.active || coarse) return;
-    const timer = window.setTimeout(() => setAnchorHold(null), CHROME_TIMING.fadeMs);
+    const timer = window.setTimeout(() => takeAnchor(null), CHROME_TIMING.fadeMs);
     return () => window.clearTimeout(timer);
-  }, [anchorHold, hovered, menuHold, gesture.active, coarse]);
-
-  useEffect(() => {
-    const onTransaction = ({ transaction }: { transaction: Transaction }) => {
-      const follow = (hold: NodeHold) => followBlock(editor.state, hold, transaction.mapping);
-      setMenuHold((hold) => (hold === null ? hold : follow(hold)));
-      setAnchorHold((hold) => (hold === null ? hold : follow(hold)));
-    };
-    editor.on("transaction", onTransaction);
-    return () => {
-      editor.off("transaction", onTransaction);
-    };
-  }, [editor]);
+  }, [anchorHold, hovered, menuHold, gesture.active, coarse, takeAnchor]);
 
   useEffect(() => {
     if (!editable) return;
     const onSelection = () => {
       if (!coarse || gesture.inFlight() || editor.isDestroyed) return;
       const selected = blockForSelection(editor.state);
-      setAnchorHold(selected ? holdBlock(editor.state, selected.pos) : null);
+      takeAnchor(selected ? selected.pos : null);
     };
     editor.on("selectionUpdate", onSelection);
     return () => {
       editor.off("selectionUpdate", onSelection);
     };
-  }, [editor, editable, coarse, gesture.inFlight]);
+  }, [editor, editable, coarse, gesture.inFlight, takeAnchor]);
 
   useEffect(() => {
     if (!chrome || !editable) return;
@@ -128,11 +118,11 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
         if (gesture.inFlight()) return false;
         const pos = targetPosRef.current;
         if (pos === null) return false;
-        openBlockMenuAt(editor, pos, setMenuHold);
+        openMenu(pos);
         return true;
       },
     });
-  }, [chrome, editable, editor, gesture.inFlight]);
+  }, [chrome, editable, gesture.inFlight, openMenu]);
 
   const runOnBlock = useCallback(
     (pos: number, build: BlockTransactionBuilder) => {
@@ -208,7 +198,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
           at={handleAnchorPoint(handleElement)}
           open
           onOpenChange={(open) => {
-            if (!open) setMenuHold(null);
+            if (!open) takeMenu(null);
           }}
           onMove={(direction) =>
             runOnBlock(menuHold.from, (state, source) =>
@@ -228,13 +218,12 @@ function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
   return { x: box.left, y: box.top };
 }
 
-function openBlockMenuAt(editor: Editor, pos: number, open: (hold: NodeHold) => void): void {
+function openBlockMenuAt(editor: Editor, pos: number, open: TakeNodeHold): void {
   const target = blockAt(editor.state.doc, pos);
   if (!target) return;
   const selection = isEditorObject(target.node)
     ? selectObjectTransaction(editor.state, target.pos)
     : editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(target.pos + 1)));
   if (selection) editor.view.dispatch(selection);
-  const hold = holdBlock(editor.state, target.pos);
-  if (hold) open(hold);
+  open(target.pos);
 }

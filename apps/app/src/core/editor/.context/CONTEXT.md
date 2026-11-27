@@ -170,9 +170,11 @@ cursors (`loro-points.ts`: `pointAt`, `encodePoint`/`decodePoint` for storage; `
 type: a node with an id resolves by id, so a deleted node releases rather than retargeting a
 replacement, and following it skips the positional carry, since one remote replace can cover a
 node's edge (a move, or a batch touching the node and what follows); an inline atom with no id
-resolves by the seams around it. `carryAnchor` is used
-where plugin `apply` runs before the binding settles; read resolution happens later. Every
-resolution is bounds-checked.
+resolves by the seams around it. `carryHold` (that positional carry, for a hold without an id)
+is used where plugin `apply` runs before the binding settles; read resolution happens later. A
+React surface carries a hold with `useNodeHold(editor, resolve)` (`resolveNodeHold`, or
+`resolveBlockHold` for a top-level block) and any other anchor with `useHeldAnchor`
+(`features/editor/chrome/useNodeHold.ts`). Every resolution is bounds-checked.
 
 DOM elements are geometry only. Node views and decoration spans can be rebuilt
 without content moving, so a surface drops elements after measuring and holds

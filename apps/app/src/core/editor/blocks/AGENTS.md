@@ -6,7 +6,9 @@ handle, drop line and menu are the
 [surface's](../../../features/editor/surfaces/blocks/AGENTS.md).
 
 - A deleted block releases the hold. The hold names the block id, so a replacement
-  standing where the block was doesn't inherit it. The surface ends its gesture on
-  that transition.
+  standing where the block was doesn't inherit it, and a block a peer moves keeps it.
+  The surface notices the release at the next pointer move or at the drop, never from
+  a `transaction` listener: that runs inside the gesture's own begin and lift
+  dispatches.
 - The hold resolves on read, not in `apply`: a plugin's `apply` runs while the
   binding may still describe the document the transaction replaced.
