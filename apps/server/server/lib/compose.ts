@@ -211,7 +211,7 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
-import { requestModel, threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
+import { modelInfo, threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import { createModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
@@ -975,7 +975,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         agentCatalog: ports.agentCatalog,
         gateway: ports.gateway,
       });
-      const model = requestModel(ports.gateway, { model: modelId });
+      const model = modelInfo(ports.gateway, modelId);
       if (!model)
         return {
           ok: false,

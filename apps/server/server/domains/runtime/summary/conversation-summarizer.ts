@@ -11,7 +11,7 @@ import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.
 import { estimateRequestTokens, outputReserveTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
-import { requestModel } from "../loop/turn-context-assembly.js";
+import { modelInfo } from "../loop/turn-context-assembly.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type {
   ConversationSummarizer,
@@ -145,7 +145,7 @@ export function createConversationSummarizer(
       try {
         input.signal.throwIfAborted();
         const cheapModel = gateway.listModels().find((model) => model.id === config.model);
-        const threadModel = requestModel(gateway, input.requestInHand);
+        const threadModel = modelInfo(gateway, input.requestInHand.model);
         if (!threadModel) throw new Error("Summary thread model is unavailable");
         const prediction: PrefixCacheState = input.knownTooLarge
           ? { state: "cold", reason: "summary_transcript" }

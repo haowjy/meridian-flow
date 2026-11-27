@@ -207,11 +207,11 @@ function turnGatewayParams(
   return effort ? { ...agentParams, model, reasoning: effort } : { ...agentParams, model };
 }
 
-export function requestModel(
+export function modelInfo(
   gateway: AssembleNextTurnContextInput["gateway"],
-  request: Pick<GenerateRequest, "model">,
+  id: string | undefined,
 ): ModelInfo | undefined {
-  const modelId = request.model ?? gateway.getDefaultModel();
+  const modelId = id ?? gateway.getDefaultModel();
   return gateway.listModels().find((model) => model.id === modelId);
 }
 
@@ -228,17 +228,11 @@ export async function threadModelId(
   );
 }
 
-export async function threadModel(
-  input: Parameters<typeof threadModelId>[0],
-): Promise<ModelInfo | undefined> {
-  return requestModel(input.gateway, { model: await threadModelId(input) });
-}
-
 export function lazyThreadModel(
-  input: Parameters<typeof threadModel>[0],
+  input: Parameters<typeof threadModelId>[0],
 ): () => Promise<ModelInfo | undefined> {
   let model: Promise<ModelInfo | undefined> | undefined;
-  return () => (model ??= threadModel(input));
+  return () => (model ??= threadModelId(input).then((id) => modelInfo(input.gateway, id)));
 }
 
 export async function assembleNextTurnContext(
@@ -300,7 +294,7 @@ export async function prepareNextTurnContext(
   }
 
   const gatewayParams = turnGatewayParams(input.gateway, thread, agentContext.gatewayParams);
-  const resolvedModel = requestModel(input.gateway, gatewayParams);
+  const resolvedModel = modelInfo(input.gateway, gatewayParams.model);
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
