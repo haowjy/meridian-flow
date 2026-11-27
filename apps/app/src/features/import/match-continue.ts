@@ -1,4 +1,4 @@
-// keep: Pair Continue entries by root name + path, never by picker enumeration order (duplicate names would mispair); compare by content hash for entries the server already holds.
+// Pair Continue entries by root name + path, never by picker enumeration order (duplicate names would mispair); compare by content hash for entries the server already holds.
 import type { ImportDetail } from "@meridian/contracts";
 import type { HeldFile } from "./manifest";
 import type { Selection } from "./selection";

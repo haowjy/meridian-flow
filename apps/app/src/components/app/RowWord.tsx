@@ -161,7 +161,6 @@ export function withGone<T, G = T>(
   gone: readonly GoneRow<G>[],
 ): WithGone<T, G>[] {
   const shown: WithGone<T, G>[] = rows.map((row) => ({ row, key: keyOf(row), gone: false }));
-  // Rows with no neighbour left go to the top in the order given, not each ahead of the last.
   let top = 0;
   for (const each of gone) {
     if (shown.some((item) => item.key === each.key)) continue;

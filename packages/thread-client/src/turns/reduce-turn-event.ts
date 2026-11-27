@@ -678,7 +678,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
             toolCallId: event.toolCallId,
             toolName: existingTool ? toolNameFromBlock(existingTool) : toolNameFromEvent(event),
             ...preservedToolFields(content),
-            // keep: Tool args deltas are incremental fragments; append them instead of replacing prior input
             input: `${existingInput}${event.delta}`,
             status: "partial",
           }),
@@ -843,12 +842,11 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           }
           const turn = activeAssistantTurn(store, threadId);
           if (!turn) return;
-          // keep: Output deltas can arrive before TOOL_CALL_START; drop them quietly until a host tool block exists
+          // Output deltas can arrive before TOOL_CALL_START; drop them quietly until a host tool block exists
           const existingTool = blockById(turn, `tool-${payload.toolCallId}`);
           if (existingTool?.blockType !== "tool_use") return;
           const content = blockContentRecord(existingTool);
           const prior = typeof content.streamedOutput === "string" ? content.streamedOutput : "";
-          // keep: Keep one stdout and stderr buffer in arrival order
           const nextBuffer = `${prior}${payload.text}`;
           store.upsertAssistantBlock(
             threadId,
@@ -951,7 +949,6 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
             });
           return;
         }
-        // keep: Forgotten turns are stamped, never removed, so retry chains still connect through them
         if (event.name === TURNS_FORGOTTEN_EVENT) {
           const forgotten = readTurnsForgotten(event.value);
           if (forgotten) store.markForgotten(threadId, forgotten.turnIds, forgotten.byTurnId);

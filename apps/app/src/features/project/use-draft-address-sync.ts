@@ -68,8 +68,6 @@ export function useDraftAddressSync({
       ? undefined
       : JSON.stringify([arrivalOf(history, entryKey), documentId]);
   const arrived = useRef<string | undefined>(undefined);
-  // What main's document shows, by the one rule: the address follows it. `shownOf` reads the
-  // store when called, so `stored` is what re-runs the follow when the pin moves (a change focused).
   const shownOf = useShownDraft(projectId, chatThreadId);
   const stored = useDocumentView(accountId, projectId, documentId ?? null);
   const scopeDraftId = useScopeDraftOwner(projectId, chatThreadId).draftId || null;

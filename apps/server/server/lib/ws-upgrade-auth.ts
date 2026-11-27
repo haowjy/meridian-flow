@@ -1,4 +1,4 @@
-// keep: Nitro dev's WS proxy crashes the dev server on a non-101 upgrade hook, so a rejection accepts the socket first and closes it from open()
+// Nitro dev's WS proxy crashes the dev server on a non-101 upgrade hook, so a rejection accepts the socket first and closes it from open()
 
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";

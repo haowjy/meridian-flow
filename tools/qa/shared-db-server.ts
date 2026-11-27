@@ -1,4 +1,4 @@
-// keep: `DATABASE_URL` is set verbatim and `applyDevEnvToProcess` is never called for it, since the loader pins a worktree's URL to that checkout's database; no server build config calls the loader either
+// `DATABASE_URL` is set verbatim and `applyDevEnvToProcess` is never called for it, since the loader pins a worktree's URL to that checkout's database; no server build config calls the loader either
 import { type ChildProcess, spawn } from "node:child_process";
 import { resolve } from "node:path";
 import postgres from "postgres";

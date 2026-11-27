@@ -27,7 +27,7 @@ function loroList(doc: LoroDoc): ListDoc {
   const ops: LoroList = doc.getList("ops");
   const settle: LoroList = doc.getList("settle");
   let depth = 0;
-  // keep: Cache decoded list values by identity between appends because readers compare records by identity
+  // Cache decoded list values by identity between appends because readers compare records by identity
   let records: unknown[] = [];
   let settles: SettleRecord[] = [];
   return {

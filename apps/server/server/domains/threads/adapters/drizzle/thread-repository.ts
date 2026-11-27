@@ -29,7 +29,7 @@ import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./reposi
 import { threadActionRequiredSql } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
-// keep: Drizzle strips table qualifiers in RETURNING; use sql.identifier for the outer table reference
+// Drizzle strips table qualifiers in RETURNING; use sql.identifier for the outer table reference
 const agentDefinitionRevisionId = sql<string | null>`(
   SELECT ${schema.threadAgentBindings.definitionRevisionId}
   FROM ${schema.threadAgentBindings}

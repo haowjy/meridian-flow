@@ -69,7 +69,7 @@ export const agentPackageSaves = pgTable(
     savedBy: text("saved_by", { enum: ["writer", "ai"] })
       .notNull()
       .default("writer"),
-    // keep: Order Saves by seq, not created_at; transaction-start timestamps can tie or invert
+    // Order Saves by seq, not created_at; transaction-start timestamps can tie or invert
     seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
     createdAt: createdAt(),
   },

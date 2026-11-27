@@ -4,8 +4,6 @@ import type { ServerOpenDocument } from "@/client/stores";
 export type PreviewKind = "text" | "markdown" | "pdf" | "image" | "binary";
 
 export function previewKind(tab: ServerOpenDocument, read: ContextReadResponse): PreviewKind {
-  // A name never says what a file is (`Chapter 13` has no suffix): the stored
-  // classification and the read do.
   if (read.kind === "tracked") return read.filetype === "markdown" ? "markdown" : "text";
   const fileType = tab.kind === "viewer" ? tab.fileType : null;
   if (fileType === "image") return "image";

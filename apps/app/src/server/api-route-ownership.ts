@@ -1,4 +1,4 @@
-// keep: Route-owner rules are ordered; exact app routes precede server families and every new server family must be listed
+// Route-owner rules are ordered; exact app routes precede server families and every new server family must be listed
 
 export type ApiRouteOwner = "app" | "server";
 

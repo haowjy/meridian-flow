@@ -13,7 +13,6 @@ export async function bindTree(
   const contents = new Map<string, CopiedContent>();
   for (const file of plan.documents) {
     contents.set(file.source.documentId, await bind(file, plan));
-    // Binding is CPU work; a large tree must let other requests run.
     if (contents.size % 25 === 0) await delay(0);
   }
   return { plan, contents };

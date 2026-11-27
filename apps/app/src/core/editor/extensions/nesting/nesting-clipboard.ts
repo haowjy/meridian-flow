@@ -151,8 +151,6 @@ function walkItem(
   let opened = false;
   const own: Emit = (block, at) => {
     if (!opened) {
-      // The item's marker speaks for its own list, so an item whose first block sits in a
-      // deeper list gets an empty paragraph of its own first.
       const target = at.replaceAll("|", "").slice(itemPath.length).includes("-")
         ? document.createElement("p")
         : block;
@@ -175,11 +173,6 @@ function outermostContainers(root: Element): Element[] {
   });
 }
 
-/**
- * Unwraps every list and quote under `root` into its blocks, each carrying `data-path`, and
- * on an item's first block `data-marker`, `data-kind` and `data-start`. Nesting attributes the
- * source wrote itself are dropped first, so only what this pass read reaches the parser.
- */
 export function flattenDom(root: Element): void {
   for (const element of root.querySelectorAll(
     NESTING_DATA_ATTRIBUTES.map((name) => `[${name}]`).join(", "),

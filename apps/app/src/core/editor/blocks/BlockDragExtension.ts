@@ -33,12 +33,6 @@ const BLOCK_DRAG_NAME = "meridianBlockDrag";
 export const BLOCK_LIFTED_CLASS = "meridian-block-lifted";
 
 type BlockDragState = {
-  /**
-   * The block under the pointer, held by block id rather than by position:
-   * a remote write replaces the whole document, so the mapping calls every
-   * position deleted, and the seam a deleted block leaves behind is where its
-   * replacement now starts.
-   */
   hold: NodeHold;
   lifted: boolean;
 };
@@ -47,10 +41,6 @@ type BlockDragMessage = BlockDragState | null;
 
 const blockDragPluginKey = new PluginKey<BlockDragState | null>(BLOCK_DRAG_NAME);
 
-/**
- * Take hold of the block at `pos`. Nothing is lifted yet: a press that never
- * travels is a click, and a paragraph that faded for it would be a flicker.
- */
 export function beginBlockDrag(editor: Editor, pos: number): void {
   const hold = holdBlock(editor.state, pos);
   if (hold) dispatchBlockDrag(editor, { hold, lifted: false });
@@ -95,10 +85,6 @@ export const BlockDragExtension = Extension.create({
             if (message !== undefined) return message;
             if (!current) return null;
             const carried = carryAnchor(current.hold, transaction.mapping);
-            // A deleted block leaves nothing to hold — which only the mapping
-            // of a local edit can say, and only for an editor with no shared
-            // document behind it. Identity answers on read, where the binding
-            // has finished describing the document this transaction produced.
             return carried ? { ...current, hold: carried } : null;
           },
         },
@@ -131,8 +117,6 @@ export const BlockDragExtension = Extension.create({
 function dispatchBlockDrag(editor: Editor, message: BlockDragMessage): void {
   if (editor.isDestroyed) return;
   const transaction: Transaction = editor.state.tr.setMeta(blockDragPluginKey, message);
-  // Nothing about the document changed, so nothing downstream should think it
-  // did: no history entry, no scroll, no selection move.
   transaction.setMeta("addToHistory", false);
   editor.view.dispatch(transaction);
 }

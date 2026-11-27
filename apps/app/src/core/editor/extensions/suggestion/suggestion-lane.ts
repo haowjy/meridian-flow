@@ -49,15 +49,6 @@ import {
   type SuggestionMenuModel,
 } from "@/core/completion";
 
-/**
- * What the host offers a lane.
- *
- * Read when the menu opens, never at construction: a catalog carries localized
- * labels and host callbacks that must stay live, and making them construction
- * facts would put a locale switch on the editor's remount path. Null leaves the
- * lane mounted and silent, so a read-only surface or a fenced document pays for
- * no menu.
- */
 export type SuggestionLaneOptions<TCatalog> = {
   catalog: () => TCatalog | null;
   suggestionHost: (editor: Editor) => SuggestionHost | null;

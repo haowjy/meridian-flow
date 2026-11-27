@@ -1,8 +1,3 @@
-/**
- * What a drag knows of a row: its identity, never where it sits. Placement is
- * read from the replay when a drop is planned, so a row that moved (or that a
- * peer moved) is still the same row.
- */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,

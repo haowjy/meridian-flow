@@ -40,13 +40,6 @@ export type ObjectOverlayPlacement = {
 
 const OVERLAY_INSET_PX = 10;
 
-/**
- * Resolve a corner, or null when there is nothing to draw against.
- *
- * Null once the anchor has left the document: a node view that remounts leaves
- * the old element detached, and chrome rendered into a detached element is
- * chrome nobody can see or reach.
- */
 export function useObjectOverlayCorner(
   editor: Editor | null,
   corner: ObjectOverlayCorner | null,
@@ -66,9 +59,6 @@ export function useObjectOverlayCorner(
   return {
     container: overlay,
     placement: "over",
-    // Anchored to the right edge so an overlay that gains a verb keeps its
-    // outermost control where the pointer already learned to find it. The
-    // class supplies the `translateX(-100%)` that pulls it back over its width.
     style: { top: rect.top + OVERLAY_INSET_PX, left: rect.right - OVERLAY_INSET_PX },
   };
 }

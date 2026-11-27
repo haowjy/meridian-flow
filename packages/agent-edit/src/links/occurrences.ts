@@ -14,10 +14,6 @@ interface Edit {
   attrs: OccurrenceAttrs;
 }
 
-/**
- * `occurrences` must be `walkLinkOccurrences(blocks)`; `attrs[i]` replaces
- * occurrence `i`'s attrs, `null` keeps it.
- */
 export function rebuildOccurrences(
   blocks: readonly PMNode[],
   occurrences: readonly LinkOccurrence[],

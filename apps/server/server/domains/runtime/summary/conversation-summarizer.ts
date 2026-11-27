@@ -219,7 +219,7 @@ export function createConversationSummarizer(
             finishReason: "error",
             usage,
           };
-          // keep: Record a paid summary attempt before the gateway call; even aborted streams count
+          // Record a paid summary attempt before the gateway call; even aborted streams count
           modelResponses.push(row);
           try {
             const gatewayCallId = crypto.randomUUID();
@@ -384,7 +384,6 @@ export function createConversationSummarizer(
           baseline: null,
           tokenizer: model.tokenizer,
         });
-        // keep: The running-summary reserve is in provider tokens, not characters
         const runningReserve =
           estimateModelJsonTokens("Prior context (running summary):", model.tokenizer) +
           outputReserveTokens(model);

@@ -8,7 +8,7 @@ if (!configFile) {
   process.exit(1);
 }
 const handle = await createArchitectureServer(configFile);
-// keep: answer only our own host names, or another origin's page can point its name at 127.0.0.1 and read this
+// Answer only our own host names, or another origin's page can point its name at 127.0.0.1 and read this
 const hosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
 createServer((req, res) => {
   if (!hosts.has(req.headers.host)) {

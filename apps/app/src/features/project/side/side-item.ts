@@ -1,23 +1,3 @@
-/**
- * What the side shows beside main: the slot of the kind main is not. The project keeps one slot per
- * kind, the last chat and the last document on screen in either pane (`client/project-shell/store.ts`);
- * `useMainArrival` writes main's, a pick or link into the side writes the other.
- *
- * ```text
- * main document / landing   side = chat slot ?? a new chat (about main's document)
- * main chat / new chat / recent chats
- *                           side = document slot, else nothing (the side's empty state)
- * main opening              side keeps what it showed
- * ```
- *
- * Nothing derives the side from what a chat edited or what a document was touched by. A document
- * fits beside only once it is described and opens in the editor: one that no longer opens
- * (removed, an upload) leaves the side empty. While a describe is unanswered the side keeps what
- * it shows; it never paints a fallback and then swaps.
- *
- * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
- * diagrams with any change here.
- */
 import type { OpenDocument } from "@/client/stores";
 import type { PanePlace } from "../pane-place";
 import type { Item } from "../views";

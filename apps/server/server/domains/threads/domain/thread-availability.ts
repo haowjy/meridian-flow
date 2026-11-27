@@ -7,7 +7,6 @@ export function threadAvailabilityCode(
   project: OwnerRow | null | undefined,
   userId: string,
 ): ThreadAvailabilityCode | null {
-  // keep: Check thread and project ownership before deletion; foreign rows must look like missing rows
   if (!thread || !project || thread.userId !== userId || project.userId !== userId) {
     return "thread_not_found";
   }

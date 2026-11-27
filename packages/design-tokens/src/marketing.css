@@ -1,6 +1,6 @@
 :root {
   --mkt-night: oklch(0.135 0.02 200);
-  /* keep: Keep the night bar near-opaque; fully opaque Chromium software compositing drops the WebGL canvas bottom */
+  /* Keep the night bar near-opaque; fully opaque Chromium software compositing drops the WebGL canvas bottom */
   --mkt-night-bar: oklch(0.135 0.02 200 / 0.985);
   --mkt-scrim: oklch(0.12 0.02 200);
   --mkt-shade: oklch(0.15 0.03 205);

@@ -1,4 +1,4 @@
-// keep: img-src allows no other origin: a remote image would send the writer's text to its host
+// Img-src allows no other origin: a remote image would send the writer's text to its host
 import { objectStoreConfig, objectStoreReadOrigins } from "@meridian/contracts/object-store-env";
 import { createMiddleware } from "@tanstack/react-start";
 

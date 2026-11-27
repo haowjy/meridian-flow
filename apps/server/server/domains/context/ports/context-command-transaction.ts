@@ -17,7 +17,6 @@ export type ContextCommandDraft = {
 
 export type ContextCommandOptions = {
   draft?: ContextCommandDraft;
-  /** More sources whose namespaces the command takes with its own, in key order (§6.4). */
   sourceIds?: readonly string[];
 };
 

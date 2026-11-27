@@ -22,12 +22,7 @@ export type ResolvedEdit = {
       kind: "insert";
       after?: BlockRef;
       insertionRun?: object;
-      /** The inserted source text; it names the empty-content refusal and never drives the insert. */
       newText: string;
-      /**
-       * The nodes inserted, exactly as resolved (parsed, reconstructed or copied).
-       * No markup round trip happens between resolution and application.
-       */
       blocks: readonly Block[];
     }
   | {

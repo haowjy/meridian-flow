@@ -91,8 +91,6 @@ export async function deriveDocument(
   documentId: DocumentId,
   at = new Date(),
 ): Promise<DocumentDerivationResult> {
-  // Retry only stale cuts, not serializer/database failures. A constantly edited
-  // document yields to the next hint or sweep instead of monopolizing a worker.
   for (let attempt = 0; attempt < 3; attempt++) {
     const cut = await input.store.capture(documentId);
     if (!cut) return { status: "missing" };
@@ -100,7 +98,6 @@ export async function deriveDocument(
       const version = encodeRoomVersion(cut.doc.docs.version());
       const outputs = await deriveDocumentOutputs(cut, input.readCut);
       if (await input.store.certify(cut, outputs, at)) {
-        // Also when the cut was already certified: a failed earlier registration retries here.
         if (outputs.links.some((row) => row.aheadId)) await input.store.registerAheads(documentId);
         return { status: "derived", version };
       }
@@ -135,7 +132,6 @@ export async function deriveDocumentOutputs(
  */
 export function createCutReader(deps: {
   schema: Schema;
-  /** A thunk: the runtime that owns the codec is built after the derivation service. */
   codec(): AgentEditCodecFactory;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): ReadCut {

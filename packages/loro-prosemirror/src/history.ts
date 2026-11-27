@@ -20,10 +20,6 @@ import { type SelectionCursors, selectionCursors } from "./cursors.js";
 export { UNTRACKED_ORIGIN };
 
 const GROUP_MS = 500;
-/**
- * Steps kept. A step can be any number of items on a manager (a peer's import splits typing into
- * one per commit), so the managers keep every item, and a step leaves the history whole (`forget`).
- */
 const DEPTH = 500;
 
 type End = "anchor" | "head";

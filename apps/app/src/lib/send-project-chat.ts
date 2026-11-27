@@ -62,7 +62,7 @@ export function sendProjectChat({
   const title = deriveTitleFromMessage(text.trim());
 
   {
-    // keep: Record the durable submission before showing or navigating to the destination
+    // Record the durable submission before showing or navigating to the destination
     const submission: NewChatSubmission = {
       recordId: submissionId,
       submissionId,

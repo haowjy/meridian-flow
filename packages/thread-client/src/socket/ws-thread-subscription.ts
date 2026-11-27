@@ -92,7 +92,7 @@ export class WsThreadSubscriptionRegistry {
     });
   }
 
-  // keep: Complete the failure transition before callbacks so an onError unsubscribe cancels the retry
+  // Complete the failure transition before callbacks so an onError unsubscribe cancels the retry
   private failRequest(
     threadId: string,
     subscription: ThreadSubscription,
@@ -120,7 +120,7 @@ export class WsThreadSubscriptionRegistry {
     this.voidLease(subscription);
     if (message.toSeq) this.skipTo(subscription, message.toSeq);
     subscription.gapCount += 1;
-    // keep: Establish the replacement request before callbacks so removal cancels its deadline and lease
+    // Establish the replacement request before callbacks so removal cancels its deadline and lease
     this.sendRequest(message.threadId, subscription);
     for (const handler of subscription.handlers) {
       handler.onGap?.({
@@ -160,7 +160,6 @@ export class WsThreadSubscriptionRegistry {
       this.failRequest(threadId, subscription, requestId, error);
       return;
     }
-    // keep: Void a lease that survived failed auth so its frames never stream into held without end
     this.voidLease(subscription);
     this.transport.send({
       type: "unsubscribe",
@@ -309,7 +308,6 @@ export class WsThreadSubscriptionRegistry {
     this.deliver(subscription, frame);
   }
 
-  // keep: Deliver merged catch-up and held frames in seq order before onLiveState
   private settle(subscription: ThreadSubscription, after: string, catchup: SequencedEvent[]): void {
     subscription.lease = "active";
     subscription.position = selectNewestSeq(subscription.position, after);

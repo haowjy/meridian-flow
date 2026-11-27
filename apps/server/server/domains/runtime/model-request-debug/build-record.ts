@@ -6,7 +6,7 @@ import type {
 import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
 import type { ToolRegistry } from "../tools/index.js";
 
-// keep: Never capture signed media URLs; they are short-lived credentials
+// Never capture signed media URLs; they are short-lived credentials
 const LINK_OMITTED = "[signed link omitted]";
 
 function omitLinks(_key: string, value: unknown): unknown {

@@ -42,8 +42,6 @@ export function landingAt(
   let point = origin;
 
   for (;;) {
-    // A wide table scrolls inside its wrapper, and a cell scrolled out of view
-    // must not take a margin press.
     if (isTable(container.node)) {
       const box = geometry.rectOf(container.pos);
       point = { x: clamp(origin.x, box.left, box.right), y: origin.y };

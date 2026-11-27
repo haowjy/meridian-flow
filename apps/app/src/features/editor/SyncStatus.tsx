@@ -7,16 +7,6 @@ const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 
 type OutagePhase = "idle" | "awaiting" | "confirmed";
 
-/**
- * Advance on every snapshot, so the offline→confirmation swap is one state
- * change and no render exists between the two labels. A session whose unsent
- * edits can't be delivered resets to idle: nothing is waiting to upload. An outage (offline) always means awaiting. A
- * drop while confirmed (any non-synced status) returns to awaiting. A local
- * edit while confirmed (the server no longer has everything) ends the
- * confirmation and hides the pill: the connection is healthy, so it is not
- * "offline" again, and waiting to re-show the confirmation would flicker on
- * every keystroke.
- */
 function nextPhase(
   phase: OutagePhase,
   snapshot: DocumentSessionSnapshot,
@@ -44,9 +34,6 @@ function trackSession(session: DocumentSession): Tracked {
 export function SyncStatus({ session }: { session: DocumentSession }) {
   const [stored, setStored] = useState<Tracked>(() => trackSession(session));
 
-  // A new session starts from its own snapshot with no outage history. Reset
-  // during render (React re-renders before committing) so the old session's
-  // label and timer never reach the screen for the new one.
   let tracked = stored;
   if (stored.session !== session) {
     tracked = trackSession(session);
@@ -57,7 +44,6 @@ export function SyncStatus({ session }: { session: DocumentSession }) {
   useEffect(
     () =>
       session.subscribe((next) => {
-        // Read with the snapshot it belongs to, not when React runs the updater.
         const deliverable = session.canDeliverUnsentEdits();
         setStored((current) =>
           current.session === session

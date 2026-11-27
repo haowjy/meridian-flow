@@ -34,8 +34,6 @@ export function useVerbFeedback(): {
   }, [notice]);
 
   const run = useCallback((work: Promise<unknown>, verb: Verb) => {
-    // Settled rather than awaited: a rejection that escapes here would be an
-    // unhandled promise, which is the silent failure this exists to end.
     work.then(
       () => setNotice({ tone: "done", message: ANSWER[verb].done() }),
       (error: unknown) => {

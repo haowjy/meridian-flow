@@ -475,7 +475,6 @@ export function createDrizzleDocumentTrash(deps: {
         const before = count;
         for (const { id } of candidates)
           await finish(await isolated(id, () => purgeUnviewed(id as DocumentId, cutoff)));
-        // A candidate that waits stays a candidate: stop when a pass releases nothing.
         if (count === before) break;
       }
       return count;

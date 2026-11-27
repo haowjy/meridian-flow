@@ -48,10 +48,6 @@ export async function currentDocumentAddress(
   return address && !address.deleted ? address : null;
 }
 
-/**
- * The document present at exactly these coordinates: the rendered path must match
- * byte for byte, so `.hidden`, `trailing.`, `%` and `#` names never match loosely.
- */
 export async function documentAt(
   db: Database,
   at: DocumentCoordinates,
@@ -192,8 +188,6 @@ async function resolveAddressCoordinates(
     }
     chatThreadId = chat.id;
   } else if (authority.kind === "work") {
-    // Slugs stay reserved across soft deletion, so a deleted Work keeps its identity: an
-    // address resolves against it and is occupied only once a restore makes it live again.
     const [work] = await tx
       .select({ id: works.id })
       .from(works)

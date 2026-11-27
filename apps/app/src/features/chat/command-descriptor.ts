@@ -180,7 +180,7 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     phrases: (tool) => {
       const slug = stringInput(toolInputObject(tool), "name");
       if (!slug) return tenses(t`Invoking a skill…`, t`Invoked a skill`);
-      // keep: Keep the quotes inside the value; an apostrophe in an ICU message escapes the placeholder beside it.
+      // Keep the quotes inside the value; an apostrophe in an ICU message escapes the placeholder beside it.
       const skill = `'${humanizeSkillSlug(slug)}'`;
       return tenses(t`Invoking ${skill}…`, t`Invoked ${skill}`);
     },

@@ -127,7 +127,7 @@ export function createFire(canvas: HTMLCanvasElement) {
       gl.viewport(0, 0, width, height);
       gl.uniform2f(u.R, width, height);
     },
-    // keep: call in the same task as the sky's draw: a WebGL canvas clears once the frame is shown
+    // Call in the same task as the sky's draw: a WebGL canvas clears once the frame is shown
     keepNight(sky: HTMLCanvasElement) {
       gl.activeTexture(gl.TEXTURE0);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sky);

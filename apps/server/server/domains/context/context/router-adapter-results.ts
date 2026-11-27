@@ -72,7 +72,6 @@ export async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
-    // Not a fault: the command's caller runs it again with more owners locked.
     if (error instanceof TreeOwnersMoved) throw error;
     if (error instanceof NodeIdRefusedError) return Err({ code: "conflict", uri });
     return Err({

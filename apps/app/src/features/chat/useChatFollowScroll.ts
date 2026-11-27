@@ -26,7 +26,7 @@ export function useChatFollowScroll({
   releaseFollow: () => void;
 } {
   const [mode, setMode] = useState<FollowMode>(initialMode);
-  // keep: commitMode is the only writer of modeRef; adding render-time sync would let a stale render clobber a transition committed between renders, so callbacks read the ref before React commits.
+  // CommitMode is the only writer of modeRef; adding render-time sync would let a stale render clobber a transition committed between renders, so callbacks read the ref before React commits.
   const modeRef = useRef<FollowMode>(initialMode);
 
   const programmaticGuardRef = useRef(false);

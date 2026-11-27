@@ -92,7 +92,6 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   if (!isProjectContextTreeScheme(scheme)) return null;
   const path = segments.join("/");
   const validated = validateContextEntryPath(path, { allowRoot: false });
-  // Browser addresses must not silently trim a different filename into existence.
   if (!validated.ok || validated.value !== path) return null;
   return { kind: "document", scheme, path };
 }

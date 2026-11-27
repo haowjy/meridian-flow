@@ -208,11 +208,6 @@ function decodeText(bytes: Uint8Array): string | null {
   }
 }
 
-/**
- * What the stored bytes say the file is: its type, the name it takes, and the bytes read whole.
- * Text and convertible pictures are read whole within a cap, so a NUL late in a text file and the
- * picture preview see every byte. Throws when the object cannot be read back.
- */
 async function classifyStored(
   objectStore: ObjectStorePort,
   upload: Pick<UploadReservation, "objectKey" | "filename" | "mimeType" | "sizeBytes">,
@@ -390,7 +385,6 @@ export function createUploadIntake<Bound>(deps: {
 
       const stored = await deps.objectStore.readHead(current.objectKey, HEAD_BYTES);
       if (!stored.ok) {
-        // The sweep releases the final object with its row, and then there is nothing to read.
         const after = stored.error.code === "not_found" ? await read() : current;
         return after ? storageFailed : conflict;
       }
@@ -426,7 +420,6 @@ export function createUploadIntake<Bound>(deps: {
       }
 
       const tracked = classifyFiletype(claimed.fileType).kind === "tracked";
-      // A tracked file with bytes but no text read from them must never become an empty document.
       if (tracked && sizeBytes > 0 && text === null) return storageFailed;
       const storageUrl = createObjectStorageUrl(claimed.objectKey);
       const hasPreview =
@@ -487,8 +480,6 @@ export function createUploadIntake<Bound>(deps: {
         await deps.release.keys(tracked ? [incomingKey, claimed.objectKey] : [incomingKey]);
         return { ok: true, value: resultOf(outcome.reservation, source) };
       } catch (error) {
-        // Nothing is undone: the row is `object_stored` and the object is in place, so a retry
-        // reclassifies from it and resumes.
         emitEvent(deps.eventSink, {
           level: "warn",
           source: "context.upload-intake",
@@ -519,7 +510,6 @@ export function createUploadIntake<Bound>(deps: {
             row.objectKey,
           ]);
         }
-        // A row that was touched is no longer listed, so every pass shrinks the list.
         if (rows.length < SWEEP_BATCH) return dropped;
       }
     },

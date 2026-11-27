@@ -140,14 +140,12 @@ function discoverComments(
     };
     comments.push(comment);
     hidden.push(comment);
-    // Fences/backticks in this comment must not govern the next opener.
     code = null;
   }
   return comments;
 }
 
 export function scanWikilinks(sourceText: string, options: WikilinkScanOptions = {}): WikilinkScan {
-  // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const prose = options.context === "prose";
   let source = sourceText;
   if (!prose) {
@@ -170,7 +168,6 @@ export function scanWikilinks(sourceText: string, options: WikilinkScanOptions =
   findings.push(...comments);
   hidden.push(...comments);
 
-  // Comments may contain Markdown fences themselves. Mask them before the authoritative parse.
   const blocked = [...hidden];
   if (!prose)
     walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {

@@ -11,10 +11,6 @@ export async function copySelection(editor: Editor): Promise<ClipboardResult> {
   return (await writeClipboardRichText(dom.innerHTML, text)).status;
 }
 
-/**
- * Copy, then delete — in that order, and only in that order. A cut whose copy
- * was refused would take the writer's words with nothing to paste back.
- */
 export async function cutSelection(editor: Editor): Promise<ClipboardResult> {
   if (editor.isDestroyed || !editor.isEditable) return "refused";
   const copied = await copySelection(editor);
@@ -30,8 +26,6 @@ export async function pasteIntoSelection(editor: Editor): Promise<ClipboardResul
   if (held.status !== "done") return held.status;
   if (editor.isDestroyed) return "refused";
 
-  // The caret never left the prose; the paste lands where the writer is
-  // looking, so focus goes back before the transaction rather than after it.
   editor.commands.focus();
   const pasted = held.html
     ? editor.view.pasteHTML(held.html)

@@ -232,12 +232,10 @@ export class ProjectDocumentNavigationAdapter {
     try {
       outcome = await this.run(projectId, request);
     } catch (error) {
-      // A door drops the promise: an open that threw would otherwise end in silence.
       reportError(error);
       outcome = { kind: "refused", reason: "lookup-failed" };
     }
     if (outcome.kind === "refused" && !request.fallsBack)
-      // A later Retry is a new open: replacing would drop whatever page the writer is on by then.
       this.dependencies.refused(outcome, () => {
         void this.open(projectId, { ...request, replace: undefined, signal: undefined });
       });
@@ -458,7 +456,6 @@ export function ProjectDocumentNavigationProvider({
   const { open: openTrash } = useTrashNavigation();
   const standings = useProjectStandings();
   const trees = useProjectTrees(projectId);
-  // Read at each open, so a change of the list does not make a new adapter.
   const treesRef = useRef(trees);
   treesRef.current = trees;
   const locatable = useRef(new Set<() => void>());

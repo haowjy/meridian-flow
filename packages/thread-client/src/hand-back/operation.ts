@@ -210,7 +210,6 @@ export function createHandBackOperation(options: {
     const joined = running.get(requestId);
     if (joined) return joined.done;
     if (save && !store.record(held.command)) {
-      // keep: An occurrence update must not downgrade an already durable unresolved command to page memory
       fail(held, previousStatus ?? entries.get(requestId)?.status ?? "unsaved");
       changed();
       return Promise.resolve({ kind: "unsaved", command: held.command });
@@ -242,7 +241,7 @@ export function createHandBackOperation(options: {
       return { kind: "refused", command, status: verdict.status };
     }
     if (verdict.kind === "ambiguous") {
-      // keep: A remount may confirm the command while this owner posts; drop the intent when its store entry is gone
+      // A remount may confirm the command while this owner posts; drop the intent when its store entry is gone
       if (!store.pending().some((pending) => pending.requestId === requestId)) {
         runState.dropIntent(requestId);
         retire(requestId, "resolved");

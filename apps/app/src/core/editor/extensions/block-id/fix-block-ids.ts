@@ -21,11 +21,6 @@ function blocksOf(doc: ProseMirrorNode): Array<{ node: ProseMirrorNode; pos: num
   return out;
 }
 
-/**
- * Typing, deleting inside one textblock and marks never change which blocks there are. Except in a
- * block with no id: the empty document's one paragraph is that until its first keystroke, which
- * would otherwise store it with none.
- */
 function keepsBlocks(transaction: Transaction): boolean {
   return transaction.steps.every((step, index) => {
     if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) return true;
@@ -67,7 +62,6 @@ export function fixBlockIds(transaction: Transaction, oldState: EditorState): vo
     if (transaction.doc.nodeAt(at)?.attrs.id === id) owners.set(id, at);
   }
 
-  // Enter at the start of a block leaves its empty first half where the block was; the text moves on.
   for (const [id, pos] of owners) {
     const node = transaction.doc.nodeAt(pos);
     const next = transaction.doc.nodeAt(pos + (node?.nodeSize ?? 0));

@@ -12,18 +12,10 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { BlockText } from "../domain/ports/block-text.js";
 import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
 
-/**
- * The version text derivations compare: the live row's, and 0 for a document no live row places.
- * Needs `treeNodes` left-joined on the document.
- */
 export const liveLocationVersion = sql<bigint>`coalesce(${treeNodes.locationVersion}, 0)`.mapWith(
   BigInt,
 );
 
-/**
- * Both predicates need `documentBlockRooms` left-joined to `documents` and `treeNodes`.
- * `cutBehind`: the derivation's cut differs from the document's saved content or location.
- */
 const cutBehind = [
   ne(documentBlockRooms.cutContentSeq, documents.contentSeq),
   sql`${documentBlockRooms.cutLocationVersion} <> coalesce(${treeNodes.locationVersion}, 0)`,

@@ -43,11 +43,6 @@ type OwnMove = {
   snapshots: ComposerDraftSnapshot[];
 };
 const ownMoves = new Map<string, OwnMove>();
-/**
- * Undo of the writer's own delete: the chat's words go back into its box and out of New chat,
- * only while New chat still holds exactly what the move left. A box the writer has typed in since
- * keeps the one copy and its note, and nothing goes back.
- */
 export function restoreOwnDeletedChatWords(
   accountId: string,
   threadId: string,
@@ -102,14 +97,6 @@ function browserPorts(accountId: string, threadId: string): DeletedChatPorts {
     lock: browserSubmissionLock,
   };
 }
-/**
- * Moves a deleted chat's unsent words into its project's New chat box. The chat's unsent messages
- * are shared by every tab (localStorage), so a tab takes them only where they land in front of the
- * writer. The tab that deleted the chat, and a tab with a surface for it, claim at once. A tab with
- * no surface never claims from the verdict it was given: it waits until it is visible or focused
- * and asks the server again, so an Undo or a restore since ends it. The cross-tab lock keeps it to
- * one claimant, and a tab that finds nothing left to take moves nothing.
- */
 export async function cleanDeletedChat(
   accountId: string,
   threadId: string,
@@ -140,7 +127,6 @@ export async function cleanDeletedChat(
     if (box && serializeComposerDraft(box.doc).text) snapshots.push(box);
     let moved = false;
     if (snapshots.length) {
-      // No project to receive them: the words stay in this box and nothing is cleared.
       if (!project) return false;
       const target = ports.draft(accountId, { kind: "new-chat", id: project });
       const before = target.initialDraft;
@@ -150,7 +136,6 @@ export async function cleanDeletedChat(
         count: snapshots.length,
         ...(own ? { own: true } : {}),
       });
-      // Preserve the source if the tab cannot durably receive its words.
       if (!moved) return false;
       if (own)
         ownMoves.set(key, { projectId: project, before, after: target.initialDraft, snapshots });

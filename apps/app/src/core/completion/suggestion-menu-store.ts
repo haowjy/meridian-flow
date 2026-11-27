@@ -45,11 +45,6 @@ export type InternalSuggestionSession<TItem, TMeta = null> = {
   meta: TMeta;
   choose: (item: TItem, action: SuggestionChoiceAction) => void;
   choosable?: (item: TItem) => boolean;
-  /**
-   * Whether a row may take the highlight on its own when a session opens or
-   * its rows change. False keeps a row choosable by arrow or pointer but never
-   * the answer to a bare Enter: with no default row, Enter is the host's.
-   */
   defaultActive?: (item: TItem) => boolean;
   keepOpenWhenEmpty?: boolean;
   backtrack?: () => boolean;
@@ -175,10 +170,6 @@ export function createInternalSuggestionLifecycle<TItem, TMeta = null>(
     notify();
   };
 
-  // A transition publishes its lifecycle callback and subscribers completely
-  // before a synchronous reentrant transition begins. Reentrant calls still
-  // return against the projected FIFO state, so their identity is immediately
-  // usable even though their mutation waits for the current event to finish.
   const enqueue = (transition: () => void) => {
     transitions.push(transition);
     if (publishing) return;

@@ -8,14 +8,6 @@ export type TreeList = { kind: "project"; projectId: string } | { kind: "account
 
 export type ListWriter = { writer: TreeWriter; list: string };
 
-/**
- * What the server's own change makes, in the lists' copies under their locks: each writer makes
- * its list's records (ranks placed against the copy's own view, settlements
- * appended), in the order of the `lists` the caller named, and `make` returns whatever the
- * caller reads back from the replay (the names a node ended at, what a delete took). The store
- * derives the new nodes from what the copies gained. `make` is synchronous: a copy is never
- * half-changed across an await.
- */
 export type ServerChange<T> = (lists: readonly ListWriter[]) => T;
 
 /**

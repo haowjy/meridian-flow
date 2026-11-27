@@ -35,7 +35,6 @@ export function useCreatedDrafts(
       created.set(
         draftId,
         candidates.map((documentId): DraftItem => {
-          // The row is the record's: a place the trees have not drawn yet is no address, not no row.
           const uri = trees.find(documentId)?.file.uri;
           const location = uri ? parseContextUri(uri) : null;
           return {

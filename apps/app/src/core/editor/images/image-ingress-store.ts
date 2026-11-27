@@ -42,8 +42,6 @@ export function createImageIngressStore(): ImageIngressStore {
     publish({ ...status, notice: { message, token } });
     expiry = setTimeout(() => {
       expiry = null;
-      // Only this notice: a later one has replaced it and must not be silenced by an expiry
-      // queued for the one before.
       if (status.notice?.token === token) publish({ ...status, notice: null });
     }, NOTICE_LIFETIME_MS);
   };

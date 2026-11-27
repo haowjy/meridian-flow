@@ -15,10 +15,6 @@ import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId, TurnFolderTarget } from "../domain/turn-live-lineage.js";
 
-/**
- * A receipt drafted in a draft a Work purge deleted has nothing left to show: reading its missing
- * draft as none would list the edit as live.
- */
 export const receiptDraftExists = or(isNull(treeEditReceipts.draftId), isNotNull(drafts.id));
 
 export async function readTurnEditTargets(
@@ -148,7 +144,6 @@ export async function readTurnTreeTargets(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
-        // Write receipts only: a Redo's names where it landed (live after an Apply), not where the turn wrote.
         eq(treeEditReceipts.kind, "write"),
         receiptDraftExists,
       ),

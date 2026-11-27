@@ -163,7 +163,7 @@ export async function readImportParts(
         });
     }
     if (signal?.aborted) throw new ImportError(408, "import_busy");
-    // keep: drain truncated files instead of cancelling the body, which resets Nitro's keep-alive socket and turns the next request into a proxy 500
+    // Drain truncated files instead of cancelling the body, which resets Nitro's keep-alive socket and turns the next request into a proxy 500
     parser.end();
     await closed;
     if (failure) throw failure;

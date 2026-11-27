@@ -223,9 +223,6 @@ export const LinkSurfaceExtension = Extension.create({
             },
           });
 
-          // The menu outlives the state it opened on. Every verb it carries
-          // rewrites a range, and a peer typing one line up moves that range,
-          // so it follows the document rather than trusting a snapshot.
           const followDocument = ({ transaction }: { transaction: Transaction }) => {
             const menu = surface.state.menu;
             if (!transaction.docChanged || !menu) return;
@@ -274,11 +271,6 @@ export const LinkSurfaceExtension = Extension.create({
               return false;
             },
 
-            /**
-             * A link in the manuscript never navigates the browser: the draft
-             * would go with it. `preventDefault` is unconditional, and what
-             * happens instead is the design's decision, not the browser's.
-             */
             click(view, event) {
               return handleLinkPress(view, event, event.button);
             },

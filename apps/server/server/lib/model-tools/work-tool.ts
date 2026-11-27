@@ -484,7 +484,6 @@ export function createWorkHandler(deps: ToolWiringDeps) {
     const decision = actionPolicy(permission, `work.${resolved.command}`);
     if (decision === "deny") return policyRefusal("This agent can read but can't change Works.");
     if (decision === "ask") {
-      // keep: the policy table's type forbids `ask` for any other action; this keeps a slip from becoming a silent allow
       if (!isAskable(resolved))
         throw new Error(`The action policy asks about work.${resolved.command}, which can't ask`);
       const action = `work.${resolved.command}` as const;

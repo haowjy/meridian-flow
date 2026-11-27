@@ -32,7 +32,7 @@ export function resolveMainCheckoutRoot(repoRoot: string): string {
   return path.dirname(path.isAbsolute(commonDir) ? commonDir : path.resolve(repoRoot, commonDir));
 }
 
-// keep: compare directories by device and inode, never by path text; on a disk that ignores letter case git and Node can spell one directory two ways
+// Compare directories by device and inode, never by path text; on a disk that ignores letter case git and Node can spell one directory two ways
 function isSameDirectory(a: string, b: string): boolean {
   const [first, second] = [statSync(a), statSync(b)];
   return first.dev === second.dev && first.ino === second.ino;
@@ -72,7 +72,6 @@ function rewriteDatabaseName(url: string, dbName: string): string {
   return rewritten.toString();
 }
 
-// keep: a worktree's database follows its directory, so switching branch inside it keeps its data
 function databaseSlug(checkoutRealpath: string): string {
   const name =
     path
@@ -92,7 +91,6 @@ function liveLinkedWorktrees(repoRoot: string): string[] {
     .map((worktree) => realpathSync(worktree));
 }
 
-// keep: two worktrees whose directories share a name would share one database; refuse instead of letting either write to the other's
 function resolveOwnDatabaseSlug(repoRoot: string): string {
   const checkout = realpathSync(repoRoot);
   const slug = databaseSlug(checkout);
@@ -135,7 +133,6 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
     if (env[key] === undefined) env[key] = value;
   }
   for (const [key, value] of Object.entries(main)) {
-    // keep: a key present in .env.local wins even when empty, so `KEY=` turns off a main-.env setting
     if (env[key] === undefined && !(key in local)) env[key] = value;
   }
 

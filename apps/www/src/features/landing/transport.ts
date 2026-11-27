@@ -133,7 +133,7 @@ export function createTransport(options: {
     );
   }
 
-  // keep: `scrollRestoration` is manual because the browser restores a reload's offset while the page is short and scroll anchoring then drags it to the end
+  // `scrollRestoration` is manual because the browser restores a reload's offset while the page is short and scroll anchoring then drags it to the end
   history.scrollRestoration = "manual";
   const scrollEnd = () => getLayout().documentHeight - getLayout().height;
   addEventListener("pagehide", () => savePlace(scrollY / scrollEnd()), { signal });

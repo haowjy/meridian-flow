@@ -68,7 +68,6 @@ function drawContainer(container: ProseMirrorNode, start: number, out: Decoratio
     if (listSteps > 0) {
       classes.push("meridian-listed");
       style += ` --nest-marker: ${offset(facts.steps.slice(0, innermostList + 1))};`;
-      // The DOM is flat, so a screen reader learns the depth from the block itself.
       attrs["aria-level"] = String(listSteps);
     }
     if (quoted) {

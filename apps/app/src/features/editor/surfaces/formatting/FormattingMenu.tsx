@@ -52,8 +52,6 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
 
   useFormattingMenuDoors(editor, setAnchor);
 
-  // Held through the close so the menu fades out with its contents rather than
-  // emptying a frame before it goes.
   const lastModel = useRef<FormattingMenuModel | null>(null);
   if (anchor) lastModel.current = formattingMenuModel(editor);
   const model = lastModel.current;
@@ -126,8 +124,6 @@ function MarkButton({
       className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-ink-fill-strong")}
       onSelect={() => toggleTextMark(editor, FORMATTING_MARKS[id])}
     >
-      {/* An explicit text colour every time: the menu's own rule mutes any
-          icon that has none, which would swallow the lit state. */}
       <Icon className="size-4 text-foreground" />
     </EditorMenuItem>
   );

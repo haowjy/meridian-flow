@@ -232,7 +232,7 @@ export const threadHandBacks = pgTable("thread_hand_backs", {
   createdAt: createdAt(),
 });
 
-// keep: Bigserial seq orders allocation, not commit; per-thread lock serialization gives FIFO
+// Bigserial seq orders allocation, not commit; per-thread lock serialization gives FIFO
 export const threadInboxMessages = pgTable(
   "thread_inbox_messages",
   {
@@ -283,7 +283,7 @@ export const threadInboxMessages = pgTable(
   ],
 );
 
-// keep: The advisory lock is the mutex; an expired lease row is only a repair candidate, never proof of death
+// The advisory lock is the mutex; an expired lease row is only a repair candidate, never proof of death
 export const threadRunLeases = pgTable(
   "thread_run_leases",
   {
@@ -735,4 +735,4 @@ export const userTurnAdmissions = pgTable(
   ],
 );
 
-// keep: The origin-turn FK is deferrable; deleting a referenced turn requires a coordinated deferred delete
+// The origin-turn FK is deferrable; deleting a referenced turn requires a coordinated deferred delete

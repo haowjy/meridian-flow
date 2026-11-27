@@ -72,7 +72,6 @@ export function drawLinkAnswer(
   };
 }
 
-// Every resolution publish reaches every link on the page; only a changed value touches the DOM.
 function draw(element: HTMLElement, name: string, value: string | null): void {
   if (element.getAttribute(name) === value) return;
   if (value === null) element.removeAttribute(name);

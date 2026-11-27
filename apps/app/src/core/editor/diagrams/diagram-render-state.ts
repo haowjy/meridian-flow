@@ -26,11 +26,7 @@ export function useDiagramRender(provider: DiagramProvider, source: string): Dia
   const { language, render } = provider;
   const reactId = useId();
   const [result, setResult] = useState<DiagramRender>({ svg: null, error: null, rendered: null });
-  // Renders resolve out of order under fast typing; only the newest may land.
   const generation = useRef(0);
-  // A diagram is drawn in the manuscript's ink, so switching palettes has to
-  // redraw it. A renderer bakes its colors into the markup; nothing about an
-  // already-rendered SVG follows a token.
   const uiTheme = useSyncExternalStore(subscribeUiTheme, resolveUiTheme, () => DEFAULT_UI_THEME);
 
   useEffect(() => {
@@ -54,9 +50,6 @@ export function useDiagramRender(provider: DiagramProvider, source: string): Dia
         });
     };
 
-    // The first parse is not a pause in typing, it is a chapter opening, and
-    // every diagram in it would otherwise sit blank for the length of a pause
-    // nobody took.
     if (generation.current === 0) {
       run();
       return;

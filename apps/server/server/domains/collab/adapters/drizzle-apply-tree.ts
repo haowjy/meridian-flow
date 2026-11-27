@@ -124,7 +124,6 @@ export function createApplyTreeOperations(input: {
               landed.add(it.node);
           if (applied) rows.push({ scope: list.kind });
         }
-        // Every judgement above was a guess for a source whose owner was not locked.
         click.judge.assertLocked();
         return rows;
       },

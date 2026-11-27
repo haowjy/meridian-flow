@@ -258,7 +258,7 @@ function readChangelogEntriesFromGitHub(cutoff) {
       return Date.parse(pr.updatedAt);
     });
     const oldestUpdatedAt = Math.min(...updatedTimes);
-    // keep: GitHub pages by updatedAt descending and updatedAt is never earlier than mergedAt, so no later page holds an in-range merge once one crosses the cutoff
+    // GitHub pages by updatedAt descending and updatedAt is never earlier than mergedAt, so no later page holds an in-range merge once one crosses the cutoff
     if (cutoff !== null && oldestUpdatedAt < cutoff.valueOf()) break;
     if (!page.pageInfo.hasNextPage) break;
     cursor = page.pageInfo.endCursor;

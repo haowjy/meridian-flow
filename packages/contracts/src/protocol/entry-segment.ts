@@ -1,4 +1,4 @@
-// keep: A twin suffix always ends the segment; stored names cannot end in that shape
+// A twin suffix always ends the segment; stored names cannot end in that shape
 export const SEGMENT_SUFFIX = /~([0-9a-f]{4,})$/i;
 
 export type Segment = {

@@ -30,7 +30,6 @@ export interface CopyTreeDeps {
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
   actor: string;
   holderUri(path: string): string;
-  /** A folder's address: its name as stored, never the document alias (folder `Lore.md` is not `Lore`). */
   folderUri(path: string): string;
 }
 
@@ -181,8 +180,6 @@ export async function insertPlannedTrees(
   }
   if (refusal) return Err(refusal);
   if (!created.created) return Ok({ kind: "replan" });
-  // An upload's arrival publishes with its live identity; a tracked document's waited for its
-  // content, in the creation aggregate.
   await deps.arrivals?.settle(binaryIds as DocumentId[]);
   runAfterDrizzleCommit(() => {
     const queue = documents.map((document) => document.id as DocumentId);

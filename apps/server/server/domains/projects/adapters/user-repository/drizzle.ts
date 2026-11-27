@@ -17,7 +17,7 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
 
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
-      // keep: Never SET users.email on a no-change update; FOR UPDATE queues behind FK key-share locks
+      // Never SET users.email on a no-change update; FOR UPDATE queues behind FK key-share locks
       const [current] = await db
         .select({
           id: users.id,

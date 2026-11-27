@@ -293,12 +293,8 @@ function similarChain(
         .slice(0, TUNE.candidates)
         .map(([j]) => j),
     );
-    // The word index only speeds the search up: the blocks at this one's place, counted from the
-    // gap's start, its end and in proportion, are always scored, so misleading rare words never
-    // leave an edited block unpaired.
     for (const at of [b0 + (i - a0), b1 - (a1 - i), Math.round(place)])
       for (let j = at - TUNE.near; j <= at + TUNE.near; j++) if (j >= b0 && j < b1) best.add(j);
-    // Largest j first within one old block, so a strictly rising chain takes at most one of them.
     for (const j of [...best].sort((x, y) => y - x))
       if (weight(old[i], next[j]) >= STRONG) cand.push([i, j]);
   }
@@ -360,7 +356,6 @@ function findAnchors(
   const left = lengthsEndingAt(cand.map(([, j]) => j));
   const right = lengthsEndingAt(cand.map(([, j]) => -j).reverse()).reverse();
   const longest = left.reduce((m, v) => Math.max(m, v), 0);
-  // One candidate at its place in every longest set is an anchor; two at one place cross.
   const atLevel = new Map<number, Array<[number, number]>>();
   cand.forEach((pair, k) => {
     if (left[k] + right[k] - 1 !== longest) return;
@@ -375,12 +370,6 @@ const sameType = (a: PMNode, b: PMNode) => a.type === b.type;
 
 const squash = (n: PMNode) => n.textContent.replace(/\s+/gu, "");
 
-/**
- * An unpaired block beside a pair is a piece when at least half its words are in the pair's other
- * side and the pair reads better with it: the rest of a split or a join. Words segment differently
- * on the two sides when a split lands inside a word of a script without spaces, so the piece also
- * counts when pair and piece together are exact text of the other side.
- */
 function findPieces(
   old: readonly PMNode[],
   next: readonly PMNode[],
@@ -391,7 +380,6 @@ function findPieces(
   for (let i = 0; i < old.length; i++) {
     const j = partner[i];
     if (j < 0 || !sameType(old[i], next[j])) continue;
-    // Most pairs have no unpaired neighbour; counting words for them dominates a large document.
     const open = (k: number, side: readonly PMNode[], other: Int32Array, own?: Uint8Array) =>
       k >= 0 && k < side.length && other[k] < 0 && !own?.[k];
     if (

@@ -80,7 +80,7 @@ function proxyHttp(
     target,
     {
       method: request.method,
-      // keep: Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
+      // Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
       headers: request.headers,
     },
     (receivedResponse) => {

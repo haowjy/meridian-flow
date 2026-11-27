@@ -84,14 +84,6 @@ export const toggleTableHeaderRow: Command = (state, dispatch) => {
   return true;
 };
 
-/**
- * Whether row zero is a header row.
- *
- * The header is a real toggleable thing (§5.4 requirement 3), not a structural
- * given: plenty of status screens have none. Transforms that must not disturb
- * it ask this rather than assuming row zero is sacred, or a headerless table's
- * first row becomes unreachable to insert-above and to moves.
- */
 export function hasHeaderRow(table: ProseMirrorNode): boolean {
   const first = table.firstChild?.firstChild;
   return first?.type.spec.tableRole === "header_cell";
@@ -260,8 +252,6 @@ export function addTableRow(direction: "above" | "below"): Command {
         top: insertedRow,
         bottom: insertedRow + 1,
       })) {
-        // A rowspan from above reaches into the new row without belonging to
-        // it; only cells that BEGIN here are the row this insert created.
         const rect = map.findCell(cellPos);
         if (rect.top !== insertedRow) continue;
         const cell = table.nodeAt(cellPos);
@@ -323,15 +313,6 @@ export function mergeCrossesHeader(state: EditorState): boolean {
   return hasHeaderRow(rect.table) && rect.top === 0 && rect.bottom > 1;
 }
 
-/**
- * Merge, refusing to swallow the header row.
- *
- * Cells hold block sequences, so prosemirror-tables' own merge is already
- * legal: every filled cell's blocks land in the merged cell in reading order.
- * The header guard is the load-bearing part — the greyed menu item is the
- * first fence and this is the second; nothing else stops a programmatic merge
- * from taking the header row with it.
- */
 export const mergeTableCells: Command = (state, dispatch) => {
   if (mergeCrossesHeader(state)) return false;
   return mergeCells(state, dispatch);

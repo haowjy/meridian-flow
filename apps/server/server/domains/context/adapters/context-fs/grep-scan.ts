@@ -56,7 +56,6 @@ export async function scanDocuments<Shown, Fault>(input: {
   try {
     for (const [index, document] of input.documents.entries()) {
       if (input.signal.aborted) throw new GrepStopped();
-      // Text for a slice at a time bounds what a scan holds, however many documents it covers.
       if (index % STORED_SLICE === 0)
         stored = await input.stored(
           input.documents.slice(index, index + STORED_SLICE).map(({ id }) => id),

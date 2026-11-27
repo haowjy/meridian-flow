@@ -1,4 +1,3 @@
-// keep: Zero blocks and one plain empty paragraph are the same empty document because editors cannot show zero blocks
 import type { Node as PMNode, Schema } from "prosemirror-model";
 
 import { newBlockId } from "./block-id.js";

@@ -89,7 +89,6 @@ function chipFor(
   documentId: string,
   scheme: ContextUriScheme,
 ): PMNode | null {
-  // A dropped file's name is the writer's: `@notes.png` is no address segment.
   let uri: string;
   try {
     uri = canonicalContextUri(scheme, `${ASSETS_FOLDER}/${name}`);
@@ -169,7 +168,6 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     if (!placed) {
       status?.refuse(t`Can’t drop here`);
     } else {
-      // The entries exist before the chips do, so no chip ever draws a gap.
       for (const { documentId, file } of ready)
         uploads.begin(documentId, host.hostDocumentId, sendRun(host, documentId, file));
       placed.commit(editor.view);
@@ -199,8 +197,6 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       continue;
     }
     const documentId = crypto.randomUUID();
-    // Settled either way, so a refusal that lands while an earlier run is flushing is no
-    // unhandled rejection.
     const reserved = host.reserve({ documentId, file }).then(
       (name): Reserved => ({ ok: true, name }),
       (reason: unknown): Reserved => ({ ok: false, reason }),

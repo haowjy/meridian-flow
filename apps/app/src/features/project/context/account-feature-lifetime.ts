@@ -111,12 +111,6 @@ export class AccountFeatureLifetime {
     this.featureLease.suspend();
   }
 
-  /**
-   * Sign-out: the edits the server can still acknowledge are sent, the account's other tabs let
-   * go of their copies, and every copy this account has on this browser is deleted. Throws
-   * `SignOutIncomplete` when edits could not be sent or a copy could not be deleted: the writer
-   * is not signed out with the account's text left behind.
-   */
   async clearForSignOut(): Promise<void> {
     if (this.state === "open") {
       if (!(await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS)))

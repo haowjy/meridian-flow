@@ -17,7 +17,7 @@ export function el(tag, attrs, ...children) {
 export async function fetchRepoEntry(path) {
   const root = new URL(REPO_ROOT, location.href);
   const url = new URL(REPO_ROOT + path.split("/").map(encodeURIComponent).join("/"), location.href);
-  // keep: `path` comes from the address bar, so check the URL the browser will request: parsing turns %2e%2e into .. and moves a ? tail into the query
+  // `path` comes from the address bar, so check the URL the browser will request: parsing turns %2e%2e into .. and moves a ? tail into the query
   const requested = url.pathname.startsWith(root.pathname)
     ? decodeURIComponent(url.pathname.slice(root.pathname.length))
     : null;

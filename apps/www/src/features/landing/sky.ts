@@ -15,7 +15,6 @@ import {
 
 export const vec3 = ([r, g, b]: LinearRgb) =>
   `vec3(${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)})`;
-// keep: written as they are: the fire shader uses fireBody and fireCore unencoded, while sun and auroraMid are linear in the sky shader, so their CSS copies read darker
 export const rgb = ([r, g, b]: LinearRgb) => `rgb(${r * 255} ${g * 255} ${b * 255})`;
 
 const SUMMIT_AZIMUTH = 0.6;
@@ -301,7 +300,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     );
   };
 
-  // keep: without preventDefault on `webglcontextlost` the context never returns
+  // Without preventDefault on `webglcontextlost` the context never returns
   canvas.addEventListener(
     "webglcontextlost",
     (event) => {

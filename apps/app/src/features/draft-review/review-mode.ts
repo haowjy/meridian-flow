@@ -34,11 +34,6 @@ export function useReviewMode(): ReviewMode | null {
   return useContext(ReviewModeContext);
 }
 
-/**
- * The chapter each pane's step back is opening: its review opens at its last change, not its
- * first. Kept per pane, not by a host's `ReviewSurface`: the chapter opens in a new one. It holds
- * until the chapter's address names a change, since reads come again before the focus lands.
- */
 const landingOnLast = new Map<PanePlace, string>();
 
 export function landOnLast(pane: PanePlace, documentId: string): void {

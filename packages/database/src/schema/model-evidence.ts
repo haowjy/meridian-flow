@@ -13,7 +13,6 @@ import {
 import { byteaColumn } from "./_shared";
 import { documents, projects } from "./content";
 
-// keep: Store a SHA-256 beside exact unbounded link values; exact-equality guard must not merge distinct tuples
 export const threadShownLinks = pgTable(
   "thread_shown_links",
   {

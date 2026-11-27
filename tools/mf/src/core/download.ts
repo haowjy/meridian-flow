@@ -14,7 +14,6 @@ export async function downloadApiFile(
 ): Promise<void> {
   const origin = new URL(path, session.serverUrl);
   const temporary = `${output}.${randomUUID()}.part`;
-  // keep: a stored file answers with one redirect to a signed store URL, and the cookie goes only to the server's own origin
   const fetchInto = (url: URL, redirected: boolean) =>
     new Promise<void>((resolve, reject) => {
       const sameOrigin = url.origin === origin.origin;

@@ -439,13 +439,6 @@ export class ChatSubmissionDriver {
       return;
   }
 
-  /**
-   * Withdraw a switch the server can't have: take it out of the journal under the chat's
-   * lock, so no driver is posting it meanwhile. That holds only when it was never posted or
-   * the server refused it. `admitted` means the record is gone because the server has it,
-   * and the server's own Withdraw is the way. `kept` means the server may have it and
-   * hasn't said: a local removal could let a late request apply it, so it stays for Retry.
-   */
   async withdrawControl(
     recordId: string,
     threadId: string,

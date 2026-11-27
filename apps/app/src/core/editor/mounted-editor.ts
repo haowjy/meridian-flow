@@ -49,43 +49,22 @@ export type EditorMountIdentity = EditorMountBase & {
 export type EditorSurfaceOptions = {
   editable: boolean;
   editorProps: NonNullable<EditorOptions["editorProps"]>;
-  /**
-   * Whether this editor may publish the client's caret. A view hidden
-   * behind another one of the same session must not (see `gateCaretPresence`).
-   */
   publishPresence: boolean;
 };
 
 export function editorMountKey(identity: EditorMountIdentity): string {
-  // Only a code file's editor is built from its filetype: a prose rename keeps the editor.
   const filetype = identity.schemaType === "code" ? (identity.filetype ?? "") : "";
   return `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${filetype}|${identity.collaborationDecorations}`;
 }
 
 export type MountedEditorInput = {
   identity: EditorMountIdentity;
-  /**
-   * Session for `identity.documentId`. The caller's mount key covers every
-   * input the session lookup depends on, so it is constant for this mount.
-   */
   session: DocumentSession;
   user: EditorUser;
   placeholder: string;
-  /**
-   * Reads the insertion catalog when the menu opens. Mounting the extension is
-   * a construction fact; its localized labels and host callbacks are not, so
-   * they arrive through this getter instead of the mount key.
-   */
   slashCommandCatalog?: () => SlashCommandCatalog | null;
-  /**
-   * Reads the reference catalog when the `@` menu opens. Same reason as the
-   * slash catalog: mounting the trigger is a construction fact, and the list it
-   * offers — which changes every time the writer creates or renames a file —
-   * is not.
-   */
   atReferenceCatalog?: () => AtReferenceCatalog | null;
   referenceDrop?: ReferenceDropOptions;
-  /** Read at paste time: what a pasted `[[Name]]` may link to. Same reason again. */
   wikilinkPasteCatalog?: () => WikilinkPasteCatalog | null;
   surface: EditorSurfaceOptions;
 };
@@ -101,9 +80,6 @@ export function useMountedEditor({
   wikilinkPasteCatalog,
   surface,
 }: MountedEditorInput): Editor | null {
-  // The getter is read at menu-open time, so freezing the reference is safe
-  // only if it never goes stale. Keep the live one in a ref the frozen getter
-  // reads through.
   const catalogRef = useRef(slashCommandCatalog);
   catalogRef.current = slashCommandCatalog;
   const atReferenceCatalogRef = useRef(atReferenceCatalog);
@@ -122,9 +98,6 @@ export function useMountedEditor({
     const editorConfig = createEditorConfig({
       copy: { docs: session.docs, publish: (changes) => session.publish(changes) },
       history: session.history,
-      // The session owns whether this client is visible, so it owns every local
-      // awareness field the editor publishes — the caret's included. Its caret is arbitrated, because another view of
-      // this session may be the one in front.
       presence: caretGate.presence,
       schemaType: identity.schemaType,
       filetype: identity.filetype,

@@ -14,7 +14,7 @@ export type CommandRecord<Body = unknown> = {
   sendId: string;
   body: Body;
   bodyVersion: number;
-  // keep: A sent request is immutable and replayed byte for byte because the server hashes its body
+  // A sent request is immutable and replayed byte for byte because the server hashes its body
   request?: HttpRequest;
   sent: boolean;
   state: CommandState;

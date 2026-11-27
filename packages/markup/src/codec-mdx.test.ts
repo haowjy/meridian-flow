@@ -185,7 +185,6 @@ describe("mdx prose and component round-trip corpus", () => {
 {
   const parser = unified().use(remarkParse).use(remarkMdxWithHtmlVoidElements);
 
-  // Keep the contract independent of the production set so a missing name fails.
   const voidNames = [
     "area",
     "base",

@@ -8,10 +8,6 @@ import { validateContextEntryName } from "@meridian/contracts/context-entry-vali
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
 
-/**
- * The ahead address of a manuscript path a writer typed, or null when the text
- * is no address (a segment beginning with `@`, or `..`): the serializer throws on those.
- */
 function manuscriptAhead(path: string): string | null {
   try {
     return aheadAddress(canonicalContextUri("manuscript", path), "link");
@@ -20,11 +16,6 @@ function manuscriptAhead(path: string): string | null {
   }
 }
 
-/**
- * What a writer calls the document an address names: its stored name
- * (`Chapter 13`, `map.png`). Addresses hold names already decoded, so this
- * never decodes again.
- */
 export function addressDocumentName(address: string): string | null {
   const parsed = parseContextUri(address);
   return parsed.ok ? documentTitleFromUri(parsed.value.path) : null;

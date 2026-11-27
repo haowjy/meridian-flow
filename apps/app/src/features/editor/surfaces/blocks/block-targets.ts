@@ -99,8 +99,6 @@ export function moveBlockToSeamTransaction(
   const seam = seams[seamIndex];
   const tr = state.tr;
   tr.delete(run.pos, run.end);
-  // The seam was measured on the document before the lift, so a seam below the
-  // run has shifted up by exactly the run's size.
   const landing = seam < run.pos ? seam : seam - size;
   tr.insert(landing, Fragment.fromArray(moved));
 
@@ -157,7 +155,6 @@ export function deleteBlockTransaction(
     const paragraph = schema.nodes.paragraph;
     if (!paragraph) return null;
     const only = run.nodes.length === 1 ? run.nodes[0] : null;
-    // An empty heading or item is not "already empty": deleting it leaves body text.
     if (only && isBodyText(only) && only.content.size === 0) return null;
     const tr = state.tr.replaceWith(run.pos, run.end, paragraph.create());
     return tr.setSelection(TextSelection.near(tr.doc.resolve(run.pos + 1))).scrollIntoView();
@@ -168,19 +165,6 @@ export function deleteBlockTransaction(
   return tr.setSelection(TextSelection.near(tr.doc.resolve(landing), 1)).scrollIntoView();
 }
 
-/**
- * Put the writer back where they were, on the block where it now is (§5.8:
- * "selection and any open strip travel with it"). A caret keeps its offset
- * inside the block; a selected object stays selected, which is also how a
- * moved table keeps its whole-table selection — prosemirror-tables normalizes
- * the node selection back into a `CellSelection` itself.
- *
- * Everything held keeps its OFFSET inside the block, objects included. The
- * block travels whole, so the offset is exact — and an inline image is not its
- * block: re-selecting the landing position itself would ring the paragraph
- * that carried the picture, and the next character typed would then replace a
- * sentence the writer never selected.
- */
 function carrySelection(
   state: EditorState,
   tr: Transaction,

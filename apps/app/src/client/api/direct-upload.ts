@@ -8,10 +8,6 @@ import type {
 export type DirectUpload = {
   file: File;
   start(signal: AbortSignal | undefined): Promise<UploadStart>;
-  /**
-   * Idempotent. Aborting it only stops the waiting: a finish the server has received lands the
-   * file all the same.
-   */
   finish(signal: AbortSignal | undefined): Promise<UploadIntakeResult>;
   signal?: AbortSignal;
   onProgress?: (percent: number | null) => void;
@@ -60,7 +56,6 @@ export async function uploadFileDirect(upload: DirectUpload): Promise<UploadInta
     try {
       if (started.state === "reserved")
         await putFile(started.put, upload.file, upload.signal, upload.onProgress);
-      // Taken back while the bytes went up: no finish, so nothing lands.
       upload.signal?.throwIfAborted();
       return await upload.finish(upload.signal);
     } catch (error) {

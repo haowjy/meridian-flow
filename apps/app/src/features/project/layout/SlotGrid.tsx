@@ -136,11 +136,6 @@ const boxOf = (host: HTMLElement): Box => ({
   height: host.offsetHeight,
 });
 
-/**
- * Glides each host whose slot changed from where it was. Only position moves; the host is laid
- * out at its new size from the start and clipped to its old size, so its text never scales. Rects
- * stay current through resizes (a panel drag sets the grid's columns without a render).
- */
 function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
   const placed = useRef(new Map<string, Placed>());
   const sizes = useRef(new Map<string, Size>());
@@ -189,7 +184,6 @@ function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
 }
 
 function glide(host: HTMLElement, from: Box, to: Box) {
-  // The side's slide-in would fade the arriving page; the glide is its entrance.
   for (const running of host.getAnimations()) if (running instanceof CSSAnimation) running.finish();
   const right = Math.max(0, to.width - from.width);
   const bottom = Math.max(0, to.height - from.height);

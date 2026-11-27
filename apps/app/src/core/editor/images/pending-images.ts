@@ -97,11 +97,6 @@ export function pendingImageAt(
   return null;
 }
 
-/**
- * Entries with nothing left to wait for: an import whose link is gone, and an upload the store
- * has let go of. An upload whose slot left the text stays: the store decides when the writer took
- * it back, and an undo inside that time brings the slot back still sending.
- */
 export function finishedPendingImages(
   pending: PendingImageState,
   state: EditorState,

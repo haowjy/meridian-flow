@@ -109,7 +109,7 @@ export async function buildThreadSnapshot(
       repos.modelResponses.sumUsageByThread(threadId),
       statusReader.read(threadId),
     ]);
-    // keep: Expose handedBackIds if a snapshot hides turns any other way; absence means hand-back to messageFate
+    // Expose handedBackIds if a snapshot hides turns any other way; absence means hand-back to messageFate
     const turns = graph.filter((turn) => !handedBack.has(turn.id));
     const blocksByTurn = groupBy(blocks.map(toClientSafeBlock), (block) => block.turnId);
     const responsesByTurn = groupBy(responses, (response) => response.turnId);
@@ -143,7 +143,6 @@ export async function buildThreadSnapshot(
         status,
         activity,
         runState,
-        // keep: Active-run snapshots resume from the projection cursor and replay only the unmaterialized delta window
         resumeAfterSeq,
       },
       actionRequired: snapshotActionRequired(thread.activeLeafTurnId, graph, handedBack),

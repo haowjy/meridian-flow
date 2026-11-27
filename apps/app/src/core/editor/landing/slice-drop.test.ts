@@ -61,7 +61,7 @@ function dropRange(
   };
   const plan = droppedSlicePlan(
     view as never,
-    // keep: the copy key is Alt on macOS and Ctrl elsewhere; hold both so the result doesn't depend on the machine running the test
+    // The copy key is Alt on macOS and Ctrl elsewhere; hold both so the result doesn't depend on the machine running the test
     { ctrlKey: copy, altKey: copy } as DragEvent,
     slice,
     { kind: "inline", pos },

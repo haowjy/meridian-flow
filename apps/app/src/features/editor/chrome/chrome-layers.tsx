@@ -87,21 +87,13 @@ export function useChromeLayer(
 ): ChromeLayerBinding {
   const chrome = useEditorChrome(editor);
   const parentId = useContext(ChromeLayerContext);
-  // Known during render, so `scope` can hand it to children before the effect
-  // that registers it has run.
   const layerId = `${id}#${useId()}`;
 
   const closeRef = useRef(close);
   closeRef.current = close;
-  // Read live for the same reason as `close`: Radix calls this during teardown,
-  // when the surface that owns the answer may already have rendered away.
   const returnFocusRef = useRef(returnFocus);
   returnFocusRef.current = returnFocus;
 
-  // The kernel's own token for this layer, held in state rather than a ref
-  // because the keys registration below is keyed on it: every re-registration
-  // of the layer mints a new one, and keys naming the token of a layer that has
-  // been replaced would be keys nothing can reach.
   const [layer, setLayer] = useState<ChromeLayer | null>(null);
 
   useEffect(() => {
@@ -122,11 +114,6 @@ export function useChromeLayer(
 
   const keysRef = useRef(keys);
   keysRef.current = keys;
-  // The registration is keyed on the key NAMES, not on the record: a lane
-  // declares `keys` inline, so the object is new every render and re-registering
-  // on it would churn the kernel's revision — and rebuild every merged keymap —
-  // once per keystroke the surface handles. The handlers come from the ref, so
-  // what runs is always the current render's.
   const keyNames = keys ? Object.keys(keys).sort().join(" ") : "";
 
   useEffect(() => {
@@ -139,11 +126,6 @@ export function useChromeLayer(
           (state, dispatch, view) => keysRef.current?.[key]?.(state, dispatch, view) ?? false,
         ]),
     );
-    // Separate from the layer's own registration, because the two change on
-    // different beats: a lane's key SET can change while the surface stays open
-    // (a lightbox over an image has no source pane to toggle), and reopening
-    // the layer for that would spend a step of the walk home and take every
-    // layer inside it down.
     return chrome.registerKeymap({ id: layerId, scope: "layer", layer, route: "chrome", bindings });
   }, [chrome, layer, layerId, keyNames]);
 
@@ -176,8 +158,6 @@ export function useChromeLayer(
       // surface" means any layer that is not this one.
       const successor = chrome?.layers.some((layer) => layer.id !== layerId);
       if (successor) return;
-      // A modal surface that is not a chrome layer leaves no successor to
-      // find, and still hides the manuscript behind it.
       if (editor.view.dom.closest('[aria-hidden="true"], [inert]')) return;
       const lane = returnFocusRef.current;
       if (lane) {

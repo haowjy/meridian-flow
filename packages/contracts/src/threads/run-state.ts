@@ -4,7 +4,6 @@ import type { PendingInboxItem } from "./index.js";
 
 export type RunState = {
   version: string;
-  // keep: RunState items are in inbox seq order; a queued switch is a control row
   items: PendingInboxItem[];
   sentThrough: number;
   execution: { executionId: string; currentTurnId: string | null } | null;

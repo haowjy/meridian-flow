@@ -121,8 +121,6 @@ function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
 }
 
 function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
-  // The primary button only: a right-click belongs to the context-claim
-  // ladder, and the browser's own default is how it gets there.
   if (event.button !== 0 || event.defaultPrevented || !view.editable) return;
 
   const target = event.target;
@@ -180,10 +178,6 @@ export const ObjectPhysicsExtension = Extension.create({
         /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
-          // Walking ONTO an object starts from prose beside
-          // it, so the arrows cannot be scoped to "an object is selected" —
-          // they are block-level movement that declines wherever there is no
-          // object to step on. Enter genuinely needs the selection.
           const releases = [
             chrome?.registerKeymap({
               id: "object-extend-selection",
@@ -232,10 +226,6 @@ export const ObjectPhysicsExtension = Extension.create({
             }),
             chrome?.registerKeymap({
               id: "object-engage",
-              // Not `object` scope:'s Enter row covers a selected plain
-              // fence too, and a plain fence is not an object. The binding
-              // still declines anything that is not a whole block selection,
-              // which hands the key back for ordinary typing.
               scope: "block",
               appliesTo: (context) =>
                 context.owner === "object" || context.owner === "source-block",
@@ -288,7 +278,6 @@ export const ObjectPhysicsExtension = Extension.create({
             if (!transaction) return false;
             view.dispatch(transaction);
             view.focus();
-            // Selected first, as for a double-click: closing the surface lands here.
             if (objectTypeSpec(node)?.clickEngages?.(event.target)) {
               engage(editor, view.state, view.dispatch.bind(view));
             }
@@ -364,8 +353,6 @@ export const ObjectPhysicsExtension = Extension.create({
             if (!direct || !isEditorObject(node)) return false;
             const selected = selectObjectTransaction(view.state, nodePos);
             if (!selected) return false;
-            // Select first: engaging leaves the object selected underneath, so
-            // closing its surface lands on the object rather than past it.
             view.dispatch(selected);
             return engage(editor, view.state, view.dispatch.bind(view));
           },

@@ -26,7 +26,6 @@ export function createShownLinkLedger(
     if (rendered.spans === undefined) {
       try {
         const spans = parser.parseWithSpans(rendered.body).spans;
-        // A reparse that disagrees with the block names no occurrence reliably.
         rendered.spans = spans.length === rendered.facts.length ? spans : null;
       } catch {
         rendered.spans = null;
@@ -53,8 +52,6 @@ export function createShownLinkLedger(
         const body = bodies[index];
         if (hash === undefined || body === undefined) return;
         const occurrences = walkLinkOccurrences([block]);
-        // A render of links without identities is kept: it is the negative evidence
-        // that clears a fact an equal-text render once showed.
         if (occurrences.length === 0) return;
         const facts = occurrences.map((occurrence) => spelledFact(occurrence, scope));
         const entries = byHash.get(hash) ?? [];

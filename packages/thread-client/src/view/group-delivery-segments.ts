@@ -101,7 +101,6 @@ function pairToolViews(blocks: Block[]): Map<Block, ToolView> {
     if (block.blockType !== "tool_result" || pairedResults.has(block)) return;
     const previous = blocks[index - 1];
     const previousView = previous ? viewsByUseBlock.get(previous) : undefined;
-    // keep: Trust adjacency for tool results only when providers omit ids; id matching stays primary
     if (!previousView || previousView.toolCallId || toolCallIdForResult(block)) return;
     mergeToolResult(previousView, block);
     pairedResults.add(block);

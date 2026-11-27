@@ -15,11 +15,6 @@
   font-size: var(--text-sm);
 }
 
-/* The fallback box, and only for a slot with no measured frame. A file the
-   browser declined to measure (`measure-image.ts`) reserved nothing, so the
-   placeholder brings a readable box of its own. A measured frame already IS the
-   picture's box, and a minimum here would make a small picture reserve more than
-   it will ever occupy and then collapse when the bytes land. */
 .meridian-image-node:not(.meridian-image-node--framed) > .meridian-image-pending {
   min-width: 8rem;
   min-height: 4.5rem;
@@ -116,11 +111,6 @@
   overflow: hidden;
 }
 
-/* Measured pictures come as small as a 32px icon, and the frame holds that size
-   exactly — so the placeholder has to answer to a box with no room to speak in.
-   The frame is the container the box is asked about, because the rendered frame
-   is the honest question: a picture wider than the prose column has already been
-   narrowed by `max-width`, and its measured numbers no longer describe it. */
 .meridian-editor .ProseMirror .meridian-image-node--framed {
   container: meridian-image-frame / size;
 }

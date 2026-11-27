@@ -70,7 +70,7 @@ export function useAskTakeover(
       for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, report, options);
     };
   }, [presence, questionOpen]);
-  // keep: This effect must run before the report effect; the server echo is the ack, so clearing owed first stops a mount that already has the echo from re-sending.
+  // This effect must run before the report effect; the server echo is the ack, so clearing owed first stops a mount that already has the echo from re-sending.
   useEffect(() => {
     const current = heldRef.current;
     if (

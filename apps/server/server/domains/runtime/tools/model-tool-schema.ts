@@ -7,7 +7,7 @@ export function modelToolSchema(schema: z.ZodType): Record<string, unknown> {
       unknown
     >,
   ) as Record<string, unknown>;
-  // keep: Anthropic's SDK needs an object root; mark only the Zod discriminated-union root
+  // Anthropic's SDK needs an object root; mark only the Zod discriminated-union root
   projected.type = "object";
   return projected;
 }

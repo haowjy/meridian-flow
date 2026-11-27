@@ -170,7 +170,6 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const facts = normalized.facts;
   const standIns = facts.standIns ?? [];
   const { placed } = normalized;
-  // keep: An anchored card's turn outranks Retry suppression and forgetting; inherited page membership is authoritative
   const anchored = input.anchoredTurnIds;
   const effective = new Set(normalized.turns.map((turn) => turn.id));
   const turns = placed.filter(

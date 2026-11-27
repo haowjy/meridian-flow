@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// keep: connection details go in psql's environment, never its argv, so `ps` and psql's own errors cannot show the password
+// Connection details go in psql's environment, never its argv, so `ps` and psql's own errors cannot show the password
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 applyDevEnvToProcess();

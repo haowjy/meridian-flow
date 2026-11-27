@@ -74,7 +74,7 @@ export function createWorkerPool<In, Out>(options: {
       ),
     );
     worker.on("exit", () => onGone("crashed"));
-    // keep: call `unref()` after the listeners: adding a 'message' listener re-refs the worker, and only an unreffed idle pool lets the process exit
+    // Call `unref()` after the listeners: adding a 'message' listener re-refs the worker, and only an unreffed idle pool lets the process exit
     worker.unref();
     return slot;
   }

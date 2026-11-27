@@ -59,7 +59,7 @@ interface ImportantFileCandidate {
   input: ReadToolInput;
 }
 
-// keep: Sort object keys before labeling; jsonb can reorder them and change pricing or replay bytes
+// Sort object keys before labeling; jsonb can reorder them and change pricing or replay bytes
 export function readInputLabel(input: JsonObject): string {
   return JSON.stringify(
     Object.fromEntries(

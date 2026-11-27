@@ -43,10 +43,6 @@ export type DocumentDerivationStore = {
    * the sweep picks them up.
    */
   registerAheads(documentId: DocumentId): Promise<void>;
-  /**
-   * One bounded recovery page everywhere, strictly after `after`. `next` is the last ref attempted
-   * on a full page (resume there), else null (wrap). Never throws.
-   */
   recoverAheads(after?: string): Promise<{ registered: number; next: string | null }>;
 };
 export type DocumentDerivationResult =

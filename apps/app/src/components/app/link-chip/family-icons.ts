@@ -120,7 +120,6 @@ export function familyIcon(family: LinkChipIcon): LucideIcon {
 }
 
 export const LINK_CHIP_ICON_CSS = [
-  // keep: The generic rule must come first so family rules win the cascade
   `[data-link-chip]{--link-chip-icon:${maskImage(FILE)}}`,
   ...LINK_CHIP_ICONS.map(
     (icon) =>

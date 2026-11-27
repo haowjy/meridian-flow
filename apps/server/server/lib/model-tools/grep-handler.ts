@@ -105,7 +105,6 @@ export function createGrepHandler(deps: ToolWiringDeps) {
   };
 }
 
-// keep: a passage whose window cut a block claims none of its links, since the window may have left one out or split it
 function shownPassages(file: GrepFile, verbose: boolean): ShownLinkShowing[] {
   const shown = file.shown;
   if (!shown) return [];

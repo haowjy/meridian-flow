@@ -8,7 +8,7 @@ import {
   type UserRepository,
 } from "../domains/projects/index.js";
 
-// keep: WorkOS's default session storage needs a Node request, which Nitro does not give us; split and rejoin on "=" so base64 values survive
+// WorkOS's default session storage needs a Node request, which Nitro does not give us; split and rejoin on "=" so base64 values survive
 class ApiCookieSessionStorage extends CookieSessionStorage<Request, Response> {
   async getCookie(request: Request, name: string): Promise<string | null> {
     const cookieHeader = request.headers.get("cookie");
@@ -65,7 +65,6 @@ function composeName(firstName: string | null, lastName: string | null): string 
 }
 
 export async function validateAuthConfiguration(): Promise<void> {
-  // keep: raw process.env on purpose (see `@meridian/contracts/dev-auth`), and it throws when the dev bypass is set outside a local dev process
   if (resolveDevAuthUser(process.env)) return;
   await ensureAuthConfig();
 }

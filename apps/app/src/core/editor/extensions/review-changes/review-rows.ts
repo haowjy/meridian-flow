@@ -305,7 +305,6 @@ export function reviewRows(
     const at = order.get(first.id) ?? Infinity;
     const members = [...change.blocks, ...change.comments];
     rows.push({
-      // A member's id, which the press names it by: a comment's paragraph may not be one.
       id: members.includes(first.id) ? first.id : members[0],
       members,
       paragraphs: sorted,

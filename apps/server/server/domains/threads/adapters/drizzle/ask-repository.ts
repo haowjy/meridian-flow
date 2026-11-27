@@ -113,7 +113,7 @@ export function createDrizzleAskRepository(db: DrizzleDb): AskRepository {
             OR ${owedSql}
           ))`
         : sql`false`;
-      // keep: Use FOR UPDATE SKIP LOCKED here; waiting on a newly held ask would deadlock
+      // Use FOR UPDATE SKIP LOCKED here; waiting on a newly held ask would deadlock
       const rows = await currentDrizzleDb(db).execute(sql`
         WITH claimed AS (
           SELECT a.id, a.status AS prior FROM asks a

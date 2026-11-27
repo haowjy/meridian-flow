@@ -46,7 +46,6 @@ export function useCreateProject() {
         });
         return id;
       });
-      // Kept after a success: the dialog is on its way out. A failure frees the next press.
       submitting.current = submit;
       const release = () => {
         submitting.current = null;

@@ -14,7 +14,6 @@ export type ExtractedText =
   | { ok: false; reason: ConversionRefused["reason"] | "missing"; message: string };
 
 const TEXT_MIME_TYPE = "text/markdown; charset=utf-8";
-// keep: Output cap is characters; size the byte buffer for four UTF-8 bytes per character
 const STORED_TEXT_MAX_BYTES = CONVERSION_LIMITS.outputChars * 4 + 1024;
 
 export async function extractedText(

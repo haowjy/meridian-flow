@@ -91,7 +91,7 @@ export async function sweepImportObjects(
         cursor = page.value.cursor;
         keys.push(...page.value.keys.map(({ key }) => key));
       } while (cursor);
-    // keep: Finish listing object keys before deleting; local and in-memory cursors are offset-based
+    // Finish listing object keys before deleting; local and in-memory cursors are offset-based
     for (const key of keys) {
       if (
         record.projectId !== null &&

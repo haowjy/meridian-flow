@@ -36,10 +36,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   };
   const captured = (part: StoredInversePart) => capturedRoom(part.room);
   const closed = (part: StoredInversePart) => captured(part).closed !== null;
-  /**
-   * Each room after the steps planned so far, so a later step of one command is judged on what
-   * the earlier ones leave, as its commit will: the capture until a step writes there, then a copy.
-   */
   const planned = new Map<string, RoomDocs>();
   const docsNow = (part: StoredInversePart) =>
     planned.get(loroRoomName(part.room)) ?? captured(part).docs;

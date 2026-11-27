@@ -83,15 +83,7 @@ export function EditorMenu({
       {trigger ? (
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger
-          aria-hidden
-          tabIndex={-1}
-          // The pointer's own position, with no size and no hit area: it
-          // exists to be measured, never pressed. Geometry rather than theme,
-          // so it is inline style — a utility class that failed to ship would
-          // silently drop the menu in the top-left corner.
-          style={pointerAnchorStyle(at)}
-        />
+        <DropdownMenuTrigger aria-hidden tabIndex={-1} style={pointerAnchorStyle(at)} />
       )}
       <DropdownMenuContent
         align={align}

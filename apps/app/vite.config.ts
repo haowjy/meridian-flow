@@ -24,7 +24,6 @@ export default defineConfig(({ command, mode, isPreview }) => {
       process.env[key] = value;
     }
   }
-  // keep: whatever starts the dev server names the API server (`pnpm dev` does). Builds, tests and `vite preview` proxy nothing, so they run without one
   const apiDevOrigin = readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN);
   if (command === "serve" && !isPreview && !process.env.VITEST && !apiDevOrigin) {
     throw new Error(
@@ -44,7 +43,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
       allowedHosts: [".localhost", ".ts.net"],
       proxy: apiDevOrigin
         ? {
-            // keep: no `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
+            // No `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
             "/api/threads/ws": { target: apiDevOrigin, ws: true },
             "/ws/loro": { target: apiDevOrigin, ws: true },
           }
@@ -53,7 +52,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
     resolve: {
       dedupe: ["loro-crdt"],
       alias: [
-        // keep: One loro-crdt instance for app and packages; instanceof LoroMap depends on it
+        // One loro-crdt instance for app and packages; instanceof LoroMap depends on it
         { find: /^loro-crdt$/, replacement: "loro-crdt/base64" },
       ],
       tsconfigPaths: true,

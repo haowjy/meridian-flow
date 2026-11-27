@@ -44,7 +44,6 @@ export function createLayoutCodec(): BlockCodec<MdastJsxFlow> {
         if (child.type.name !== "table" || typeof widthsValue !== "string") {
           return invalidJsxFallback(ast, ctx);
         }
-        // Grid columns, not first-row cells: a spanning cell covers several.
         const widths = parseWidths(widthsValue, gridColumnCount(child));
         if (!widths || widths.every((width) => width === null)) {
           return invalidJsxFallback(ast, ctx);
@@ -215,10 +214,6 @@ function widthsFromFirstRow(table: PMNode): string | null {
     for (let offset = 0; offset < colspanOf(cell); offset += 1) {
       const width = colwidth[offset];
       if (typeof width !== "number" || !Number.isFinite(width) || width <= 0) continue;
-      // The wire carries whole pixels. A drag across a spanned column divides
-      // the cell's box by its colspan, so the document legitimately holds a
-      // fraction; rounding here converges it on the next load rather than
-      // refusing to save what the writer just did.
       slots[column + offset] = String(Math.round(width));
       hasWidth = true;
     }

@@ -17,9 +17,6 @@ import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  // A creation this account has not had confirmed owns the destination: the shell renders from
-  // its record while the POST is in flight. The server renders without the journal, so a project
-  // it cannot find is left for the client to decide (`unresolved`).
   loader: async ({ params, parentMatchPromise }) => {
     const { projectId } = params;
     // The account this load is for, not the one whose provider happens to be mounted.

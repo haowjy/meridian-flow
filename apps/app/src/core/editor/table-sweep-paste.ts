@@ -71,8 +71,6 @@ export function sweepReplaceLanding(
   const transaction = state.tr;
   let landed: { from: number; to: number } | null = null;
 
-  // Back to front, so a replacement never moves a cell still waiting its turn
-  // — which is also what lets the top-left cell's range survive unmapped.
   for (let index = cells.length - 1; index >= 0; index -= 1) {
     const cell = rect.table.nodeAt(cells[index]);
     if (!cell) continue;

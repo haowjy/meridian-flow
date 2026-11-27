@@ -28,7 +28,7 @@ const plainObject = (value: unknown): value is Record<string, unknown> =>
 const RANK = /^[A-Za-z][0-9A-Za-z]*$/;
 const SMALLEST_RANK = `A${"0".repeat(26)}`;
 
-// keep: Validate fractional-index ranks exactly; the generator accepts out-of-alphabet characters as zero
+// Validate fractional-index ranks exactly; the generator accepts out-of-alphabet characters as zero
 function isRank(value: unknown): value is string {
   if (typeof value !== "string" || !RANK.test(value) || value === SMALLEST_RANK) return false;
   const head = value.charCodeAt(0);
@@ -44,7 +44,7 @@ function read(value: unknown): ReadRecord {
   const serverFields = kind === undefined ? undefined : SERVER_FIELDS.get(kind);
   if (!clientFields && !serverFields) return fail("unknown type");
   const allowed = [...(clientFields ?? []), ...SERVER_BASE, ...(serverFields ?? [])];
-  // keep: Accept the retired arrival name on old moves but drop it from the replayed record
+  // Accept the retired arrival name on old moves but drop it from the replayed record
   for (const key of Object.keys(value))
     if (!allowed.includes(key) && !(kind === "move" && key === "name") && value[key] !== undefined)
       return fail(`field ${key}`);

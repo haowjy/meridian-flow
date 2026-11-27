@@ -58,7 +58,7 @@ export async function executeCompaction({
     policies: (name) => deps.toolRegistry.getRegistration(name)?.documentText,
     revisions: deps.documentRevisions,
   });
-  // keep: Recheck the execution's owned lease after preparation; a remote Stop may have handed back a message
+  // Recheck the execution's owned lease after preparation; a remote Stop may have handed back a message
   const owned = await deps.runClaim.readOwned(input.lease);
   if (!owned || owned.cancelRequested) throw new CompactionCancelledError();
   let summary: SummaryOutcome;

@@ -4,7 +4,7 @@ import { createMcpClient, type McpClient, type McpEvent } from "@meridian-flow/r
 import { fetch as undiciFetch } from "undici";
 import { isPublicAddress, publicAddressDispatcher } from "./public-address-dispatcher.js";
 
-// keep: the one SSRF rule, applied at add and on every request; a name that only resolves to a private address is refused later by the dispatcher
+// The one SSRF rule, applied at add and on every request; a name that only resolves to a private address is refused later by the dispatcher
 export function addressRefusal(url: URL): string | null {
   const problem = mcpAddressProblem(url);
   if (problem === "not_https")
@@ -25,7 +25,7 @@ const publicFetch = (async (input: string | URL | Request, init?: RequestInit) =
   const url = new URL(input instanceof Request ? input.url : input);
   const refusal = addressRefusal(url);
   if (refusal) throw new Error(refusal);
-  // keep: redirects are not followed: a hop could change the scheme or the port
+  // Redirects are not followed: a hop could change the scheme or the port
   const response = await undiciFetch(url, {
     ...(init as Parameters<typeof undiciFetch>[1]),
     dispatcher: publicAddressDispatcher,

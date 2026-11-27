@@ -95,7 +95,7 @@ export function useLinkFollower({
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();
-    // keep: Defer unregister to a microtask; React runs cleanup and the next registration in one commit, so a synchronous unregister strands a pending click.
+    // Defer unregister to a microtask; React runs cleanup and the next registration in one commit, so a synchronous unregister strands a pending click.
     return () => queueMicrotask(unregister);
   }, [
     baseUri,
@@ -213,7 +213,7 @@ export function useLinkFollower({
   );
 
   const dismiss = useCallback(() => {
-    // keep: Abort the in-flight follow before clearing the outcome; clearing first leaves a window where the answer lands and opens, making Cancel ineffective.
+    // Abort the in-flight follow before clearing the outcome; clearing first leaves a window where the answer lands and opens, making Cancel ineffective.
     const owner = shown.current?.owner;
     if (owner && inFlight.current.has(owner)) abortFollow(owner);
     else clearShown();

@@ -53,12 +53,6 @@ export function ownerDraftsQueryOptions(projectId: string, owner: string) {
   };
 }
 
-/**
- * Reads again what shows drafts' state after a change that committed at `since`: their lists
- * (every draft's when `drafts` holds `undefined`), a Work's row in the Works list (its count and
- * lifecycle), the documents' draft hints and link resolution. A list's read already out is
- * restarted: it may predate the change.
- */
 export function refreshDraftReads(
   queryClient: QueryClient,
   projectId: string,
@@ -257,11 +251,6 @@ export function useOwnerDrafts(
   return useDraftLists(projectId, owners, options).get(owner ?? "") ?? DISABLED;
 }
 
-/**
- * Whether a page only this draft holds: its row is new and no live tree has the document, so Live
- * has no version of it to show (design §6). A list another tab's Apply has not refetched yet
- * still calls the row new; the live tree already has it.
- */
 export function useDraftOnly(
   projectId: string,
   owner: string | null,

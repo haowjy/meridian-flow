@@ -33,7 +33,6 @@ export function showDragHint(
   set({ owner, label: verdict.label, refused, x: event.clientX, y: event.clientY });
 }
 
-/** Only the target that set the hint clears it, so the next target's hint survives. */
 export function clearDragHint(owner: string) {
   if (hint?.owner === owner) set(null);
 }

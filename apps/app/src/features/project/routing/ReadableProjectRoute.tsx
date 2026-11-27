@@ -126,7 +126,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       flush: () => router.history.flush(),
       settlePendingTraversal: () => router.history.settlePendingTraversal(),
       replaceEntry: (href, state) => {
-        // Same-entry repairs must not restore the pre-jump scroll over an editor-owned destination.
         void router.navigate({
           href,
           state,
@@ -215,10 +214,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     address.itemKey ? (closingDocumentId ?? null) : markedId,
   );
   const movedTo = rememberedId ? trees.find(rememberedId) : null;
-  // The remembered document is in no list once they have synced (a purged or trashed one still
-  // has its standing): the memory is stale and the path decides, as if the entry had none. It
-  // binds again if the document turns up, so a move between two lists, which leaves it in
-  // neither for a moment, is followed.
   const abandoned =
     !!rememberedId &&
     !movedTo &&
@@ -275,8 +270,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     const place = draftItem !== undefined ? reviewTree.find(closingDocumentId) : null;
     if (!place) {
       if (!reviewTree.isComplete || draftItem === undefined) return undefined;
-      // An item a press just took out of its list is not in live until the press lands: only
-      // a removal is an answer.
       if (endUndecided && standing.kind !== "in-trash" && standing.kind !== "purged")
         return undefined;
       return { kind: "absent" };
@@ -370,7 +363,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     answer?.kind === "found" ? answer.file : undefined,
     draftOnly,
   );
-  // Rebuilt from JSON snapshots each render: only its serialized meaning is a change.
   const addressedKey = JSON.stringify(addressedNow);
   const addressed = useMemo(() => addressedNow, [addressedKey]);
   const draftOnlyId =
@@ -516,7 +508,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     }),
     [history],
   );
-  // Stable, so the document opener built on it outlives a change of what main shows.
   const openTrashed = useCallback<TrashNavigation["open"]>(async (documentId, options) => {
     const { navigation, address } = latest.current;
     if (!navigation) return { kind: "superseded" };

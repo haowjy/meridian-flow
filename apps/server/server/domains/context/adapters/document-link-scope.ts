@@ -585,7 +585,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).draftCreatedAt(uri) : null;
     },
     async pinHolder({ view, documentId, uri }) {
-      // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
       const snapshot = storage.getStore();
       if (!snapshot?.open || !snapshot.projectId) return null;
       let candidate: string | null = null;
@@ -746,7 +745,6 @@ function snapshotCatalog(
       if (!snapshot.folderAddresses.has(uri)) return undefined;
       return snapshot.foldersAtByView.get(key)?.get(uri) ?? null;
     },
-    // An ahead ref binds once, globally, on a live arrival; until then it reads by address.
     settlement: (aheadId) => snapshot.settlements.get(aheadId),
     documentAt(uri) {
       return snapshot.addresses.has(uri) ? reachedAt(uri) : undefined;
@@ -759,7 +757,6 @@ function snapshotCatalog(
     assetAddress(id) {
       const row = snapshot.rows.get(id);
       if (row === undefined) return undefined;
-      // Never another owner's address: its id names nothing this reader has.
       if (!row?.image || !owned(row)) return null;
       const status = statusOf(row);
       if (status === UNLOADED) return undefined;

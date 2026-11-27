@@ -183,9 +183,6 @@ export const UploadPresenceExtension = Extension.create<UploadPresenceOptions>({
               peers.off("change", receive);
               unsubscribe();
               uploads.reportPeers(editor, null);
-              // The release, through the port for the same reason: a tab closed
-              // from inside inline review must not come back as an owner when
-              // the next surface resumes presence.
               if (published.length > 0) presence.setField(UPLOAD_PRESENCE_FIELD, []);
             },
           };

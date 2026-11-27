@@ -70,7 +70,6 @@ export class ContextRemovalCoordinator {
     this.tabs?.close(projectId, documentIds);
   }
 
-  /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
   createLifetimeLease(): ContextRemovalLifetimeLease {
     let held = true;
     return {
@@ -146,10 +145,6 @@ export class ContextRemovalCoordinator {
     }
   }
 
-  /**
-   * A view can present a document after the removal that raced its route. Apply the removal again
-   * to the newly presented document instead of leaving it outside the batch already settled.
-   */
   reconcileInstalledTab(projectId: string, tab: OpenDocument): void {
     if (tab.kind === "new" || !this.gone.has(`${projectId}/${tab.documentId}`)) return;
     this.applyGone(projectId, [tab.documentId]);
@@ -169,7 +164,6 @@ export class ContextRemovalCoordinator {
     documentId: string,
     landed?: (landing: MainLanding | null) => void,
   ): void {
-    // The pin's follow asks again on each render until main has left.
     if (this.unavailable() || this.isGoingBack(projectId, documentId)) return;
     this.beginOwnRemoval(projectId, [documentId], (landing) => {
       this.forget(projectId, [documentId]);

@@ -184,7 +184,6 @@ export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
   return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
-/** A level the binding read from the room may be anything; only a real one makes a heading. */
 const paragraphTag = (node: ProseMirrorNode) =>
   HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
 
@@ -379,8 +378,6 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
         const { empty, $anchor } = editor.state.selection;
         if (!empty || $anchor.parent.type !== this.type) return false;
         if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
-        // A code document has no paragraph to turn the fence into, and the default
-        // Backspace would clear the fence's language and id: do nothing.
         if (!editor.schema.nodes.paragraph) return true;
         return editor.commands.setParagraph();
       },
@@ -517,11 +514,6 @@ export const MeridianTableCell = TableCell.extend({
   },
 });
 
-/**
- * A picture's stored source. Rendered as `src` only when the browser may fetch it as written;
- * a web address goes in `data-remote-src`, which the browser never fetches and the parse rule
- * reads back; anything else is named by clipboard metadata (`links/link-clipboard.ts`).
- */
 function pictureSourceAttributes(source: unknown): Record<string, string> {
   const stored = typeof source === "string" ? source : "";
   const src = inlinePictureSource(stored);
@@ -666,9 +658,6 @@ export const MeridianLink = Link.extend({
 
   defaultProtocol: "https",
 
-  // The editor owns every follow (new tab for external, in-app for internal),
-  // so `target="_blank"` describes nothing and `nofollow` is an SEO artifact
-  // in a manuscript. `rel` stays as the fence for anything that does navigate.
   HTMLAttributes: { target: null, rel: "noopener noreferrer" },
 });
 
@@ -711,9 +700,6 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; o
         if (
           oldNode !== newNode ||
           pendingImageSignature(oldDecorations) !== pendingImageSignature(newDecorations) ||
-          // The resize grips exist while the jade ring does, and a selection
-          // change moves neither the node nor the upload. The ring's own
-          // decoration is the signal both read.
           objectSelectedInDecorations(oldDecorations) !==
             objectSelectedInDecorations(newDecorations)
         ) {

@@ -53,7 +53,6 @@ export const documentForks = pgTable(
   ],
 );
 
-// keep: Apply-all presses drafts in draft id order and Undo takes them back in reverse order
 export const pressChanges = pgTable(
   "press_changes",
   {

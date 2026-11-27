@@ -274,7 +274,6 @@ export function createPostgresDocumentRooms(input: {
     const inFlight = loading.get(name);
     if (inFlight) return inFlight;
     const started = (async () => {
-      // A failed unload leaves the room loaded; whoever asked for the unload hears the failure.
       if (existing?.unloading) await Promise.allSettled([existing.unloading]);
       const again = rooms.get(name);
       if (again && !again.unloading) return again;
@@ -497,7 +496,6 @@ export function createPostgresDocumentRooms(input: {
   function save(loaded: Loaded, reason: string): Promise<void> {
     loaded.saving++;
     const run = loaded.queue.then(() => saveUnlessIdle(loaded, reason));
-    // The next save waits for this one to settle; this one's caller hears its failure.
     loaded.queue = Promise.allSettled([run]).then(() => {
       loaded.saving--;
       settleIfIdle(loaded);
@@ -525,7 +523,6 @@ export function createPostgresDocumentRooms(input: {
         runInDrizzleTransaction(db, async () => {
           const tx = currentDrizzleDb(db);
           await lockRoom(tx, loaded.room);
-          // The room ended while this save waited for the lock.
           if (loaded.docs.isFreed) return;
           const merge = await mergeStored(tx, loaded.name, loaded.docs);
           if (merge) {
@@ -593,7 +590,6 @@ export function createPostgresDocumentRooms(input: {
         );
     })();
     loaded.unloading = run;
-    // A failed save keeps the room loaded and dirty; the next unload or save tries again.
     run.catch(() => {
       if (!loaded.docs.isFreed) loaded.unloading = null;
     });
@@ -664,8 +660,6 @@ export function createPostgresDocumentRooms(input: {
             }
           }
           for (const [docKey, mark] of marks) {
-            // Kept at its mark, and ripe again only `historyMs` from now: each unload until the
-            // fork moves on would otherwise rebuild Live and its forks for nothing.
             if (held.has(docKey)) {
               await tx
                 .update(documentSnapshots)

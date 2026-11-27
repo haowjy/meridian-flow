@@ -1,24 +1,3 @@
-/**
- * How big the writer wants this picture, and the one gesture that says so.
- *
- * A picture arrives at the size of the file it came from, capped by the prose
- * column, and that is what `width: null` means — the state nearly every picture
- * is in, and the state whose wire form stays plain `![alt](src)`. Dragging a
- * corner writes a number into the document instead, so every peer draws the
- * picture the writer's size rather than their own reading of the file (the Docs model, and the way a big picture becomes small
- * enough for words to stand beside it in the line).
- *
- * Two rules make the gesture one event rather than a hundred. The drag itself
- * is GEOMETRY — a style on the element, written each frame, seen by nobody but
- * the writer — and only the release is a transaction. So the wire carries one
- * attribute change, the peers repaint once, and undo takes the whole drag back
- * in a single step.
- *
- * The size is held by identity, never by a number: the operating system is not
- * involved, but a peer or an AI write can still move the picture between the
- * press and the release, and a raw position then aims at prose.
- */
-
 import type { Editor } from "@tiptap/core";
 
 import { type NodeHold, resolveNodeHold } from "../anchors";
@@ -103,14 +82,6 @@ export function imageWidthAttr(attrs: Record<string, unknown>): number | null {
   return typeof width === "number" && Number.isFinite(width) && width > 0 ? width : null;
 }
 
-/**
- * Write the size the writer let go at, as one historical event.
- *
- * Every other attribute is carried across untouched, `uploadToken` included: a
- * picture still on its way is an ordinary node with an ordinary size, and a
- * resize that dropped the token would abandon the bytes in flight. Returns
- * whether anything was written.
- */
 export function setImageWidth(editor: Editor, hold: NodeHold, width: number | null): boolean {
   if (editor.isDestroyed || !editor.isEditable) return false;
   const { state } = editor.view;

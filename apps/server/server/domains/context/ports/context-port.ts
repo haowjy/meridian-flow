@@ -160,12 +160,6 @@ export type FileRef = TrackedFileRef | BinaryFileRef;
 
 export interface GrepPassage {
   excerpt: string;
-  /**
-   * Hash of the block the excerpt came from, so a caller can navigate back to
-   * the passage rather than to the top of the file. Present only for schemes
-   * whose documents are serialized as hashlines (drafted sources read
-   * through a thread view); its absence elsewhere is the contract, not an error.
-   */
   blockHash?: string;
   anchor?: { start: number; end: number };
   /**
@@ -316,10 +310,6 @@ export interface ContextPort {
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
-  /**
-   * One command on the tree of `area` (a source's top address): `make` decides under the
-   * list's lock and the records it makes join the caller's command transaction.
-   */
   treeCommand<T>(area: string, input: TreeCommandInput<T>): Promise<Result<T, ContextError>>;
 
   readTree<T>(area: string, input: TreeReadInput<T>): Promise<Result<T, ContextError>>;

@@ -37,19 +37,11 @@ export type ModelEdits = {
       settled?: Settlement[];
     }>;
   }): Promise<{ outcome: ModelEditOutcome; evidence?: ResultEvidence }>;
-  /**
-   * What the call under `key` came to: waits on a transaction still holding it, and stops a call
-   * that never started (`never`), so a late attempt under the key refuses.
-   */
   resolve(key: ModelEditKey): Promise<ModelEditOutcome>;
   /**
    * The call's write at its destination, read, planned and appended under the lock the append
    * takes. Valid only inside a `run` effect: it joins that transaction.
    */
   write(command: WriteCommand, context: ModelEditWriteContext): Promise<RoutedWriteOutcome>;
-  /**
-   * A read inside a `run` effect: it joins the command's transaction and pulls nothing from live
-   * (the document was caught up before `run`). A returned edit shows the document with it.
-   */
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
 };

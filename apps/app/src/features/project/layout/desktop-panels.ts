@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useProjectSurfacePrefsStore } from "./surface-prefs-store";
 import type { DesktopPanels, PanelSlotId } from "./types";
 
-/** Stable "nothing held" argument, so the panels memo does not thrash. */
 export const NO_HELD_PANELS: readonly PanelSlotId[] = [];
 
 export function useDesktopPanels(held: readonly PanelSlotId[] = NO_HELD_PANELS): DesktopPanels {

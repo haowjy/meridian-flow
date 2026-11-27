@@ -16,8 +16,6 @@ export type AddressableWork = Work & { id: ParsedRequestId };
 const isAddressable = <W extends Work>(work: W): work is W & AddressableWork => isUuid(work.id);
 
 export function useWorksSnapshot(projectId: string, requested = true) {
-  // Called unconditionally: short-circuiting a hook behind `requested` changes
-  // the hook order the moment a caller flips it.
   const enabled = requested;
   const client = useQueryClient();
   const list = useQuery({

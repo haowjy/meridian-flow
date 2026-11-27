@@ -22,7 +22,6 @@ export type ReadBlockSelection =
   | {
       ok: true;
       selected: readonly ProjectedBlock[];
-      /** The one projection of the document, whole: its size and headings; never re-project. */
       projected: readonly ProjectedBlock[];
     }
   | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
@@ -113,8 +112,6 @@ export function createDocumentRenderer(deps: { model: AgentEditModel }): Documen
     );
     const items: RenderedRead["blocks"] = shown.map((block, index) => {
       const { body, gap } = entries[index];
-      // Blank lines and bare `>`s between blocks that sit together in the document are part of
-      // its Markdown: without them the read is not the document.
       const beside = !outline && index > 0 && picked[index] === picked[index - 1] + 1;
       return {
         hash: block.hash,

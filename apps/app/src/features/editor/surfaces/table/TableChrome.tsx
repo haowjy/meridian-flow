@@ -78,9 +78,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
     setHovering(false);
   }, [holdAnchorCell]);
 
-  // Where the held cell is now, and what is drawing it. Read fresh every
-  // render: a rebuild replaces the element while the cell itself stays, and
-  // grips measured from the old one would hang beside a row nobody is on.
   const anchorPos = anchorCell ? (resolveNodeHold(editor.state, anchorCell)?.from ?? null) : null;
   const overlay = manuscriptOverlay(editor);
   const rects = useTableChromeRects(
@@ -131,11 +128,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
         const at = hold === null ? null : resolveNodeHold(editor.state, hold);
         const pos = at?.from ?? null;
         setHovering(pos !== null);
-        // An open menu owns the anchor: letting a stray hover move the grips out
-        // from under the menu would leave it pointing at another row. The
-        // pointer's place is NOT copied aside for the close — the menu's hold is
-        // its target, and the kernel's next reading of the page is the only
-        // honest word on where the pointer is.
         if (openMenuRef.current) return;
         if (pos !== null) holdAnchorCell(pos);
       },
@@ -157,15 +149,10 @@ export function TableChrome({ editor }: { editor: Editor }) {
     return chrome.registerContextClaim({
       id: "grip",
       claim: (target) => {
-        // Mid-sweep or mid-drag the writer is doing something else with this
-        // pointer, and every surface stands down for it.
         if (chrome.suppressed) return false;
         const grip = target.element.closest("[data-table-grip]");
         if (!(grip instanceof HTMLElement)) return false;
         const axis: Axis = grip.dataset.tableGrip === "row" ? "row" : "column";
-        // A grip whose cells a peer has taken away claims nothing: opening a
-        // menu over them would offer row verbs against whatever the selection
-        // happens to be.
         if (!selectAxis(axis)) return false;
         setOpenMenu(axis);
         return true;
@@ -432,8 +419,6 @@ function useSweptCells(
     [holdAnchor, holdHead],
   );
 
-  // Memoized because surfaces depend on the pair's identity in effects: a fresh
-  // object every render would read as "the rectangle changed" every render.
   const cells = useMemo(() => (anchor && head ? { anchor, head } : null), [anchor, head]);
   return [cells, take];
 }
@@ -441,10 +426,6 @@ function useSweptCells(
 function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: boolean) {
   useEffect(() => {
     if (!chrome || !editable) return;
-    // The kernel only runs a `table`-scope binding with a table in the
-    // context chain, so these are always the writer's row and column. They
-    // consume the key even when the move refuses: handing a refused row move
-    // down the ladder would move the whole table instead.
     const inTable =
       (command: Command): Command =>
       (state, dispatch, view) => {
@@ -483,15 +464,11 @@ function useTableChromeRects(
     const measure = () => {
       const overlay = manuscriptOverlay(editor);
       const next = overlay && cell.isConnected ? measureTableChrome(overlay, cell) : null;
-      // The cell scrolled out of the manuscript's pane: the approach is over
-      // even though the pointer never moved, so the hover has to be told.
       if (!next) lostRef.current();
       setRects((previous) => (sameTableChromeRects(previous, next) ? previous : next));
     };
 
     measure();
-    // The table itself joins the cell and the manuscript root: a column drag
-    // resizes the frame live, before the width it settles on becomes a step.
     return watchManuscriptLayout(editor, [cell, cell.closest("table")], measure);
   }, [cell, editor]);
 

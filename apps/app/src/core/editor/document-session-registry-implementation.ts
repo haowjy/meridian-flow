@@ -456,24 +456,12 @@ export class DocumentSessionRegistry {
     return this.rooms.get(session.roomKey)?.session === session;
   }
 
-  /**
-   * A room the server admitted read-only holds none of the writer's edits the server lacks
-   * (`.context/CONTEXT.md`, "Undeliverable edits"). A room found holding some drops the
-   * typing and is replaced by a session on the next incarnation of its copy, which loads from the
-   * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
-   * said to other tabs: each tab replaces its own session at its own read admission.
-   *
-   * A room the server ended below its history cutoff holds updates no Join can deliver: its copy's
-   * typing beyond the mark is dropped and the copy advanced even when its owner retired the session
-   * first (a draining room retires in the same emit), so no later open resends them.
-   */
   private async replaceRoom(old: DocumentSession, refused: boolean): Promise<void> {
     if (this.replacing.has(old) || !(refused || this.isRoomSession(old))) return;
     this.replacing.add(old);
     const copy = this.copyOfSession(old);
     const words = old.undeliverableWords();
     void old.makeInert().catch(reportError);
-    // Typing into the old editor after this read goes to its copy, and the older-copy read's.
     if (words) this.dropWords();
     if (refused) await this.dropCopy(incarnationName(copy.key, copy.incarnation));
     await this.copies.advance(copy.key, copy.incarnation);
@@ -520,7 +508,6 @@ export class DocumentSessionRegistry {
   ): void {
     state.session = session;
     state.hold = hold;
-    // A pending teardown watched the old session; the new one is judged afresh.
     this.cancelPendingTeardown(session.roomKey);
     this.attachSessionTransport(session);
     this.notifyReplacement(session.roomKey, session);

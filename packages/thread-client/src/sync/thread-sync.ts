@@ -318,7 +318,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
   const accept = (read: ThreadSnapshotResponse, cached: boolean): "applied" | "stale" => {
     if (signal.aborted) return "stale";
     flush();
-    // keep: A joining read must be newer than every frame the held value reflects or stream-built turns are dropped
+    // A joining read must be newer than every frame the held value reflects or stream-built turns are dropped
     const joining = started && unsubscribe === null;
     const held = state.get().deliveryCursor;
     if (
@@ -328,7 +328,7 @@ export function createThreadSync(ports: ThreadSyncPorts): ThreadSync {
       observe({ kind: "read", read, applied: false, cached });
       return "stale";
     }
-    // keep: Run end-of-turn checks against the cell as the stream left it before the read lands
+    // Run end-of-turn checks against the cell as the stream left it before the read lands
     const checks = checkRead(read);
     const runState = read.liveState.runState;
     const next = applyRead(state.get(), {

@@ -27,7 +27,7 @@ function roomCorrelation(roomId: string): EventCorrelation {
   return {};
 }
 
-// keep: Trace only room metadata; keep update bytes, the Join's auth and versions out and allowlist error text (leak hazard).
+// Trace only room metadata; keep update bytes, the Join's auth and versions out and allowlist error text (leak hazard).
 function summarize(message: ProtocolMessage): {
   messageClass: string;
   batchId?: string;

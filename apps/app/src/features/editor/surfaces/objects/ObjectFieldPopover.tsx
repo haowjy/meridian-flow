@@ -36,9 +36,6 @@ export function ObjectFieldPopover({
       side="bottom"
       align="end"
       className="meridian-object-fields"
-      // Focus is claimed below, on the field the writer actually asked for.
-      // Radix's own entry focus takes the first control, which is the wrong one
-      // whenever they picked the second or third verb.
       focusOnOpen="prose"
     >
       {target
@@ -70,8 +67,6 @@ function ObjectFieldInput({
   value: string;
   claimsFocus: boolean;
 }) {
-  // A callback ref rather than an effect: it runs the moment the control exists,
-  // which is before Radix would have moved focus anywhere else.
   const controlId = useId();
   const takeFocus = useCallback(
     (control: HTMLInputElement | HTMLTextAreaElement | null) => {

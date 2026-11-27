@@ -8,7 +8,7 @@ export type DroppedEntry = { kind: "file"; file: File } | { kind: "folder"; name
 
 let ownerSequence = 0;
 
-// keep: DataTransfer is emptied after the drop handler returns; read it synchronously
+// DataTransfer is emptied after the drop handler returns; read it synchronously
 function droppedEntries(transfer: DataTransfer): DroppedEntry[] {
   const entries: DroppedEntry[] = [];
   for (const item of Array.from(transfer.items)) {
@@ -83,7 +83,7 @@ export function useFileDrop({
       onDragOver: hover,
       onDragLeave(event) {
         if (!claims(event)) return;
-        // keep: Safari gives no relatedTarget on dragleave, so don't count enter/leave pairs
+        // Safari gives no relatedTarget on dragleave, so don't count enter/leave pairs
         const to = event.relatedTarget;
         if (to instanceof Node && event.currentTarget.contains(to)) return;
         end();

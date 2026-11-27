@@ -44,7 +44,6 @@ export function rankAmong(ranks: readonly string[], index: number): string {
   const at = Math.max(0, Math.min(index, ranks.length));
   const before = at > 0 ? (ranks[at - 1] ?? null) : null;
   let after: string | null = ranks[at] ?? null;
-  // keep: Place after the whole run of equal ranks left by concurrent inserts
   if (before !== null && after !== null && after <= before) {
     after = ranks.slice(at).find((rank) => rank > before) ?? null;
   }

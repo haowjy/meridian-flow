@@ -292,7 +292,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }),
     ],
     content: initialDraft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
-    // keep: autofocus must be false, not true; undefined keeps Tiptap's restored selection
+    // Autofocus must be false, not true; undefined keeps Tiptap's restored selection
     autofocus: autoFocus ? undefined : false,
     editorProps: {
       handleDOMEvents: {
@@ -304,7 +304,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             (event.key !== "Enter" && event.key !== " ")
           )
             return false;
-          // keep: preventDefault on Enter so ProseMirror's keymap doesn't eat the failed-upload button's action
+          // PreventDefault on Enter so ProseMirror's keymap doesn't eat the failed-upload button's action
           event.preventDefault();
           target.click();
           return true;
@@ -422,13 +422,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               : null;
           const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
           if (chipOf === reference.documentId) return "already";
-          // keep: editor.isEmpty counts an upload-only paragraph as empty; check childCount instead
+          // Editor.isEmpty counts an upload-only paragraph as empty; check childCount instead
           const empty = only?.type.name === "paragraph" && only.childCount === 0;
           return empty || (chipOf !== null && chipOf === replaces) ? "fits" : "taken";
         };
         const now = fits();
         if (now !== "fits") return now === "already";
-        // keep: Microtask keeps Tiptap's React node view out of a commit; setContent selects the draft, so place the caret after the chip
+        // Microtask keeps Tiptap's React node view out of a commit; setContent selects the draft, so place the caret after the chip
         queueMicrotask(() => {
           if (editor.isDestroyed || fits() !== "fits") return;
           editor

@@ -53,8 +53,6 @@ export function sanitizePastedHTML(html: string): string {
   const source = parser.parseFromString(html, "text/html");
   const output = document.implementation.createHTMLDocument("");
 
-  // Lists and quotes become blocks that carry their nesting before anything is dropped: the
-  // depth, quotes, numbering and task state live on the elements and attributes this pass removes.
   flattenDom(source.body);
   appendSanitizedChildren(source.body, output.body, output);
   return output.body.innerHTML;
@@ -103,7 +101,6 @@ function declaresNormalWeight(element: Element): boolean {
   return weight === "normal" || weight === "400";
 }
 
-/** Values `flattenDom` writes, and nothing else. */
 const NESTING_VALUES: Record<string, RegExp> = {
   "data-path": /^[-|>]{1,64}$/,
   "data-kind": /^ordered$/,

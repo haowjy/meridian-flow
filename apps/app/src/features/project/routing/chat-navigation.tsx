@@ -1,12 +1,3 @@
-/**
- * Project chat navigation. Main shows a new chat's composer (`/chats`), Recent chats
- * (`/chats/recent`) or one chat the address names;
- * `useMainArrival` records it in the chat slot. What chat sits beside a document is the side's
- * resolution (`side/side-item.ts`), not this. Every way of opening a chat in main navigates there.
- *
- * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
- * diagrams with any change here.
- */
 import {
   createContext,
   type ReactNode,
@@ -113,7 +104,6 @@ export function useProjectChatNavigation({
   useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     if (surfaceThreadId) dropMainTabChat(accountId, projectId, surfaceThreadId);
-    // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "new-chat" }, { replace: true });
   });
 

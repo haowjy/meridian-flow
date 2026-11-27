@@ -22,8 +22,6 @@ class StderrEventSink extends NoopEventSink {
   }
 }
 
-// A pool of 2: a second connection opened inside a model edit would hang here, not in production.
-// The application name lets the parent find this process's connections in `pg_stat_activity`.
 const db = createDb(process.env.DATABASE_URL as string, {
   max: Number(process.env.CHILD_POOL ?? 2),
   postgres: { connection: { application_name: process.env.CHILD_NAME } },
@@ -31,7 +29,6 @@ const db = createDb(process.env.DATABASE_URL as string, {
 const ports = await createProductionAppPorts({
   db,
   eventSink: new StderrEventSink(),
-  // No provider key composes the mock model; its script queue needs the debug gate.
   environment: { APP_DEBUG: "1", NODE_ENV: "test" },
 });
 const app = composeAppServices(ports);
@@ -137,7 +134,6 @@ async function handle(message: Op): Promise<unknown> {
 emit({ event: "ready" });
 for await (const line of createInterface({ input: process.stdin })) {
   const message = JSON.parse(line);
-  // Not awaited: an op held at a point must not block the next op, `release` above all.
   handle(message).then(
     (result) => emit({ id: message.id, ok: true, result }),
     (error) => emit({ id: message.id, ok: false, error: String(error?.stack ?? error) }),

@@ -103,7 +103,7 @@ export function createDrizzleSessionLock(db: Database, seed: bigint): SessionLoc
                   claims.delete(key);
                   releaseIfIdle(connection);
                 } catch {
-                  // keep: After a failed unlock, drop the DB connection to release all its server-side locks
+                  // After a failed unlock, drop the DB connection to release all its server-side locks
                   drop(connection);
                 }
               });

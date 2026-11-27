@@ -97,7 +97,6 @@ export function ActionNotice({
   );
 }
 
-// keep: NAME_SLOT is a sentinel; splitting on the name itself would cut a name that occurs in the sentence
 const NAME_SLOT = "\u0000";
 
 function Sentence({

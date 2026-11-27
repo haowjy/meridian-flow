@@ -78,7 +78,7 @@ export const permissionAskPayloadSchema = z.discriminatedUnion("action", [
 
 const workIdSchema = z.string().uuid();
 
-// keep: permissionWorkCommand is server-only and must never be serialized through threadAsk()
+// PermissionWorkCommand is server-only and must never be serialized through threadAsk()
 export const permissionWorkCommandSchema = z.discriminatedUnion("command", [
   z.strictObject({
     command: z.literal("create"),

@@ -64,7 +64,6 @@ if (!RUN) {
       address: addressFor(scheme),
     });
     const registration = registrationFor("manuscript");
-    // Registration commits in its own root transaction, so no rollback fixture: reset by FK order.
     const database = createDb(DATABASE_URL, { max: 4 });
 
     async function seed() {
@@ -234,7 +233,6 @@ if (!RUN) {
     });
 
     describe("written in a draft, or typed by the writer", () => {
-      // Commands publish after commit and registration opens root transactions: commit for real.
       const db = createDb(DATABASE_URL, { max: 12 });
       afterAll(() => db.close());
       const runtimes = useComposedRuntimes(() => db);

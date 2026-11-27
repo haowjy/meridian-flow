@@ -55,14 +55,6 @@ export function ObjectLightbox({
       title={provider ? t`Diagram` : t`Image`}
       size="workspace"
       className="meridian-object-lightbox"
-      // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog
-      // as well as on the selected block. It rides the dialog's layer rather
-      // than a listener of this component's: focus is in portalled content, so
-      // the kernel's document route is what hears it — and the binding is then
-      // one the kernel can list, scope, and refuse a second claimant for.
-      //
-      // The dialog's key, not the pane's: it has to open a pane that is closed,
-      // and a pane cannot register the chord that summons it.
       keys={
         provider
           ? {

@@ -36,7 +36,7 @@ export class ExportReadError extends Error {
   }
 }
 
-// keep: fflate has no ZIP64; refuse archives over 4 GiB
+// Fflate has no ZIP64; refuse archives over 4 GiB
 const ZIP_LIMIT_BYTES = 4 * 1024 ** 3;
 const ZIP_HEADROOM_BYTES = 64 * 1024 ** 2;
 

@@ -19,7 +19,6 @@ export const env = createEnv({
   emptyStringAsUndefined: true,
 });
 
-// keep: the one debug gate: never on in production, and elsewhere only with an explicit APP_DEBUG=1
 export function resolveDebugPathsEnabled(input: {
   rawNodeEnv?: string;
   rawAppEnv?: string;

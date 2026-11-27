@@ -1,14 +1,3 @@
-/**
- * Main's tabs: the items open in main, one lane per kind (documents, chats), per (account, project)
- * in this browser tab's sessionStorage, so a reload keeps them and two windows keep their own. This
- * is the one record of what is open in main. The address names main's item; arriving at it is the
- * one command that writes here (`arriveMainTab`, called only by `useMainArrival`), and selecting or
- * closing a tab writes the address from here. A lane's `selected` is the pane-state page's
- * "current" item of that kind: the tab main showed last.
- *
- * Placement follows `apps/app/src/features/project/.context/pane-state-machine.md`: change that page's rules and
- * diagrams with any change here.
- */
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
 import { browserRecord, isRecord } from "../storage/browser-record";
@@ -144,10 +133,6 @@ export function arriveMainTab(accountId: string, projectId: string, tab: MainTab
   writeLane(accountId, projectId, tab.kind, { tabs, selected: key });
 }
 
-/**
- * Main's item changed descriptor without a new arrival (a rename, a move): an open tab takes it.
- * A closed one stays closed, so a removal that closed it is not undone by the page re-rendering.
- */
 export function refreshMainTab(accountId: string, projectId: string, tab: MainTab): void {
   const current: Lane = readMainTabs(accountId, projectId)[tab.kind];
   const at = current.tabs.findIndex((member) => mainTabKey(member) === mainTabKey(tab));

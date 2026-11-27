@@ -17,13 +17,6 @@ type Shared = { read: Read | null; reader: ClosedOwners };
 
 const projects = new WeakMap<QueryClient, Map<string, Shared>>();
 
-/**
- * Which owners this tab reads as closed, read at each press from what it holds now: the Works
- * list as this tab's own archive and unarchive left it, and the sources that ended (a chat
- * lineage's sources end when every chat in it is in Trash). One object per project for the tab's
- * life, kept current by every component that calls this: a step on the sidebar's stack holds it
- * long after the component that made it is gone.
- */
 export function useClosedOwners(projectId: string): ClosedOwners {
   const queryClient = useQueryClient();
   const { works, deleted, nameOf } = useWorks(projectId, { enabled: Boolean(projectId) });

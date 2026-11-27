@@ -29,19 +29,6 @@ export type SlashCommandCatalog = {
   items: readonly SlashCommandItem[];
   menuLabel: string;
   groupLabels: Record<SlashCommandGroupId, string>;
-  /**
-   * Open the host's picker for a picture that goes at `at`.
-   *
-   * The anchor is the whole contract. The lane consumes the trigger and pins
-   * the place it left behind; the host's chooser then outlives that place —
-   * a writer can leave an operating-system dialog open while their own caret
-   * moves and peers rewrite the chapter — and only the anchor still knows where
-   * the picture was asked for.
-   *
-   * Required, not optional: `Image` is a visible row, and a host that offers
-   * the catalog without a picker offers a row that eats the trigger text and
-   * shows nothing. A surface with no picker returns no catalog at all.
-   */
   requestImageUpload: (at: EditorAnchor) => void;
 };
 

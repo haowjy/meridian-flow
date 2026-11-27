@@ -113,9 +113,6 @@ function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget |
     $pos.node(depth - 1).canReplaceWith(index, index + 1, type);
   if (convertible) return { mode: "convert", pos: $pos.before(depth), block };
 
-  // Land after the whole list the block sits in, inside the quotes around it, so a block asked
-  // for from a bullet does not split the list; then take the first level that will hold the
-  // node, stopping inside the cell when there is one.
   const node = doc.type.schema.nodeFromJSON(block.node);
   const floor = cellFloor($pos);
   for (let level = depth; level > floor; level -= 1) {
@@ -169,11 +166,6 @@ export function applySlashCommand(
   if (target.mode === "inline") {
     const consumed = editor.chain().focus().deleteRange(range).run();
     if (!consumed) return false;
-    // The place the trigger left behind, pinned before the host opens anything:
-    // the operating system's chooser can stay up for a minute, and the writer's
-    // own caret and every peer's writes move on without it. `at` describes the
-    // document the delete just produced, which is the document this anchor is
-    // taken against.
     catalog.requestImageUpload(anchorRange(editor.state, { from: at, to: at }));
     return true;
   }
@@ -187,8 +179,6 @@ export function applySlashCommand(
       if (!dispatch) return true;
       const made =
         target.mode === "convert" ? editor.schema.nodeFromJSON(target.block.node) : target.node;
-      // The entry's own attributes (a fence's language) are the writer's choice; the block
-      // keeps the rest, its id and its place among them.
       if (target.mode === "convert") replaceBlock(tr, start, made, target.block.node.attrs ?? {});
       else tr.insert(start, made);
       landCaret(tr, start, tr.doc.nodeAt(start)?.nodeSize ?? made.nodeSize, target.block.caret);
@@ -224,9 +214,6 @@ function landCaret(tr: Transaction, start: number, size: number, caret: "inside"
     return;
   }
 
-  // Nothing to type into ahead: a divider that landed at the end of the
-  // document, or against its cell's wall. The writer asked for a break, not
-  // for a dead end.
   const paragraph = tr.doc.type.schema.nodes.paragraph?.createAndFill();
   if (!paragraph) return;
   tr.insert(end, paragraph);

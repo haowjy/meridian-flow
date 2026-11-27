@@ -120,7 +120,7 @@ export async function listWorktreeDatabasesForUrl(
   }
 }
 
-// keep: a prefix match, not a LIKE pattern: `_` in a database name is literal
+// A prefix match, not a LIKE pattern: `_` in a database name is literal
 export async function listDatabasesWithPrefixForUrl(
   databaseUrl: string,
   prefix: string,

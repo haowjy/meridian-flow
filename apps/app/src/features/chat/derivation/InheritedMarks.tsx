@@ -22,7 +22,6 @@ export function InheritedSourceHeader({
     >
       <GitFork aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 items-baseline gap-1">
-        {/* One message, so a translation can put the source's name first. */}
         <Trans>
           <span className="shrink-0">From </span>
           <SourceChatLink threadId={ownerThreadId} title={source.title} trashed={source.trashed} />

@@ -69,7 +69,6 @@ export function ReviewBar() {
     });
   };
   const pressChapter = (verdict: "apply" | "discard", event: { currentTarget: HTMLElement }) => {
-    // The pressed control leaves with the bar: the focus waits for the notice's Undo.
     const page = event.currentTarget.closest<HTMLElement>("[data-paint-frame]");
     if (page)
       holdFocus(
@@ -133,8 +132,6 @@ export function ReviewBar() {
 
 function fitReviewLine(line: HTMLDivElement | null) {
   if (!line) return;
-  // The target picker's name shrinks before anything overflows, so a cut name gives the count's
-  // room to the name; only an overflow hides the stepper, never a long name.
   const fits = (level: number) =>
     line.scrollWidth <= line.clientWidth &&
     (level >= 2 ||

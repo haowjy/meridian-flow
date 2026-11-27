@@ -47,12 +47,6 @@ export interface CheckoutHandoff {
 }
 
 export interface UseCreateCheckoutSessionOptions {
-  /**
-   * Runs after a session/portal URL exists and before the redirect. The caller
-   * captures the pre-redirect ledger baseline here. `isCurrent` is false once a
-   * newer attempt has superseded this one; the caller must not write in that
-   * case, and the hook will not redirect for it.
-   */
   onHandoff?: (handoff: CheckoutHandoff, isCurrent: () => boolean) => void | Promise<void>;
 }
 
@@ -66,8 +60,6 @@ export function useCreateCheckoutSession(options: UseCreateCheckoutSessionOption
       return { generation: generationRef.current };
     },
     onSuccess: async (session, request, context) => {
-      // A newer click owns the pending control and the redirect. A superseded
-      // response must not open its session or stamp its own baseline.
       if (!context || context.generation !== generationRef.current) return;
       const isCurrent = () => context.generation === generationRef.current;
       await options.onHandoff?.({ session, request }, isCurrent);

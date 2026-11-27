@@ -32,7 +32,7 @@ type ParticipantFrame<State> = {
 
 const transactionStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
-// keep: async work inherits the ambient transaction, so a branch still running after its scope ends reaches a finished transaction; it throws instead of using the released connection
+// Async work inherits the ambient transaction, so a branch still running after its scope ends reaches a finished transaction; it throws instead of using the released connection
 function activeTransaction(): DrizzleTransactionContext | undefined {
   const active = transactionStorage.getStore();
   if (active?.closed) {

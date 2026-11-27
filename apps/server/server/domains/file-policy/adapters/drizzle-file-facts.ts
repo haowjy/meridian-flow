@@ -309,7 +309,6 @@ async function loadContainer(
   let ownerLive = true;
   if (owner.scope === "chat") {
     if (scheme !== "uploads") return null;
-    // The chat's row may not exist yet (a New chat's first upload); a trashed one is deleted.
     const [chat] = await currentDrizzleDb(db)
       .select({ deleted: sql<boolean>`${threads.deletedAt} IS NOT NULL` })
       .from(threads)

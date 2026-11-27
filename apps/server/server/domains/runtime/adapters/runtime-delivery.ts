@@ -328,7 +328,7 @@ export function createDeliveryAdapter(
     await ack(threadId, [control.id]);
   }
   async function threadChanged(threadId: ThreadId, mutationId = crypto.randomUUID()) {
-    // keep: Do not take a thread lock from Work mutations; it inverts thread-to-Work lock order
+    // Do not take a thread lock from Work mutations; it inverts thread-to-Work lock order
     await inbox.enqueue({
       threadId,
       intent: "notice",

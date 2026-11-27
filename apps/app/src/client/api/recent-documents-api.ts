@@ -23,13 +23,6 @@ export async function listRecentDocuments(
 
 export type RecordRecentDocumentResult = { kind: "recorded" | "unchanged" | "failed" };
 
-/**
- * Record that the writer opened a document. The open never waits on this, and
- * the caller posts only once the server holds the document
- * (`useRecordOpenedDocument`), so a 404 is a real fault, not a race.
- * Whether two opens are the same open is the server's write-interval rule, so
- * the interval lives with the row it governs and every device shares one clock.
- */
 export async function recordRecentDocument(
   documentId: string,
   signal?: AbortSignal,

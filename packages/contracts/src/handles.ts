@@ -1,4 +1,4 @@
-// keep: Handles are lowercase-only; folding case would let a name resolve as another owner's handle
+// Handles are lowercase-only; folding case would let a name resolve as another owner's handle
 
 export const HANDLE_LETTERS = { chat: "c", subagent: "p", work: "w" } as const;
 export type HandleKind = keyof typeof HANDLE_LETTERS;

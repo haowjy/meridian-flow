@@ -78,7 +78,7 @@ export function createGithubPackageFetcher(
   options: { token?: string; fetch?: typeof fetch } = {},
 ): PackageFetcher {
   const send = options.fetch ?? fetch;
-  // keep: Follow redirects manually so every host is checked and the API token stays on api.github.com
+  // Follow redirects manually so every host is checked and the API token stays on api.github.com
   async function request(url: string, budget: FetchBudget, accept: string): Promise<Response> {
     let target = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -259,7 +259,7 @@ export function createGithubPackageFetcher(
         (chunks: AsyncIterable<Buffer>) =>
           readTar(chunks, async (entry) => {
             budget.entry();
-            // keep: GitHub tarballs wrap entries in <owner>-<repo>-<shortsha>/; strip that first segment
+            // GitHub tarballs wrap entries in <owner>-<repo>-<shortsha>/; strip that first segment
             const [, ...inRepo] = normalizeSegments(entry.name, "An archive entry");
             const key = inRepo.join("/");
             if (entry.type === "directory" || inRepo.length === 0) {

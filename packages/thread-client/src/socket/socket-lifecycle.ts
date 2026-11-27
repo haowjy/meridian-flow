@@ -194,7 +194,7 @@ export class SocketLifecycleController {
     this.clearHandshakeTimer();
     this.clearPingTimer();
 
-    // keep: Report a replacing CLOSING socket's close before bumping the generation or its native close becomes stale
+    // Report a replacing CLOSING socket's close before bumping the generation or its native close becomes stale
     const replaced = this.socket;
     if (replaced) {
       this.socket = null;
@@ -257,7 +257,7 @@ export class SocketLifecycleController {
   private closeCurrentSocket(reason: string): void {
     const socket = this.socket;
     if (!socket) return;
-    // keep: Retire a socket before native close because an incomplete upgrade may never acknowledge it
+    // Retire a socket before native close because an incomplete upgrade may never acknowledge it
     this.handleSocketClose({ code: 4000, reason, wasClean: false });
     try {
       socket.close(4000, reason);

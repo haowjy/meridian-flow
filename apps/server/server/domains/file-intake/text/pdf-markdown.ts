@@ -73,7 +73,7 @@ type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
 
 async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
   try {
-    // keep: Pass pdf.js a copy of the buffer; it takes ownership
+    // Pass pdf.js a copy of the buffer; it takes ownership
     return await getDocumentProxy(new Uint8Array(bytes));
   } catch (error) {
     const name = error instanceof Error ? error.name : "";

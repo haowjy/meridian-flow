@@ -74,8 +74,6 @@ export function selectionAnchorPoint(view: EditorView): FormattingMenuPoint | nu
     const coords = view.coordsAtPos(view.state.selection.to);
     return { x: coords.left, y: coords.bottom };
   } catch {
-    // A position the view has not drawn yet (a collapsed node view, a
-    // mid-transaction read) has no coordinates; the key falls through.
     return null;
   }
 }

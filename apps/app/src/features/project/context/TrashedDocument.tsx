@@ -141,12 +141,6 @@ function useSessionText(session: DocumentSession | null): string {
   return text;
 }
 
-/**
- * Main follows the document out of Trash, wherever it was restored from (this Restore, the
- * sidebar's, a drag out), and an address naming a document no longer in Trash goes to it once.
- * One open leaves the view: the list changing again must not start another, which would cancel
- * this one. A refusal is the opener's to say.
- */
 function useOpenOnceLiving(projectId: string, documentId: string, living: boolean): void {
   const openDocument = useOpenProjectDocument(projectId);
   const leaving = useRef(false);

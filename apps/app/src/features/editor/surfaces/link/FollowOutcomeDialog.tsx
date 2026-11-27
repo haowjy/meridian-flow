@@ -30,9 +30,6 @@ export function FollowOutcomeDialog({ editor }: { editor: Editor }) {
 
   return (
     <EditorDialog
-      // One dialog per link: following a second link must not open wearing the
-      // first one's failed-to-create notice. A checking answer that settles into
-      // a missing one keeps the same dialog rather than flashing a new one.
       key={linkTargetHref(follow.target)}
       editor={editor}
       id="link-follow-outcome"

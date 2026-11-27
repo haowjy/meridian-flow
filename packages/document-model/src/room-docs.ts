@@ -25,7 +25,6 @@ export interface Imported {
   restore: DocChange[];
 }
 
-/** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
 export class RoomDocsFreedError extends Error {
   constructor() {
     super("RoomDocs used after free()");
@@ -270,12 +269,6 @@ export class RoomDocs {
     return new Set([...(this.live?.textKeys() ?? []), ...this.texts.keys()]);
   }
 
-  /**
-   * The doc a write into block `id` goes to: its own, else (in a draft) a fork of Live's taken now,
-   * else a new doc. A draft never writes into Live's text docs. `before` is the frontier the write
-   * starts from: the doc's own, or for a doc forked by this call the frontier it forked at, which
-   * is what the write's Undo record and a turn's restore press need (design §2).
-   */
   writableText(id: BlockId): { doc: LoroDoc; before: Frontiers } {
     const own = this.texts.get(id);
     let written: { doc: LoroDoc; before: Frontiers };
@@ -320,13 +313,6 @@ export class RoomDocs {
     return out;
   }
 
-  /**
-   * The version of every doc a read of this copy shows, as `frontiers()` names them: the room
-   * version plus, in a draft, Live's version of each text it has no fork of. A planning view's
-   * writes are exported from the room's `shownVersion()` (`view.exportSince(docs.shownVersion())`,
-   * design §5): a block the view forked from Live then ships only its new ops, which the draft
-   * room imports into its own fork of Live's doc (`importBatch`).
-   */
   shownVersion(): Map<DocKey, DocVersion> {
     const out = new Map<DocKey, DocVersion>();
     for (const [key, doc] of this.live?.texts ?? []) out.set(key, docVersion(doc));

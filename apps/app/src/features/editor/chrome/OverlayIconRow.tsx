@@ -89,11 +89,6 @@ function OverlayIconChip({
   label: string;
   onSelect?: () => void;
   asTrigger?: boolean;
-  /**
-   * The tooltip is portalled out of the row, so it carries the row's mark
-   * itself — a surface watching the pointer must read it as part of the same
-   * chrome rather than as a step off the object.
-   */
   chromeAttributes: Record<string, string>;
   children: ReactNode;
 }) {
@@ -111,8 +106,6 @@ function OverlayIconChip({
       tooltipContentProps={chromeAttributes}
       className="meridian-overlay-icon-chip"
       onClick={asTrigger ? rest.onClick : onSelect}
-      // A press on the chrome must not move the caret out from under the
-      // object the chrome belongs to.
       onMouseDown={(event) => {
         event.preventDefault();
         onMouseDown?.(event);

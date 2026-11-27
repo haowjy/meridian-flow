@@ -735,8 +735,6 @@ describe("write-mode switches in the journal", () => {
       expect(r.scenario.appendRequests).toHaveLength(1);
       expect(await owner.withdrawControl("switch-1", "thread_1")).toBe("removed");
       expect(r.scenario.appendRequests).toHaveLength(2);
-      // One whose answer was lost may be on the server: it is marked posted before the
-      // request leaves, keeps its place, and a local Withdraw leaves it for Retry.
       lost = true;
       r.records.clear();
       r.records.set("switch-1", switchRecord(6));

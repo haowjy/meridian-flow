@@ -19,7 +19,7 @@ function specOnly<T extends NodeSpec | MarkSpec>(spec: T): Omit<T, "parseDOM" | 
   return structural as Omit<T, "parseDOM" | "toDOM">;
 }
 
-// keep: Never add validate to align or level; bad stored values must read as themselves and fail at write boundaries
+// Never add validate to align or level; bad stored values must read as themselves and fail at write boundaries
 const layoutAlignAttr = { default: null };
 
 export const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
@@ -48,7 +48,6 @@ const basicNodeDefaults = {
 const linkRefAttr = { default: null };
 
 const basicNodeOverrides = {
-  // keep: Headings stay paragraph nodes so retyping edits attrs in place and concurrent typing and anchors survive
   paragraph: {
     ...specOnly(basicNodes.paragraph),
     attrs: { align: layoutAlignAttr, level: paragraphLevelAttr, ...blockAttrs },
@@ -59,7 +58,7 @@ const basicNodeOverrides = {
     attrs: { language: { default: null }, ...blockAttrs },
   },
 
-  // keep: Image src needs a default, not basic schema's validate: string
+  // Image src needs a default, not basic schema's validate: string
   image: {
     inline: true,
     group: "inline",
@@ -154,13 +153,13 @@ const basicMarkDefaults = {
 } satisfies Record<string, MarkSpec>;
 
 const customMarks = {
-  // keep: Code mark needs excludes: _ to match TipTap's Code extension
+  // Code mark needs excludes: _ to match TipTap's Code extension
   code: {
     ...specOnly(basicMarks.code),
     excludes: "_",
   },
 
-  // keep: Link href needs a default, not basic schema's validate: string
+  // Link href needs a default, not basic schema's validate: string
   link: {
     attrs: {
       href: { default: "" },

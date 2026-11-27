@@ -1,5 +1,5 @@
 import type { ChangeEvent, RefObject } from "react";
-// keep: Feature-detect webkitdirectory but exclude iOS; iOS reports support yet cannot pick a folder.
+// Feature-detect webkitdirectory but exclude iOS; iOS reports support yet cannot pick a folder.
 export function canPickFolders(): boolean {
   if (typeof document === "undefined") return false;
   const input = document.createElement("input");

@@ -1,15 +1,3 @@
-/**
- * route-document-owner — the one order in which a route finds its document.
- *
- * Desktop and phone read the same sources: the live tree, and the draft row the address
- * names with its `owner` and `item` (a page a draft created is hidden from the catalog until
- * Apply, so its draft row is its only descriptor). A document the route is bound to is found by
- * identity in both, whatever path it now holds. The path occupant is consulted only when the
- * route knows no identity, because an occupant of a path the bound document left or took is
- * some other document. When a known identity resolves nowhere the answer is `pending`, never
- * that occupant.
- */
-
 import type { OpenDocument } from "@/client/stores";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import type { ContextRouteRequest } from "../routing/project-route";
@@ -22,10 +10,6 @@ export type RouteDocumentOwner =
   | { kind: "addressed"; document: OpenDocument }
   | { kind: "pending" }
   | { kind: "absent" };
-/**
- * The live half of the order: the bound identity wherever its path went, else (only with no
- * bound identity) the path's occupant. A bound identity the tree lacks is `pending`.
- */
 export function resolveLiveRouteDocument(input: {
   path: string;
   boundDocumentId?: string | null;

@@ -30,7 +30,6 @@ function continuity(a: string, b: string) {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
   let suffix = 0;
-  // Prefix and suffix may not count the same character twice.
   while (
     suffix < a.length - prefix &&
     suffix < b.length - prefix &&
@@ -41,8 +40,6 @@ function continuity(a: string, b: string) {
 }
 
 function showingOrder(a: ShownLink, b: ShownLink) {
-  // Equal observation times have no normative identity ordering. Use opaque data
-  // ordering rather than array iteration order to keep the module deterministic.
   if (a.at !== b.at) return a.at > b.at ? -1 : 1;
   if (a.ref !== b.ref) return a.ref < b.ref ? -1 : 1;
   if (a.address !== b.address) return a.address < b.address ? -1 : 1;

@@ -106,7 +106,6 @@ function stop(id: string): void {
 
 async function send(id: string, entry: Entry, run: UploadRun): Promise<void> {
   const { controller } = entry;
-  // A stopped run is over even if its finish lands: the entry is the stop's, or a retry's.
   const current = () =>
     entries.get(id) === entry && entry.controller === controller && !controller.signal.aborted;
   try {
@@ -165,10 +164,6 @@ export const uploads = {
     return () => listeners.delete(listener);
   },
 
-  /**
-   * Starts sending. Call it before the node goes into the text, so no node ever draws a gap; the
-   * holder's next `changed` sees it there.
-   */
   begin(id: string, holder: string, run: UploadRun): void {
     uploads.discard(id);
     const entry: Entry = {

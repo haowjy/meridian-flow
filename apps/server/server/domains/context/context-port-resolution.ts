@@ -52,7 +52,6 @@ export async function resolveThreadContext(
   const [primaryWorkAuthority, primaryWork] = primaryMembership
     ? await Promise.all([
         deps.workAuthorityResolver.byId(thread.projectId, primaryMembership.workId),
-        // By id: the project listing leaves out No Work, whose chats can draft too.
         deps.works.findById(primaryMembership.workId),
       ])
     : [null, null];

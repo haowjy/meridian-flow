@@ -46,7 +46,6 @@ type RequestInitOptions = {
   signal?: AbortSignal;
 };
 
-/** A command's body carries a fresh id per request, minted here once the caller has decided to send. */
 function withCommandId<T extends object>(data: T): CommandBody<T> {
   return { ...data, commandId: crypto.randomUUID() };
 }

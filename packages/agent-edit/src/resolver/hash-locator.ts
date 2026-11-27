@@ -32,7 +32,6 @@ export function locateBlockByHash(
   hash: string,
   options: { notFoundMessage?: string } = {},
 ): HashLocationResult {
-  // Display hashes are flexible prefixes; resolve held old widths against immutable full hashes.
   const normalized = hash.trim().toLowerCase();
   const matches =
     normalized.length === 0

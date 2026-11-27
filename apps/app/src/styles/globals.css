@@ -596,7 +596,6 @@
   margin-bottom: -2px;
 }
 @utility tab-chip-active {
-  /* keep: --tab-radius is px, not rem; the mask paths below are drawn in px and must agree at any root font size */
   --tab-radius: 6px;
   margin-top: --spacing(1);
   padding-bottom: --spacing(1);

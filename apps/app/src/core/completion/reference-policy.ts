@@ -213,13 +213,6 @@ export function referenceRowForFolder(
   };
 }
 
-/**
- * One ordering policy for terminal and navigable rows.
- *
- * Exact, prefix, word-start, contains, and fuzzy are strict tiers. Priors can
- * only move a row inside its tier, and the caller's normalized tree order is
- * the final tie breaker. Stable identity is deduplicated before the final cap.
- */
 export function rankReferenceRows(
   rows: readonly ReferenceRow[],
   query: string,

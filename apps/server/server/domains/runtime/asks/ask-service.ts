@@ -385,7 +385,6 @@ export function createAskService(deps: {
             draftAnswers: input.answers,
           });
           if (!updated) return "not_open_question";
-          // keep: Publish deadline changes by 30-second bucket, not by a delta from the last stored deadline
           const bucket = (at: Date | null) =>
             Math.floor((at?.getTime() ?? 0) / PRESENCE_PUBLISH_MS);
           if (!input.answers && bucket(updated.deadlineAt) === bucket(stored.deadlineAt))

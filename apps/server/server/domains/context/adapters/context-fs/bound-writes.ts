@@ -65,10 +65,6 @@ export class BoundWrites {
     return false;
   }
 
-  /**
-   * The tracked document at `path`, read before any command transaction so
-   * content can be bound against it; the transaction looks it up again.
-   */
   async lookup(path: string): Promise<Result<ContextDocument | null, AdapterFault>> {
     const existing = await this.deps.findDocument(path);
     if (existing.ok && existing.value && existing.value.fileType !== null) {

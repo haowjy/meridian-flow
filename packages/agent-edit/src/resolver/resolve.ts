@@ -50,13 +50,6 @@ export interface ResolveWriteContext {
   doc: DocHandle | null | undefined;
   model: AgentEditModel;
   codec: AgentEditCodec;
-  /**
-   * Ref assignment over the command's prepared link scope; parse itself is
-   * pure syntax. Every door that turns written Markdown into nodes assigns
-   * through it before block alignment and no-op detection. Copies never do:
-   * their nodes already carry what they name. `"preassigned"`: the caller
-   * already assigned refs (a host's lowered overwrite), so nodes stay as given.
-   */
   links: WriteLinks;
 }
 
@@ -82,12 +75,6 @@ interface NormalizedParams extends ResolveWriteParams {
   content: string;
 }
 
-/**
- * A write resolved up to ref assignment: scope, find matches and splices are fixed,
- * and `written` holds every parsed node assignment will see (a find's
- * reconstructed groups included), so the host can load what they name
- * before `assign` runs synchronously over the prepared scope.
- */
 export type WritePlan =
   | {
       ok: true;
@@ -193,7 +180,6 @@ function assignPlannedWrite(
   return { ok: true, edits };
 }
 
-/** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
 function assignScope(
   ctx: ConcreteResolveContext,
   step: Extract<PlannedStep, { kind: "replace" | "spliced" }>,
@@ -313,7 +299,6 @@ function planReplace(
     if (!sectionCheck.ok) return sectionCheck;
     return replaceScopeWithCopies(ctx, params, scope.scope, params.blocks);
   }
-  // Parsed content stands for itself: an empty paragraph is a block even though it spells "".
   if (params.content.length === 0 && !params.parsedContent) {
     return error("invalid_write", "replace content must not be empty; `remove` removes blocks");
   }
@@ -469,8 +454,6 @@ function planFindMatches(
   command: WriteCommandName,
 ): PlannedWrite | ResolveWriteFailure {
   const steps: PlannedStep[] = [];
-  // Structural groups can replace their predecessor block. Lower from the end
-  // so every insert anchor remains live until its group executes.
   for (const group of groupFindMatches(matches).reverse()) {
     const groupSource = joinEntries(documentBodies(ctx, group.startIndex, group.endIndex));
     const spliced = spliceFindMatches(

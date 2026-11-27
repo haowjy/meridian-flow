@@ -27,10 +27,6 @@ function blockIdIn(node: Node): string | null {
   return id;
 }
 
-/**
- * The reading line: the top of the prose column, below its top inset. Measured from the pane's
- * edge instead, a document read from its first line reopens scrolled by the inset.
- */
 function readingLine(editor: Editor, pane: HTMLElement): number {
   return (
     pane.getBoundingClientRect().top +

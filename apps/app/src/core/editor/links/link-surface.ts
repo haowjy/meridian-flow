@@ -141,9 +141,6 @@ export function createLinkSurface(): LinkSurface {
 
     openForm(at) {
       sequence += 1;
-      // The two summoned surfaces are alternatives, never neighbours: Edit
-      // link opens the form from the menu, and leaving the menu up behind it
-      // would put two claims on the same link (law 4).
       set({ form: { at, seq: sequence }, menu: null, folder: null, hint: null });
     },
     closeForm() {

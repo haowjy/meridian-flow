@@ -7,7 +7,6 @@ import { unpublishFromTailnet } from "./dev-tailscale";
 
 export type ClientBuild = "development" | "production";
 
-// keep: a pid alone can be reused by an unrelated process; the `ps` start time beside it is what makes it the same process
 export interface ProcessRef {
   pid: number;
   start: string;
@@ -40,7 +39,7 @@ function ps(args: string[]): string {
     return execFileSync("ps", args, {
       cwd: "/",
       encoding: "utf8",
-      // keep: `lstart` is printed in the caller's locale and timezone; pin both or two shells disagree on a process's identity
+      // `lstart` is printed in the caller's locale and timezone; pin both or two shells disagree on a process's identity
       env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
       stdio: ["ignore", "pipe", "ignore"],
     });
@@ -51,7 +50,7 @@ function ps(args: string[]): string {
   }
 }
 
-// keep: `ps` pads a one-digit day ("Dec  1"); every reader of `lstart` goes through here, or the same process compares unequal to itself on days 1 to 9
+// `ps` pads a one-digit day ("Dec  1"); every reader of `lstart` goes through here, or the same process compares unequal to itself on days 1 to 9
 function normalizeStart(fields: readonly string[]): string {
   return fields.filter(Boolean).join(" ");
 }
@@ -100,7 +99,7 @@ export function requireRunningStack(checkout: string): DevStackState {
   );
 }
 
-// keep: routes go before the record, which is the only thing that names them. When Tailscale doesn't answer, this throws with the record kept, so the next stop or start tries again
+// Routes go before the record, which is the only thing that names them. When Tailscale doesn't answer, this throws with the record kept, so the next stop or start tries again
 export function retireStack(
   checkout: string,
   stack: Pick<DevStackState, "pid" | "tailnetHost" | "ports" | "www">,
@@ -114,7 +113,6 @@ export function retireStack(
       );
     }
   }
-  // Only this stack's record: a start that overlapped the stop has written its own.
   if (readStackState(checkout)?.pid === stack.pid) {
     fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
   }
@@ -141,7 +139,7 @@ function linuxCpuCentiseconds(pid: number): number | null {
   }
 }
 
-// keep: pnpm starts each script in a process group of its own, so the stack is found by parentage, not by group
+// Pnpm starts each script in a process group of its own, so the stack is found by parentage, not by group
 export function processTree(rootPid: number): ProcessInfo[] {
   type Row = ProcessRef & { rssKb: number; time: string };
   const byParent = new Map<number, Row[]>();
@@ -167,7 +165,7 @@ export function processTree(rootPid: number): ProcessInfo[] {
       pid: next.pid,
       start: next.start,
       rssKb: next.rssKb,
-      // keep: Linux `ps` reports whole CPU seconds, too coarse to tell an idle stack from a used one
+      // Linux `ps` reports whole CPU seconds, too coarse to tell an idle stack from a used one
       cpuCentiseconds:
         (process.platform === "linux" ? linuxCpuCentiseconds(next.pid) : null) ??
         parseCpuCentiseconds(next.time),
@@ -222,7 +220,7 @@ export async function waitForFreePorts(ports: readonly number[], timeoutMs: numb
   }
 }
 
-// keep: take the tree before signalling; a child whose parent has exited is reparented and no longer found by parentage
+// Take the tree before signalling; a child whose parent has exited is reparented and no longer found by parentage
 export async function terminateTree(refs: readonly ProcessRef[], graceMs: number): Promise<void> {
   signalProcesses(refs, "SIGTERM");
   const deadline = Date.now() + graceMs;
@@ -230,7 +228,6 @@ export async function terminateTree(refs: readonly ProcessRef[], graceMs: number
   signalProcesses(refs, "SIGKILL");
 }
 
-// keep: the record names the services as well as the supervisor, so a stack whose supervisor was killed can still be stopped
 export async function stopStack(checkout: string): Promise<boolean> {
   const state = readStackState(checkout);
   if (!state) return false;
@@ -245,12 +242,10 @@ export async function stopStack(checkout: string): Promise<boolean> {
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
-  // A supervisor that stopped cleanly has retired its own record; one still here belongs to a supervisor that was killed or could not reach Tailscale.
   if (readStackState(checkout)?.pid === state.pid) retireStack(checkout, state);
   return stack.size > 0;
 }
 
-// keep: two `pnpm dev` runs that both pass the port check would each start a supervisor and overwrite each other's record
 export function acquireStartLock(checkout: string): () => void {
   const file = path.join(checkout, START_LOCK_FILE);
   fs.mkdirSync(path.dirname(file), { recursive: true });

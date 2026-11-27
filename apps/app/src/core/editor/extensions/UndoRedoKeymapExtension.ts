@@ -3,8 +3,6 @@ import { type DocumentHistory, redoEditorHistory, undoEditorHistory } from "../e
 
 export const UndoRedoKeymapExtension = Extension.create({
   name: "meridianUndoRedoKeymap",
-  // Above every other extension's priority, so these keys resolve here first and no
-  // extension added later can quietly take them.
   priority: 1100,
 
   addOptions() {
@@ -24,10 +22,6 @@ export const UndoRedoKeymapExtension = Extension.create({
     this.storage.detach = null;
   },
 
-  // Every binding consumes its key whether or not the stack had anything left.
-  // Ownership that lapses on an empty stack is not ownership: the key would
-  // fall through to the browser, and a writer at the bottom of their history
-  // would find Mod-z doing whatever the page does.
   addKeyboardShortcuts() {
     return {
       "Mod-z": () => {

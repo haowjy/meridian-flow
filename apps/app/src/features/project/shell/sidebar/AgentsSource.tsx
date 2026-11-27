@@ -117,7 +117,6 @@ export function AgentsSource({
         </span>
       );
     },
-    // `revision`: a Save or Undo changes what `shows` answers.
     [projectId, files, packages, writable, saves.revision],
   );
   const shared = { writable, projectId, editorWorkId, activeDocumentId, onSelectFile, onPicked };

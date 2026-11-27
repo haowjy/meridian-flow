@@ -58,12 +58,6 @@ export type EditorHistory = {
   restoreOutside(step: OutsideStep): void;
 };
 
-/**
- * A press's step on the Ctrl+Z of the editors open on its documents, pushed as the press is made,
- * so typing after it is undone first. Its Undo waits for the press's answer and is that press's
- * one Undo; Redo presses again and the step stands for the new press. Taken back from anywhere
- * else (the sidebar, a notice), the step leaves the editors with it.
- */
 export class EditorPressStep implements OutsideStep {
   private press: Promise<PressEntry | null> = Promise.resolve(null);
   private undone = false;

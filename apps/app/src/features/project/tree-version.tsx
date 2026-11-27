@@ -134,16 +134,8 @@ export function TreeVersionProvider({
 }) {
   const accountId = useAccountId();
   const { draftId, work, picked, known, workDrafts } = useScopeDraftOwner(projectId, chatThreadId);
-  // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before and
-  // show the new owner's (`enterScope`). A new chat on screen has no drafts, so it is a change to
-  // no owner. "" with no new chat, or any owner before the Works list loads, is no owner known
-  // yet (no chat on screen, or its row or the Works list still loading), which changes nothing. A layout effect, so the address's arrival after it in this
-  // commit wins. A Work pick has already run `enterScope` with the scope's write, and this run
-  // finds nothing to change.
   const queryClient = useQueryClient();
   const ownerKey = known ? draftId || (newChat ? NO_OWNER : "") : "";
-  // A move between one picked Work's drafts leaves the toggle as the move set it: a pick puts it
-  // on Draft, `Delete draft` on Live.
   const pickedId = picked?.id ?? null;
   const owner = useRef({ key: ownerKey, work: pickedId });
   useLayoutEffect(() => {
@@ -165,8 +157,6 @@ export function TreeVersionProvider({
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
   const versions = useMemo(() => (draftVersion ? [draftVersion] : []), [draftVersion]);
   const tree = useDraftsTreeChanges(projectId, versions).get(listedDraft ?? "") ?? null;
-  // Documents and folders come from the draft-list read, which has already subtracted every
-  // journal hold, so all surfaces count the same rows.
   const commands = useDraftCommandOwner();
   const count = () => (rows?.length ?? 0) + (drafts.folderIds?.length ?? 0);
   const changeCount = useSyncExternalStore(commands.subscribe, count, count);

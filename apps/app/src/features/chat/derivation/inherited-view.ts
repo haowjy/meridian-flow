@@ -109,7 +109,6 @@ export function optimisticForkPrefix(input: {
 }): InheritedView | null {
   const { source, sourceInherited, localTurns, cutoffTurnId } = input;
   const inheritedTurns = sourceInherited?.transcript.turns ?? [];
-  // keep: Apply inConversation membership to the source's own held turns before joining the inherited prefix, or a fork shows forgotten words until its pages land.
   const all = [...inheritedTurns, ...localTurns.filter(inConversation)];
   const cutoff = all.findIndex((turn) => turn.id === cutoffTurnId);
   if (cutoff < 0) return null;

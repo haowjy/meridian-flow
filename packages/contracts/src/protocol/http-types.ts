@@ -144,7 +144,6 @@ export type CopyContextEntrySource = {
 
 export type CopyContextEntriesRequest = {
   operationId: string;
-  // keep: Copy roots are ordered; copies land in that order
   sources: CopyContextEntrySource[];
   destinationScheme: ProjectContextTreeScheme;
   destinationFolderPath: string;
@@ -208,7 +207,7 @@ export type ContextReadTrackedResponse = {
 
 export type ContextReadBinaryResponse = {
   kind: "binary";
-  // keep: Binary read URLs are short-lived; clients must not persist them
+  // Binary read URLs are short-lived; clients must not persist them
   url: string;
   drawUrl?: string;
   fileType: DocumentFileType;
@@ -413,7 +412,6 @@ export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 export type { ThreadSnapshotAncestor, ThreadSnapshotResponse } from "./thread-snapshot.js";
 
 export type TranscriptPageResponse = {
-  // keep: Transcript page entries are chronological even on newest-first pages
   entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
   owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
   segment: {
@@ -447,7 +445,7 @@ export type GetFigureSignedUrlResponse = {
   fileType: BinaryDocumentFileType;
   name: string;
   sizeBytes: number;
-  // keep: Figure signed URLs are short-lived; never persist them in a document
+  // Figure signed URLs are short-lived; never persist them in a document
   signedUrl: string;
   drawUrl?: string;
   signedUrlExpiresAt: string;

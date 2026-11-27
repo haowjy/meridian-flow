@@ -12,8 +12,6 @@ export function allowsSlashTrigger(doc: PMNode, from: number): boolean {
   const $from = doc.resolve(from);
   const block = $from.parent;
 
-  // A code fence is source, not prose — and a mermaid fence is the diagram's
-  // source pane, so this one check closes both of §5.7's "never" cases.
   if (block.type.spec.code) return false;
   if (!block.isTextblock || !PROSE_TRIGGER_BLOCKS.has(block.type.name)) return false;
 

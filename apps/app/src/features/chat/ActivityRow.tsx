@@ -93,9 +93,6 @@ export function ActivityRow({
       />
     ) : null;
 
-  // The title row is the stretched area's positioning context. The toggle is
-  // painted over the title content (later positioned sibling), and a door
-  // inside the title lifts back above it with its own `z-10`.
   const titleRow = (
     <div
       className={cn(
@@ -107,10 +104,6 @@ export function ActivityRow({
         <DisclosureMark open={open} className="-mr-1 mt-[var(--chat-space-inline)]" />
       ) : null}
       {title ? (
-        // No `overflow-hidden` here: a door inside grows past the line box to
-        // reach a touch target, and clipping it would shrink that back down.
-        // Each title renderer truncates its own content. The title sizes to its
-        // text so the status dot and chevron sit beside it, not at the far edge.
         <span id={titleId} className="min-w-0 text-compact font-medium text-foreground">
           {title}
         </span>
@@ -129,10 +122,6 @@ export function ActivityRow({
     </div>
   );
 
-  // Outer container is the flex row (icon column + content column). The
-  // interactive area covers only the title row, not the icon column, because
-  // the icon column owns the rail and the rail must extend through the row's
-  // full height including any inline-fold body.
   return (
     <div className="flex items-stretch gap-[var(--chat-space-block)]" data-activity-row>
       {iconColumn(TITLE_ROW_PAD)}

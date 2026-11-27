@@ -79,7 +79,6 @@ export function usePressCommands({
   threadId?: string | null;
   surface: NoticeSurface["kind"];
 }) {
-  // A new array each render would remake every command: the list's ids are what matter.
   const draftsKey = draftList.join(",");
   const owner = useDraftCommandOwner();
   const driver = useCommandDriver();
@@ -116,11 +115,6 @@ export function usePressCommands({
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
-    /**
-     * Reads the lists again; a row a press took or gave back shows once this lands. An Undo
-     * turn reads its turn's card again too, dropping a read already out, so any card read that
-     * lands after this says whether the press is in force (`RestoreEntry.since`).
-     */
     const refresh = async (scope: Scope) => {
       if (scope.kind === "turn" && threadId)
         void queryClient.refetchQueries(
@@ -222,8 +216,6 @@ export function usePressCommands({
       const { seat, place } = seatOf(taken, async () => (await entry.undo()).ok);
       place(pressed.placement);
       const undo = async (): Promise<Undone> => {
-        // An Apply's Undo takes a created document out of Live: main, read before, follows it to
-        // the draft's plain page, where it is a draft's document again.
         const main = presented?.mainDocumentId(projectId);
         const answer = await unpress(pressed.commandId, pressed.drafts, scope);
         if (typeof answer === "string")
@@ -266,12 +258,6 @@ export function usePressCommands({
       return step;
     };
 
-    /**
-     * One press. Its rows and folders are in flight while the journal holds it, until a list read
-     * after its answer (`DraftCommandOwner.followPresses`): they leave the list and the review, and
-     * nothing else can be pressed on them. Every list read subtracts the journal hold, including a
-     * read already out; a press that fails releases the hold and gives the rows back.
-     */
     const press = async (
       target: PressTarget,
       live: CommandDriver,
@@ -288,7 +274,6 @@ export function usePressCommands({
       const inScope = lists.flatMap(({ listed }) => listed.items);
       const nodes = target.documents ?? inScope.map((item) => item.documentId);
       const taken = inScope.filter((item) => all || nodes.includes(item.documentId));
-      // Discard all takes folders with only a tree change too: they have no row.
       const folders = all
         ? lists.flatMap(({ draft, listed }) =>
             listed.folders.map((folder) => ({ draft, id: folder.id })),
@@ -370,7 +355,6 @@ export function usePressCommands({
           (step) => run(target, input, step, heldRows),
         );
       let entry: PressEntry | null = null;
-      // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows(scope).map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? folderName(node);
       if (verdict === "discard" && target.whole) {
@@ -477,13 +461,6 @@ export function usePressCommands({
       const entry = owner.restore(turn, draft);
       if (entry?.kind === "in-force") void entry.press.undo();
     };
-    /**
-     * What a read of the turn's card (`TurnReceiptChip.restored`, read at `readAt`) says is in
-     * force in `draft`: `named`, a press id, or null for none; undefined before the card has a
-     * read. A press this tab doesn't hold (another tab's, or one from before a reload) is taken on
-     * with the card's Undo alone; one the read says ended elsewhere ends here, its Ctrl+Z and
-     * sidebar steps with it. A read from before the entry last changed here is out of date.
-     */
     const syncRestore = (
       turn: TurnId,
       draft: DraftId,

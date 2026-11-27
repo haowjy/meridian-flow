@@ -206,11 +206,6 @@ export class DeviceAccountRecentsStore {
     return true;
   }
 
-  /**
-   * Add rows this device has not ranked, and adopt a newer openedAt.
-   * Never deletes, never overwrites a known locator, never clears a removal.
-   * A payload from another bind is ignored.
-   */
   applyServerList(
     accountId: string,
     projectId: string,

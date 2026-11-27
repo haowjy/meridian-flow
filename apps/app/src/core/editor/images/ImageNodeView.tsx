@@ -1,37 +1,3 @@
-/**
- * ImageNodeView — what an inline picture looks like at every point in its life.
- *
- * One node view for five states, because they are one node: a picture on its
- * way (dimmed frame, its own proportions, a thin progress line), a picture that
- * did not make it (the same frame, what failed, Retry and Remove), a picture
- * somebody ELSE is uploading right now (the same frame, no percent and no verbs,
- * because neither the bytes nor the retry are ours), a picture whose upload
- * never finished at all (a reload or a redo found the slot but not the bytes),
- * and a picture (the ordinary case, a signed read URL for the document its
- * `asset:` source or its `ref` names).
- *
- * A stored picture this browser can't draw (no preview could be made) is a file
- * card with Download, never Retry. A picture whose ref names nothing it can draw says which: an address nothing
- * has been uploaded to yet (it draws itself when a file lands there), or a
- * document that is gone. Neither offers Retry, because nothing a press could
- * do would change the answer.
- *
- * Which of the two empty-slot states applies is never guessed: the slot's
- * `uploadToken` plus a live owner signal says an upload is in flight, and only
- * a token nobody claims is the abandoned one (`pending-images.ts`).
- *
- * The frame is the reason completion moves nothing. Its size comes from the file
- * the writer handed over, measured locally before the upload started, and it is
- * REMEMBERED here for the rest of the node view's life: the picture's own bytes
- * arrive a moment after its `src` does, and a frame that collapsed in that gap
- * would reflow the manuscript twice for one picture. A picture that arrived some
- * other way is measured when it draws, because the height cap needs its ratio to
- * narrow a stored width rather than stretch it.
- *
- * What is in flight arrives as a decoration rather than an attribute
- * (`pending-images.ts`): progress is the document's to show and nobody's to
- * store.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { NodeViewProps } from "@tiptap/core";
@@ -75,10 +41,6 @@ export function ImageNodeView(props: NodeViewProps) {
   const pending = pendingUploadFromDecorations(props.decorations);
   const mine = pending?.owner === "mine" ? pending : null;
 
-  // The measured shape outlives the entry that carried it: the entry is dropped
-  // the moment `src` is written, and the picture is not on screen yet. A
-  // collaborator's upload announces the same shape, so the slot they are watching
-  // is the picture's box before it is the picture.
   const [shape, setShape] = useState<PendingImageFrame | null>(null);
   const announcedFrame = pending?.owner === "mine" ? pending.entry.frame : (pending?.frame ?? null);
   if (announcedFrame && !sameShape(announcedFrame, shape)) setShape(announcedFrame);

@@ -6,7 +6,7 @@ export interface ModelFamily {
   exclude?: readonly string[];
 }
 
-// keep: a family id must equal its alias in meridian-base's mars.toml and nothing checks that the two agree
+// A family id must equal its alias in meridian-base's mars.toml and nothing checks that the two agree
 export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = {
   anthropic: [
     {

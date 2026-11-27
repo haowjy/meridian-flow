@@ -34,7 +34,6 @@ export function restoreOutsideSplice(
   const { newText } = input;
   const blocks = parsed.blocks;
   const newOccurrences = walkLinkOccurrences(blocks);
-  // The serialized old group must reparse into the same occurrences, or its spans name nothing.
   if (oldSpans.length !== oldOccurrences.length || parsed.spans.length !== newOccurrences.length)
     return { fallback: "misaligned" };
   if (coarse(oldSpans, input.oldText) || coarse(parsed.spans, newText))
@@ -59,7 +58,6 @@ export function restoreOutsideSplice(
     twins.push([oldOccurrences[oldOccurrences.length - offset], newOccurrences.length - offset]);
   for (const [old, index] of twins) {
     const next = newOccurrences[index];
-    // Outside text is byte-identical, so a kind mismatch means the parse realigned.
     if (!old || !next || old.kind !== next.kind) return { fallback: "surroundings-reparsed" };
     attrs[index] = old.attrs;
   }

@@ -47,14 +47,6 @@ import {
 } from "./diagrams";
 import { caretInsideNodeAt, engageObject, selectObjectTransaction } from "./objects";
 
-/**
- * `caretInsideNodeAt`, subscribed and read fresh on every render.
- *
- * Not local state written from an effect: a face held in state is a second copy
- * of the answer, and a copy can disagree with the selection for a frame. The
- * subscription is deliberately coarse — every transaction, focus, and blur
- * re-reads, and React drops the readings that come back the same.
- */
 function useCaretInsideNode(editor: Editor, getPos: () => number | undefined): boolean {
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
@@ -95,16 +87,6 @@ export function CodeBlockNodeView(props: NodeViewProps) {
       <pre className={showSource ? undefined : "hidden"}>
         <NodeViewContent as={"code" as never} style={{ whiteSpace: "inherit" }} />
       </pre>
-      {/* The render layer. Mounted for the whole life of a diagram fence: the
-          condition is the language attr, which only a document change moves, so
-          no selection transition adds or removes this element. Everything
-          inside it changes on the parser's clock instead.
-
-          Keyed by provider, because the render layer holds one provider's render
-          state: a language change swaps which renderer is called, and reusing
-          the component across that swap would hand the new provider the old
-          one's hook state. A language change is a document change, so a remount
-          here is allowed where a selection-driven one would not be. */}
       {provider ? (
         <div className={showSource ? "hidden" : undefined} contentEditable={false}>
           <DiagramRenderLayer
@@ -137,8 +119,6 @@ function DiagramRenderLayer({
     const pos = getPos();
     const node = pos === undefined ? null : editor.state.doc.nodeAt(pos);
     if (pos === undefined || !node) return;
-    // Select first: engaging leaves the diagram selected underneath, so closing
-    // the dialog lands on it rather than wherever the caret was.
     const selected = selectObjectTransaction(editor.state, pos);
     if (selected) editor.view.dispatch(selected);
     engageObject(editor, { node, pos }, "engage");

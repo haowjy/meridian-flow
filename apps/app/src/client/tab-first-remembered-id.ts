@@ -50,7 +50,6 @@ export function writeRememberedId(
   id: string | null,
 ): void {
   const tabRecord = selectionRecord("session", kind, accountId, projectId);
-  // Independent attempts: a failed tab write must not prevent updating the seed.
   tabRecord.write(id);
   selectionRecord("local", kind, accountId, projectId).write(id);
 }

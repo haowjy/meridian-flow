@@ -7,19 +7,6 @@ import {
 } from "@meridian/document-model";
 import type { EditorView } from "prosemirror-view";
 
-/**
- * The composition guard and the one door for remote batches (design §6). A peer's batch is held,
- * as bytes, while any editor on the room is in an IME composition, and imported in order once the
- * last composition ends. Holding the batch itself, not just the editor's view of it, keeps the
- * binding's invariant: between transactions the editor's document is the docs' read plus the
- * blocks it keeps for its caret, and every local write is computed against that. Gate 1: 24 of 24 compositions with a remote update
- * mid-composition, against 12 of 24 unguarded.
- *
- * A Draft editor binds to the fork's docs, which read Live's text for blocks the draft has not
- * written, so the hold is per Live room: a draft's editors hold Live's batches too, and a Live
- * batch is forwarded into every draft its holder registered (`registerDraft`) before their editors
- * hear of it, whether or not an editor is bound to the draft (design §2, "Forwarding").
- */
 export interface EditorListener {
   before(): void;
   after(changed: ReadonlySet<DocKey>, remote: boolean): void;
@@ -53,15 +40,6 @@ function holdFor(docs: RoomDocs): Hold {
   return hold;
 }
 
-/**
- * Import a peer's batch into `docs` (a Live copy or a draft's fork), or hold it while an editor on
- * the room is composing. Returns null when held, else what the import changed and whether some of
- * it waits on ops not yet seen. Throws on bytes that are not an envelope, before holding anything.
- *
- * A removal the batch brings that did not read typing this copy holds is answered by the import,
- * before any editor reads it (design §1, rule 1), so the block never leaves the typist's screen;
- * `publish` sends that restore.
- */
 export function importRemoteUpdate(
   docs: RoomDocs,
   bytes: Uint8Array,
@@ -122,11 +100,6 @@ export function forwardLocalWrite(live: RoomDocs, changed: Iterable<DocKey>) {
   forwardInto(hold, new Set(changed));
 }
 
-/**
- * Register a draft's fork to be forwarded on every batch its Live copy imports; returns the
- * unregister. Its holder (the fork's session) registers it for the fork's whole life, so a fork
- * no editor shows (a Review reference) is forwarded too. `publish` sends what a forward restores.
- */
 export function registerDraft(draft: RoomDocs, publish: PublishWrite): () => void {
   if (!draft.live) throw new Error("registerDraft takes a draft's fork");
   const hold = holdFor(draft);

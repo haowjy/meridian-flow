@@ -18,7 +18,7 @@ export function compareDefaultSiblings(
 
 export type RankedSibling = { rank?: string | null; entryId: string };
 
-// keep: Compare catalog ranks bytewise, never with the name collator, then by identity
+// Compare catalog ranks bytewise, never with the name collator, then by identity
 export function compareCatalogSiblings(left: RankedSibling, right: RankedSibling): number {
   const leftRank = left.rank ?? "";
   const rightRank = right.rank ?? "";

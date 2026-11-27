@@ -36,7 +36,7 @@ export class JournalUnavailableError extends Error {
 
 export type SubmitInput = {
   kind: string;
-  // keep: Only the earliest unsettled record per lane is sent; lanes() receives journal records inside the save transaction
+  // Only the earliest unsettled record per lane is sent; lanes() receives journal records inside the save transaction
   lanes: readonly string[] | ((records: readonly CommandRecord[]) => readonly string[]);
   body: unknown;
 };
@@ -370,7 +370,7 @@ export class CommandDriver {
       else if (at > now) next = Math.min(next, at);
     }
     for (const record of this.records) next = Math.min(next, expiry(record));
-    // keep: Clamp long timers below 2^31 ms; larger setTimeout delays fire immediately
+    // Clamp long timers below 2^31 ms; larger setTimeout delays fire immediately
     if (next < Number.POSITIVE_INFINITY)
       this.wakeTimer = setTimeout(
         () => this.wake(),
@@ -455,7 +455,7 @@ export class CommandDriver {
     if (this.isAccountFault(answer)) return this.fault();
     if (status === 408 || status === 429 || status >= 500)
       return this.later(record, `http_${status}`, status === 500);
-    // keep: Only the server's stored outcome settles a non-retryable 4xx; an unresolved command stores never
+    // Only the server's stored outcome settles a non-retryable 4xx; an unresolved command stores never
     const resolved = await this.call(
       {
         method: "POST",

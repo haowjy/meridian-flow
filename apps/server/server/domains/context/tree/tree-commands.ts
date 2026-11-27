@@ -230,7 +230,6 @@ function noteChanges(
 ) {
   const writtenLeaf = written.segments[written.segments.length - 1] ?? "";
   const history = projection.history.get(node.id);
-  // Names, not segments: a twin's suffix that came or went since is no rename or move.
   const sameName =
     node.name === nameOf(writtenLeaf) ||
     node.name === nameOf(written.folder ? writtenLeaf : canonicalLeaf(writtenLeaf));
@@ -408,7 +407,6 @@ function noteLoopCause(
     chain.unshift(at);
   const inside = chain[0] ? projection.nodes.get(chain[0]) : undefined;
   const along = through.findIndex((step) => step.node === inside?.id);
-  // The model wrote the path through `node` itself: nobody else is the cause.
   if (!inside || through.some((step) => step.node === node.id) || along < 0) return;
   const named = uriOf(written.area, written.segments.slice(0, along + 1), true);
   noteConcurrent(
@@ -437,11 +435,6 @@ type Decided = {
   kept?: string;
 };
 
-/**
- * One node to move, rename or place. Everything that can stop it is decided before the first
- * record is made, so a move that does nothing stores nothing (and neither does a call whose
- * items all do nothing: `SourceTree.run` drops what a call without records made).
- */
 function decideMove(
   cx: Context,
   from: string,
@@ -601,17 +594,6 @@ export type PathReach =
   | { kind: "gone"; why: "deleted" | "purged" | "other_version"; by?: Actor }
   | { kind: "unresolved" };
 
-/**
- * Resolves a path through the names shown, for the tools that read or write inside a document:
- * the live node it meant and where it is now; `gone` when the node it names is not available
- * here, so no caller looks the path up again and reaches whatever holds that name now; or nothing
- * when neither the map nor the tree holds a node for it. Only a name the model was shown means a
- * node in Trash: an unshown name means a standing node or nothing.
- *
- * A `destination` (the folder a create goes into) never answers `gone`: a folder the model was
- * shown that someone deleted since stands again around what the call makes (rule 3), and a purged
- * one or one of the other version falls to the tree, where the call makes a fresh folder.
- */
 export function reachPath(
   scope: Pick<TreeScope, "writer" | "view" | "root">,
   area: string,
@@ -870,7 +852,6 @@ export function runTreeCommand(
         if (!carrier && !decided.some((other) => other.node.id === item.node.id))
           decided.push(item);
       }
-      // Every item shares the destination and the anchor: one placement, so they land in order.
       const into = decided[0]?.folder;
       let placedAtEnd: string | undefined;
       const arrived: string[] = [];
@@ -1107,7 +1088,6 @@ export function runTreeUndo(
       remember(cx, back.id, entry.node);
     }
   }
-  // The answers about sources the locks missed were guesses: nothing of this commits.
   judge.assertLocked();
   const after =
     scope.view.draft !== null && inLive ? scope.writer.view(LIVE) : scope.writer.view(scope.view);

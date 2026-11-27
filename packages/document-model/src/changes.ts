@@ -60,8 +60,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   const L = sides.live.view;
   const F = sides.fork.view;
   const overridden = overriddenBlocks(F);
-  // Comment bodies the fork changed. One whose visibility differs between the sides changes how a
-  // block reads with no write of the fork's in it, so its Live carriers are read too.
   const bodies = F.overrideKeys("comments").filter(
     (comment) => !sameValue(L.baseValue("comments", comment), F.override("comments", comment)),
   );
@@ -79,10 +77,6 @@ export function changedBlocks(draft: RoomDocs): BlockChange[] {
   );
 
   const changed: BlockId[] = [];
-  // Hidden on both sides but written by the draft: a block the draft put inside a block it then
-  // removed, or a half split off and joined away. It is never a member (a press would write its
-  // removal over Live's own), but hangs off the change it is under or tied to, whose press
-  // deletes its overrides, so discarding the removal does not bring it back as a new change.
   const under: BlockId[] = [];
   for (const id of new Set([...L.ids, ...F.ids])) {
     const inLive = L.shown.has(id);

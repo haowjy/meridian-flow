@@ -41,7 +41,6 @@ export function DocumentVersionMenu({
     return work ? nameOf(work) : label;
   };
   const listed: DocumentDraftHint[] = [...hints];
-  // A draft on screen that the hints have not caught up with is still a version of the document.
   if (shown && !hints.some((hint) => hint.draftId === shown.draftId))
     listed.push({
       draftId: shown.draftId,

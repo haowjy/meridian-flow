@@ -142,23 +142,6 @@ export type AssetImageLoadFailureTransition = {
   action: "refresh" | "error" | "ignore";
 };
 
-/**
- * What an `<img>` failure means. One automatic signed-URL refresh per picture
- * the writer has actually seen; the next failure shows the reason instead of
- * looping.
- *
- * Two failures are not the picture's fault and must not reach the writer:
- *
- * - **A failure while a load is in flight.** A refresh keeps the previous URL
- *   on screen so the picture does not blink, and that URL is expiring — which
- *   is why a refresh is running. Its error is news about the URL being
- *   replaced, and the load already running is the answer.
- * - **A failure long after the last one.** The budget is spent per displayed
- *   picture rather than per node view, because a node view lives as long as
- *   the chapter is open: one blip in the first minute must not leave the
- *   second hour's expiry with nothing but a placeholder. `imageDisplayed`
- *   returns the budget, and only the browser can say the picture rendered.
- */
 export function reduceAssetImageLoadFailure(
   state: AssetImageRetryState,
   loadInFlight = false,
@@ -207,9 +190,6 @@ export function useAssetImageRenderState(input: {
       state: { automaticRefreshUsed: false },
     };
   }
-  // Whether a signed-URL load is running right now. A ref rather than the
-  // rendered state: an `<img>` error arrives between renders, and what it has
-  // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
   const fileFactsRef = useRef<AssetFileFacts | null>(null);
   const undrawableRef = useRef<string | null>(null);
@@ -273,8 +253,6 @@ export function useAssetImageRenderState(input: {
     );
   }, [assetDocumentId, picture]);
 
-  // Keyed by `targetIdentity`, the target's value: the object is rebuilt
-  // every render, and a new one with the same value must not re-sign.
   useEffect(() => {
     const setState = showFor(setShown, picture);
     if (!projectId && (target.kind === "document" || target.kind === "resolving")) {
@@ -305,10 +283,6 @@ export function useAssetImageRenderState(input: {
     async function loadSignedUrl(skipCache: boolean) {
       loadInFlightRef.current = true;
       const askedIn = generationRef.current;
-      // The previous URL stays on screen: a refresh must not blink the picture
-      // out of the manuscript. It is also the URL about to expire, which is
-      // why an error arriving now belongs to the request, not to the picture.
-      // A card stays a card while its Download is renewed.
       setState((kept) =>
         kept?.kind === "file" ? kept : { kind: "loading", url: kept?.url ?? null },
       );
@@ -325,7 +299,6 @@ export function useAssetImageRenderState(input: {
           name: signed.name,
           mimeType: signed.mimeType,
           sizeBytes: signed.sizeBytes,
-          // A picture still in a Work's draft is not in the live tree the download route reads.
           downloadUrl: owner ? signed.signedUrl : documentDownloadUrl(routeAssetDocumentId),
         };
         fileFactsRef.current = file;

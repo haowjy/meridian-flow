@@ -68,7 +68,6 @@ function createColorResolver(ground: string): (css: string) => string | null {
 
   return (css) => {
     if (!context || !css) return null;
-    // Overlay tokens (fills, borders) are translucent ink: read them as painted on the page.
     context.fillStyle = ground;
     context.fillRect(0, 0, 1, 1);
     context.fillStyle = "#000";

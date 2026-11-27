@@ -1,7 +1,5 @@
 .meridian-block-handle {
   position: absolute;
-  /* The browser must not read a drag off the grip as a page scroll: this
-     gesture is the writer moving a block, start to finish. */
   touch-action: none;
   z-index: 30;
   display: inline-flex;
@@ -20,10 +18,6 @@
   pointer-events: none;
 }
 
-/* Clickable only once it is legible: `step-end` holds the hit target off for
-   the whole fade in, so a handle appearing under a resting pointer cannot take
-   a press the writer meant for the margin. Leaving needs no such care — the
-   base rule transitions opacity alone, so `closed` goes inert immediately. */
 .meridian-block-handle[data-state="open"] {
   opacity: 1;
   pointer-events: auto;

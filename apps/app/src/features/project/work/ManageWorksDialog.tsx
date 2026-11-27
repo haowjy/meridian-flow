@@ -77,13 +77,9 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
     deletion.dismissAll();
     onClose();
   };
-  // A change row opens its review in main: the dialog gets out of its way on a push or a
-  // traversal, through the goal guard. The shell's own replaces repair the address in place.
   const router = useRouter();
   const leave = useRef((_: HistoryAction) => leaveVia(close));
   leave.current = (action) => leaveVia(close, () => undoTraversal(action));
-  // Keeping the goal edit undoes a Back or Forward the writer pressed, so the page under the
-  // dialog stays the one it opened over. The undo's own event must not ask again.
   const undoing = useRef(false);
   const undoTraversal = (action: HistoryAction) => {
     const delta =
@@ -155,7 +151,6 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             <Trans>Manage Works and review their changes</Trans>
           </DialogDescription>
         </DialogHeader>
-        {/* The bleed is the room the Work list's rows reach into (-mx-2), so it never scrolls sideways. */}
         <div ref={body} className="-mx-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2">
           {view.kind === "list" ? (
             <WorkCollection
@@ -195,8 +190,6 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             submitLabel={t`Create Work`}
             onClose={() => setCreating(false)}
             onCreate={async ({ name, details }) => {
-              // Navigate first: the Work opens as soon as it is saved on this device, in its
-              // creating state until the server answers.
               const workId = await createWork.create({ name, goal: details || undefined });
               if (!workId) return;
               setView({ kind: "work", workId });
@@ -230,7 +223,6 @@ function OpenedWork({
   const creation = creations.get(workId);
   if (work && work.id !== noWork?.id)
     return (
-      // Keyed: goal edits and the changes list belong to one Work.
       <WorkDetail
         key={work.id}
         projectId={projectId}

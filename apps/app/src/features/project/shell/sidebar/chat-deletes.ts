@@ -114,7 +114,6 @@ export class ChatDeletes {
     this.update(held, "restoring");
     if (!(await held.landed)) return false;
     const { threadId, title } = held.notice;
-    // Navigate first: main is back on the chat while the server restores it.
     await held.moved;
     restoreOwnDeletedChatWords(this.ports.accountId, threadId);
     if (!held.ended) this.putBack(threadId, held.taken);
@@ -126,7 +125,6 @@ export class ChatDeletes {
       return true;
     }
     if (held.ended) return false;
-    // Still in Trash: what Undo put back lets go again.
     this.takeAway(threadId);
     held.moved = this.moveWords(threadId, title);
     this.update(held, "failed");

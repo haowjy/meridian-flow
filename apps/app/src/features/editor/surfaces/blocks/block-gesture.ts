@@ -49,8 +49,6 @@ export function useBlockMovementGesture({
   const [active, setActive] = useState(false);
   const gestureRef = useRef<Gesture | null>(null);
 
-  // Read live: the finalizer must keep one identity for the whole gesture, and
-  // the menu it opens belongs to whatever the surface is rendering now.
   const onHandleClickRef = useRef(onHandleClick);
   onHandleClickRef.current = onHandleClick;
 
@@ -125,13 +123,8 @@ export function useBlockMovementGesture({
       if (!gesture) return;
 
       if (draggedBlockPos(editor.state) === null) {
-        // A peer deleted the block under the pointer. The document has already
-        // let go of it; the gesture has to as well, or the drop line keeps
-        // hunting a seam on behalf of a block that no longer exists.
         finishGesture(false);
       } else if (gesture.lifted) {
-        // The seam is re-derived rather than mapped: the document moved under
-        // a pointer that did not, and the line belongs under the pointer.
         setSeamIndex(seamIndexAtPointer(editor.view, gesture.pointerY));
       }
     };
@@ -170,8 +163,6 @@ export function useBlockMovementGesture({
     };
   }, [editor, editable, chrome, beginGesture]);
 
-  // Nothing outlives an unmount: a surface torn down mid-drag would leave the
-  // kernel suppressing chrome for a pointer nobody is following.
   useEffect(() => () => finishGesture(false), [finishGesture]);
 
   const pressHandle = useCallback(
@@ -192,7 +183,6 @@ function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
   const seam = seamIndexAtPointer(editor.view, pointerY);
   const transaction = moveBlockToSeamTransaction(editor.state, source, seam);
   if (!transaction) return;
-  // The hold and lift messages are meta-only and end nothing; the drop is the step boundary.
   endUndoStep(editor.state);
   editor.view.dispatch(transaction);
 }

@@ -46,12 +46,6 @@ export type ChatSubmission = {
   threadId: string;
   projectId: string | null;
   createdAt: string;
-  /**
-   * The record's place in its chat's order, allocated when the record is first appended: one
-   * above both the chat's durable counter and its largest held `seq`, so a retired record's
-   * number is never reused. Drain order, refusal barriers and the switch ledger sort by it,
-   * then by `recordId`; `createdAt` is display only.
-   */
   seq: number;
   text: string;
   blocks: UserMessageBlock[];
@@ -60,10 +54,6 @@ export type ChatSubmission = {
   state?: "rejected";
   control?: { kind: "write_mode"; mode: AiWriteMode };
   answer?: ControlAnswer;
-  /**
-   * Set before a message or control's first POST. Without it, the server cannot hold the
-   * record; with it, local removal needs a server answer or the server's own withdrawal.
-   */
   posted?: true;
   draft?: ComposerDraftSnapshot;
   creation?: {
@@ -254,7 +244,6 @@ export class DeviceChatSubmissionJournal {
     return this.snapshot() ?? this.lastKnown;
   }
 
-  /** Null means unavailable, never an authoritative empty journal. */
   snapshot(): ChatSubmission[] | null {
     const accountId = this.state?.accountId;
     if (!accountId) return [];

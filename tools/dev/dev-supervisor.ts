@@ -27,7 +27,7 @@ const clientBuild: ClientBuild = process.argv.includes("--production-client")
   ? "production"
   : "development";
 const www = process.argv.includes("--www");
-// keep: the environment the stack started with, before any `.env` is loaded; a restart reuses it and reads `.env` again
+// The environment the stack started with, before any `.env` is loaded; a restart reuses it and reads `.env` again
 const launchEnv = { ...process.env };
 const ports = resolveDevPorts(repoRoot);
 const idleMinutes = Number(launchEnv.DEV_IDLE_STOP_MINUTES || 60);
@@ -81,7 +81,6 @@ function serviceEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...launchEnv };
   applyDevEnvToProcess(repoRoot, env);
   env.MERIDIAN_API_ORIGIN = loopbackOrigin(ports.server);
-  // keep: the app and the marketing site link to each other; a page opened over the tailnet needs links that work from that device
   const pageOrigin = (port: number) =>
     tailnetHost ? tailnetUrl(tailnetHost, port) : browserUrl(port);
   env.MERIDIAN_APP_ORIGIN = pageOrigin(ports.app);
@@ -127,7 +126,7 @@ async function shutdown(reason: string, code = 0): Promise<void> {
   if (stopping) return;
   stopping = true;
   log(`stopping: ${reason}`);
-  // keep: wait out a restart in flight; it sees `stopping` and starts nothing, so no service is born after the tree below is taken
+  // Wait out a restart in flight; it sees `stopping` and starts nothing, so no service is born after the tree below is taken
   await restartInFlight;
   await stopServices();
   try {
@@ -195,7 +194,7 @@ process.on("SIGUSR2", () => {
 if (process.argv.includes("--tailscale")) {
   try {
     tailnetHost = readTailnetHost();
-    // keep: the record names the tailnet host before any route exists, so a stack that dies at any later point still has its routes removed by `pnpm dev --stop`
+    // The record names the tailnet host before any route exists, so a stack that dies at any later point still has its routes removed by `pnpm dev --stop`
     publish();
     publishOnTailnet(tailnetHost, browserPorts({ ports, www }));
   } catch (error) {

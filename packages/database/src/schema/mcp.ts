@@ -82,7 +82,7 @@ export const mcpPins = pgTable(
   (table) => [index("mcp_pins_connection_created").on(table.connectionId, table.createdAt)],
 );
 
-// keep: MCP tokens are AES-256-GCM ciphertext under MCP_TOKEN_KEY and are never returned to the app
+// MCP tokens are AES-256-GCM ciphertext under MCP_TOKEN_KEY and are never returned to the app
 export const mcpConnectionTokens = pgTable(
   "mcp_connection_tokens",
   {

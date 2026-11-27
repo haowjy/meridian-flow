@@ -7,7 +7,7 @@ export function isThreadActivity(value: unknown): value is ThreadActivity {
   return Array.isArray((value as ThreadActivity).children);
 }
 
-// keep: Liveness is the live lease (status.kind === 'awake'), not durable spawnStatus; a dead process can keep spawnStatus 'running' with no lease.
+// Liveness is the live lease (status.kind === 'awake'), not durable spawnStatus; a dead process can keep spawnStatus 'running' with no lease.
 export function isActiveNode(node: ThreadActivityNode): boolean {
   return node.status.kind === "awake";
 }

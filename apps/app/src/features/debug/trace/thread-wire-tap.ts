@@ -28,7 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// keep: Allowlist every copied classification; arbitrary payload strings must never become searchable trace records, and nested data is ignored except a sequenced event's type.
+// Allowlist every copied classification; arbitrary payload strings must never become searchable trace records, and nested data is ignored except a sequenced event's type.
 function inspectThreadFrame(direction: WireDirection, data: string): ThreadFrameMetadata {
   let parsed: unknown;
   try {

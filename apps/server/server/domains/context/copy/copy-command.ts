@@ -134,7 +134,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             if (!prepared)
               throw new Error("A stored receipt vanished between its lookup and its use");
             if (!prepared.ok) return prepared;
-            // The rows name these objects only if this operation commits.
             const { putKeys } = prepared.value;
             if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
             try {
@@ -147,8 +146,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                 },
               );
             } catch (cause) {
-              // The Work lock found the destination's Work closed before anything was written. This
-              // command commits, so the objects the plan duplicated are released here.
               const returned = closedOwnerBounce(cause);
               if (!returned) throw cause;
               await deps.release.keys(putKeys);
@@ -157,7 +154,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           },
         );
       } finally {
-        // A replay, a mismatch or a throw before the receipt's callback ran leaves them unclaimed.
         if (!claimed && prepared?.ok) await deps.release.keys(prepared.value.putKeys);
       }
     } finally {
@@ -401,18 +397,12 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         folders = inserted.value.folders;
         break;
       }
-      // Under the lock nothing can take the names again, so a second plan must hold.
       if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
       planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
     return Ok({ status: "copied", entries: entries.map(toEntry), folders, ...settled });
   }
 
-  /**
-   * The destination as it stands under the lock. A folder named by id may have moved since the
-   * route found it, which only changes its address; the lock this command holds is the old Work's
-   * namespace, so one that moved to another Work or scheme is sent again (nothing is stored).
-   */
   async function resolvedDestination(
     input: ContextCopyInput,
   ): Promise<Result<CopyDestinationHandoff, ContextError>> {

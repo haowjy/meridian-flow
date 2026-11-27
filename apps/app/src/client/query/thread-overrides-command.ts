@@ -34,8 +34,6 @@ export function projectThreadOverrides(
 
 export function threadOverridesDomain(client: QueryClient): CommandDomain {
   let bound: CommandDriver | null = null;
-  // A settled change stops overriding the server's value once a snapshot read that began after
-  // it succeeds; until then the driver keeps the record, so the pick never flickers back.
   const observeSettled = (threadId: string, before: number) =>
     void bound?.observe(
       (record) =>

@@ -278,7 +278,7 @@ export function createDrizzleWorkPurger(deps: {
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
         .returning({ id: works.id, entityRevision: works.entityRevision });
       if (deleted[0]) {
-        // keep: Move a purged Work's revision to No Work so the project snapshot sum never falls
+        // Move a purged Work's revision to No Work so the project snapshot sum never falls
         await activeDb
           .update(works)
           .set({
