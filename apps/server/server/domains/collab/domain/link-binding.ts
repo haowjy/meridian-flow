@@ -231,6 +231,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   };
 }
 
+/** Identity overrides are an import-only capability, never on the model/editor binder. */
 export interface ImportLinkBinder {
   bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
   bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;
