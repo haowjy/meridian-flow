@@ -166,15 +166,5 @@ export function createDrizzleProjectRepository(
         return mapProject(row);
       });
     },
-    async touch(id: ProjectId): Promise<void> {
-      const activeDb = currentDrizzleDb(db);
-      const [project] = await activeDb.select().from(projects).where(eq(projects.id, id)).limit(1);
-      if (!project || project.deletedAt) return;
-      const now = new Date();
-      await activeDb
-        .update(projects)
-        .set({ updatedAt: now, lastActivityAt: now })
-        .where(eq(projects.id, id));
-    },
   };
 }

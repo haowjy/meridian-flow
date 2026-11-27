@@ -5,9 +5,10 @@ type ReadFilters = Pick<QueryFilters, "queryKey" | "exact">;
 
 /**
  * Settles once every query `filters` match that is on screen has been read from the server since
- * now, so a read that failed keeps waiting until one succeeds. A command observed only then keeps
- * its projection over the list until the list has it. `loaded`: a read already held counts.
- * `cached`: every cached query a refetch would read counts, not only those on screen.
+ * now, so a read that failed keeps waiting until one succeeds or the query leaves the screen. A
+ * command observed only then keeps its projection over the list until the list has it. `loaded`: a
+ * read already held counts. `cached`: every cached query a refetch would read counts, not only those
+ * on screen, and a failed one waits until a read succeeds or it leaves the cache.
  * Call it before starting the reads, so their answers are seen.
  */
 export function whenRead(

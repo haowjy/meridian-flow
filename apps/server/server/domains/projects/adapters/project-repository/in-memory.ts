@@ -105,13 +105,5 @@ export function createInMemoryProjectRepository(options?: {
       row.updatedAt = now();
       return { ...row };
     },
-
-    async touch(id: ProjectId): Promise<void> {
-      const row = rows.get(id);
-      if (!row || row.deletedAt) return;
-      const timestamp = now();
-      row.updatedAt = timestamp;
-      row.lastActivityAt = timestamp;
-    },
   };
 }

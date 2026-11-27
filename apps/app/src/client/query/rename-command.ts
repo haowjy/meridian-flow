@@ -6,7 +6,8 @@ export async function renameCommand(
   input: SubmitInput & { body: { title: string } & Record<string, unknown> },
   onRenamed?: (title: string) => void,
 ): Promise<void> {
-  if (!driver || !input.body.title) return;
+  if (!input.body.title) return;
+  if (!driver) throw new Error("Commands are not available yet");
   const record = await submitCommand(driver, input);
   if (!record) throw new DeviceRefusedError();
   const settled = await driver.whenSettled(record.id);

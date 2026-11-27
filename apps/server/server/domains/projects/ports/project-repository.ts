@@ -21,5 +21,4 @@ export interface ProjectRepository {
   rename(id: ProjectId, title: string): Promise<Project>;
   softDelete(id: ProjectId): Promise<Project>;
   restore(id: ProjectId): Promise<Project>;
-  touch(id: ProjectId): Promise<void>;
 }

@@ -133,22 +133,13 @@ async function main(): Promise<void> {
       throw new Error(`listThreads failed: ${JSON.stringify(threads)}`);
     }
 
-    console.log("6. touch");
-    const beforeTouch = updated.updatedAt;
-    await new Promise((resolveTouch) => setTimeout(resolveTouch, 10));
-    await repos.projects.touch(PROJECT_ID);
-    const afterTouch = await repos.projects.findById(PROJECT_ID);
-    if (!afterTouch || afterTouch.updatedAt <= beforeTouch) {
-      throw new Error("touch did not bump updatedAt");
-    }
-
-    console.log("7. owner isolation");
+    console.log("6. owner isolation");
     const otherList = await repos.projects.listByUser(OTHER_USER_ID);
     if (otherList.some((project) => project.id === PROJECT_ID)) {
       throw new Error("other user should not see smoke project");
     }
 
-    console.log("8. soft delete hides child threads");
+    console.log("7. soft delete hides child threads");
     await repos.projects.softDelete(PROJECT_ID);
     if (await repos.threads.findById(thread.id)) {
       throw new Error("thread still visible after parent project soft-delete");
