@@ -36,7 +36,10 @@ export function useRenameProject(project: Project): (title: string) => Promise<v
   const mutation = useMutation({
     mutationKey: projectQueryKeys.rename(projectId),
     mutationFn: ({ title }: RenameVariables) => updateProject(projectId, { title }),
-    onMutate: ({ title }) => showTitle(queryClient, fallback.current, title),
+    onMutate: ({ title }) =>
+      writeOverReads(queryClient, [projectQueryKeys.list, projectQueryKeys.detail(projectId)], () =>
+        showTitle(queryClient, fallback.current, title),
+      ),
     onError: (_error, { revision }) => {
       record.current.pending -= 1;
       if (revision === record.current.revision)
@@ -88,12 +91,10 @@ function readTitle(client: QueryClient, projectId: string): string | undefined {
 
 function showTitle(client: QueryClient, project: Project, title: string): void {
   const retitle = (row: Project): Project => ({ ...row, title });
-  writeOverReads(client, [projectQueryKeys.list, projectQueryKeys.detail(project.id)], () => {
-    client.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
-      (current ?? [project]).map((row) => (row.id === project.id ? retitle(row) : row)),
-    );
-    client.setQueryData<Project>(projectQueryKeys.detail(project.id), (detail) =>
-      detail ? retitle(detail) : detail,
-    );
-  });
+  client.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
+    (current ?? [project]).map((row) => (row.id === project.id ? retitle(row) : row)),
+  );
+  client.setQueryData<Project>(projectQueryKeys.detail(project.id), (detail) =>
+    detail ? retitle(detail) : detail,
+  );
 }

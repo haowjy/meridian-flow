@@ -1,10 +1,10 @@
 import { Extension } from "@tiptap/core";
 import { type DocumentHistory, redoEditorHistory, undoEditorHistory } from "../editor-history";
-import { KEYMAP_PRIORITY } from "../keymap-priority";
+import { EXTENSION_PRIORITY } from "../extension-priority";
 
 export const UndoRedoKeymapExtension = Extension.create({
   name: "meridianUndoRedoKeymap",
-  priority: KEYMAP_PRIORITY.undoRedo,
+  priority: EXTENSION_PRIORITY.undoRedo,
 
   addOptions() {
     return { history: null as DocumentHistory | null };

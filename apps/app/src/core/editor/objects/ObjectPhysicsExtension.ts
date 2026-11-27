@@ -11,7 +11,7 @@ import { isBindingReread } from "../anchors";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
-import { KEYMAP_PRIORITY } from "../keymap-priority";
+import { EXTENSION_PRIORITY } from "../extension-priority";
 import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
@@ -146,7 +146,7 @@ function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
 
 export const ObjectPhysicsExtension = Extension.create({
   name: OBJECT_PHYSICS_NAME,
-  priority: KEYMAP_PRIORITY.objectPhysics,
+  priority: EXTENSION_PRIORITY.objectPhysics,
 
   addStorage(): ObjectPhysicsStorage {
     return { engagements: new Map() };

@@ -128,7 +128,7 @@ function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
  * new configuration knob here.
  *
  * Order is precedence; the lanes that must outrank the rest, and undo above
- * them all, take their priority from `KEYMAP_PRIORITY`.
+ * them all, take their priority from `EXTENSION_PRIORITY`.
  */
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
