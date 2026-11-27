@@ -94,7 +94,10 @@ synchronously, then drains transports and leases.
   are left alone: their blocks already have ids. A block's id is its text doc's key, so a block
   is found by id (`findBlock` in `loro-points.ts`), never by a stored position.
 - Caret across a remote write: the binding carries the selection as Loro cursors. A
-  `NodeSelection` that still selects a node after mapping stays one. When the block a cursor was
+  `NodeSelection` that still selects a node after mapping stays one. A selection with neither end
+  in a textblock (a `CellSelection`, a gap cursor, select-all) has no cursors and keeps
+  ProseMirror's own mapping through the replace, so a peer's edit leaves a cell selection whole.
+  When the block a cursor was
   in is gone (a peer deleted it while the writer composed in it), the caret goes to the nearest
   position before where the block was; typing composed into it stays in its text doc, hidden
   with the block.
