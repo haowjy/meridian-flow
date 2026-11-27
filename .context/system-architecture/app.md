@@ -101,13 +101,13 @@ A pill shows transport health; inspectors open by alt-clicking the transcript or
 
 Talking to the server: HTTP clients, query hooks, the thread store, providers.
 
-HTTP clients, React Query hooks, the thread store and the transport provider. `account` is what one signed-in account holds: its lifetime (document sessions, tree lists, removal, draft commands, sign-out) and the one provider tree `/_authenticated` mounts. Also chat submissions and the project creation record, which let the app show a result before the server answers, recents, `release` (what the tab knows about the app being deployed under it), and `project-shell`: main's open tabs, the last item of each kind on screen (the pane slots) and each document's view, per browser tab.
+HTTP clients, React Query hooks, the thread store and the transport provider. `account` is what one signed-in account holds: its lifetime (document sessions, tree lists, removal, draft commands, sign-out) and the one provider tree `/_authenticated` mounts. Also chat submissions and the project creation record, which let the app show a result before the server answers, recents, `release` (what the tab knows about the app being deployed under it) and `draft-commands`, the account's draft and press command owner. `project-shell` holds main's open tabs, the last item of each kind on screen (the pane slots) and each document's view, per browser tab, and the account's presented documents, the removal coordinator that closes a removed document's tabs, and the route request types they name.
 
 - Kind: module
 - Paths: `apps/app/src/client`
 - Docs: [app CONTEXT](../../apps/app/.context/CONTEXT.md), [chat-submissions CONTEXT](../../apps/app/src/client/chat-submissions/.context/CONTEXT.md), [recents CONTEXT](../../apps/app/src/client/recents/.context/CONTEXT.md)
 - Machines: [chat submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md), [release](../../apps/app/src/client/release/.context/state-machines.md)
-- Drift: No written dependency rule covers the app's layers. `client` imports `features` in two places (chat submissions' `whenDerived` from `features/chat`, the tree actions' `closed-owners` from `features/project`), and `core` imports `client` and `components`.
+- Drift: No written dependency rule covers the app's layers. `client` imports `features` in one place (chat submissions' `whenDerived` from `features/chat`), and `core` imports `client` and `components`.
 
 ## core
 

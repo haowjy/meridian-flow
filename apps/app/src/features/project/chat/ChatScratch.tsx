@@ -3,6 +3,7 @@ import type { ContextOwner } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen } from "lucide-react";
 import { useMemo } from "react";
 import { serverDocumentFromFile } from "@/client/project-shell/open-document-from-file";
+import { useWorkState } from "@/client/query/work-state";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -20,7 +21,6 @@ import { treePlace, useTreeNoticeWords } from "../context/use-tree-notice-words"
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { useShellTreeVersion } from "../tree-version";
 import { useOptionalMainItem } from "../views";
-import { useWorkState } from "../work/work-state";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
 function useOpenDocumentId(): string | undefined {

@@ -118,7 +118,7 @@ export function AccountFeatureComposition({
 }: {
   accountId: string;
   externalId: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const connectivityHints = useConnectivityHints();
   const desired = useRef({ accountId, externalId });
@@ -166,7 +166,7 @@ function AccountFeatureProviders({
   children,
 }: {
   lifetime: AccountFeatureLifetime;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   useInsertionEffect(() => {
     lifetime.resumeFeatureLease();

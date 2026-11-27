@@ -20,14 +20,12 @@ import {
   useOptionalPresentedDocuments,
 } from "@/client/account/account-composition";
 import type { DraftPin } from "@/client/project-shell/document-views";
-import type {
-  NavigationSettlement,
-  PreparedWorkspaceNavigation,
-} from "@/client/project-shell/project-route";
 import {
   type ContextRouteRequest,
   contextRouteRequest,
   type NavigationOptions,
+  type NavigationSettlement,
+  type PreparedWorkspaceNavigation,
   type ProjectRouteCommands,
 } from "@/client/project-shell/project-route";
 import { useDraftStanding } from "@/client/query/useDraftStanding";

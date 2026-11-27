@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { useAccountId } from "@/client/account/account-context";
 import { TreeActions } from "@/core/project-tree/tree-actions";
 import { type TreeVersion, useTreeVersion } from "@/core/project-tree/tree-version";
-import { useClosedOwners } from "@/features/project/context/closed-owners";
+import { useClosedOwners } from "./closed-owners";
 import { useTreeList } from "./useProjectTree";
 
 export function useTreeActions(

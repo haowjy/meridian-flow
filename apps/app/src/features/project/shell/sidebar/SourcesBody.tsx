@@ -14,6 +14,7 @@ import {
 } from "react";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
+import { useWorkState } from "@/client/query/work-state";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -51,7 +52,6 @@ import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
 import { useOptionalMainItem, useShownDraft } from "../../views";
-import { useWorkState } from "../../work/work-state";
 import { AgentsSource } from "./AgentsSource";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
