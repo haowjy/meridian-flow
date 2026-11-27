@@ -1,16 +1,3 @@
-/**
- * The crash test of the model's edits to a live document, through the real chat loop: a composed
- * server in a child process runs a chat turn on the mock model, the parent kills it (SIGKILL) at
- * a named step or holds it there, and a second process takes the chat over and recovers. Asserts
- * on stored rows only: the document, the edit receipts, the result blocks, the command rows.
- *
- *   pnpm exec tsx tools/qa/probes/model-edit-kills/run.mts
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a dead run's turn ends in `error`, and recovery answers each open `write` call from its key:
- *   a committed edit's own result, or "did not run"
- * - a tool timeout settles the call through its key, so a late claim finds `never`
- */
 import assert from "node:assert/strict";
 import {
   type Child,

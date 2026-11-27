@@ -1,8 +1,3 @@
-/** A shared Vitest module graph must not load vi.mock. One missed file can call a real provider.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Mock-bearing tests use isolated Vitest module graphs
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";

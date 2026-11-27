@@ -1,10 +1,3 @@
-/**
- * Tests the Meridian Flow media resolver.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Access is checked on every resolve, so a file the thread can't read is never sent
- * - A link is asked of the object store; bytes are read only when the store has none
- */
 import { describe, expect, it } from "vitest";
 import type {
   ProjectContextAvailabilityPort,

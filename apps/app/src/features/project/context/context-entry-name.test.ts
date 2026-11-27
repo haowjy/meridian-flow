@@ -1,9 +1,3 @@
-/**
- * Context entry name behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - rename-field selection, and no document name refused (`storedDocumentName`)
- */
 import { describe, expect, it } from "vitest";
 
 import {

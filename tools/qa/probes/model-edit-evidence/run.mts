@@ -1,16 +1,3 @@
-/**
- * The crash test of what the model was shown: an edit's frontier is recorded in the edit's own
- * transaction, a read's evidence is handed over after its result block is stored. A process is
- * killed at the steps between and a second one recovers; the frontier rows must agree with the
- * blocks the model was shown. Stored rows only.
- *
- *   pnpm exec tsx tools/qa/probes/model-edit-evidence/run.mts
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - an edit's evidence commits with the command, under the result block's id; a refused edit
- *   hands over what its answer showed after its block is stored, like a read
- * - a read's evidence is recorded after its block is stored, so a kill between them loses it
- */
 import assert from "node:assert/strict";
 import {
   frontierSources,

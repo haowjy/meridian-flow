@@ -1,10 +1,3 @@
-/**
- * Tests message document behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Message reference occurrence allocation
- */
-
 import { resolveDocumentHref } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { serializeMessageDoc } from "./serialize";

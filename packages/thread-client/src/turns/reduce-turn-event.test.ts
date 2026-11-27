@@ -1,9 +1,3 @@
-/**
- * The reducer against `syncedTurnStore`: tool results and the injected clock.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Injected-clock event reduction
- */
 import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
 import { answeredControlIds, readWriteModeSwitch } from "@meridian/contracts/threads";

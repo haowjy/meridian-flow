@@ -1,8 +1,3 @@
-/** Conformance tests for the UploadIntake aggregate independent of adapters.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Server-side upload content taxonomy
- */
 import { describe, expect, it } from "vitest";
 import { classifyUpload } from "../../file-intake/index.js";
 

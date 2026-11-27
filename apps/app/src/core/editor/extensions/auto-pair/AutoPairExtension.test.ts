@@ -1,21 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Representative auto-pair behavior across gesture and editor-context boundaries.
- *
- * Every case here types real characters through the same `handleTextInput` path
- * a browser drives and presses real keys through the keymap, because the whole
- * feature is about what a keystroke becomes. The cases that matter most are the
- * refusals: a pair that fires where the writer did not want it, or a closing
- * keystroke that vanishes, costs far more than the convenience is worth.
- *
- * Explicit representative rows cover each context and gesture without deriving
- * the test cases from the production registry. Handwritten cases below cover
- * boundary rules around the caret, nesting, and gestures that degrade to plain
- * insertion.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - paired-character editing semantics
- */
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";

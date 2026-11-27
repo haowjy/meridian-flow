@@ -1,15 +1,3 @@
-/**
- * The crash test of takeover: a second process settles a chat whose run another process still
- * holds or died in, while the old process may come back and try to store. Real processes, the
- * real recovery lanes, stored rows only. The old process's session claim is dropped from the
- * database side (a lost connection), the one way a live process loses its chat.
- *
- *   pnpm exec tsx tools/qa/probes/model-edit-takeover/run.mts
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a run's stores check its lease row under the thread lock; the takeover ends the row
- * - recovery runs inside the takeover's thread-lock hold and waits there on a held key
- */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {

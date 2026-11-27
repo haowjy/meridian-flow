@@ -1,10 +1,3 @@
-/**
- * PostgreSQL terminal A: turn, report, journal, and publication share one commit.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - mixed message and control batch splitting under one execution lease and report (kb/wiki/agents/conversations.md)
- */
-
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";

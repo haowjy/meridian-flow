@@ -1,8 +1,3 @@
-/** Stored link spelling and resolution must name the same document.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Exact-before-extension document lookup (kb/wiki/documents/links.md#stored-identity-and-spelling)
- */
 import { expect, it } from "vitest";
 import {
   documentPathKey,

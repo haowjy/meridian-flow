@@ -1,10 +1,3 @@
-/**
- * Postgres regression for auth provisioning: one WorkOS principal maps to one local account, while email collisions across principals fail closed.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - email-key advisory serialization for account provisioning
- */
-
 import type { UserId } from "@meridian/contracts/runtime";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

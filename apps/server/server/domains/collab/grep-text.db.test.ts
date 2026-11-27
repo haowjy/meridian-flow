@@ -1,12 +1,3 @@
-/**
- * The stored block text and the room copy's per-block text agree byte for byte.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - grep skips reading a document whose stored text is usable, which holds only while the two
- *   paths produce the same lines, including empty paragraphs (`^$` counts) and a code file's
- *   text with no fence.
- * - a save rewrites only the blocks it changed, and the order array only when the order moved.
- */
 import { createDb } from "@meridian/database";
 import { documentBlockRooms, documentBlocks } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";

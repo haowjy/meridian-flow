@@ -1,9 +1,3 @@
-/**
- * Tests the window a signed media link is pinned to.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - The window is the cache lifetime, aligned to the clock, so every request in it gets one link
- */
 import { describe, expect, it } from "vitest";
 import { S3ObjectStoreAdapter } from "../../storage/index.js";
 import { linkExpirySeconds, linkWindowAt } from "./media-link-window.js";

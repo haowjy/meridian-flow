@@ -1,9 +1,3 @@
-/**
- * Guards the one risk this driver exists for: a command sent twice with different effects,
- * dropped, or reordered across a reload, two tabs, a frozen page and a lost answer. Several
- * tabs share one journal, one lock and one simulated server that applies a command id once.
- * Pins implementation decisions: backoff constants, the 15 s deadline, the 10 s "not sent" line.
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandDriver, NOT_SENT_AFTER_MS } from "./driver.js";
 import { createMemoryJournal } from "./memory-journal.js";

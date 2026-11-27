@@ -1,10 +1,3 @@
-/**
- * Thread-bound creates and writer overwrites use the selected SQL tree view.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - immediate existing-document settlement without self-deadlock and URI failure mapping
- */
-
 import { randomUUID } from "node:crypto";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";

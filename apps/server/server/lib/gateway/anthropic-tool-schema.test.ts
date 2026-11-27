@@ -1,9 +1,3 @@
-/**
- * Tests the Anthropic tool-schema projection against the server's real Work and Write schemas.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Anthropic advertises one object envelope for a root `oneOf`/`anyOf`
- */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WriteToolInputSchema } from "@meridian/agent-edit/integration";

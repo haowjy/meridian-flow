@@ -1,10 +1,3 @@
-/**
- * Postgres coverage for bootstrap readiness fast and repair paths.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - readiness is "the account has a live project", read without the lock or a reseed
- */
-
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";

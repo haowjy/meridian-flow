@@ -1,8 +1,3 @@
-/** Append-only history and bump-class gate for the collaboration schema surface.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Append-only schema history and structural version bumps
- */
 import { execFileSync } from "node:child_process";
 import type { Attrs, MarkSpec, NodeSpec } from "prosemirror-model";
 import { describe, expect, it } from "vitest";

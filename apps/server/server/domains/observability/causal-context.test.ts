@@ -1,9 +1,3 @@
-/** Consolidated test contracts; each block retains its original fixture scope.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Bounded stdout queue and drop policy (kb/wiki/architecture/diagnostics.md#bounded-and-loss-aware)
- */
-
 import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import { LocalEventSink } from "./adapters/local/local-event-sink.js";
 import { CorrelatingEventSink } from "./causal-context.js";

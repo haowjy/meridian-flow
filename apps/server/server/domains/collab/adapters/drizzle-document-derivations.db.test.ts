@@ -1,12 +1,3 @@
-/**
- * PostgreSQL races and recovery contracts for durable document derivation.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a cut is certified against `documents.content_seq`, which every save of the Live room bumps,
- *   and against the document's location version; a stale cut writes nothing
- * - lazy-cut retirement and durable recovery sweeps
- */
-
 import { createHash, randomUUID } from "node:crypto";
 import {
   createAgentEditCodecFactory,

@@ -1,9 +1,3 @@
-/**
- * Composer document behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - composer draft selection mapping
- */
 import { describe, expect, it } from "vitest";
 
 import {

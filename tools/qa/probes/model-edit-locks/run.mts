@@ -1,14 +1,3 @@
-/**
- * The lock order of document commands, through the real chat loop and a chat card's Undo: two
- * commands, or a command and another transaction, racing for the same Work and document. The
- * parent holds a lock from its own connection to line the racers up in the order that used to
- * hang, lose text or store a deadlock as an answer. Asserts on stored rows only.
- *
- *   pnpm exec tsx tools/qa/probes/model-edit-locks/run.mts
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a card Undo reverses the turn's Work receipts after the documents' command commits
- */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {

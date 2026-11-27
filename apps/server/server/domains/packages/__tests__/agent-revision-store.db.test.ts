@@ -1,10 +1,3 @@
-/**
- * Postgres contracts for retained Agent identity, transactional binding and a package's Saves.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Agent-less binding overlays
- * - A package's saved version is its newest Save row; Undo appends the row before it
- */
 import { createDb } from "@meridian/database";
 import {
   assertThrowawayDatabaseForRunDbTests,

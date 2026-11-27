@@ -1,8 +1,3 @@
-/** Guards the view model's seams: row identity versus render key, stand-in placement, queued writer rows, and which turns draw as items.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Transcript row identity, failure placement, and interning
- */
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { viewAssistantTurn } from "./assistant-view";
