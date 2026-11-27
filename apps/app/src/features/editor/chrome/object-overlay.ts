@@ -24,7 +24,7 @@
  */
 
 import type { Editor } from "@tiptap/core";
-import type { CSSProperties } from "react";
+import { type CSSProperties, useEffect, useReducer } from "react";
 
 import { manuscriptOverlay } from "./manuscript-overlay";
 import { useAnchorRect } from "./useAnchorRect";
@@ -47,12 +47,13 @@ export function useObjectOverlayCorner(
   const measured = corner && "over" in corner ? corner.over : null;
   const rect = useAnchorRect(editor, measured);
   const overlay = manuscriptOverlay(editor);
+  const inside = useRenderedNodeView(corner && "inside" in corner ? corner.inside : null);
 
   if (!corner || typeof document === "undefined") return null;
 
   if ("inside" in corner) {
-    if (!corner.inside.isConnected) return null;
-    return { container: corner.inside, placement: "inside", style: undefined };
+    if (!inside) return null;
+    return { container: inside, placement: "inside", style: undefined };
   }
 
   if (!rect || !overlay) return null;
@@ -61,4 +62,31 @@ export function useObjectOverlayCorner(
     placement: "over",
     style: { top: rect.top + OVERLAY_INSET_PX, left: rect.right - OVERLAY_INSET_PX },
   };
+}
+
+/**
+ * The node view's element once TipTap has rendered its `NodeViewWrapper` into it. TipTap's node
+ * view throws from every DOM check ProseMirror makes (a mutation, a destroy) while the element's
+ * first child is not the wrapper, and a throw there leaves the view without the node on screen. A
+ * node view made by a move, a paste or a peer's write renders its wrapper later than our chrome
+ * would, so the chrome waits for it and is appended after it.
+ */
+function useRenderedNodeView(element: HTMLElement | null): HTMLElement | null {
+  const [, rerender] = useReducer((count: number) => count + 1, 0);
+  const rendered = element?.isConnected === true && hasWrapper(element);
+
+  useEffect(() => {
+    if (!element || rendered) return;
+    const observer = new MutationObserver(() => {
+      if (hasWrapper(element)) rerender();
+    });
+    observer.observe(element, { childList: true });
+    return () => observer.disconnect();
+  }, [element, rendered]);
+
+  return rendered ? element : null;
+}
+
+function hasWrapper(element: HTMLElement): boolean {
+  return element.firstElementChild?.hasAttribute("data-node-view-wrapper") === true;
 }
