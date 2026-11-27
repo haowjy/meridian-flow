@@ -18,8 +18,8 @@ Agent's model, and `turns.model` records what ran; a client tells "fell back" fr
 comparing the override with the newest turn's model, or with `GET /api/models` (`available`) for the
 turn about to run. The effort override always replaces the Agent's effort; the server never drops it. The
 gateway's `resolveReasoning` clamps whichever runs to the nearest level the resolved model accepts,
-as it does for the Agent's own level. Every reader of the chat's model goes through `threadModel`
-(turn-context-assembly): the binding after `followRemovedModel`, then the override, then the
+as it does for the Agent's own level. Every reader of the chat's model goes through `threadModelId`
+(turn-context-assembly, or `threadModel` for its `ModelInfo`): the binding after `followRemovedModel`, then the override, then the
 default. The summarizer takes it from the request it was handed (`requestModel`), which the
 turn built by the same rule. There is one vocabulary, Mars's ladder (`effortLevels()` in
 `@meridian-flow/mars-schema`: none, minimal, low, medium, high, xhigh, max), and the gateway is built with it

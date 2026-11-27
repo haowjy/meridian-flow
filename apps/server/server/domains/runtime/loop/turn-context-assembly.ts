@@ -215,17 +215,23 @@ export function requestModel(
   return gateway.listModels().find((model) => model.id === modelId);
 }
 
-export async function threadModel(
+export async function threadModelId(
   input: Pick<
     AssembleNextTurnContextInput,
     "thread" | "agentRevisions" | "agentCatalog" | "gateway"
   >,
-): Promise<ModelInfo | undefined> {
+): Promise<string | undefined> {
   const binding = await followedThreadBinding(input);
-  return requestModel(
-    input.gateway,
-    turnGatewayParams(input.gateway, input.thread, { model: binding.configuration.model }),
+  return (
+    turnGatewayParams(input.gateway, input.thread, { model: binding.configuration.model }).model ??
+    input.gateway.getDefaultModel()
   );
+}
+
+export async function threadModel(
+  input: Parameters<typeof threadModelId>[0],
+): Promise<ModelInfo | undefined> {
+  return requestModel(input.gateway, { model: await threadModelId(input) });
 }
 
 export function lazyThreadModel(

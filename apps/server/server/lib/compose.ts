@@ -211,7 +211,7 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
-import { threadModel } from "../domains/runtime/loop/turn-context-assembly.js";
+import { requestModel, threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import { createModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
@@ -969,16 +969,17 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     registry: toolRegistry,
     chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
-      const model = await threadModel({
+      const modelId = await threadModelId({
         thread: caller,
         agentRevisions: ports.agentRevisions,
         agentCatalog: ports.agentCatalog,
         gateway: ports.gateway,
       });
+      const model = requestModel(ports.gateway, { model: modelId });
       if (!model)
         return {
           ok: false,
-          error: meridianErrorFromSystem("model_unavailable", "Model not found"),
+          error: meridianErrorFromSystem("model_unavailable", `Model not found: ${modelId}`),
         };
       return model.tokenizer;
     },
