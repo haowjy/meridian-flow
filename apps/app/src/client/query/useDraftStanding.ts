@@ -1,4 +1,4 @@
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { listWorkDrafts } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "./project-query-keys";
@@ -10,7 +10,6 @@ export function useDraftStanding(
   projectId: string,
   draftId: string | null,
 ): "exists" | "gone" | null {
-  const client = useQueryClient();
   const asked = useMemo(() => (draftId ? Date.now() : 0), [draftId]);
   const { works, deleted, creations } = useWorks(projectId, { enabled: !!draftId });
   const { list: worksList } = useWorksSnapshot(projectId, !!draftId);
