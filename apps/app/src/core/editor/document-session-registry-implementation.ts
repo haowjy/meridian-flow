@@ -138,15 +138,14 @@ export class DocumentSessionRegistry {
     }
   }
 
+  async deliverStoredCopies(): Promise<void> {
+    const unsent = await this.storedUnsent();
+    for (const room of withLiveRooms(unsent)) this.openToDeliver(room);
+  }
+
   private async openStoredUnsent(deadline: number): Promise<DocumentRoom[] | null> {
-    const unsent: DocumentRoom[] = [];
-    // One at a time: holding every copy's bytes at once costs their sum.
-    for (const { name, room } of await this.copies.currentCopies())
-      if (!this.openSession(room) && (await this.copies.holds(name, storedOpsBeyondMark)))
-        unsent.push(room);
-    const rooms = unsent.flatMap((room): DocumentRoom[] =>
-      room.kind === "fork" ? [{ kind: "live", documentId: room.documentId }, room] : [room],
-    );
+    const unsent = await this.storedUnsent();
+    const rooms = withLiveRooms(unsent);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const drained = await Promise.race([
       Promise.all(rooms.map((room) => this.teardownOwner.drain(sessionRoomKey(room)))).then(
@@ -166,7 +165,17 @@ export class DocumentSessionRegistry {
     return unsent;
   }
 
+  private async storedUnsent(): Promise<DocumentRoom[]> {
+    const unsent: DocumentRoom[] = [];
+    // One at a time: holding every copy's bytes at once costs their sum.
+    for (const { name, room } of await this.copies.currentCopies())
+      if (!this.openSession(room) && (await this.copies.holds(name, storedOpsBeyondMark)))
+        unsent.push(room);
+    return unsent;
+  }
+
   private openToDeliver(room: DocumentRoom): void {
+    if (this.accountClosing.aborted || !this.signedIn()) return;
     if (this.openSession(room) || this.teardownOwner.retiring(sessionRoomKey(room))) return;
     if (room.kind === "fork" && !this.openSession({ kind: "live", documentId: room.documentId }))
       return;
@@ -733,6 +742,12 @@ export class DocumentSessionRegistry {
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
   }
+}
+
+function withLiveRooms(rooms: readonly DocumentRoom[]): DocumentRoom[] {
+  return rooms.flatMap((room): DocumentRoom[] =>
+    room.kind === "fork" ? [{ kind: "live", documentId: room.documentId }, room] : [room],
+  );
 }
 
 function roomsOf(document: DocumentEntry): Room[] {
