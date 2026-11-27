@@ -162,11 +162,10 @@ export class NodeIdRefusedError extends Error {
 }
 
 /**
- * Claims the node ids the records create, in the admitting transaction, and returns the ids it
- * refused: the claim table's key is the claim, so two lists that admit one id at once cannot both
- * hold it. An id that is not a uuid, or that a document row or a list already has, is refused too.
- * A document's Live room does not count: an import seeds each text under the id its create will
- * have, before the create.
+ * Claims the node ids the records create, in the admitting transaction: the claim table's key is
+ * the claim, so two lists that admit one id at once cannot both hold it. An id a document row or a
+ * list already has is taken too. A document's Live room does not count: an import seeds each
+ * text under the id its create will have, before the create.
  */
 export async function claimNodeIds(
   tx: DrizzleDb,
