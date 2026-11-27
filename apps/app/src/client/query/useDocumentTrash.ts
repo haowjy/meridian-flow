@@ -1,8 +1,8 @@
 import type { ProjectContextTreeScheme, TrashEntryFacts } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { foldersAbove } from "@/core/tree-list/standing";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import { getTrash, getTrashedDocument } from "../api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";

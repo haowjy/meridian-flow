@@ -1,22 +1,22 @@
 import { t } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
 import { type RequestAccount, sendRequestsAs } from "@/client/api/http-client";
+import { DraftCommandOwner } from "@/client/draft-commands/draft-command-owner";
+import { createLinkSettlements } from "@/client/link-settlements";
+import { ContextRemovalCoordinator } from "@/client/project-shell/context-removal-coordinator";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
+import { PresentedDocuments } from "@/client/project-shell/presented-documents";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
 import { countSignOut, signedInSince, watchSignOuts } from "@/core/account-sign-outs";
 import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
 import { clearAccountCopies, endOtherAccounts } from "@/core/editor/local-document-copies";
+import { ProjectDocumentLiveOpener } from "@/core/editor/project-document-live-opener";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
+import { ProjectStandings } from "@/core/tree-list/project-standings";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
-import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
-import { createLinkSettlements } from "@/features/links/link-settlements";
-import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { ProjectDocumentLiveOpener } from "./open-project-document";
-import { PresentedDocuments } from "./presented-documents";
-import { ProjectStandings } from "./project-standings";
 
 export class SignOutIncomplete extends Error {
   constructor(readonly left: "unsent" | "copies") {

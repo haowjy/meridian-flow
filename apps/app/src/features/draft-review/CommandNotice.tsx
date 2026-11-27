@@ -10,13 +10,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useDraftCommandOwner } from "@/client/account/account-composition";
+import type { DraftNotice } from "@/client/draft-commands/draft-notices";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { type ReviewFileTarget, reviewFileTargetName } from "@/client/query/work-draft-files";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
 import { documentDisplayName } from "@/features/chat/document-display-name";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import type { DraftNotice } from "./draft-notices";
 
 type CommandQuestion = {
   kind: "apply-all";

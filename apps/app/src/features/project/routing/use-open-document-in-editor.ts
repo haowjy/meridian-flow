@@ -1,12 +1,12 @@
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
+import type { NavigationSettlement } from "@/client/project-shell/project-route";
+import { contextRouteRequest } from "@/client/project-shell/project-route";
 import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import { useOptionalChatOnScreen } from "../side/SideView";
 import { useShownDraft } from "../views";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
-import type { NavigationSettlement } from "./project-navigation";
-import { contextRouteRequest } from "./project-route";
 
 type EditorDocument =
   | ({ scheme: ProjectContextTreeScheme; path: string } & ContextOwner)

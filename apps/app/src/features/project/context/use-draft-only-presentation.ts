@@ -1,7 +1,7 @@
+import { useAccountId } from "@/client/account/account-context";
 import { useDocumentView } from "@/client/project-shell/document-views";
 import type { OpenDocument } from "@/client/stores";
 import { useOwnerDraftRows } from "../views";
-import { useAccountId } from "./account-feature-context";
 
 export type DocumentLiveness = "live" | "draft-only" | "pending";
 

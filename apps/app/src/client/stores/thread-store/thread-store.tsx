@@ -38,13 +38,13 @@ import {
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import { useOptionalAccountEpochSignal } from "@/client/account/account-context";
 import { announceError } from "@/client/announcements";
 import {
   getChatSubmissionAccountId,
   isThreadAwaitingCreation,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
-import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type { ThreadStoreActions, ThreadStoreState } from "./types";

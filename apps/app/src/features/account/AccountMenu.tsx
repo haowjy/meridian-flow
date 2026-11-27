@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import { useState } from "react";
-
+import { useOptionalSignOutCleanup } from "@/client/account/account-context";
+import { SIGN_OUT_FAILURE, SignOutIncomplete } from "@/client/account/account-lifetime";
 import { notifyFailure } from "@/components/app/failure-toast";
 import {
   DropdownMenu,
@@ -14,11 +15,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
-import { useOptionalSignOutCleanup } from "@/features/project/context/account-feature-context";
-import {
-  SIGN_OUT_FAILURE,
-  SignOutIncomplete,
-} from "@/features/project/context/account-feature-lifetime";
 
 export function AccountMenu() {
   const { user, loading } = useAuth();

@@ -1,8 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
-
+import { useOptionalAccountEpochSignal } from "@/client/account/account-context";
 import { renameThread } from "@/client/api/threads-api";
-import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 import {
   abandonThreadRename,

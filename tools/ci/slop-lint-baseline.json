@@ -73,17 +73,17 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/account/useAccountSettings.ts",
+        "path": "apps/app/src/client/account/useAccountSettings.ts",
         "line": "void getAccountSettings({ signal: capturedEpoch })",
         "count": 1
       },
       {
-        "path": "apps/app/src/features/account/useAccountSettings.ts",
+        "path": "apps/app/src/client/account/useAccountSettings.ts",
         "line": "void getAccountSettings({ signal: write.epoch })",
         "count": 1
       },
       {
-        "path": "apps/app/src/features/account/useAccountSettings.ts",
+        "path": "apps/app/src/client/account/useAccountSettings.ts",
         "line": "void router.invalidate().catch(() => undefined);",
         "count": 1
       },

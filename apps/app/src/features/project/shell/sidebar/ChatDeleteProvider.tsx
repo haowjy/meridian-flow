@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useAccountId } from "../../context/account-feature-context";
+import { useAccountId } from "@/client/account/account-context";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { ChatDeletes } from "./chat-deletes";
 

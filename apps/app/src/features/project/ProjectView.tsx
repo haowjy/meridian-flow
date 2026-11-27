@@ -1,8 +1,18 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useDraftCommandOwner,
+  useOptionalPresentedDocuments,
+} from "@/client/account/account-composition";
+import { useAccountId } from "@/client/account/account-context";
+import type { ContextRemovalRoutePort } from "@/client/project-shell/context-removal-coordinator";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
+import {
+  contextRouteRequest,
+  type ProjectRouteCommands,
+} from "@/client/project-shell/project-route";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useProjectWake } from "@/client/query/useProjectWake";
@@ -14,12 +24,6 @@ import { useConversationRevealRouting } from "@/features/chat/conversation-revea
 import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import {
-  useAccountId,
-  useDraftCommandOwner,
-  useOptionalPresentedDocuments,
-} from "./context/account-feature-context";
-import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { recentAddressFromTab } from "./context/recent-opening";
@@ -35,7 +39,6 @@ import type { MainReviewControls } from "./routing/main-review";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { ReviewTarget } from "./routing/project-address";
-import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
 import {

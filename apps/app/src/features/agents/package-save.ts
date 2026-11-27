@@ -8,9 +8,9 @@ import {
 } from "@meridian/contracts/agents";
 import { notifyManager, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { saveAgentPackages, undoAgentSave } from "@/client/api/agents-api";
 import { invalidateAgentReads, latestAgentFiles } from "@/client/query/useAgentFiles";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 
 export type PackageRef = { level: AgentsLevel; folder: string };
 

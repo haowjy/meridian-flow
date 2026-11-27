@@ -4,7 +4,6 @@ import {
   isProjectContextTreeScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import {
   createContext,
   createElement,
@@ -16,6 +15,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { useProjectStandings } from "@/client/account/account-composition";
+import { openDocumentFromFile } from "@/client/project-shell/open-document-from-file";
+import { contextRouteRequest } from "@/client/project-shell/project-route";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import {
   isEditorScheme,
@@ -24,161 +26,14 @@ import {
   type ServerOpenDocument,
 } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
-import type {
-  DocumentSessionLease,
-  LiveDocumentSessionRegistry,
-} from "@/core/editor/document-session-registry";
 import type { TreeFile } from "@/core/project-tree/tree-view";
+import type { ProjectStandings } from "@/core/tree-list/project-standings";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
   useTrashNavigation,
 } from "../routing/ProjectNavigationContext";
-import { contextRouteRequest } from "../routing/project-route";
-import { useProjectStandings } from "./account-feature-context";
-import { openDocumentFromFile } from "./open-document-from-file";
-import type { ProjectStandings } from "./project-standings";
 import { UploadViewerDialog } from "./UploadViewerDialog";
-
-export interface LiveDocumentBinding {
-  readonly projectId: ProjectId;
-  readonly documentId: DocumentId;
-  readonly session: DocumentSession;
-  subscribeSession(listener: (session: DocumentSession) => void): () => void;
-  readonly local?: true;
-  release(): void;
-}
-
-export interface AdmittedLiveDocument {
-  readonly projectId: ProjectId;
-  readonly documentId: DocumentId;
-  bind(ownerId: string): Promise<LiveDocumentBinding>;
-}
-
-export type ProjectDocumentLiveOpenResult =
-  | { kind: "opened"; admission: AdmittedLiveDocument }
-  | { kind: "cancelled" }
-  | { kind: "not-editable" }
-  | {
-      kind: "unavailable";
-      reason: "deleted" | "authority-unavailable" | "not-visible" | "indeterminate" | "failed";
-    };
-
-export type ProjectDocumentLiveOpenRequest = {
-  projectId: ProjectId;
-  documentId: DocumentId;
-  trashed?: true;
-  workOnly?: true;
-  draftId?: string;
-  signal?: AbortSignal;
-};
-
-export class ProjectDocumentLiveOpener {
-  constructor(
-    private readonly dependencies: {
-      registry: Pick<
-        LiveDocumentSessionRegistry,
-        "admit" | "retain" | "get" | "release" | "restartUnavailableRoom" | "observeReplacement"
-      >;
-      standings: Pick<ProjectStandings, "standing" | "whenReadable">;
-      epochSignal: AbortSignal;
-    },
-  ) {}
-
-  async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
-    const { projectId, documentId, signal } = input;
-    const cancelled = () => signal?.aborted || this.dependencies.epochSignal.aborted;
-    if (cancelled()) return { kind: "cancelled" };
-    let standing = this.dependencies.standings.standing(projectId, documentId);
-    if (standing.kind === "waiting") {
-      try {
-        await this.dependencies.standings.whenReadable(projectId, signal);
-      } catch {
-        return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
-      }
-      standing = this.dependencies.standings.standing(projectId, documentId);
-    }
-    if (cancelled()) return { kind: "cancelled" };
-    switch (standing.kind) {
-      case "purged":
-        return { kind: "unavailable", reason: "deleted" };
-      case "in-trash":
-        if (!input.trashed) return { kind: "unavailable", reason: "deleted" };
-        if (standing.node.kind !== "document") return { kind: "not-editable" };
-        break;
-      case "not-in-list":
-      case "waiting":
-        if (input.workOnly) break;
-        return { kind: "unavailable", reason: "not-visible" };
-      case "in-tree":
-        if (standing.node.kind !== "document") return { kind: "not-editable" };
-    }
-    try {
-      return {
-        kind: "opened",
-        admission: this.capability(
-          this.dependencies.registry.admit(projectId, documentId, input.draftId),
-        ),
-      };
-    } catch {
-      return cancelled() ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" };
-    }
-  }
-
-  private capability(lease: DocumentSessionLease): AdmittedLiveDocument {
-    const registry = this.dependencies.registry;
-    return Object.freeze({
-      projectId: lease.projectId,
-      documentId: lease.documentId,
-      async bind(ownerId: string): Promise<LiveDocumentBinding> {
-        registry.retain(ownerId, [lease]);
-        try {
-          let session = registry.get(lease);
-          const snapshot = session.getSnapshot();
-          if (
-            snapshot.status === "access-lost" ||
-            snapshot.connectionState?.kind === "terminal" ||
-            session.resetDisposition === "removed"
-          ) {
-            await registry.restartUnavailableRoom(lease);
-            session = registry.get(lease);
-          }
-          let released = false;
-          const listeners = new Set<(session: DocumentSession) => void>();
-          const stopObserving = registry.observeReplacement(
-            sessionRoomKey(lease.room),
-            (replacement) => {
-              session = replacement;
-              for (const listener of [...listeners]) listener(replacement);
-            },
-          );
-          return Object.freeze({
-            projectId: lease.projectId,
-            documentId: lease.documentId,
-            get session() {
-              return session;
-            },
-            subscribeSession(listener: (session: DocumentSession) => void) {
-              listeners.add(listener);
-              return () => listeners.delete(listener);
-            },
-            release() {
-              if (released) return;
-              released = true;
-              stopObserving();
-              listeners.clear();
-              registry.release(ownerId);
-            },
-          });
-        } catch (error) {
-          registry.release(ownerId);
-          throw error;
-        }
-      },
-    });
-  }
-}
 
 export type KnownDocumentIdentity = ContextOwner & {
   scheme: ProjectContextTreeScheme;

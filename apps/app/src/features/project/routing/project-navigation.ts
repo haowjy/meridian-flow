@@ -1,3 +1,8 @@
+import type {
+  NavigationSettlement,
+  PreparedWorkspaceNavigation,
+  ProjectNavigationTicket,
+} from "@/client/project-shell/project-route";
 import { type ProjectAddress, parseProjectAddress, projectAddressHref } from "./project-address";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
@@ -15,22 +20,8 @@ export type ProjectNavigationPort = {
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
   | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
-export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
-export type NavigationSettlement =
-  | { kind: "applied" | "cancelled" | "superseded" }
-  | {
-      kind: "failed";
-      error: unknown;
-      ticket: ProjectNavigationTicket;
-      stage: "before-acceptance" | "workspace-commit";
-    };
 export type NavigationEffects = { afterCommit?: () => void };
-export type PreparedWorkspaceNavigation = {
-  isCurrent(): boolean;
-  commit(): void;
-  afterCommit?: () => void;
-};
 export type ProjectLeaveGuard = {
   request(intent: { run(): void; cancel(): void }): void;
   dirty(): boolean;

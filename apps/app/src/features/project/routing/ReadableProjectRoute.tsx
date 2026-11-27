@@ -15,7 +15,21 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  useContextRemovalCoordinator,
+  useOptionalPresentedDocuments,
+} from "@/client/account/account-composition";
 import type { DraftPin } from "@/client/project-shell/document-views";
+import type {
+  NavigationSettlement,
+  PreparedWorkspaceNavigation,
+} from "@/client/project-shell/project-route";
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+  type NavigationOptions,
+  type ProjectRouteCommands,
+} from "@/client/project-shell/project-route";
 import { useDraftStanding } from "@/client/query/useDraftStanding";
 import { useDraftOnly, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
@@ -23,10 +37,6 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { isEditorScheme } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
-import {
-  useContextRemovalCoordinator,
-  useOptionalPresentedDocuments,
-} from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { removalAnswer } from "../context/removal-answer";
 import { useDocumentStanding } from "../context/use-document-standing";
@@ -59,17 +69,7 @@ import {
   withoutDraft,
   withoutReview,
 } from "./project-address";
-import {
-  createProjectNavigation,
-  type NavigationSettlement,
-  type PreparedWorkspaceNavigation,
-} from "./project-navigation";
-import {
-  type ContextRouteRequest,
-  contextRouteRequest,
-  type NavigationOptions,
-  type ProjectRouteCommands,
-} from "./project-route";
+import { createProjectNavigation } from "./project-navigation";
 import { rememberedRouteDocument, routeDocumentMark, routePlaceKey } from "./route-document";
 
 type ReadableProjectRouteProps = {

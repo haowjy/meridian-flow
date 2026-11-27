@@ -2,14 +2,14 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 const account = vi.hoisted(() => ({ controller: new AbortController() }));
-vi.mock("./account-feature-context", () => ({
+vi.mock("@/client/account/account-context", () => ({
   useAccountEpochSignal: () => account.controller.signal,
 }));
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { ProjectDocumentLiveOpener } from "./open-project-document";
-import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
+import type { ProjectDocumentLiveOpener } from "@/core/editor/project-document-live-opener";
+import { ProjectDocumentLiveOpenerContext } from "@/core/editor/project-document-live-opener-context";
 import { type LiveDocumentHostBinding, useLiveDocumentBinding } from "./use-live-document-binding";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };

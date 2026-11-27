@@ -102,7 +102,7 @@ re-read when the server wakes the owner (`useProjectWake`) and in each of the ac
 press or its Undo settles (`refreshDraftReads`). A pressed row leaves while the press is in flight
 and comes back with a pill if the press fails. The journal is the one holder of what is in flight,
 in every tab and through a reload: a press not yet answered, or answered and not yet `observed`
-(`followPresses`, fed by `FollowPresses` in `routes/_authenticated.tsx`). A change press holds its
+(`followPresses`, fed by `FollowPresses` in `client/account/account-composition.tsx`). A change press holds its
 editor row there too, without subtracting the document from the draft list. A press is observed once
 every draft list on screen in that tab has been read from the server since it settled
 (`whenRead`): a read that failed keeps the rows held until one succeeds. Every draft-list read

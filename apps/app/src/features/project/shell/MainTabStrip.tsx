@@ -14,6 +14,7 @@ import {
   useSyncExternalStore,
   type WheelEvent,
 } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import {
   closeAllMainTabs,
@@ -36,7 +37,6 @@ import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
-import { useAccountId } from "../context/account-feature-context";
 import { documentPlace } from "../context/context-schemes";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { tabSubject } from "../context/tab-subject";

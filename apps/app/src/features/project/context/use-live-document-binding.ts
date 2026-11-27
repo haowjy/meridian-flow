@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAccountEpochSignal } from "@/client/account/account-context";
 import type { DocumentSession } from "@/core/editor/document-session";
-import { useAccountEpochSignal } from "./account-feature-context";
-import type { LiveDocumentBinding, ProjectDocumentLiveOpenResult } from "./open-project-document";
-import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
+import type {
+  LiveDocumentBinding,
+  ProjectDocumentLiveOpenResult,
+} from "@/core/editor/project-document-live-opener";
+import { useProjectDocumentLiveOpener } from "@/core/editor/project-document-live-opener-context";
 
 export type LiveDocumentBindingState =
   | { kind: "absent" }

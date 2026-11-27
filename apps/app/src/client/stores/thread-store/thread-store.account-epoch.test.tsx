@@ -15,7 +15,7 @@ import { ThreadStoreProvider } from "./thread-store";
 ).IS_REACT_ACT_ENVIRONMENT = true;
 const epoch = vi.hoisted(() => ({ signal: null as AbortSignal | null }));
 const causal = vi.hoisted(() => ({ list: vi.fn(), refresh: vi.fn() }));
-vi.mock("@/features/project/context/account-feature-context", () => ({
+vi.mock("@/client/account/account-context", () => ({
   useOptionalAccountEpochSignal: () => epoch.signal,
 }));
 vi.mock("@/client/api/projects-api", async (importOriginal) => ({

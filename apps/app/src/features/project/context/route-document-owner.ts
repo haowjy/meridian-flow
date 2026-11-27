@@ -1,6 +1,6 @@
+import type { ContextRouteRequest } from "@/client/project-shell/project-route";
 import type { OpenDocument } from "@/client/stores";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
-import type { ContextRouteRequest } from "../routing/project-route";
 
 export type AddressedDocument = { document: OpenDocument; draftOnly: boolean };
 

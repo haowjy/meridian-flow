@@ -5,9 +5,9 @@ import { classifyFiletype, documentFilenameAt } from "@meridian/contracts/protoc
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
+import { useLiveDocumentSessionRegistry } from "@/client/account/account-composition";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { writeFirstAgentText } from "@/features/agents/agent-file-template";
-import { useLiveDocumentSessionRegistry } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
   joinContextEntryPath,

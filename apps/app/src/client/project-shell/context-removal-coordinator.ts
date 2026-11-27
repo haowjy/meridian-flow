@@ -1,12 +1,12 @@
 import { readAccountRecents } from "@/client/recents";
 import type { OpenDocument } from "@/client/stores";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { PresentedDocuments } from "./presented-documents";
 import type {
+  ContextRouteRequest,
   NavigationSettlement,
   PreparedWorkspaceNavigation,
-} from "../routing/project-navigation";
-import type { ContextRouteRequest } from "../routing/project-route";
-import { PresentedDocuments } from "./presented-documents";
+} from "./project-route";
 
 export type MainLanding = { documentId: string | null };
 

@@ -8,6 +8,7 @@ import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/conte
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
+import type { LinkSettlements } from "@/client/link-settlements";
 import {
   type DocumentAnswer,
   type InternalLinkResolver,
@@ -15,8 +16,6 @@ import {
   type LocalLinkAnswer,
   linkTargetHref,
 } from "@/core/editor/links";
-
-import type { LinkSettlements } from "./link-settlements";
 import { createProjectLinkCatalog } from "./project-link-catalog";
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
 

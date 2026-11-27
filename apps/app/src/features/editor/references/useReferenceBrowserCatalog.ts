@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
 import { sourceFor } from "@/client/query/useProjectTree";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
@@ -11,7 +12,6 @@ import {
   referenceSourceOf,
 } from "@/core/completion";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 
 export function useReferenceBrowserCatalog(
   projectId: string | null | undefined,

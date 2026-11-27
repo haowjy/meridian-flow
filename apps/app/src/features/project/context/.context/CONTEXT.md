@@ -69,7 +69,7 @@ The close of `AccountFeatureLifetime` releases the lists with the rest of the ac
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
 path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tabs.ts`) follow the
 address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
-documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
+documents in `PresentedDocuments` (`client/project-shell/presented-documents.ts`: places main, side and kept). Its
 `documents` are main's and the side's only (main first): the removal coordinator
 reads them to know what is on screen. Its `shown` list, every mounted document
 newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also

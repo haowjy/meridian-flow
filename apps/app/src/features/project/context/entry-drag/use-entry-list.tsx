@@ -1,10 +1,10 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type TrashEntry, useTrashRows } from "@/client/query/useDocumentTrash";
 import {
   useOptionalContextRemovalCoordinator,
   useOptionalLiveDocumentSessionRegistry,
-} from "../account-feature-context";
+} from "@/client/account/account-composition";
+import { type TrashEntry, useTrashRows } from "@/client/query/useDocumentTrash";
 import { useDocumentTrashRestore } from "../DocumentTrashRestoreProvider";
 import {
   type EntriesRoute,

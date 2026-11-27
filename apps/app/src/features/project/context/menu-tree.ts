@@ -1,11 +1,11 @@
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
+import { serverDocumentFromFile } from "@/client/project-shell/open-document-from-file";
 import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
 import { fileKindIcon } from "./context-file-icon";
-import { serverDocumentFromFile } from "./open-document-from-file";
 
 export type MenuArea = {
   id: string;

@@ -8,6 +8,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import {
   useAccountContextSources,
@@ -24,7 +25,6 @@ import { roomContent } from "@/core/editor/room-content";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
-import { useAccountId } from "./account-feature-context";
 import { schemeLocation } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
