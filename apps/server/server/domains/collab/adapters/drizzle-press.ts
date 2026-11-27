@@ -60,7 +60,11 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { LoroDoc } from "loro-crdt";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  assertOutsideTransaction,
+  currentDrizzleDb,
+  type DrizzleDb,
+} from "../../../shared/drizzle-transaction.js";
 import { NO_OWNERS, type TreeOwners, withTreeOwners } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -191,10 +195,10 @@ export function createDrizzlePress(
   /**
    * A loaded fork saves on a debounce, and its row (that it exists, that it is pending) is what
    * `textDocuments` reads: a tab's first words in a draft, acknowledged just before the press, are
-   * in the room but not yet in a row. Saved before the press's transaction, which holds the locks
-   * a save takes.
+   * in the room but not yet in a row. The press's transaction holds the locks a save takes.
    */
   async function saveLoadedForks(drafts: readonly string[]): Promise<void> {
+    assertOutsideTransaction("Saving a press's loaded forks");
     for (const name of deps.rooms.loaded()) {
       const room = parseLoroRoomName(name);
       if (room?.kind === "fork" && drafts.includes(room.draftId)) await deps.rooms.flush(room);
