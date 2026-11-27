@@ -19,7 +19,7 @@ catalog. Tables are selected with the full-cell `CellSelection` spelling that
 - A press on a non-editable object body selects, so hidden source is never exposed.
   Inline-drag rows opt out so native inline dragging works.
 - Selection rings are decorations derived from the current selection. Node-view
-  `selectNode`/`deselectNode` cannot survive a remote whole-document rebuild.
+  `selectNode`/`deselectNode` cannot survive a remote write that replaces the node.
 - A rebuild restores a node selection by position alone. When it lands on a different
   node type, the object has gone and physics turns the selection into a caret, since
   a keystroke would replace the text it landed on.

@@ -14,9 +14,9 @@
  * that text now". With nobody else typing the mapping is empty and this is one
  * `insertText`.
  *
- * A peer's write is the case the mapping cannot answer: it arrives as a
- * replacement of the whole document, so every offset maps to a boundary. The
- * document is re-read instead, and when the fence itself changed underneath
+ * A peer's write is the case the mapping cannot answer: it arrives as one
+ * replacement over everything that differs, so an offset inside it maps to its
+ * edge. The document is re-read instead, and when the fence itself changed underneath
  * the writer the pane has no usable base at all until the next render supplies
  * one — refusing there is what keeps the diff from reading the peer's new line
  * as the writer's deletion.
@@ -30,7 +30,7 @@ import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
+import { isRemoteEdit } from "@/core/editor/anchors";
 
 import { isDiagramFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
 
@@ -124,7 +124,7 @@ export function useFenceDraft(
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
       const rebase = rebaseRef.current;
       if (!transaction.docChanged || !rebase) return;
-      rebaseRef.current = isRemoteDocumentRebuild(transaction)
+      rebaseRef.current = isRemoteEdit(transaction)
         ? fenceRebaseAfterRemote(rebase, readFence(editor, targetRef.current?.element))
         : fenceRebaseAfter(rebase, transaction);
     };

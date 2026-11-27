@@ -160,6 +160,6 @@ function identityAt($pos: ResolvedPos): string | null {
   return typeof id === "string" ? id : null;
 }
 
-export function isRemoteDocumentRebuild(transaction: Transaction): boolean {
+export function isRemoteEdit(transaction: Transaction): boolean {
   return transaction.getMeta(loroSyncKey) === REMOTE_META;
 }

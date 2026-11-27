@@ -120,7 +120,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
   if (!editor.isEditable || landing.kind === "source") return;
 
   // The drop point is pinned in the shared document, which survives a peer's update; ProseMirror's
-  // own mapping does not (the binding replaces the whole fragment).
+  // own mapping moves a point inside the range the update replaces to that range's edge.
   let kind = landing.kind;
   let pin: EditorAnchor = anchorRange(editor.state, { from: landing.pos, to: landing.pos });
   const pinAt = (pos: number) => {

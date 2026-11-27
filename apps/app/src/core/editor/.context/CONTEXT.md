@@ -321,7 +321,8 @@ keyboard, pointer, drop, or recovery answer.
   placed by the same `placeNodes` the row door uses. Files land in the order the drop
   lists them, a run of chips as one edit; the drop point is an `anchorRange` pin, read back
   with `resolveAnchorIn` when the chips go in, because a peer's update (a model streaming)
-  replaces the whole fragment and ProseMirror's mapping would land between blocks; a file over `MAX_UPLOAD_BYTES` is refused
+  is one replacement over the range that differs and ProseMirror's mapping would move a point
+  inside it to the range's edge; a file over `MAX_UPLOAD_BYTES` is refused
   alone, before anything is inserted for it. A chip's progress and failure are the upload
   store's (`core/uploads/upload-store.ts`), as a Composer chip's and a picture slot's are: a
   failed chip (or one taken back by undo and returned by redo) reads failed and a press retries

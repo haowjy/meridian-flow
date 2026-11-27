@@ -7,7 +7,7 @@ import {
   type Transaction,
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { isRemoteDocumentRebuild } from "../anchors";
+import { isRemoteEdit } from "../anchors";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
 import { selectedSourceBlock } from "../chrome/chrome-context";
 import type { KeymapBinding } from "../chrome/keymap";
@@ -171,7 +171,7 @@ export const ObjectPhysicsExtension = Extension.create({
           const after = newState.selection;
           if (!(before instanceof NodeSelection) || !(after instanceof NodeSelection)) return null;
           if (after.node.type === before.node.type) return null;
-          if (!transactions.some(isRemoteDocumentRebuild)) return null;
+          if (!transactions.some(isRemoteEdit)) return null;
           return newState.tr.setSelection(TextSelection.near(after.$from));
         },
 
