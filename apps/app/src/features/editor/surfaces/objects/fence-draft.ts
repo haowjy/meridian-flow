@@ -63,7 +63,6 @@ export function useFenceDraft(
 ): {
   value: string;
   onChange: (next: string) => void;
-  onSelect: () => void;
   area: RefObject<HTMLTextAreaElement | null>;
 } {
   const fence = useCallback(() => {
@@ -81,7 +80,7 @@ export function useFenceDraft(
   const shown = useRef(source);
   const caret = useRef<HeldCaret | null>(null);
 
-  const onSelect = useCallback(() => {
+  const takeCaret = useCallback(() => {
     const element = area.current;
     const found = fence();
     if (!element || !found || found.text !== element.value) return;
@@ -133,10 +132,20 @@ export function useFenceDraft(
         editor.state.tr.insertText(patch.text, found.start + patch.from, found.start + patch.to),
       );
       shown.current = fence()?.text ?? next;
-      onSelect();
+      takeCaret();
     },
-    [editor, fence, onSelect],
+    [editor, fence, takeCaret],
   );
 
-  return { value: source, onChange, onSelect, area };
+  // React's onSelect misses a click that moves the caret in this dialog; the document's own event
+  // reports every change of the textarea's selection.
+  useEffect(() => {
+    const onSelectionChange = () => {
+      if (document.activeElement === area.current) takeCaret();
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, [takeCaret]);
+
+  return { value: source, onChange, area };
 }

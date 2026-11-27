@@ -178,7 +178,6 @@ function DiagramFace({
             name={provider.name}
             value={source}
             onChange={draft.onChange}
-            onSelect={draft.onSelect}
             areaRef={draft.area}
             error={rendered === source ? error : null}
           />
@@ -197,14 +196,12 @@ function SourcePane({
   name,
   value,
   onChange,
-  onSelect,
   areaRef,
   error,
 }: {
   name: string;
   value: string;
   onChange: (next: string) => void;
-  onSelect: () => void;
   areaRef: RefObject<HTMLTextAreaElement | null>;
   error: string | null;
 }) {
@@ -227,7 +224,6 @@ function SourcePane({
         aria-label={t`${name} source`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        onSelect={onSelect}
       />
       {error ? (
         <p className="meridian-diagram-parse-note meridian-lightbox-parse-note" role="status">

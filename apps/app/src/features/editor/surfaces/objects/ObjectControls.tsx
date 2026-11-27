@@ -67,9 +67,9 @@ const SURFACE_SPECS = EDITOR_OBJECT_TYPES.filter(
 
 export function ObjectControls({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
-  const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
 
+  const [rowMenu, holdRowMenu] = useNodeHold(editor);
   const [contextMenu, holdContextMenu] = useNodeHold(editor);
   const [fenceMenu, holdFenceMenu] = useNodeHold(editor);
   const [lightbox, holdLightbox] = useNodeHold(editor);
@@ -80,9 +80,18 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   const contextAt = useRef<MenuPoint | null>(null);
   const fenceAt = useRef<MenuPoint | null>(null);
 
-  const { target, visible } = useApproachedObject(
+  const { target: approached, visible } = useApproachedObject(
     editor,
-    menuOpen || contextMenu !== null || fenceMenu !== null || fieldPopover !== null,
+    rowMenu !== null || contextMenu !== null || fenceMenu !== null || fieldPopover !== null,
+  );
+  // While the row's own menu is open, the row hangs off the object it opened on, wherever a write
+  // moves it; the pointer may meanwhile be over another object.
+  const target = rowMenu === null ? approached : objectSurfaceForHold(editor.view, rowMenu);
+  const opensOn = useRef<number | null>(null);
+  opensOn.current = target?.pos ?? null;
+  const setMenuOpen = useCallback(
+    (open: boolean) => holdRowMenu(open ? opensOn.current : null),
+    [holdRowMenu],
   );
 
   const openLightbox = useCallback(
@@ -189,7 +198,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
             <EditorMenu
               editor={editor}
               id="object-row-menu"
-              open={menuOpen}
+              open={rowMenu !== null}
               onOpenChange={setMenuOpen}
               align="end"
               trigger={chip}
