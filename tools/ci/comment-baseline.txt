@@ -63,10 +63,10 @@ apps/app/src/client/query/useProjectWake.ts	A read someone else started may pred
 apps/app/src/client/query/useThreadSnapshotSync.ts	A fresh read cancels the one in flight, but React Query hands the first read back instead: it started before this request, so follow it with one more.
 apps/app/src/client/query/useThreadSnapshotSync.ts	The sync's lifetime is independent of the pending-creation flag. A commit that clears that flag must not stop the handler installed by first send.
 apps/app/src/client/query/useWorks.ts	A read that failed while offline leaves its error beside data that is still fresh, so reconnecting would not refetch on staleness alone.
-apps/app/src/client/query/when-read.ts	Settles once every query `filters` match that is on screen has been read from the server since now, so a read that failed keeps waiting until one succeeds. A command observed only then keeps its projection over the list until the list has it. `loaded`: a read already held counts. Call it before starting the reads, so their answers are seen.
+apps/app/src/client/query/when-read.ts	Not invalidateQueries: it rereads only mounted copies, and an unmounted one would open on the old value once the projection is observed away.
+apps/app/src/client/query/when-read.ts	Settles once every query `filters` match that is on screen has been read from the server since now, so a read that failed keeps waiting until one succeeds. A command observed only then keeps its projection over the list until the list has it. `loaded`: a read already held counts. `cached`: every cached query a refetch would read counts, not only those on screen. Call it before starting the reads, so their answers are seen.
 apps/app/src/client/query/when-read.ts	`manual`: a write of this browser's own (`setQueryData`), not a read.
 apps/app/src/client/query/works-projection-acquisition.ts	Registers request start before any loader or live network work begins.
-apps/app/src/client/query/write-over-reads.ts	TanStack cancels synchronously, so the write needn't wait for the cancelled reads to settle.
 apps/app/src/client/recents/index.ts	Access the browser getter inside the store's storage-error boundary too.
 apps/app/src/client/recents/store.ts	Device-local history remains best-effort when storage is unavailable.
 apps/app/src/client/recents/store.ts	The in-memory boundary still refuses a cross-account read.

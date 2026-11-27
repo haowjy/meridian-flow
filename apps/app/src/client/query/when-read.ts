@@ -7,11 +7,19 @@ type ReadFilters = Pick<QueryFilters, "queryKey" | "exact">;
  * Settles once every query `filters` match that is on screen has been read from the server since
  * now, so a read that failed keeps waiting until one succeeds. A command observed only then keeps
  * its projection over the list until the list has it. `loaded`: a read already held counts.
+ * `cached`: every cached query a refetch would read counts, not only those on screen.
  * Call it before starting the reads, so their answers are seen.
  */
-export function whenRead(client: QueryClient, filters: ReadFilters, loaded = false) {
+export function whenRead(
+  client: QueryClient,
+  filters: ReadFilters,
+  { loaded = false, cached = false }: { loaded?: boolean; cached?: boolean } = {},
+) {
   const cache = client.getQueryCache();
-  const shown = () => cache.findAll({ ...filters, type: "active" });
+  const shown = () =>
+    cached
+      ? cache.findAll(filters).filter((query) => !query.isDisabled() && !query.isStatic())
+      : cache.findAll({ ...filters, type: "active" });
   const waiting = new Set(shown().filter((query) => !loaded || query.state.status !== "success"));
   return new Promise<void>((resolve) => {
     const done = () => {
@@ -35,11 +43,12 @@ export function whenRead(client: QueryClient, filters: ReadFilters, loaded = fal
 export function rereadThenObserve(
   client: QueryClient,
   driver: CommandDriver | null | undefined,
-  record: CommandRecord,
+  settled: (record: CommandRecord) => boolean,
   reads: readonly ReadFilters[],
 ): void {
-  void Promise.all(reads.map((filters) => whenRead(client, filters))).then(() =>
-    driver?.observe((each) => each.id === record.id),
-  );
-  for (const filters of reads) void client.invalidateQueries(filters);
+  const read = Promise.all(reads.map((filters) => whenRead(client, filters, { cached: true })));
+  // Not invalidateQueries: it rereads only mounted copies, and an unmounted one would open on the
+  // old value once the projection is observed away.
+  for (const filters of reads) void client.refetchQueries(filters);
+  void read.then(() => driver?.observe(settled));
 }

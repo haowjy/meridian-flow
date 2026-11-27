@@ -409,8 +409,7 @@ CREATE TABLE "commands" (
 	"thread_id" uuid,
 	"request_digest" text,
 	"outcome" jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'project_rename', 'thread_set_overrides', 'chat_rename', 'press', 'unpress', 'draft_create', 'draft_rename', 'draft_delete', 'draft_restore', 'chat_draft'))
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "document_block_rooms" (

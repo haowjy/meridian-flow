@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { DeviceRefusedError } from "@/client/commands/submit";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { cn } from "@/lib/utils";
@@ -89,7 +90,13 @@ export function TitleEditSlot({
             .catch((cause: unknown) => {
               if (latestRename.get(titleKey) !== commit) return;
               const sentence = closed?.(cause) ?? null;
-              setRefusal(sentence === null ? { line: failure(cause) } : { closed: sentence });
+              setRefusal(
+                cause instanceof DeviceRefusedError
+                  ? null
+                  : sentence === null
+                    ? { line: failure(cause) }
+                    : { closed: sentence },
+              );
               setEditing(
                 (current) =>
                   current ?? { initial: next, unchanged, focus: focusIsIdle(triggerRef) },

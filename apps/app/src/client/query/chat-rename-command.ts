@@ -51,7 +51,7 @@ export function chatRenameDomain(client: QueryClient): CommandDomain {
           : Promise.resolve(),
       onSettled: (record) => {
         const { projectId } = record.body as ChatRenameBody;
-        rereadThenObserve(client, bound?.driver, record, [
+        rereadThenObserve(client, bound?.driver, (each) => each.id === record.id, [
           { queryKey: projectQueryKeys.threads(projectId), exact: true },
           { queryKey: projectQueryKeys.chatFeed(projectId) },
         ]);

@@ -101,7 +101,7 @@ export function createDrizzleProjectRepository(
       const where = opts?.includeDeleted
         ? eq(projects.userId, userId)
         : and(eq(projects.userId, userId), isNull(projects.deletedAt));
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(projects)
         .where(where)
@@ -110,7 +110,7 @@ export function createDrizzleProjectRepository(
     },
     async search(userId: UserId, query: string): Promise<Project[]> {
       const pattern = `%${query}%`;
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(projects)
         .where(
@@ -124,7 +124,7 @@ export function createDrizzleProjectRepository(
       return rows.map(mapProject);
     },
     async rename(id: ProjectId, title: string): Promise<Project> {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .update(projects)
         .set({ name: title, updatedAt: new Date() })
         .where(eq(projects.id, id))
@@ -167,10 +167,11 @@ export function createDrizzleProjectRepository(
       });
     },
     async touch(id: ProjectId): Promise<void> {
-      const [project] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+      const activeDb = currentDrizzleDb(db);
+      const [project] = await activeDb.select().from(projects).where(eq(projects.id, id)).limit(1);
       if (!project || project.deletedAt) return;
       const now = new Date();
-      await db
+      await activeDb
         .update(projects)
         .set({ updatedAt: now, lastActivityAt: now })
         .where(eq(projects.id, id));

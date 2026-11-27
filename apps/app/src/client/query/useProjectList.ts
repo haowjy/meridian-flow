@@ -49,8 +49,7 @@ export function useProject(
   projectId: string,
   initialProject?: Project | null,
 ): Project | undefined {
-  const projects = useProjectList();
-  const listProject = projects?.find((project) => project.id === projectId);
+  const listProject = useProjectListQuery().data?.find((project) => project.id === projectId);
   const detail = useQuery<Project>({
     queryKey: projectQueryKeys.detail(projectId),
     queryFn: () => getProject(projectId),

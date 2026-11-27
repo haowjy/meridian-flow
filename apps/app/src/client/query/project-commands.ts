@@ -185,7 +185,7 @@ export function projectDomain(client: QueryClient): CommandDomain {
       },
       onSettled: (record) => {
         const { projectId } = record.body as ProjectRenameBody;
-        rereadThenObserve(client, bound, record, [
+        rereadThenObserve(client, bound, (each) => each.id === record.id, [
           { queryKey: projectQueryKeys.list, exact: true },
           { queryKey: projectQueryKeys.detail(projectId), exact: true },
         ]);
