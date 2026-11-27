@@ -17,6 +17,8 @@ import {
 import { markRunStateChanged } from "./drizzle-run-state.js";
 import { createDrizzleSessionLock, type SessionLockClaim } from "./drizzle-session-lock.js";
 
+const DB_NOW = sql`clock_timestamp()`;
+
 export interface DrizzleRunClaimOptions {
   holderId?: string;
   leaseTtlMs?: number;
@@ -113,8 +115,7 @@ export function createDrizzleRunClaim(
           phase: "generating",
           cancelRequested: false,
           currentTool: null,
-          // Use the database wall clock for lease acquisition; fences order on the same clock
-          acquiredAt: sql`clock_timestamp()`,
+          acquiredAt: DB_NOW,
           renewedAt: new Date(),
           expiresAt: nextExpiry(),
         });
@@ -249,7 +250,7 @@ export function createDrizzleRunClaim(
       if (threadIds.length === 0) return;
       await db_()
         .update(schema.threads)
-        .set({ wakeFenceAt: sql`clock_timestamp()` })
+        .set({ wakeFenceAt: DB_NOW })
         .where(inArray(schema.threads.id, threadIds as string[]));
     },
 

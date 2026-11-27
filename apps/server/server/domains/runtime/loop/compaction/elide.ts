@@ -54,7 +54,8 @@ export function collectRecordedDocuments(
       );
     }
     // Insert compaction evidence in reverse Map order; the recent picker reverses insertion order
-    const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
+    const bySequence = [...blocks].sort((a, b) => a.sequence - b.sequence);
+    const referenceBlocks = turn.role === "compaction" ? bySequence.reverse() : bySequence;
     for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);
       if (reference?.kind === "document" && reference.read)

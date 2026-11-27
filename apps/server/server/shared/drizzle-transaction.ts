@@ -134,6 +134,10 @@ export function assertOutsideCommandTransaction(what: string): void {
     throw new Error(`${what} inside a command transaction`);
 }
 
+export function requireOutsideTransaction(what: string): void {
+  if (COMMAND_CHECKS && isInDrizzleTransaction()) throw new Error(`${what} inside a transaction`);
+}
+
 export async function runInRootDrizzleTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,

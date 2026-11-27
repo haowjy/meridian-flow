@@ -1,6 +1,6 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { BlockList, isIP } from "node:net";
-import { Agent, buildConnector } from "undici";
+import { Agent, buildConnector, fetch, type RequestInit, type Response } from "undici";
 import { OUTBOUND_CONNECT_OPTIONS } from "./outbound-http1";
 
 const IPV4_SPECIAL = new BlockList();
@@ -73,7 +73,7 @@ const dial = buildConnector({
   timeout: 10_000,
 });
 
-export const publicAddressDispatcher = new Agent({
+const publicAddressDispatcher = new Agent({
   connect: (options, callback) => {
     const host = options.hostname.replace(/^\[|\]$/g, "");
     if (isIP(host) !== 0 && !isPublicAddress(host)) {
@@ -85,3 +85,30 @@ export const publicAddressDispatcher = new Agent({
   headersTimeout: 10_000,
   bodyTimeout: 10_000,
 });
+
+export interface PublicFetchPolicy {
+  check(url: URL): void;
+  maxRedirects: number;
+  redirectRefusal(status: number): Error;
+}
+
+export async function publicFetch(
+  url: URL,
+  policy: PublicFetchPolicy,
+  init: Omit<RequestInit, "dispatcher" | "redirect"> = {},
+): Promise<Response> {
+  let next = url;
+  for (let hop = 0; ; hop++) {
+    policy.check(next);
+    const response = await fetch(next, {
+      ...init,
+      dispatcher: publicAddressDispatcher,
+      redirect: "manual",
+    });
+    if (response.status < 300 || response.status >= 400) return response;
+    await response.body?.cancel();
+    const location = response.headers.get("location");
+    if (!location || hop >= policy.maxRedirects) throw policy.redirectRefusal(response.status);
+    next = new URL(location, next);
+  }
+}
