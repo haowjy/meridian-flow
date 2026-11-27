@@ -19,7 +19,7 @@ those cells.
 
 The mousedown listener sits beside, not inside, ProseMirror's click machinery so
 click-to-select does not break double-click-to-open. Selection rings come from
-decorations, not node-view callbacks that a remote rebuild can lose.
+decorations, not node-view callbacks that a binding re-read can lose.
 
 ## Arrow movement and Escape
 
@@ -44,7 +44,7 @@ A plain code fence is not an object. Enter on its NodeSelection takes the caret 
 its start and consumes the key so the base keymap cannot split it. That binding
 uses Chrome's block scope, as do arrows approaching an object from prose.
 
-A remote rebuild may restore a NodeSelection by position. If a different node type
+A binding re-read may restore a NodeSelection by position. If a different node type
 now occupies that position, the extension changes it to a text caret; otherwise
 typing would replace unrelated text. An adjacent object of the same type remains
 selected, with its ring visible.

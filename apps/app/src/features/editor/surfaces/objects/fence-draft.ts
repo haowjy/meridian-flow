@@ -30,7 +30,7 @@ import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-import { isRemoteEdit } from "@/core/editor/anchors";
+import { isBindingReread } from "@/core/editor/anchors";
 
 import { isDiagramFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
 
@@ -124,7 +124,7 @@ export function useFenceDraft(
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
       const rebase = rebaseRef.current;
       if (!transaction.docChanged || !rebase) return;
-      rebaseRef.current = isRemoteEdit(transaction)
+      rebaseRef.current = isBindingReread(transaction)
         ? fenceRebaseAfterRemote(rebase, readFence(editor, targetRef.current?.element))
         : fenceRebaseAfter(rebase, transaction);
     };

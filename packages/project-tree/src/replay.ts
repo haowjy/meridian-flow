@@ -591,9 +591,7 @@ export function startReplay(
       const kidsOf = (parent: string) => {
         let kids = sorted.get(parent);
         if (!kids) {
-          kids = [...(children.get(parent) ?? [])].sort((a, b) =>
-            compareRankThenId(a.rank, a.id, b.rank, b.id),
-          );
+          kids = [...(children.get(parent) ?? [])].sort(compareRankThenId);
           sorted.set(parent, kids);
         }
         return kids;
@@ -928,12 +926,7 @@ function derive(
   const ordered = new Map<string, TreeNode[]>();
   for (const [parent, kids] of children)
     if (!absent(parent))
-      ordered.set(
-        parent,
-        kids
-          .flatMap((kid) => out.get(kid.id) ?? [])
-          .sort((a, b) => compareRankThenId(a.rank, a.id, b.rank, b.id)),
-      );
+      ordered.set(parent, kids.flatMap((kid) => out.get(kid.id) ?? []).sort(compareRankThenId));
   const inTrash = deletesInTrash(nodes, deletes, hides);
   const covered = (entry: DeleteInForce) =>
     [...entry.cascade].filter((member) => {
