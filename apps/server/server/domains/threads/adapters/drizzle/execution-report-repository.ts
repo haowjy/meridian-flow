@@ -2,6 +2,7 @@ import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import {
   assertReportCapture,
@@ -19,7 +20,6 @@ import type {
   ExecutionReportRepository,
   FinalizeExecutionReportInput,
 } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 type ExecutionReportRow = Omit<
   typeof schema.threadExecutionReports.$inferSelect,

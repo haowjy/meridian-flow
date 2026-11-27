@@ -17,6 +17,7 @@ import {
 } from "../../threads/index.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
+import type { RuntimeDelivery } from "./delivery/runtime-delivery.js";
 import { latestRowAt } from "./latest-row.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
@@ -32,7 +33,6 @@ import {
   RuntimeShuttingDownError,
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
-import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 type RunSession = {
   controller: AbortController;

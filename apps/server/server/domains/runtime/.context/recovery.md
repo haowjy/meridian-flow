@@ -47,7 +47,7 @@ no-input run with the failed turn in history.
 
 ## Lease settlement
 
-`adapters/execution-settlement.ts` owns acknowledgement, ending an execution,
+`loop/delivery/execution-settlement.ts` owns acknowledgement, ending an execution,
 abandoning a claim and orphan retirement. The unsettled-turn, placeholder and
 report sweep lanes pass their own repair to delivery's
 `settleStaleExecution(threadId, repair)` inside one thread-lock transaction; the
@@ -60,7 +60,7 @@ under a newly taken claim, which adds it and any unsettled compaction. Status
 publishes only after commit. A rollback keeps both
 unfinished work and lease. Every path that finalizes orphans under the claim
 (run start, idle materialization, applying due write-mode switches) goes through
-the delivery adapter's one `repairOrphans` helper.
+the delivery service's one `repairOrphans` helper.
 
 Release is guarded: delivery re-reads the receipt and ends the execution
 (lease deletion and the closed run-state record in one transaction) only if the same execution

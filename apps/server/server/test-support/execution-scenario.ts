@@ -4,12 +4,12 @@ import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
 import { invocationCardProps } from "../domains/runtime/spawn/spawn-output.js";
-import { createDrizzleRepositoriesForTest } from "../domains/threads/adapters/drizzle/repositories.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/repositories.js";
 import type {
   AdmitExecutionReportInput,
   FinalizeExecutionReportInput,
 } from "../domains/threads/ports/repositories.js";
+import { createDrizzleRepositoriesForTest } from "./thread-repositories.js";
 
 type ExecutionIds = {
   user: string;

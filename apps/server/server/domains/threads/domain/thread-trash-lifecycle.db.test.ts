@@ -4,11 +4,11 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { createDrizzleRepositoriesForTest } from "../../../test-support/thread-repositories.js";
 import { createProjectRepositoryForTest } from "../../projects/test-support/project-repository.js";
 import { createDrizzleRunClaim } from "../../runtime/adapters/drizzle-run-claim.js";
 import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import { createLineageCancellation } from "../../runtime/spawn/lineage-cancellation.js";
-import { createDrizzleRepositoriesForTest } from "../adapters/drizzle/repositories.js";
 import { deleteOwnedThreadToTrash } from "../thread-access.js";
 
 const databaseUrl = process.env.DATABASE_URL;

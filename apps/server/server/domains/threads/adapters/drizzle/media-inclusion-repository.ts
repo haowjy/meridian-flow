@@ -1,7 +1,7 @@
 import * as schema from "@meridian/database/schema";
 import { asc, eq } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type { ThreadMediaInclusionRepository } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 export function createDrizzleThreadMediaInclusionRepository(
   db: DrizzleDb,

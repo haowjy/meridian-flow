@@ -21,7 +21,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
     const { readTranscriptPage } = await import("../../domain/transcript-page.js");
     const { createDrizzleThreadLock } = await import(
       "../../../runtime/adapters/drizzle-thread-lock.js"

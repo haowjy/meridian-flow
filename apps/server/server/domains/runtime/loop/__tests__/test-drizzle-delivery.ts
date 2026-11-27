@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { processDetachedWork } from "../../../../shared/detached-work.js";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";
-import { createDrizzleRepositoriesForTest } from "../../../threads/adapters/drizzle/repositories.js";
+import { createDrizzleRepositoriesForTest } from "../../../../test-support/thread-repositories.js";
 import { createDrizzleRuntimeDelivery } from "../../adapters/drizzle/runtime-delivery.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { createOrphanReportRepair } from "../../spawn/orphan-report-repair.js";

@@ -73,6 +73,11 @@ export {
   planCompaction,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
+export {
+  type DeliveryProducer,
+  HandBackConflictError,
+  type RuntimeDelivery,
+} from "./loop/delivery/runtime-delivery.js";
 export { linkExpirySeconds } from "./loop/media-link-window.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
@@ -121,11 +126,6 @@ export {
   RuntimeShuttingDownError,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
-export {
-  type DeliveryProducer,
-  HandBackConflictError,
-  type RuntimeDelivery,
-} from "./loop/runtime-delivery.js";
 export {
   isSkillsUri,
   listSkillDir,

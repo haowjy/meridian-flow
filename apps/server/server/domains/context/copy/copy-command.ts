@@ -16,8 +16,8 @@ import {
   runAfterDrizzleCommit,
 } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { WorkLifecycleUnavailableError } from "../../../shared/work-lifecycle-lock.js";
 import type { CollabDomain } from "../../collab/index.js";
-import { WorkLifecycleUnavailableError } from "../../projects/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";

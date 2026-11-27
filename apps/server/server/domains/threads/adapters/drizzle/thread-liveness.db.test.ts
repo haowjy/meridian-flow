@@ -26,7 +26,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleRunClaim } = await import("../../../runtime/index.js");
     const { createThreadRuntimeService } = await import("../../runtime-service.js");
     const { createDrizzleThreadRepository } = await import("./thread-repository.js");
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -62,7 +64,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("keeps snapshot payload and journal cursors on one committed view", async () => {
-      const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+      const { createDrizzleRepositoriesForTest } = await import(
+        "../../../../test-support/thread-repositories.js"
+      );
       const { createDrizzleEventJournalReader } = await import("./event-reader.js");
       const { createDrizzleEventJournalWriter } = await import("./event-writer.js");
       const { createThreadEventHub } = await import("../../thread-event-hub.js");

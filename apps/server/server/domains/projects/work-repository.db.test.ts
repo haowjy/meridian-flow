@@ -41,7 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
     const { NO_PROJECT_HINTS } = await import("../../test-support/project-hints.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../threads/adapters/drizzle/repositories.js"
+      "../../test-support/thread-repositories.js"
     );
     const {
       createDrizzleProjectWorkRepository,

@@ -2,6 +2,7 @@ import type { Turn } from "@meridian/contracts/threads";
 import { SYSTEM_TURN_KINDS } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { asc, eq, inArray, sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type {
   ReadTranscriptItemsInput,
   TranscriptItemRow,
@@ -10,7 +11,6 @@ import type {
 } from "../../ports/repositories.js";
 import { inConversationSql } from "./handed-back.js";
 import { mapBlock, mapTurn } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 type ItemKey = { turn_id: string; position: number; sequence: number; block_id: string | null };
 

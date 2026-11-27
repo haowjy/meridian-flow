@@ -1,15 +1,9 @@
 import {
-  currentDrizzleDb,
   type DrizzleDatabase,
-  type DrizzleDb,
-  type DrizzleTransaction,
   runInDrizzleTransaction,
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
-import {
-  createDrizzleLineageScratchLifecycle,
-  type LineageScratchLifecycle,
-} from "../../../context/index.js";
+import type { LineageScratchLifecycle } from "../../../context/index.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories, ThreadStatusReader } from "../../ports/repositories.js";
@@ -26,11 +20,9 @@ import { createDrizzleThreadUserStateRepository } from "./thread-user-state-repo
 import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js";
 import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn-repository.js";
 
-export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTransaction };
-
-function composeDrizzleRepositories(
+export function createDrizzleRepositories(
   db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit"> | null,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit">,
   lineageScratch: LineageScratchLifecycle,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
@@ -63,17 +55,4 @@ function composeDrizzleRepositories(
       });
     },
   };
-}
-
-export function createDrizzleRepositories(
-  db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks" | "recountAfterCommit">,
-  lineageScratch: LineageScratchLifecycle,
-  statusReader?: ThreadStatusReader,
-): InternalThreadRepositories {
-  return composeDrizzleRepositories(db, workActivity, lineageScratch, statusReader);
-}
-
-export function createDrizzleRepositoriesForTest(db: DrizzleDatabase): InternalThreadRepositories {
-  return composeDrizzleRepositories(db, null, createDrizzleLineageScratchLifecycle(db));
 }

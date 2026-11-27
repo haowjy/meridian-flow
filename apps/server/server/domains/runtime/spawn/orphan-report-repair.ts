@@ -3,15 +3,17 @@ import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
+import type { RuntimeDelivery } from "../loop/delivery/runtime-delivery.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
-import type { RunClaim } from "../loop/ports.js";
+import type { InboxReader, RunClaim } from "../loop/ports.js";
+import type { ToolRegistry } from "../tools/types.js";
 import type { ReportPublisher } from "./report-publisher.js";
 
 export function createOrphanReportRepair(deps: {
   repos: ThreadRepositories;
-  toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
-  inbox: Pick<import("../loop/ports.js").InboxReader, "selectPending">;
+  toolRegistry?: Pick<ToolRegistry, "getRegistration">;
+  inbox: Pick<InboxReader, "selectPending">;
   retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   clearOrphanedTurn?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: LiveEventWriter;
@@ -19,7 +21,7 @@ export function createOrphanReportRepair(deps: {
   authority: RunClaim;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
-  settleStaleExecution: import("../loop/runtime-delivery.js").RuntimeDelivery["settleStaleExecution"];
+  settleStaleExecution: RuntimeDelivery["settleStaleExecution"];
 }) {
   const { settleStaleExecution } = deps;
   let reportCursor: TurnId | undefined;

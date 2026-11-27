@@ -1,25 +1,27 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
+import type { ThreadRepositories } from "../../../threads/index.js";
+import type { ToolRegistry } from "../../tools/types.js";
 import {
   type FinalizedExecution,
   finalizeExecution,
   type TerminalCause,
-} from "../loop/execution-finalizer.js";
-import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
-import type { PersistenceDeps } from "../loop/persistence.js";
-import type { Lease, RunClaim } from "../loop/ports.js";
-import { LostRunError } from "../loop/runtime-delivery.js";
-import type { ThreadLock } from "../loop/thread-lock.js";
+} from "../execution-finalizer.js";
+import { finalizeOrphanedTurns } from "../orphaned-placeholder.js";
+import type { PersistenceDeps } from "../persistence.js";
+import type { Lease, RunClaim } from "../ports.js";
+import type { ThreadLock } from "../thread-lock.js";
 import type { DeliveryLeaseStore, DeliveryStore } from "./delivery-ports.js";
+import { LostRunError } from "./runtime-delivery.js";
 
 export type Deliverer = { turn: Pick<Turn, "id"> };
 
 export type Retirement = Deliverer | { handedBackBy: string } | null;
 
 export type ExecutionSettlementDeps = PersistenceDeps & {
-  repos: import("../../threads/index.js").ThreadRepositories;
-  toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
+  repos: ThreadRepositories;
+  toolRegistry?: Pick<ToolRegistry, "getRegistration">;
   publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
   recoverCommands: Parameters<typeof finalizeExecution>[0]["recoverCommands"];
   publishStatus?(threadId: ThreadId): Promise<void>;

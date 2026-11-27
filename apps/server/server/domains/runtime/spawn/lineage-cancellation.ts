@@ -5,6 +5,7 @@ import type {
   ThreadRepository,
 } from "../../threads/index.js";
 import type { AskService } from "../asks/ask-service.js";
+import type { RuntimeDelivery } from "../loop/delivery/runtime-delivery.js";
 import { isAskResolved } from "../loop/next-inbox-work.js";
 import type { InboxMessage, RunClaim } from "../loop/ports.js";
 import type {
@@ -12,7 +13,6 @@ import type {
   LineageCancelled,
   LineageDecision,
 } from "../loop/run-session.js";
-import type { RuntimeDelivery } from "../loop/runtime-delivery.js";
 import { asMultiThreadLocker } from "../loop/thread-lock.js";
 
 export function createLineageCancellation(deps: {

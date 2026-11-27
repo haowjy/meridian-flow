@@ -2,24 +2,27 @@ import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { carryRootDraft } from "../../../../shared/draft-owner.js";
-import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  type DrizzleDatabase,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks } from "../../../../shared/thread-work-lock.js";
+import { WorkLifecycleUnavailableError } from "../../../../shared/work-lifecycle-lock.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
-import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
   type ThreadWorksRepository,
 } from "../../ports/repositories.js";
-import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzleThreadWorksRepository(
   db: DrizzleDatabase,
-  workCounts: Pick<WorkProjectionMutation, "recountAfterCommit"> | null,
+  workCounts: Pick<WorkProjectionMutation, "recountAfterCommit">,
 ): ThreadWorksRepository {
   async function carry(threadId: ThreadId, workId: WorkId) {
     const moved = await carryRootDraft(db, threadId, workId);
-    if (moved.length > 0) workCounts?.recountAfterCommit({ workIds: moved, lineageRootIds: [] });
+    if (moved.length > 0) workCounts.recountAfterCommit({ workIds: moved, lineageRootIds: [] });
   }
 
   async function mutateMembership<T>(

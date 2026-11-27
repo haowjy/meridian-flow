@@ -1,7 +1,7 @@
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { HandBackResponse, RunState } from "@meridian/contracts/threads";
-import type { InboxMessage, InboxReader, Lease, MessageDraft } from "../loop/ports.js";
-import type { HandBackScopeFacts, StopFacts } from "../loop/stop-rule.js";
+import type { InboxMessage, InboxReader, Lease, MessageDraft } from "../ports.js";
+import type { HandBackScopeFacts, StopFacts } from "../stop-rule.js";
 
 export interface DeliveryStore extends InboxReader {
   setBlockedReason(threadId: ThreadId, reason: "credits_exhausted" | null): Promise<void>;

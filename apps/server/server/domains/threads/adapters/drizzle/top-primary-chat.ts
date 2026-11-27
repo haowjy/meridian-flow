@@ -1,7 +1,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
 import type { TopPrimaryChat, TopPrimaryChatResolver } from "../../ports/top-primary-chat.js";
-import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
 export function createDrizzleTopPrimaryChatResolver(db: DrizzleDatabase): TopPrimaryChatResolver {
   return {

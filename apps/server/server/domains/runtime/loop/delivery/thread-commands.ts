@@ -7,7 +7,6 @@ import type {
   StopRequest,
   StopResponse,
 } from "@meridian/contracts/threads";
-import { HandBackConflictError } from "../loop/runtime-delivery.js";
 import {
   decideHandBack,
   decideSendNow,
@@ -16,8 +15,8 @@ import {
   handBackFingerprint,
   type StopDecision,
   type StopFacts,
-} from "../loop/stop-rule.js";
-import type { ThreadLock } from "../loop/thread-lock.js";
+} from "../stop-rule.js";
+import type { ThreadLock } from "../thread-lock.js";
 import type {
   DeliveryLeaseStore,
   DeliveryStore,
@@ -25,6 +24,7 @@ import type {
   StoredHandBack,
 } from "./delivery-ports.js";
 import type { ExecutionSettlement } from "./execution-settlement.js";
+import { HandBackConflictError } from "./runtime-delivery.js";
 
 export type ThreadCommandPorts = {
   threadLock: ThreadLock;
@@ -41,7 +41,7 @@ export type ThreadCommandPorts = {
 export function createThreadCommands(ports: ThreadCommandPorts) {
   const { threadLock, inbox, leaseStore } = ports;
   const requireHandBacks = () => {
-    if (!ports.handBacks) throw new Error("Hand-back is not configured for this delivery adapter");
+    if (!ports.handBacks) throw new Error("Hand-back is not configured for this delivery service");
     return ports.handBacks;
   };
   async function storedHandBack(threadId: ThreadId, stored: StoredHandBack) {
