@@ -73,9 +73,7 @@ export class DocumentSessionRegistry {
     private readonly signedIn: () => boolean,
   ) {
     this.copies = new LocalDocumentCopies(accountId);
-    accountClosing.addEventListener("abort", () => void this.close().catch(() => undefined), {
-      once: true,
-    });
+    accountClosing.addEventListener("abort", () => void this.close(), { once: true });
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
