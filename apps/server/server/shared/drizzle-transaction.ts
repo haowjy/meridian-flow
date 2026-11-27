@@ -124,10 +124,14 @@ export async function runInCommandTransaction<T>(
   }
 }
 
-export function assertOutsideCommandTransaction(what: string): void {
-  if (!COMMAND_CHECKS) return;
+export function isInCommandTransaction(): boolean {
   const command = commandStorage.getStore();
-  if (command && !command.closed) throw new Error(`${what} inside a command transaction`);
+  return command !== undefined && !command.closed;
+}
+
+export function assertOutsideCommandTransaction(what: string): void {
+  if (COMMAND_CHECKS && isInCommandTransaction())
+    throw new Error(`${what} inside a command transaction`);
 }
 
 export async function runInRootDrizzleTransaction<T>(
@@ -283,11 +287,12 @@ export function deferUntilDrizzleRollback(callback: () => void | Promise<void>):
 }
 
 export function isRetryableTransactionError(error: unknown): boolean {
-  for (let cause = error; cause instanceof Error; cause = cause.cause) {
-    const code = (cause as { code?: unknown }).code;
-    if (code === "40P01" || code === "40001") return true;
-  }
-  return false;
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  if (code === "40P01" || code === "40001") return true;
+  if (error instanceof AggregateError && error.errors.some(isRetryableTransactionError))
+    return true;
+  return isRetryableTransactionError(error.cause);
 }
 
 export function sqlState(cause: unknown): string | null {

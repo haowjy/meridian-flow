@@ -167,12 +167,28 @@ live room reads its copy in the transaction under the document key. A
 read a command plans on is taken, or taken again, under the locks of what it read: the inverse
 captures off-lock to choose its steps, then reads the text each step writes under its Works,
 document keys. A miss the server retries rolls back past the claim and is never stored as an
-outcome: `runInCommandTransaction` reruns the transaction, up to three attempts, on a deadlock or
-serialization failure (`isRetryableTransactionError`), and `untilOwnersHold` reruns it on a moved
-owner. Each attempt starts clean: its after-commit callbacks, locals and participants die with it,
-and the one state an effect keeps in memory, the reply's own updates, is reset at each attempt's
-start (`effectSettler`). A catch that turns errors into an answer (`callAdapter`, a bound write)
-lets a retryable error through, or the writer gets the deadlock as a failed edit. In dev and test, a second connection taken while a command
+outcome.
+
+**What reruns.** This is the one place that says it. `untilOwnersHold` reruns a command on a moved
+owner. `runInCommandTransaction` reruns a command's transaction, up to three attempts, on a
+deadlock (`40P01`) or serialization failure (`40001`; none reaches a command today: commands run
+at read committed, and a read snapshot opened inside one joins it). Nothing else reruns on a
+deadlock: room saves, the run loop, background sweeps, imports, and context-port writes outside a
+command (REST writes and creates, upload finish) fail, and the context port answers them
+`io_error` (502, retryable). A rerun attempt starts clean only because:
+
+- its after-commit callbacks, locals and `beforeCommit` participants die with the rolled-back
+  attempt, and its after-rollback callbacks run before the next one;
+- what an effect keeps outside the transaction is reset per attempt: the reply's own updates
+  (`effectSettler`), the closures a body fills (`refusedEvidence` in model edits, the tree tool's
+  history `handle`), and object-store copies made inside the attempt, which a rollback releases
+  (`copyBinaryDocument`);
+- Copy puts its objects once, before the command, and keeps them only if the committed attempt
+  wrote them (an after-commit flag), releasing them otherwise;
+- a catch that turns errors into an answer (`callAdapter`, a bound write, a collab markdown write,
+  a Work receipt reversal) rethrows when `restartsTransaction` says someone above reruns it.
+
+In dev and test, a second connection taken while a command
 transaction is open throws (`assertOutsideCommandTransaction`): a wait on it is invisible to
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
 copy is marked `pending` by the root transaction that changed it, and any other transaction

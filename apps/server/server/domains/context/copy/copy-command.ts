@@ -11,6 +11,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { decodeRoomVersion, type RoomVersion, versionCovers } from "@meridian/document-model";
 import type { PMNode } from "@meridian/markup";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
+import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { CollabDomain } from "../../collab/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/index.js";
@@ -122,12 +123,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       // connection, so Copies that each held one while reading would starve the pool they
       // wait on.
       const prepared = replay ? null : await prepare(selected);
-      // The command reruns its transaction after a deadlock, so the bytes put before it are kept
-      // only when the answer is the result of an attempt that wrote them, the one that committed.
-      let wrote: unknown = null;
-      let answer: Awaited<ReturnType<CopyCommands["execute"]>> | undefined;
+      // The bytes are put once, before the command, which may rerun its transaction: only the
+      // attempt that commits a write marks them kept, a rolled-back one's callback is dropped.
+      let kept = false;
       try {
-        answer = await commands.execute(
+        return await commands.execute(
           input.request.operationId,
           receiptCommand(input.sources, input.destination.uri, input.request),
           input.destination.uri,
@@ -144,7 +144,10 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                   ...(input.destination.draft ? { draft: input.destination.draft } : {}),
                 },
               );
-              if (written.ok) wrote = written;
+              if (written.ok)
+                runAfterDrizzleCommit(() => {
+                  kept = true;
+                });
               return written;
             } catch (cause) {
               const returned = closedOwnerBounce(cause);
@@ -153,9 +156,8 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             }
           },
         );
-        return answer;
       } finally {
-        if (prepared?.ok && answer !== wrote) await deps.release.keys(prepared.value.putKeys);
+        if (prepared?.ok && !kept) await deps.release.keys(prepared.value.putKeys);
       }
     } finally {
       release?.();
