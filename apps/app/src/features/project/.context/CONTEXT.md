@@ -265,9 +265,10 @@ moves them back into the chat's box (`restoreOwnDeletedChatWords`) and out of Ne
 writer has not typed in New chat since: then the one copy stays in New chat with its note. Undo returns main to
 the chat only if main is still on `/chats`, and the chat slot only if nothing has replaced it since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
-restart it. Every restore goes through `ChatDeletes` (Undo, and `restore` for a trashed chat's
-Restore line), so a restore of the chat a notice names ends the notice without dropping anything.
-`restoreProjectChat` resets the chat's snapshot query rather than invalidating it: a cached
+restart it. The delete and Undo's restore are command-driver kinds on the chat's lane
+(`chat_delete`, `chat_restore` in `client/query/chat-commands.ts`), so an Undo made before the
+delete reached the server is sent after it, and both survive a reload; the notice itself does not.
+A settled restore resets the chat's snapshot query rather than invalidating it: a cached
 "deleted" error would read as proof the chat is gone when it next mounts. Nothing lists
 trashed chats; after a reload a deleted chat is reachable only by its address.
 

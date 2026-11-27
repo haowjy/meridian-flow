@@ -73,9 +73,10 @@ ports, not adapter internals:
 - `ThreadStoreState`/`ThreadStoreActions` own per-thread turns and actions;
   features import through `@/client/stores`. `ThreadCachePort` keeps list and
   snapshot projections in React Query while per-thread turns stay in the store.
-- Renaming a chat or a project is a command-driver kind (`chat_rename`,
-  `project_rename`); `useProjectThreads`, `useProjectChatFeed` and
-  `useProjectList` show its title over what the server last returned.
+- Renaming a chat or a project, and pinning, deleting or restoring a chat, are
+  command-driver kinds (`chat_rename`, `project_rename`, `chat_favorite`, `chat_delete`,
+  `chat_restore`); `useProjectThreads`, `useProjectChatFeed` and `useProjectList` show the
+  unsettled change over what the server last returned.
 - `useRebindThreadWork` is the one explicit composer-only Work rebind adapter.
   Work management and navigation never invoke it. Its cache convergence and
   durable transport owners remain separate.

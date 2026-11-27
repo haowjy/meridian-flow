@@ -41,7 +41,7 @@ The root screen after sign-in: the project list and the new-project view.
 
 The dialog for creating a project.
 
-The command that lets the app open a new project before the server answers is the driver's `project_create` kind (`client/query/project-commands.ts`). Renaming it is `project_rename` in the same file. A chat's model and reasoning overrides are the `thread_set_overrides` kind (`client/query/thread-overrides-command.ts`), and renaming a chat is `chat_rename` (`client/query/chat-rename-command.ts`).
+The command that lets the app open a new project before the server answers is the driver's `project_create` kind (`client/query/project-commands.ts`). Renaming it is `project_rename` in the same file. A chat's model and reasoning overrides are the `thread_set_overrides` kind (`client/query/thread-overrides-command.ts`), and renaming, pinning, deleting and restoring a chat are `chat_rename`, `chat_favorite`, `chat_delete` and `chat_restore` (`client/query/chat-commands.ts`).
 
 - Kind: feature
 - Paths: `apps/app/src/features/creation`
