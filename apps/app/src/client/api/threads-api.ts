@@ -1,6 +1,5 @@
 import {
   type AdmissionLookup,
-  API_THREADS_PATH,
   admissionLookupSchema,
   apiAvailableSkillsPath,
   apiThreadAdmissionPath,
@@ -28,8 +27,6 @@ import {
   type ForkThreadRequest,
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
-  type ListThreadsResponse,
-  listThreadsResponseSchema,
   type ModelRequestDebugListResponse,
   type RenameThreadRequest,
   type RenameThreadResponse,
@@ -88,18 +85,6 @@ type GetThreadSnapshotInput = {
   threadId: string;
   after?: string;
 };
-
-export async function listThreads(init?: {
-  origin?: string;
-  headers?: HeadersInit;
-}): Promise<Thread[]> {
-  const url = init?.origin ? new URL(API_THREADS_PATH, init.origin).toString() : API_THREADS_PATH;
-  const response = await getJson<ListThreadsResponse>(url, {
-    headers: init?.headers,
-    schema: listThreadsResponseSchema,
-  });
-  return response.threads;
-}
 
 export function forkThread(sourceThreadId: string, request: ForkThreadRequest): Promise<Thread> {
   return postJson(apiThreadForkPath(sourceThreadId), request, { schema: threadSchema });

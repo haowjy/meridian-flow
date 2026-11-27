@@ -46,24 +46,6 @@ function whose(level: AgentLevel, slug: string): string {
   }
 }
 
-function listOf(items: string[]): string {
-  if (items.length < 2) return items[0] ?? "";
-  const head = items.slice(0, -1).join(", ");
-  const last = items[items.length - 1];
-  return t`${head} and ${last}`;
-}
-
-export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[]): string {
-  const below = listOf(
-    shadows.map((item) =>
-      item === "user" ? t`yours` : item === "builtin" ? t`the built-in one` : t`the project's`,
-    ),
-  );
-  return level === "project"
-    ? t`This project's own; it hides ${below}.`
-    : t`Your own; it hides ${below}.`;
-}
-
 export function AgentFileState({
   projectId,
   document,

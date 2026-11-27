@@ -158,8 +158,3 @@ export function useCommands(filter: CommandFilter = {}): readonly CommandRecord[
     [records, kind, lane],
   );
 }
-
-export function useCommand(id: string | null): CommandRecord | undefined {
-  const { records } = useDriverSnapshot();
-  return useMemo(() => records.find((record) => record.id === id), [records, id]);
-}

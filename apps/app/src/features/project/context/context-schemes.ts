@@ -2,15 +2,12 @@ import { t } from "@lingui/core/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import {
   CONTEXT_URI_SCHEME_NAMES,
-  CONTEXT_URI_SCHEMES,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 
 import { familyIcon } from "@/components/app/link-chip/family-icons";
-
-export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
 export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 

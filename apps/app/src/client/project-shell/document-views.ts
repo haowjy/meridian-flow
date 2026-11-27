@@ -138,19 +138,6 @@ export function enterScope(
   if (changed) write(accountId, projectId, next);
 }
 
-export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
-  const views = read(accountId, projectId);
-  const next: Record<string, DocumentView> = {};
-  let changed = false;
-  for (const [documentId, view] of Object.entries(views)) {
-    if (view.pin?.draftId === pin.draftId && view.pin.itemKey === pin.itemKey) {
-      changed = true;
-      next[documentId] = { version: view.version };
-    } else next[documentId] = view;
-  }
-  if (changed) write(accountId, projectId, next);
-}
-
 function subscribe(accountId: string, projectId: string, listener: () => void) {
   const key = recordKey(accountId, projectId);
   const set = listeners.get(key) ?? new Set();

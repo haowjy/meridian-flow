@@ -20,8 +20,6 @@ export type Selection = {
   leftOut: { name: string; kind: "folder" | "file" }[];
 };
 
-export const EMPTY_SELECTION: Selection = { roots: [], leftOut: [] };
-
 export function unreadableReason(error: unknown): ImportUnreadableReason {
   const name = error instanceof DOMException || error instanceof Error ? error.name : "";
   if (name === "NotFoundError") return "not_found";

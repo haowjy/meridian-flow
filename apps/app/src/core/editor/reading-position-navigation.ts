@@ -2,8 +2,6 @@ import type { Editor } from "@tiptap/core";
 
 const pending = new Map<string, Set<object>>();
 const targeted = new WeakSet<Editor>();
-const restored = new WeakSet<Editor>();
-
 export function claimDocumentTarget(documentId: string): () => void {
   const owners = pending.get(documentId) ?? new Set<object>();
   const owner = {};
@@ -17,14 +15,6 @@ export function claimDocumentTarget(documentId: string): () => void {
 
 export function markEditorTarget(editor: Editor): void {
   targeted.add(editor);
-}
-
-export function markRestoredPlace(editor: Editor): void {
-  restored.add(editor);
-}
-
-export function keepsRestoredPlace(editor: Editor): boolean {
-  return restored.has(editor);
 }
 
 export function mayRestoreReadingPosition(editor: Editor, documentId: string): boolean {

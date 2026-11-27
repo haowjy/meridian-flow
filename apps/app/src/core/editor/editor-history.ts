@@ -135,10 +135,6 @@ export function endUndoStep(state: EditorState): void {
   if (docs) byDocs.get(docs)?.endStep();
 }
 
-export function editorHistory(editor: Editor): DocumentHistory | null {
-  return histories.get(editor) ?? null;
-}
-
 export function undoEditorHistory(editor: Editor): boolean {
   return (histories.get(editor)?.run("undo", editor) ?? null) !== null;
 }

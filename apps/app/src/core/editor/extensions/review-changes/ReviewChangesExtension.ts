@@ -60,10 +60,6 @@ export function setReviewChanges(view: EditorView, config: ReviewChangesConfig |
   );
 }
 
-export function reviewRowsOf(state: EditorState): readonly ReviewRow[] {
-  return reviewChangesKey.getState(state)?.rows ?? [];
-}
-
 function blockPositions(doc: Node): Map<string, number> {
   const positions = new Map<string, number>();
   doc.descendants((node, pos) => {

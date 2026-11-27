@@ -1,4 +1,4 @@
-import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
+import type { ChromeContext } from "./chrome-context";
 
 export type GesturePhase = "idle" | "drag" | "sweep";
 
@@ -36,29 +36,4 @@ export function escStep(situation: EscSituation): EscStep {
   if (objectPos !== null) return { kind: "select-object", pos: objectPos };
 
   return { kind: "at-home" };
-}
-
-export function advanceEscSituation(situation: EscSituation, step: EscStep): EscSituation {
-  switch (step.kind) {
-    case "cancel-gesture":
-      return { ...situation, gesture: "idle" };
-    case "close-layer":
-      return { ...situation, layers: situation.layers.slice(0, -1) };
-    case "select-object":
-      return {
-        ...situation,
-        context: {
-          owner: "object",
-          nodeType: situation.context.nodeType,
-          objectSpec: situation.context.objectSpec,
-          pos: step.pos,
-          chain: ["document", "object"],
-          objectPos: null,
-        },
-      };
-    case "caret-after-block":
-      return { ...situation, context: DOCUMENT_CHROME_CONTEXT };
-    case "at-home":
-      return situation;
-  }
 }
