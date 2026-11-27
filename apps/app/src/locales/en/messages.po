@@ -601,10 +601,9 @@ msgstr "{steps, plural, one {# step} other {# steps}}"
 msgid "{submitLabel} (enter a name first)"
 msgstr "{submitLabel} (enter a name first)"
 
-#. placeholder {0}: restored.keptWith
 #: src/features/project/shell/sidebar/chat-deletes.ts
-msgid "{title} comes back when {0} is restored"
-msgstr "{title} comes back when {0} is restored"
+msgid "{title} comes back when {work} is restored"
+msgstr "{title} comes back when {work} is restored"
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "{title} restored"

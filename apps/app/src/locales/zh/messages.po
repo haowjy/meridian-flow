@@ -601,9 +601,8 @@ msgstr ""
 msgid "{submitLabel} (enter a name first)"
 msgstr ""
 
-#. placeholder {0}: restored.keptWith
 #: src/features/project/shell/sidebar/chat-deletes.ts
-msgid "{title} comes back when {0} is restored"
+msgid "{title} comes back when {work} is restored"
 msgstr ""
 
 #: src/features/project/shell/sidebar/chat-deletes.ts

@@ -7,7 +7,12 @@ import {
   restoreOwnDeletedChatWords,
 } from "@/client/chat-submissions/deleted-chat";
 import { readLastShownChat, writeLastShownChat } from "@/client/project-shell/store";
-import { CHAT_DELETE_KIND, CHAT_RESTORE_KIND, trashChat } from "@/client/query/chat-commands";
+import {
+  CHAT_DELETE_KIND,
+  CHAT_RESTORE_KIND,
+  type ChatRestoreResult,
+  trashChat,
+} from "@/client/query/chat-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { whenRead } from "@/client/query/when-read";
 import type { ChatNavigation } from "../../routing/chat-navigation";
@@ -34,8 +39,6 @@ type Ports = {
 };
 
 type Taken = { main: boolean; current: boolean };
-
-type RestoreResult = { keptWith: { workId: string; name: string } | null };
 
 type Held = {
   notice: ChatDeleteNotice;
@@ -123,9 +126,10 @@ export class ChatDeletes {
     this.takeAway(threadId);
     held.moved = this.moveWords(threadId, title);
     if (restored) {
-      held.notice = { ...held.notice, status: "kept", keptWith: restored.keptWith };
+      const work = restored.keptWith;
+      held.notice = { ...held.notice, status: "kept", keptWith: work };
       this.publish();
-      announce(t`${title} comes back when ${restored.keptWith} is restored`);
+      announce(t`${title} comes back when ${work} is restored`);
       return false;
     }
     this.update(held, "failed");
@@ -179,7 +183,7 @@ export class ChatDeletes {
       return false;
     }
     if (!settled) return false;
-    const keptWith = (settled.outcome?.result as RestoreResult | undefined)?.keptWith;
+    const keptWith = (settled.outcome?.result as ChatRestoreResult | undefined)?.keptWith;
     if (keptWith) return { keptWith: keptWith.name };
     await read;
     return true;

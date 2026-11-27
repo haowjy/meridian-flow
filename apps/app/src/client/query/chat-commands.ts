@@ -35,6 +35,11 @@ export const chatLane = (threadId: string) => `chat:${threadId}`;
 
 type ChatChange = { title?: string; isFavorite?: boolean; deleted?: boolean };
 
+export type ChatRestoreResult = { keptWith: { workId: string; name: string } | null };
+
+const restoreBroughtBack = (record: CommandRecord) =>
+  record.state === "done" && !(record.outcome?.result as ChatRestoreResult | undefined)?.keptWith;
+
 function chatChanges(records: readonly CommandRecord[]): Map<string, ChatChange> {
   const changes = new Map<string, ChatChange>();
   for (const record of records) {
@@ -49,7 +54,8 @@ function chatChanges(records: readonly CommandRecord[]): Map<string, ChatChange>
     else if (record.kind === CHAT_FAVORITE_KIND)
       change().isFavorite = (body as ChatFavoriteBody).isFavorite;
     else if (record.kind === CHAT_DELETE_KIND) change().deleted = true;
-    else if (record.kind === CHAT_RESTORE_KIND) change().deleted = false;
+    else if (record.kind === CHAT_RESTORE_KIND && restoreBroughtBack(record))
+      change().deleted = false;
   }
   return changes;
 }
