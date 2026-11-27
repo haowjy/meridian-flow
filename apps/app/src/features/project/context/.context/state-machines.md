@@ -41,13 +41,16 @@ rather than keeping their own. Sign-out and switching accounts close it.
 stateDiagram-v2
   [*] --> open
   open --> closing: sign-out or an account switch aborts epochSignal
+  closing --> closing: the close fails; the next close tries again
   closing --> closed: the registry's close retires every session
 ```
 
-- **`closing` refuses new work and lets go of what is held.** The registry refuses to admit,
-  open, retain, restart or clear a room once the signal is aborted, but `release` still runs, so
-  a view unmounting during the close does not leak a hold. A cancelled open is teardown, not a
-  failure (Live document binding, above).
+- **`closing` refuses new work and lets go of what is held.** The registry refuses `admit`, `get`,
+  `retain`, `setHosted`, `restartUnavailableRoom`, `whenSentAcknowledged` and `clearLocalCopy`
+  once the signal is aborted, but `release` still runs, so a view unmounting during the close
+  does not leak a hold. Its `close` throws unless the signal is aborted, so a closed registry can't
+  take work again. An open the shutdown cuts off, even mid-bind, is teardown, not a failure (Live
+  document binding, above).
 - **`closed` is the registry's settled close.** `finishClose` closes the tree lists, Draft
   commands and the removal lease, then joins the registry's one close attempt: a second close
   while one is in flight waits on the same retirement, and a failed one is tried again by the

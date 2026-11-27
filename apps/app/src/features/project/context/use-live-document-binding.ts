@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
+import { useAccountEpochSignal } from "./account-feature-context";
 import type { LiveDocumentBinding, ProjectDocumentLiveOpenResult } from "./open-project-document";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
@@ -36,6 +37,7 @@ export function useLiveDocumentBinding({
   draftId?: string;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
+  const accountSignal = useAccountEpochSignal();
   const hostId = useRef(`${owner}:${++hostSequence}`);
   const attemptRef = useRef(0);
   const [retryGeneration, setRetryGeneration] = useState(0);
@@ -88,7 +90,7 @@ export function useLiveDocumentBinding({
           setState({ kind: "opened", documentId, session }),
         );
       } catch (error) {
-        if (abort.signal.aborted) return;
+        if (abort.signal.aborted || accountSignal.aborted) return;
         reportError(error);
         setState({ kind: "failed", documentId, reason: "failed" });
       }
@@ -98,7 +100,7 @@ export function useLiveDocumentBinding({
       stopSession();
       binding?.release();
     };
-  }, [documentId, draftId, opener, projectId, retryGeneration, trashed, workOnly]);
+  }, [accountSignal, documentId, draftId, opener, projectId, retryGeneration, trashed, workOnly]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
   return useMemo(() => ({ state, retry }), [retry, state]);

@@ -3,7 +3,6 @@ import type { AccountId } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { notifyFailure } from "@/components/app/failure-toast";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
 import {
   clearAccountCopies,
@@ -32,8 +31,7 @@ const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 export class AccountFeatureLifetime {
   private readonly closing = new AbortController();
   readonly epochSignal = this.closing.signal;
-  private readonly sessions: DocumentSessionRegistry;
-  readonly registry: LiveDocumentSessionRegistry;
+  readonly registry: DocumentSessionRegistry;
   readonly draftCommands;
   readonly presented = new PresentedDocuments((projectId, tab) =>
     this.removal.reconcileInstalledTab(projectId, tab),
@@ -51,12 +49,11 @@ export class AccountFeatureLifetime {
     readonly accountId: string,
     connectivityHints?: ConnectivityHintsPort,
   ) {
-    this.sessions = new DocumentSessionRegistry(
+    this.registry = new DocumentSessionRegistry(
       accountId as AccountId,
       this.epochSignal,
       (options) => createLoroRoomTransport({ ...options, connectivityHints }),
     );
-    this.registry = this.sessions;
     this.treeLists = new TreeListRegistry(accountId);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.standings = new ProjectStandings(this.treeLists, accountId);
@@ -128,7 +125,7 @@ export class AccountFeatureLifetime {
   async finishClose(): Promise<void> {
     this.beginClose();
     this.featureLease.disposeIfSuspended();
-    await this.sessions.close();
+    await this.registry.close();
     this.signOutChannel?.close();
   }
 }

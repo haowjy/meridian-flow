@@ -270,6 +270,7 @@ export class DocumentSessionRegistry {
   }
 
   close(): Promise<void> {
+    if (!this.accountClosing.aborted) throw new Error("Abort the account signal before closing");
     if (this.closeAttempt) return this.closeAttempt;
     const attempt = this.retireAll();
     this.closeAttempt = attempt;

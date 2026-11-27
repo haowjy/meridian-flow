@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -26,9 +27,7 @@ const SignOutContext = createContext<(() => Promise<void>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
-const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
-  null,
-);
+const LiveDocumentRegistryAccountContext = createContext<LiveDocumentSessionRegistry | null>(null);
 
 export function AccountFeatureComposition({
   accountId,
@@ -143,15 +142,13 @@ export function useOptionalContextRemovalCoordinator(): ContextRemovalCoordinato
   return useContext(ContextRemovalAccountContext);
 }
 
-export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["registry"] {
+export function useLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry {
   const registry = useContext(LiveDocumentRegistryAccountContext);
   if (!registry) throw new Error("AccountFeatureComposition is required");
   return registry;
 }
 
-export function useOptionalLiveDocumentSessionRegistry():
-  | AccountFeatureLifetime["registry"]
-  | null {
+export function useOptionalLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry | null {
   return useContext(LiveDocumentRegistryAccountContext);
 }
 
