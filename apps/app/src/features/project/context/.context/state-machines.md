@@ -70,7 +70,9 @@ stateDiagram-v2
   releases its holds so the owner's deletion can take them, and goes to `/end-session`. A tab
   whose own sign-out is running when the count moves lets that sign-out finish instead
   (`signOutRunning`): both deliver and delete the same copies, and ending the lifetime under it
-  would only make it answer "Couldn't log out" before the tab leaves. A copy
+  would only make it answer "Couldn't log out" before the tab leaves. If that sign-out refuses
+  (its own words couldn't be delivered in 8 s) and the count has moved meanwhile, the lifetime
+  then ends as on a sign-out elsewhere, so the tab doesn't stay open under a session that ended. A copy
   left by a tab closed before the sign-out is a stored copy: the owner's wait reads it, delivers
   what it holds and deletes it with the rest. Words typed in another tab after the owner's wait
   answered, before that tab hears the count, are deleted unsent, and so are words that tab can't

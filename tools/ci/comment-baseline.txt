@@ -497,6 +497,7 @@ apps/app/src/features/project/context/InlineValidationOverlay.tsx	Capture phase 
 apps/app/src/features/project/context/RecentDocumentsLanding.tsx	A link can't be pressed; `ListRow` names a selected link instead.
 apps/app/src/features/project/context/account-feature-lifetime.ts	Closed by anything but this sign-out, the wait no longer knows what was delivered.
 apps/app/src/features/project/context/account-feature-lifetime.ts	No await before this abort: the wait answered from one synchronous pass, and a keystroke landing in between would be deleted unsent.
+apps/app/src/features/project/context/account-feature-lifetime.ts	Refused, but another tab's sign-out moved the count meanwhile: end as that one asked.
 apps/app/src/features/project/context/account-feature-lifetime.ts	Stored copies wait for the signing-out tab, or for their document's next open: opening them here would race a sign-out's deletion.
 apps/app/src/features/project/context/account-feature-lifetime.ts	This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
 apps/app/src/features/project/context/context-entry-name.ts	A name that would read as another type (`data.json.md`) is kept whole, as the replay keeps it.
@@ -819,6 +820,7 @@ apps/server/server/domains/file-intake/image-preview-worker.ts	Remove BMP alpha;
 apps/server/server/domains/file-intake/image-preview.ts	Retire a worker after a HEIC decode failure; libheif's WASM may be unusable
 apps/server/server/domains/file-intake/index.ts	Accept only bare MIME type/subtype; parameters would break the signed PUT header
 apps/server/server/domains/file-intake/text/pdf-markdown.ts	Pass pdf.js a copy of the buffer; it takes ownership
+apps/server/server/domains/file-intake/worker-pool.ts	Call `unref()` after the listeners: adding a 'message' listener re-refs the worker, and only an unreffed idle pool lets the process exit
 apps/server/server/domains/file-policy/adapters/file-access-changes.ts	NOTIFY inside the ambient transaction is delivered at its commit.
 apps/server/server/domains/file-policy/domain/types.ts	The settings on the file and its folders, source and Work in the *live* tree, nearest first; never a draft's view, or a draft move of a file out of a `deny` folder would escape it. The policy takes the first. Absent until settings are stored.
 apps/server/server/domains/file-policy/edit-confirmation.ts	Binds edit grants to a write call (file-access §5): every write seam the call reaches locks the grants' Works with its own, in id order, and confirms them inside its transaction before any advisory lock.
@@ -857,10 +859,10 @@ apps/server/server/domains/projects/adapters/work-repository/drizzle.ts	Restore 
 apps/server/server/domains/runtime/adapters/drizzle-inbox.ts	Keep canMaterializeWork's thread lock weak; stronger locks invert Work-mutation order
 apps/server/server/domains/runtime/adapters/drizzle-session-lock.ts	A holder cannot prevent other lost-claim notifications.
 apps/server/server/domains/runtime/adapters/drizzle-session-lock.ts	After a failed unlock, drop the DB connection to release all its server-side locks
-apps/server/server/domains/runtime/adapters/runtime-delivery.ts	Do not take a thread lock from Work mutations; it inverts thread-to-Work lock order
 apps/server/server/domains/runtime/loop/compaction-phase.ts	Recheck the execution's owned lease after preparation; a remote Stop may have handed back a message
 apps/server/server/domains/runtime/loop/compaction/elide.ts	Insert compaction evidence in reverse Map order; the recent picker reverses insertion order
 apps/server/server/domains/runtime/loop/compaction/important-files.ts	Sort object keys before labeling; jsonb can reorder them and change pricing or replay bytes
+apps/server/server/domains/runtime/loop/delivery/delivery-service.ts	Do not take a thread lock from Work mutations; it inverts thread-to-Work lock order
 apps/server/server/domains/runtime/loop/execution-finalizer.ts	Lock asks before threads everywhere; deletion and archive settlement use the same order
 apps/server/server/domains/runtime/loop/orchestrator.ts	Helper result delivery is flushed by callers after their live-turn registry is cleared. Draining here would race queued helper system turns into a still-running parent thread.
 apps/server/server/domains/runtime/loop/orchestrator.ts	The next request starts only after its boundary commits.
@@ -911,7 +913,6 @@ apps/server/server/shared/model-edit-ids.ts	Arbitrary fixed namespaces: changing
 apps/server/server/shared/thread-work-lock.ts	Canonical mutation lock order is thread, then Works by id, and threads parents first by `(spawn_depth, id)`; any other order deadlocks against a Stop
 apps/server/server/shared/thread-work-lock.ts	Distinct from the run-ownership lock seed (81); never share a seed across concerns
 apps/server/server/shared/tree-owners.ts	Whether a catch that turns errors into an answer must rethrow `cause`: a moved owner, or a deadlock or serialization failure inside a command, whose transaction then runs again. Outside a command nothing reruns a deadlock, so the catch answers it as before.
-apps/server/server/shared/worker-pool.ts	Call `unref()` after the listeners: adding a 'message' listener re-refs the worker, and only an unreffed idle pool lets the process exit
 apps/server/server/test-support/tree-list-crash-writer.ts	hang until SIGKILL
 apps/server/vitest.config.ts	Mocked server tests stay in the isolated config; a shared worker would leak their vi.mock
 apps/server/vitest.db.config.ts	A timed-out hook's async DB work is not cancelled and overlaps the next test's destructive reset, so setup and cleanup get the same 30 s budget
@@ -966,7 +967,8 @@ packages/contracts/src/protocol/entry-segment.ts	A twin suffix always ends the s
 packages/contracts/src/protocol/filetype.ts	ClassifyFiletype is frozen; a changed kind or schemaType changes replay of stored tree records and needs a migration
 packages/contracts/src/protocol/http-types.ts	Binary read URLs are short-lived; clients must not persist them
 packages/contracts/src/protocol/http-types.ts	Figure signed URLs are short-lived; never persist them in a document
-packages/contracts/src/protocol/loro-ws.ts	Liveness for a room socket, outside the Loro protocol (a text frame): the server sends one every interval, and a client that hears nothing for the timeout replaces the socket, since a half-open connection never closes on its own and its unacknowledged batches are resent only by a new Join.
+packages/contracts/src/protocol/loro-ws.ts	A room socket's ping, outside the Loro protocol: a text frame the client never decodes.
+packages/contracts/src/protocol/socket-liveness.ts	Liveness for the app's sockets (the thread socket and every room socket): the server sends a ping every interval, and a client that hears nothing for the timeout replaces the socket. A half-open connection never closes on its own.
 packages/contracts/src/threads/asks.ts	PermissionWorkCommand is server-only and must never be serialized through threadAsk()
 packages/database/src/schema/agent-definition-revisions.ts	Order Saves by seq, not created_at; transaction-start timestamps can tie or invert
 packages/database/src/schema/agent-threads.ts	Bigserial seq orders allocation, not commit; per-thread lock serialization gives FIFO

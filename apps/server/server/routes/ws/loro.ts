@@ -1,4 +1,4 @@
-import { LORO_PING, LORO_PING_INTERVAL_MS } from "@meridian/contracts/protocol";
+import { LORO_PING, SOCKET_PING_INTERVAL_MS } from "@meridian/contracts/protocol";
 import { defineWebSocketHandler } from "nitro";
 import { runWithEventCorrelation } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
@@ -95,7 +95,7 @@ export default defineWebSocketHandler({
         send: (data) => wsPeer.send(data),
         close: (code, reason) => wsPeer.close(code, reason),
       });
-      wsPeer._ping = setInterval(() => wsPeer.send(LORO_PING), LORO_PING_INTERVAL_MS);
+      wsPeer._ping = setInterval(() => wsPeer.send(LORO_PING), SOCKET_PING_INTERVAL_MS);
     });
   },
   message(peer, message) {

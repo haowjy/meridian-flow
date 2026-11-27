@@ -143,6 +143,8 @@ export class AccountFeatureLifetime {
       return await this.signOut();
     } finally {
       this.signOutRunning = false;
+      // Refused, but another tab's sign-out moved the count meanwhile: end as that one asked.
+      if (!this.signedIn()) void this.signedOutElsewhere();
     }
   }
 

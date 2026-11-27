@@ -1,4 +1,5 @@
 import type { FailureLog } from "@meridian/contracts/failures";
+import { SOCKET_PING_TIMEOUT_MS } from "@meridian/contracts/protocol";
 import type {
   ConnectivityHintsPort,
   SocketClose,
@@ -11,11 +12,7 @@ import {
   computeReconnectDelayMs,
   DEFAULT_WS_RECONNECT,
 } from "./ws-reconnect";
-import {
-  DEFAULT_WS_PING_TIMEOUT_MS,
-  formatWsCloseReason,
-  isTerminalWsClose,
-} from "./ws-thread-socket-utils";
+import { formatWsCloseReason, isTerminalWsClose } from "./ws-thread-socket-utils";
 
 export const DEFAULT_WS_HANDSHAKE_TIMEOUT_MS = 10_000;
 
@@ -165,7 +162,7 @@ export class SocketLifecycleController {
     this.pingTimer = setTimeout(() => {
       this.pingTimer = null;
       this.closeCurrentSocket("ping_timeout");
-    }, DEFAULT_WS_PING_TIMEOUT_MS);
+    }, SOCKET_PING_TIMEOUT_MS);
   }
 
   private publishConnectionState(state: ConnectionState): void {

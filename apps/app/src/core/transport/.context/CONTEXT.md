@@ -121,8 +121,8 @@ not waiting for the browser's close event); `retry-now` connects at once when no
 A room socket that stops carrying frames without closing (a half-open connection: a dropped NAT
 mapping, a sleep, a server that vanished without a reset) would stay `connected` for minutes, and
 the batches it sent but never had acknowledged are resent only by a new Join. So the server sends
-a text frame `LORO_PING` every `LORO_PING_INTERVAL_MS` (30 s) on each room socket, outside the Loro
-protocol, and the transport drops a socket that has carried no frame for `LORO_PING_TIMEOUT_MS`
-(45 s) and joins again on the usual backoff. That is the thread socket's rule (its ping every
-30 s, 45 s without one), and it bounds how long typing, a press or a sign-out's wait can be stuck
+a text frame `LORO_PING` every `SOCKET_PING_INTERVAL_MS` (30 s) on each room socket, outside the Loro
+protocol, and the transport drops a socket that has carried no frame for `SOCKET_PING_TIMEOUT_MS`
+(45 s) and joins again on the usual backoff. The thread socket uses the same two constants, and
+the same rule bounds how long typing, a press or a sign-out's wait can be stuck
 on a dead socket. `./mf` ignores the text frames.

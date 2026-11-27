@@ -3,12 +3,12 @@ import {
   decodeLoroJoinExtra,
   encodeLoroJoinAuth,
   LORO_JOIN_ERROR,
-  LORO_PING_TIMEOUT_MS,
   LORO_ROOM_ERROR,
   LORO_WS_PATH,
   type LoroRoom,
   loroRoomErrorOf,
   loroRoomName,
+  SOCKET_PING_TIMEOUT_MS,
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
 import {
@@ -403,7 +403,7 @@ export function createLoroRoomTransport({
 
   const heard = (ws: WebSocket) => {
     clearTimeout(silence);
-    silence = setTimeout(() => drop(ws, "ping_timeout"), LORO_PING_TIMEOUT_MS);
+    silence = setTimeout(() => drop(ws, "ping_timeout"), SOCKET_PING_TIMEOUT_MS);
   };
 
   // A half-open socket may not report its close for minutes: treat it as closed at once.
