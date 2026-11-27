@@ -5,7 +5,7 @@ import {
 } from "@meridian/contracts";
 import { numberedName, readSegment } from "@meridian/contracts/protocol";
 import { exportFilename } from "../../context/index.js";
-import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
+import type { ExportDocument, ExportFolder, ExportSourceRoot } from "../ports/export-snapshot.js";
 export function portableName(name: string): string {
   const nfc = name.normalize("NFC");
   // slop-lint: allow suppression the control range is the point of the pattern
@@ -18,7 +18,8 @@ export function buildExportLayout(
   documents: readonly ExportDocument[],
   options: ProjectExportOptions,
   sources: readonly ExportSourceRoot[] = [],
-): { paths: Map<string, string>; roots: Map<string, string> } {
+  folders: readonly ExportFolder[] = [],
+): { paths: Map<string, string>; roots: Map<string, string>; emptyFolders: string[] } {
   const entries = new Map<string, Entry>([["", { name: "", kind: "folder", children: [] }]]);
   function add(key: string, parent: string, name: string, kind: Entry["kind"]): string {
     if (!entries.has(key)) {
@@ -27,15 +28,14 @@ export function buildExportLayout(
     }
     return key;
   }
-  const works = add("works", "", "Works", "folder");
-  const noWork = add("no-work", works, "No Work", "folder");
   function rootFor(source: ExportSourceRoot): string | null {
     let parent: string;
     if (source.scheme === "scratch" || source.scheme === "uploads") {
       if (!options[source.scheme]) return null;
+      const works = add("works", "", "Works", "folder");
       const work = source.workId
         ? add(`work:${source.workId}`, works, source.workName ?? "Work", "folder")
-        : noWork;
+        : add("no-work", works, "No Work", "folder");
       parent = add(
         `${work}:${source.scheme}`,
         work,
@@ -61,16 +61,22 @@ export function buildExportLayout(
     const root = rootFor(source);
     if (root) rootKeys.set(source.uri, root);
   }
-  for (const doc of documents) {
-    let parent = rootFor(doc);
-    if (!parent) continue;
-    rootKeys.set(doc.uri.slice(0, -doc.path.length), parent);
-    let key = `${doc.scheme}:${doc.workId}:${doc.rootThreadId}`;
-    for (const segment of doc.path.split("/").slice(0, -1)) {
+  function folderOf(entry: ExportFolder, segments: readonly string[]): string | null {
+    let parent = rootFor(entry);
+    if (!parent) return null;
+    rootKeys.set(entry.uri.slice(0, -entry.path.length), parent);
+    let key = `${entry.scheme}:${entry.workId}:${entry.rootThreadId}`;
+    for (const segment of segments) {
       key += `/${segment}`;
       parent = add(key, parent, readSegment(segment).name, "folder");
     }
-    add(`doc:${doc.id}`, parent, exportFilename(doc.name, doc.extension, doc.fileType), "file");
+    return parent;
+  }
+  for (const folder of folders) folderOf(folder, folder.path.split("/"));
+  for (const doc of documents) {
+    const parent = folderOf(doc, doc.path.split("/").slice(0, -1));
+    if (parent)
+      add(`doc:${doc.id}`, parent, exportFilename(doc.name, doc.extension, doc.fileType), "file");
   }
   const pathOf = new Map<string, string>([["", ""]]);
   for (const [key, { children }] of entries) {
@@ -99,5 +105,8 @@ export function buildExportLayout(
     }),
   );
   const roots = new Map([...rootKeys].map(([uri, key]) => [uri, pathOf.get(key) as string]));
-  return { paths, roots };
+  const emptyFolders = [...entries].flatMap(([key, { kind, children }]) =>
+    key && kind === "folder" && children.length === 0 ? [pathOf.get(key) as string] : [],
+  );
+  return { paths, roots, emptyFolders };
 }

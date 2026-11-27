@@ -18,9 +18,11 @@ export type ExportSourceRoot = Pick<
   ExportDocument,
   "scheme" | "workId" | "workName" | "rootThreadId" | "chatTitle"
 > & { uri: string };
+export type ExportFolder = ExportSourceRoot & { path: string };
 export interface ExportSnapshotStore {
   read(projectId: string): Promise<{
     documents: ExportDocument[];
+    folders: ExportFolder[];
     sources: ExportSourceRoot[];
     settlements: ReadonlyMap<string, string>;
   }>;

@@ -1,8 +1,8 @@
 import {
   canonicalLeaf,
+  entryExtension,
   type Filetype,
   readSegment,
-  splitExtension,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import {
@@ -487,7 +487,7 @@ function decideMove(
     if (node.kind === "folder") name = nameOf(toLeaf);
     else {
       const parsed = storedFilename(nameOf(toLeaf), {
-        extension: splitExtension(node.name).extension.toLowerCase(),
+        extension: entryExtension(node),
         editable: node.kind === "document",
         filetype: node.filetype,
       });

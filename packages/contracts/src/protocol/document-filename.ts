@@ -115,6 +115,18 @@ export function splitExtension(filename: string): { name: string; extension: str
     : { name: filename, extension: "" };
 }
 
+export function entryExtension(entry: {
+  kind: "folder" | "document" | "file";
+  name: string;
+  filetype?: string | null;
+}): string {
+  if (entry.kind === "folder") return "";
+  if (entry.kind === "file" || entry.filetype === "source")
+    return splitExtension(entry.name).extension.toLowerCase();
+  const parsed = parseDocumentFilename(entry.name);
+  return parsed.ok ? parsed.value.extension : "";
+}
+
 export function numberedName(entry: string, n: number, kind: "file" | "folder"): string {
   if (n === 1) return entry;
   if (kind === "folder") return `${entry} (${n})`;
