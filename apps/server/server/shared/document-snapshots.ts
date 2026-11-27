@@ -1,13 +1,21 @@
 import { documentSnapshots, type StoredFrontiers } from "@meridian/database/schema";
+import { type DocVersion, docVersion } from "@meridian/document-model";
 import { sql } from "drizzle-orm";
 import type { LoroDoc, PeerID } from "loro-crdt";
 import type { DrizzleDb } from "./drizzle-transaction.js";
 
 export type SnapshotRow = { roomKey: string; docKey: string; doc: LoroDoc };
 
-export async function writeSnapshots(tx: DrizzleDb, rows: readonly SnapshotRow[]): Promise<number> {
-  if (rows.length === 0) return 0;
+// Each doc's version is read at its export: a room imports into its docs without a lock, so a
+// version read after the insert's awaits can cover a batch the row lacks.
+export async function writeSnapshots(
+  tx: DrizzleDb,
+  rows: readonly SnapshotRow[],
+): Promise<{ bytes: number; stored: Map<string, DocVersion> }> {
+  const stored = new Map<string, DocVersion>();
+  if (rows.length === 0) return { bytes: 0, stored };
   const values = rows.map(({ roomKey, docKey, doc }) => {
+    stored.set(docKey, docVersion(doc));
     const snapshot = doc.export({ mode: "snapshot" });
     return {
       roomKey,
@@ -28,7 +36,7 @@ export async function writeSnapshots(tx: DrizzleDb, rows: readonly SnapshotRow[]
         savedAt: sql`now()`,
       },
     });
-  return values.reduce((sum, value) => sum + value.snapshot.byteLength, 0);
+  return { bytes: values.reduce((sum, value) => sum + value.snapshot.byteLength, 0), stored };
 }
 
 export const storedFrontiers = (doc: LoroDoc): StoredFrontiers =>

@@ -12,12 +12,13 @@ export function docUpdateFrames(
   roomId: string,
   envelope: Uint8Array,
   batchId: HexString,
+  crdt: CrdtType = CrdtType.Loro,
 ): Uint8Array[] {
   if (envelope.byteLength <= FRAGMENT_BYTES)
     return [
       encode({
         type: MessageType.DocUpdate,
-        crdt: CrdtType.Loro,
+        crdt,
         roomId,
         updates: [envelope],
         batchId,
@@ -27,7 +28,7 @@ export function docUpdateFrames(
   const frames = [
     encode({
       type: MessageType.DocUpdateFragmentHeader,
-      crdt: CrdtType.Loro,
+      crdt,
       roomId,
       batchId,
       fragmentCount: count,
@@ -38,7 +39,7 @@ export function docUpdateFrames(
     frames.push(
       encode({
         type: MessageType.DocUpdateFragment,
-        crdt: CrdtType.Loro,
+        crdt,
         roomId,
         batchId,
         index,

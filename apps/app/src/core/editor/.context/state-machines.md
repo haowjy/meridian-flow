@@ -54,11 +54,12 @@ stateDiagram-v2
   ([sync status](../../../features/editor/.context/state-machines.md)).
 - **`synced` does not mean the server has every local edit.** That is
   `serverHasLocalChanges`: true once the server has acknowledged every local update sent on
-  this connection.
+  this connection. Saved is later still: `hasUnsavedEdits` turns false only once the server's
+  saved frame covers the copy, about 2 s after the last batch.
 - **A detached session keeps its document.** `detachTransport` closes the socket and keeps the
   `RoomDocs`, local persistence and undo history; edits made meanwhile wait in the document until
   the next `attachTransport` syncs them. The session registry detaches a session it is keeping
-  when no view wants its socket open and it has no unsent edits
+  when no view wants its socket open and it has no unsaved edits
   (`detachUnwantedTransport`).
 - `destroyed` is the one stored state: once set, `recomputeStatus` returns without deriving.
 - The transport states are the [room connection](../../transport/.context/state-machines.md)'s.

@@ -20,9 +20,9 @@
  * deleted on a final fact; an incarnation that is no longer current is deleted when no tab holds
  * it (`openOlder`).
  *
- * A copy is working storage only (`local-copy-store.ts`). What the server is known to have is in
- * the copy, its mark (`SERVER_META`): what it holds beyond its mark is what a room that ends for
- * good drops.
+ * A copy is working storage only (`local-copy-store.ts`). What the server is known to have saved
+ * is in the copy, its mark (`SAVED_META`): what it holds beyond its mark is what a room that ends
+ * for good drops.
  */
 import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";

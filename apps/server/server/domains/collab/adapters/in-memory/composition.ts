@@ -258,6 +258,7 @@ function memoryServerRooms(memory: MemoryDocumentRooms): ServerDocumentRooms {
       memory.transaction((tx) => memory.commit(tx, room, batch, origin)),
     seed: (_tx, room, snapshots) => memory.transaction((tx) => memory.seed(tx, room, snapshots)),
     subscribe: memory.subscribe,
+    subscribeSaved: memory.subscribeSaved,
     flush: memory.flush,
     loaded: memory.loaded,
     unload: memory.unload,
