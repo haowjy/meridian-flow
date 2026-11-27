@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { draftItemKey, type ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
-import { LIVE, type TreeWriter } from "@meridian/project-tree";
+import { LIVE, type TreeWriter, userActor } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -318,7 +318,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => make(writer),
       });
-    const WRITER = `user:${USER_ID}`;
+    const WRITER = userActor(USER_ID);
     const placementsNamed = async (name: string) =>
       db
         .select({ id: schema.treeNodes.id, deletedAt: schema.treeNodes.trashedAt })

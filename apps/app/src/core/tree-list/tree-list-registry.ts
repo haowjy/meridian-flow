@@ -1,4 +1,5 @@
 import { loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
+import { userActor } from "@meridian/project-tree";
 import { watchBounces } from "../project-tree/tree-bounces";
 import { TreeListSession } from "./tree-list-session";
 
@@ -23,7 +24,7 @@ export class TreeListRegistry {
     let entry = this.sessions.get(key);
     if (!entry) {
       const session = new TreeListSession(this.accountId, list, this.signedIn, this.accountChanged);
-      const unwatch = watchBounces(session, `user:${this.accountId}`);
+      const unwatch = watchBounces(session, userActor(this.accountId));
       entry = { session, unwatch, holds: 0 };
       this.sessions.set(key, entry);
     }

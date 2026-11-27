@@ -113,7 +113,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         writes,
-        actor: `user:${USER_ID}`,
+        userId: USER_ID,
         threadView: {
           threadId: THREAD_ID,
           draftOwner: {

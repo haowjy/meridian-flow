@@ -24,6 +24,8 @@ export { type ListDoc, listOf } from "./list-doc.js";
 export { shownName } from "./names.js";
 export {
   type Actor,
+  type ActorOf,
+  agentActor,
   type BlobRef,
   type CreateRecord,
   type DeleteRecord,
@@ -35,12 +37,15 @@ export {
   type PurgeRecord,
   type RenameRecord,
   type RestoreRecord,
+  readActor,
   type Settlement,
   type SettleRecord,
+  SYSTEM_ACTOR,
   sourceIdOf,
   sourceRoot,
   type TreeRecord,
   type TreeRecordInput,
+  userActor,
 } from "./record.js";
 export {
   type DroppedRecord,

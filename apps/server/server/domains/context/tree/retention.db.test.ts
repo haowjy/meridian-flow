@@ -11,7 +11,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { LIVE } from "@meridian/project-tree";
+import { agentActor, LIVE } from "@meridian/project-tree";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -34,7 +34,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
   const PROJECT = randomUUID();
   const SOURCE = randomUUID();
   const WORK = randomUUID();
-  const AGENT = `agent:${randomUUID()}/${randomUUID()}`;
+  const AGENT = agentActor(randomUUID(), randomUUID());
   let draftId: DraftId;
   const { treeLists } = createTestRemovalDeps(db);
   const seed = treeSeeder(db);

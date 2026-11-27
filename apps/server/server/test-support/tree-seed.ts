@@ -5,6 +5,7 @@ import {
   type BlobRef,
   childrenOf,
   LIVE,
+  SYSTEM_ACTOR,
   sourceRoot,
   type TreeWriter,
   type View,
@@ -74,7 +75,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     const store = options.store ?? defaultStore;
     const { result } = await store.submit({
       lists: [await treeListOfSource(db, sourceId)],
-      make: ([{ writer }]) => make(writer, options.view ?? LIVE, options.actor ?? "system"),
+      make: ([{ writer }]) => make(writer, options.view ?? LIVE, options.actor ?? SYSTEM_ACTOR),
     });
     return result;
   }

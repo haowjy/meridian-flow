@@ -273,7 +273,7 @@ async function harness(
     } as never,
     store: store_,
     writes: {} as never,
-    actor: `user:${USER}`,
+    userId: USER,
     scheme: "user",
     documentSync: documentSync as never,
   });

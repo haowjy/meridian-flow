@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createReplyMutations } from "@meridian/agent-edit/integration";
 import { draftItemKey } from "@meridian/contracts";
 import { toolContentText } from "@meridian/contracts/threads";
-import { LIVE } from "@meridian/project-tree";
+import { LIVE, userActor } from "@meridian/project-tree";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -293,7 +293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await call("read", { path: "ch1" });
       await treeSeeder(db).store.submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
-        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+        make: ([{ writer }]) => writer.delete(LIVE, userActor(USER_ID), CH1),
       });
       for (const args of [
         { command: "replace", path: "ch1", find: "Alpha one.", content: "Alpha, edited." },
@@ -322,7 +322,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const part = await treeSeeder(db).folder(SOURCE_ID, "Part");
       await treeSeeder(db).store.submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
-        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, part),
+        make: ([{ writer }]) => writer.delete(LIVE, userActor(USER_ID), part),
       });
       for (const args of [
         { command: "replace", path: "Part/ch2", find: "Delta four.", content: "Delta, edited." },
@@ -346,7 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         deleted = true;
         await treeSeeder(db).store.submit({
           lists: [await treeListOfSource(db, SOURCE_ID)],
-          make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+          make: ([{ writer }]) => writer.delete(LIVE, userActor(USER_ID), CH1),
         });
       });
       const returned = await call("write", {
@@ -441,7 +441,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(landed.isError, landed.text).toBeFalsy();
       await treeSeeder(db).store.submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
-        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+        make: ([{ writer }]) => writer.delete(LIVE, userActor(USER_ID), CH1),
       });
       for (const args of [
         { command: "undo", path: "ch1" },

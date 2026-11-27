@@ -3,6 +3,27 @@ export type DraftId = string;
 export type Actor = string;
 export type BlobRef = { storageKey: string; mime: string; size: number };
 
+export const SYSTEM_ACTOR: Actor = "system";
+
+export function userActor(userId: string): Actor {
+  return `user:${userId}`;
+}
+export function agentActor(threadId: string, turnId: string): Actor {
+  return `agent:${threadId}/${turnId}`;
+}
+
+export type ActorOf =
+  | { kind: "user"; userId: string }
+  | { kind: "agent"; threadId: string }
+  | { kind: "other" };
+
+export function readActor(actor: Actor): ActorOf {
+  if (actor.startsWith("user:")) return { kind: "user", userId: actor.slice("user:".length) };
+  if (actor.startsWith("agent:"))
+    return { kind: "agent", threadId: actor.slice("agent:".length).split("/")[0] ?? "" };
+  return { kind: "other" };
+}
+
 export function sourceRoot(sourceId: string): string {
   return `source:${sourceId}`;
 }

@@ -64,7 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db,
           sourceId: async () => SOURCE_ID,
         }),
-        actor: `user:${USER_ID}`,
+        userId: USER_ID,
         documentCreation: collab,
         documentSync: {
           ...collab,

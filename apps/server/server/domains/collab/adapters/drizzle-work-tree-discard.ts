@@ -1,7 +1,13 @@
 import type { DraftId, UserId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { discardDraft, pendingRecords, recordsOfItem } from "@meridian/project-tree";
+import {
+  discardDraft,
+  pendingRecords,
+  recordsOfItem,
+  SYSTEM_ACTOR,
+  userActor,
+} from "@meridian/project-tree";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
@@ -19,7 +25,7 @@ export async function discardTreeRecords(
 ): Promise<{ had: Set<DocumentId>; trashed: string[] }> {
   const had = new Set<DocumentId>();
   const trashed: string[] = [];
-  const by = input.userId ? `user:${input.userId}` : "system";
+  const by = input.userId ? userActor(input.userId) : SYSTEM_ACTOR;
   const { result } = await deps.treeLists.submit({
     lists: await treeListsOfDraft(db, input.draftId),
     make: (copies) =>

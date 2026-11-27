@@ -1,5 +1,5 @@
 import type { LoroDoc } from "loro-crdt";
-import type { TreeRecord } from "./record.js";
+import { SYSTEM_ACTOR, type TreeRecord } from "./record.js";
 import { replay, type TreeNode, type TreeProjection } from "./replay.js";
 import { droppedRecords, listRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
@@ -119,7 +119,7 @@ export function admit(server: TreeWriter, update: Uint8Array, connection: Connec
   const dropped = stamp(server.doc, records, connection);
   if (dropped.length > 0)
     server.transact(() =>
-      server.settle("system", dropped, "dropped", { reason: "Work was closed" }),
+      server.settle(SYSTEM_ACTOR, dropped, "dropped", { reason: "Work was closed" }),
     );
   return { records, dropped };
 }
