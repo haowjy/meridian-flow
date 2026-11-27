@@ -179,7 +179,7 @@ function collectSwallowedErrors(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
-// keep: the raw scanner loses its place after a template with a substitution, so comments come from the parse tree, and JsxText is skipped because its words are text
+// The raw scanner loses its place after a template with a substitution, so comments come from the parse tree, and JsxText is skipped because its words are text
 function comments(sourceFile, text) {
   const byStart = new Map();
   const add = (pos, end) => {

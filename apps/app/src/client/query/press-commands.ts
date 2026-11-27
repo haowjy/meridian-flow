@@ -24,6 +24,10 @@ export type PressUndoBody = { projectId: string; pressCommandId: string };
 
 export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
 
+/**
+ * A press or Undo holds the lane of each draft it presses, so it goes after every earlier press
+ * on any of them: a Work's press after a Discard of one of its drafts' chapters, not beside it.
+ */
 const PRESS_LANE = "press:";
 
 export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[] {

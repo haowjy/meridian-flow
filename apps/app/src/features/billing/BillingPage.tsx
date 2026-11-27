@@ -61,7 +61,7 @@ export function BillingPage() {
 
   const checkout = useCreateCheckoutSession({
     onHandoff: async ({ session, request }, isCurrent) => {
-      // keep: Baseline needs a fresh ledger read (never cache) and must stay null if that read fails (fail closed), or a stale cache fakes a purchase delta.
+      // Baseline needs a fresh ledger read (never cache) and must stay null if that read fails (fail closed), or a stale cache fakes a purchase delta.
       let baseline: CheckoutBaseline | null = null;
       if (session.kind === "checkout") {
         try {

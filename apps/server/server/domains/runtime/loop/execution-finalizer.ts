@@ -176,7 +176,7 @@ export async function finalizeExecution(
       );
       const existingReport =
         turn.role === "compaction" && ancestorReport?.outcome !== null ? null : ancestorReport;
-      // keep: Lock asks before threads everywhere; deletion and archive settlement use the same order
+      // Lock asks before threads everywhere; deletion and archive settlement use the same order
       const liveAsk = await deps.repos.asks.findLiveByTurnForUpdate(input.turnId);
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
       if (thread?.kind === "subagent" && !existingReport && turn.role === "assistant") {

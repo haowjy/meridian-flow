@@ -38,7 +38,7 @@ const serverEnv = (
   LOCAL_OBJECT_STORE_DIR: objectStoreDir,
 });
 
-// keep: a chunk cycle lets Node evaluate a chunk before the one it needs has run its top level ("__exportAll is not a function"), and booting reaches only startup's chunks, so walk every chunk's static imports
+// A chunk cycle lets Node evaluate a chunk before the one it needs has run its top level ("__exportAll is not a function"), and booting reaches only startup's chunks, so walk every chunk's static imports
 function chunkCycles(serverDir: string): string[] {
   const graph = new Map<string, string[]>();
   const walk = (dir: string): void => {

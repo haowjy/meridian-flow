@@ -22,7 +22,7 @@ export type UndoOutcome =
   | "insufficient_undo"
   | "nothing_to_revert";
 
-// keep: Keep WriteStatus values synchronized with @meridian/agent-edit without coupling that package to wire contracts
+// Keep WriteStatus values synchronized with @meridian/agent-edit without coupling that package to wire contracts
 export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
 
 export const DONE_WRITE_STATUSES = ["success", "reversed", "reconciled"] as const;

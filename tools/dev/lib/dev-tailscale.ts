@@ -10,11 +10,11 @@ interface ServeConfig {
 function tailscale(args: string[]): string {
   try {
     return execFileSync("tailscale", args, {
-      // keep: the supervisor also runs this after its checkout, and so its working directory, is gone
+      // The supervisor also runs this after its checkout, and so its working directory, is gone
       cwd: "/",
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      // keep: `tailscale serve` waits forever when the tailnet has Serve or HTTPS turned off, after printing the link that turns it on
+      // `tailscale serve` waits forever when the tailnet has Serve or HTTPS turned off, after printing the link that turns it on
       timeout: 20_000,
     });
   } catch (error) {

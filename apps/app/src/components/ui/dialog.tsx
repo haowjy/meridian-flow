@@ -126,7 +126,7 @@ function useDismissalFocus(
   };
 }
 
-// keep: Content must take focus on open or Radix's focus trap never engages and Tab escapes
+// Content must take focus on open or Radix's focus trap never engages and Tab escapes
 function focusContentOnOpen(event: Event) {
   event.preventDefault();
   (event.target as HTMLElement | null)?.focus({ preventScroll: true });

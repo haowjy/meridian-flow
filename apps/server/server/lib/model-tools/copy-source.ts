@@ -125,7 +125,7 @@ export async function readTrackedCopySource(
       ...(source.version ? { version: source.version } : {}),
       includeNodes: true,
     },
-    // keep: never the write's tool call id here: it keys the write's idempotency cache
+    // Never the write's tool call id here: it keys the write's idempotency cache
     { threadId: ctx.threadId, turnId: ctx.turnId, responseIdentity: ctx.responseIdentity },
   );
   if (outcome.isError) {

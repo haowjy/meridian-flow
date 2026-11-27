@@ -18,7 +18,7 @@ export function linguiMacroBabelPlugin(): Plugin {
         babelrc: false,
         configFile: false,
         sourceMaps: true,
-        // keep: Babel 8 dropped allExtensions/isTSX, so TSX macros need ignoreExtensions plus parserOpts jsx
+        // Babel 8 dropped allExtensions/isTSX, so TSX macros need ignoreExtensions plus parserOpts jsx
         presets: [["@babel/preset-typescript", { ignoreExtensions: true }]],
         plugins: ["@lingui/babel-plugin-lingui-macro"],
         parserOpts: { plugins: ["jsx"] },

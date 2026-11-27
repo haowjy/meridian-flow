@@ -113,7 +113,7 @@ export function createDrizzleRunClaim(
           phase: "generating",
           cancelRequested: false,
           currentTool: null,
-          // keep: Use the database wall clock for lease acquisition; fences order on the same clock
+          // Use the database wall clock for lease acquisition; fences order on the same clock
           acquiredAt: sql`clock_timestamp()`,
           renewedAt: new Date(),
           expiresAt: nextExpiry(),
@@ -333,7 +333,6 @@ export function createDrizzleRunClaim(
         return deleted.length > 0;
 
       const unlock = async () => {
-        // keep: Ignore stale unlock callbacks; keep a failed claim entry for the owner's final release
         if (held.get(lease.threadId) !== entry) return;
         await entry.claim.release();
         if (held.get(lease.threadId) === entry) held.delete(lease.threadId);

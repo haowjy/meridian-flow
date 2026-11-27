@@ -92,7 +92,7 @@ export class WsThreadSubscriptionRegistry {
     });
   }
 
-  // keep: Complete the failure transition before callbacks so an onError unsubscribe cancels the retry
+  // Complete the failure transition before callbacks so an onError unsubscribe cancels the retry
   private failRequest(
     threadId: string,
     subscription: ThreadSubscription,
@@ -120,7 +120,7 @@ export class WsThreadSubscriptionRegistry {
     this.voidLease(subscription);
     if (message.toSeq) this.skipTo(subscription, message.toSeq);
     subscription.gapCount += 1;
-    // keep: Establish the replacement request before callbacks so removal cancels its deadline and lease
+    // Establish the replacement request before callbacks so removal cancels its deadline and lease
     this.sendRequest(message.threadId, subscription);
     for (const handler of subscription.handlers) {
       handler.onGap?.({

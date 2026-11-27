@@ -26,7 +26,7 @@ import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 const HOT_CACHE_LIMIT = 500;
 const JOURNAL_PAGE_SIZE = 1_000;
 const DEFAULT_EVICTION_GRACE_MS = 60_000;
-// keep: Socket seq is journal seq times 1000 plus the frame sub-index
+// Socket seq is journal seq times 1000 plus the frame sub-index
 const EVENT_SEQ_FACTOR = 1_000n;
 const EVENT_SEQ_CURSOR_OFFSET = EVENT_SEQ_FACTOR - 1n;
 
@@ -255,7 +255,7 @@ export function createThreadEventHub(
     state: ThreadHubState,
     head: bigint,
   ): Promise<void> {
-    // keep: Build cold replay state privately; never publish a partial projector, head or reset
+    // Build cold replay state privately; never publish a partial projector, head or reset
     const cursor = await deps.journalReader.lastSeqBefore(
       threadId,
       head + 1n,

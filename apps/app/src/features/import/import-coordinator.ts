@@ -101,7 +101,7 @@ export class ImportCoordinator {
   private live(record: RecordState, attempt: UploadAttempt) {
     return !attempt.ended && this.current(record);
   }
-  // keep: Request the new attempt's presence lease before releasing the old one, or presence lapses between attempts.
+  // Request the new attempt's presence lease before releasing the old one, or presence lapses between attempts.
   private open(record: RecordState) {
     const attempt = new UploadAttempt(this.presence.hold(record.view.importId));
     record.attempt?.end();
@@ -122,7 +122,7 @@ export class ImportCoordinator {
   }
   private install(record: RecordState, summary: ImportSummary) {
     if (!this.current(record)) return;
-    // keep: Concurrent answers arrive out of order; an uploading summary must never replace a later state, and receipts only accumulate.
+    // Concurrent answers arrive out of order; an uploading summary must never replace a later state, and receipts only accumulate.
     if (
       summary.state === "uploading" &&
       (record.view.summary.state !== "uploading" ||
@@ -366,7 +366,7 @@ export class ImportCoordinator {
       this.nudge();
     } catch (error) {
       if (this.live(record, attempt)) {
-        // keep: A 4xx on a replayed create cannot disprove an earlier unanswered create; don't treat it as proof the create failed.
+        // A 4xx on a replayed create cannot disprove an earlier unanswered create; don't treat it as proof the create failed.
         if (
           previousCreation === "local" &&
           record.revision === revision &&
@@ -489,7 +489,7 @@ export class ImportCoordinator {
       signal: attempt.signal,
       gate: reported,
       send: async (parts, signal) => {
-        // keep: Probe a one-byte read before the multipart request to detect a file removed since picking, and stream the file instead of buffering the batch in memory.
+        // Probe a one-byte read before the multipart request to detect a file removed since picking, and stream the file instead of buffering the batch in memory.
         const probes = await Promise.all(
           parts.map((part) =>
             probeReadable(part.file).then(
@@ -586,7 +586,7 @@ export class ImportCoordinator {
     const record = this.records.get(id);
     if (!record) return;
     await this.command(record, async () => {
-      // keep: Let the hash report finish before the skip; the skip can end the upload and would pre-empt the report.
+      // Let the hash report finish before the skip; the skip can end the upload and would pre-empt the report.
       await record.attempt?.reporting;
       await this.run(record, async (attempt) => {
         if (record.picked.length && !(await this.report(record, attempt))) return;

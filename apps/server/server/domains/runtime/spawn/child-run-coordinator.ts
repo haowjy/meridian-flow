@@ -148,7 +148,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const { revision, configuration, resolvedSlug, defaultTitle, invocationOverlay } = resolution;
 
     const child = await deps.repos.transaction(async () => {
-      // keep: Write parent journal rows before taking child membership's Work locks
+      // Write parent journal rows before taking child membership's Work locks
       const lockedParent = await deps.repos.threads.lockByIdIncludingDeleted(
         input.parentThread.id as ThreadId,
       );

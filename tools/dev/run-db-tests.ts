@@ -130,7 +130,7 @@ async function main(): Promise<void> {
               DB_TEST_DATABASE_URLS: JSON.stringify(
                 workerDatabaseUrls.map((workerUrl) => {
                   const url = new URL(workerUrl);
-                  // keep: postgres.js forwards unknown URL parameters as session settings, so only these throwaway connections may set `synchronous_commit=off`
+                  // Postgres.js forwards unknown URL parameters as session settings, so only these throwaway connections may set `synchronous_commit=off`
                   url.searchParams.set("synchronous_commit", "off");
                   return url.toString();
                 }),

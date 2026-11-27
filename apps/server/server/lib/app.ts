@@ -92,7 +92,7 @@ async function createAppServices(): Promise<AppServices> {
   );
   app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
-    // keep: postgres.js drops the listener before unlisten's first await, so the drain cannot be joined by a notification and must not wait on one
+    // Postgres.js drops the listener before unlisten's first await, so the drain cannot be joined by a notification and must not wait on one
     await Promise.all([
       ...listeners.map((listener) => listener.unlisten()),
       scheduler.stop(),

@@ -43,7 +43,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
       allowedHosts: [".localhost", ".ts.net"],
       proxy: apiDevOrigin
         ? {
-            // keep: no `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
+            // No `changeOrigin`; the server's dev sign-in rule compares Origin with the Host the browser sent
             "/api/threads/ws": { target: apiDevOrigin, ws: true },
             "/ws/loro": { target: apiDevOrigin, ws: true },
           }
@@ -52,7 +52,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
     resolve: {
       dedupe: ["loro-crdt"],
       alias: [
-        // keep: One loro-crdt instance for app and packages; instanceof LoroMap depends on it
+        // One loro-crdt instance for app and packages; instanceof LoroMap depends on it
         { find: /^loro-crdt$/, replacement: "loro-crdt/base64" },
       ],
       tsconfigPaths: true,

@@ -13,7 +13,7 @@ export function prepareScript(source: string): PreparedCode {
   const fenced = FENCE.exec(source);
   const code = fenced ? `\n${fenced[1]}` : source;
   try {
-    // keep: Wrap model scripts and strip types in place so top-level return parses and offsets stay fixed
+    // Wrap model scripts and strip types in place so top-level return parses and offsets stay fixed
     const stripped = stripTypeScriptTypes(`${OPEN}${code}${CLOSE}`, { mode: "strip" });
     return { ok: true, code: stripped.slice(OPEN.length, stripped.length - CLOSE.length) };
   } catch (cause) {

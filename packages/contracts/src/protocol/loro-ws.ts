@@ -51,7 +51,7 @@ export function liveRoomOf(room: DocumentRoom): DocumentRoom {
 export const SERVER_PEER_LIMIT = 1n << 48n;
 export const PEER_ID_LIMIT = 1n << 64n;
 
-// keep: Loro peer ids are decimal u64 strings in the client range so client ops never read as server ops
+// Loro peer ids are decimal u64 strings in the client range so client ops never read as server ops
 export interface LoroJoinAuth {
   schema: string;
   peer: string;

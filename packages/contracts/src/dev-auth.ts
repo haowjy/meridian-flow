@@ -1,4 +1,4 @@
-// keep: Pass raw process.env; validated env defaults would make a deployed process look local and enable dev auth bypass
+// Pass raw process.env; validated env defaults would make a deployed process look local and enable dev auth bypass
 
 export interface DevAuthUser {
   externalId: string;
@@ -28,7 +28,7 @@ export function resolveDevAuthUser(env: EnvLike): DevAuthUser | null {
   return devAuthIdentity(env);
 }
 
-// keep: Dev auth checks Host then Origin then Sec-Fetch-Site; Chrome omits fetch metadata on WebSocket handshakes and DNS-rebound HTTP hosts
+// Dev auth checks Host then Origin then Sec-Fetch-Site; Chrome omits fetch metadata on WebSocket handshakes and DNS-rebound HTTP hosts
 export function devAuthAppliesToRequest(request: Request): boolean {
   const host = request.headers.get("host");
   if (!isLocalHost(host)) return false;
@@ -66,7 +66,7 @@ export function isLocalHost(host: string | null | undefined): boolean {
   );
 }
 
-// keep: only the page's own origin passes (the dev proxies forward Host unchanged). Trusting a name would be wrong twice: every dev stack is "localhost", and anyone can serve a page under `*.ts.net`
+// Only the page's own origin passes (the dev proxies forward Host unchanged). Trusting a name would be wrong twice: every dev stack is "localhost", and anyone can serve a page under `*.ts.net`
 function isTrustedOrigin(origin: string, host: string | null): boolean {
   return URL.canParse(origin) && new URL(origin).host === host?.toLowerCase();
 }

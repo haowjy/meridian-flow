@@ -13,7 +13,7 @@ export default defineConfig({
     ...sharedTest,
     exclude: ["e2e/**", "node_modules/**"],
     setupFiles: ["./vitest.setup.ts"],
-    // keep: Node 25+'s global localStorage shadows jsdom's; disable it with --no-experimental-webstorage
+    // Node 25+'s global localStorage shadows jsdom's; disable it with --no-experimental-webstorage
     execArgv: ["--no-experimental-webstorage"],
   },
 });

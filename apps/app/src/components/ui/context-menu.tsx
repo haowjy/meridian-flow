@@ -53,7 +53,7 @@ export function ContextMenuContent({
         {...props}
         onPointerUpCapture={(event) => {
           onPointerUpCapture?.(event);
-          // keep: Prevent the right-click release's pointerup or Radix selects the menu's first row
+          // Prevent the right-click release's pointerup or Radix selects the menu's first row
           if (event.button !== 0) event.preventDefault();
         }}
         className={cn(

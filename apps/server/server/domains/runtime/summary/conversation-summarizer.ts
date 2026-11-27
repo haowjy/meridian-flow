@@ -219,7 +219,7 @@ export function createConversationSummarizer(
             finishReason: "error",
             usage,
           };
-          // keep: Record a paid summary attempt before the gateway call; even aborted streams count
+          // Record a paid summary attempt before the gateway call; even aborted streams count
           modelResponses.push(row);
           try {
             const gatewayCallId = crypto.randomUUID();

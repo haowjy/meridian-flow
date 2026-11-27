@@ -18,7 +18,7 @@ if (options.includes("--staged")) {
     console.log(`No staged non-documentation paths. Skipping Nx target "${target}".`);
     process.exit(0);
   }
-  // keep: Nx's stdin protocol is newline-delimited, so a filename with a newline cannot be sent losslessly: check all projects rather than select the wrong ones
+  // Nx's stdin protocol is newline-delimited, so a filename with a newline cannot be sent losslessly: check all projects rather than select the wrong ones
   if (files.some((file) => file.includes("\n"))) {
     console.log("Staged path contains a newline; selecting all projects.");
   } else {
@@ -47,7 +47,7 @@ if (filtered.length === 0) {
   process.exit(0);
 }
 
-// keep: Nx 23 exits non-zero after green targets when its task-history SQLite commit fails with code 787; forgive only that exact failure, matched on the output tail, and never when a failed-task summary is there
+// Nx 23 exits non-zero after green targets when its task-history SQLite commit fails with code 787; forgive only that exact failure, matched on the output tail, and never when a failed-task summary is there
 const TAIL_LIMIT = 64 * 1024;
 
 function isIgnorableDbFailure(tailText) {

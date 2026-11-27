@@ -26,7 +26,7 @@ function loadMermaid() {
   return mermaidLoad;
 }
 
-// keep: Mermaid's colour maths cannot read oklch or color-mix, so lay colours over their ground and flatten them to rgb()
+// Mermaid's colour maths cannot read oklch or color-mix, so lay colours over their ground and flatten them to rgb()
 function toRgb(css, ground) {
   const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = ground;

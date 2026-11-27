@@ -18,7 +18,7 @@ export function AccountSettingsProvider({
   children: React.ReactNode;
 }) {
   const accountEpoch = useAccountEpochSignal();
-  // keep: Bump the remount key on account-epoch change; otherwise a previous account's confirmed settings can seed or drive the next account.
+  // Bump the remount key on account-epoch change; otherwise a previous account's confirmed settings can seed or drive the next account.
   const [epoch, setEpoch] = useState(accountEpoch);
   const [generation, setGeneration] = useState(0);
   if (epoch !== accountEpoch) {

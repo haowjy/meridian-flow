@@ -156,7 +156,7 @@ export async function readTar(
     if (!Number.isSafeInteger(size) || size < 0) throw corrupt("a size is invalid");
 
     const type = entryType(flag);
-    // keep: Tar links and directories carry no body; do not advance the reader by their size field
+    // Tar links and directories carry no body; do not advance the reader by their size field
     const bodyBytes = type === "file" || type === "other" ? size : 0;
     const bodyPadded = Math.ceil(bodyBytes / BLOCK) * BLOCK;
     let consumed = false;

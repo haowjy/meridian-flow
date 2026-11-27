@@ -106,7 +106,7 @@ export const works = pgTable(
     ),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
     check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
-    // keep: Schema SQL needs a literal because interpolating a number creates an unbound $1 in migrations
+    // Schema SQL needs a literal because interpolating a number creates an unbound $1 in migrations
     check(
       "works_status_length",
       sql`${table.status} IS NULL OR char_length(${table.status}) <= ${sql.raw(String(WORK_STATUS_MAX_LENGTH))}`,
@@ -132,9 +132,9 @@ export const contextSources = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
-    // keep: rootThreadId has no thread FK; purging the first chat must not cascade its Scratch
+    // RootThreadId has no thread FK; purging the first chat must not cascade its Scratch
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
-    // keep: chatThreadId has no thread FK; purging the chat must not cascade its uploads source
+    // ChatThreadId has no thread FK; purging the chat must not cascade its uploads source
     chatThreadId: uuid("chat_thread_id").$type<ThreadId>(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -246,7 +246,7 @@ export const uploadIntakes = pgTable(
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // keep: ownerThreadId has no thread FK; the chat row may not exist at attach and its purge must not cascade
+    // OwnerThreadId has no thread FK; the chat row may not exist at attach and its purge must not cascade
     ownerThreadId: uuid("owner_thread_id").$type<ThreadId>(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
@@ -293,7 +293,7 @@ export const documentPreviousLocations = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    // keep: Hash-index unbounded paths and recheck exact equality; namespace locks own replacement uniqueness
+    // Hash-index unbounded paths and recheck exact equality; namespace locks own replacement uniqueness
     index("document_previous_locations_path").using("hash", table.path),
     index("document_previous_locations_source").on(table.contextSourceId),
     index("document_previous_locations_document").on(table.documentId),
@@ -344,7 +344,7 @@ export const linkAheadRefs = pgTable(
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (table) => [
-    // keep: Index md5 of unbounded paths and recheck exact equality; Postgres B-tree tuples cap near 2.7 kB
+    // Index md5 of unbounded paths and recheck exact equality; Postgres B-tree tuples cap near 2.7 kB
     index("link_ahead_refs_owner_unsettled")
       .on(
         table.projectId,

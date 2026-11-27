@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { CommandId, ModelEditKey } from "@meridian/contracts";
 
-// keep: arbitrary fixed namespaces: changing one orphans every stored command it named
+// Arbitrary fixed namespaces: changing one orphans every stored command it named
 const COMMAND_NAMESPACE = "6f1c2f3e-5a0b-4c55-9d0e-3b7a1f6a2c11";
 const BLOCK_NAMESPACE = "0b8e4a77-2d1c-4f19-8a63-c5d94e7b30a2";
 

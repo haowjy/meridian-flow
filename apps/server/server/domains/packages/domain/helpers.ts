@@ -25,7 +25,7 @@ export function canonicalizeJsonObject(value: JsonObject): JsonObject {
   );
 }
 
-// keep: Canonicalize object keys inside arrays too; Postgres jsonb scrambles nested key order
+// Canonicalize object keys inside arrays too; Postgres jsonb scrambles nested key order
 function canonicalizeJsonValue(entry: unknown): unknown {
   if (Array.isArray(entry)) return entry.map(canonicalizeJsonValue);
   if (entry && typeof entry === "object") return canonicalizeJsonObject(entry as JsonObject);

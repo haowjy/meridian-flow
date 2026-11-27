@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-// keep: Keep inputs at 16px below md; iOS zooms the viewport on focus when the field font-size is smaller.
+// Keep inputs at 16px below md; iOS zooms the viewport on focus when the field font-size is smaller.
 const textClass = "text-base md:text-sm";
 const labelClass = `${textClass} font-medium`;
 const fieldClass = `bg-card ${textClass}`;

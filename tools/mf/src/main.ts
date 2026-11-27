@@ -188,7 +188,7 @@ async function main(): Promise<void> {
     if (error.code !== "EPIPE") throw error;
     process.exit(process.exitCode ?? 0);
   });
-  // keep: set `exitCode`, never `process.exit()`: exiting early truncates piped stdout
+  // Set `exitCode`, never `process.exit()`: exiting early truncates piped stdout
   process.exitCode = await runCli(process.argv.slice(2), {
     io: { stdout: process.stdout, stderr: process.stderr },
     env: process.env,

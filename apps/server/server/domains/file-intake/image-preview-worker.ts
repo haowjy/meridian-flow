@@ -34,7 +34,7 @@ async function toPipeline(mime: string, bytes: Uint8Array): Promise<ReturnType<t
   if (mime === "image/bmp") {
     if (bmpPixelCount(bytes) > MAX_INPUT_PIXELS) throw new TooLarge();
     const { data, width, height } = decodeBmp(Buffer.from(bytes), { toRGBA: true });
-    // keep: Remove BMP alpha; 24-bit pixels report alpha 0
+    // Remove BMP alpha; 24-bit pixels report alpha 0
     return sharp(data, { raw: { width, height, channels: 4 } }).removeAlpha();
   }
   return sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();

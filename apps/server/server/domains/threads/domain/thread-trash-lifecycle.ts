@@ -41,7 +41,7 @@ export async function transitionThreadTrash(
     const noWork = await deps.works.findNoWork(projectId);
     if (!noWork) throw new Error("No Work is missing for this project");
     return deps.repos.transaction(async () => {
-      // keep: Lock the thread and No Work fallback together in canonical id order
+      // Lock the thread and No Work fallback together in canonical id order
       const before = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId, [noWork.id]);
       if (!before || before.userId !== input.userId) {
         throw new ThreadTrashUnavailableError(input.threadId);

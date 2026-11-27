@@ -37,7 +37,7 @@ export const storedFrontiers = (doc: LoroDoc): StoredFrontiers =>
 export const loroFrontiers = (frontiers: StoredFrontiers) =>
   frontiers.map(({ peer, counter }) => ({ peer: peer as PeerID, counter }));
 
-// keep: `frontiersToVV` throws for a peer id the doc lacks (loro-crdt 1.18, though its changelog says it returns undefined)
+// `frontiersToVV` throws for a peer id the doc lacks (loro-crdt 1.18, though its changelog says it returns undefined)
 export function holdsFrontiers(doc: LoroDoc | undefined, frontiers: StoredFrontiers): boolean {
   if (!doc) return false;
   try {

@@ -54,7 +54,7 @@ export type DocumentLinkAnswer =
   | { state: "missing"; uri: string }
   | { state: "unresolvable" };
 
-// keep: Link resolution answers stay in request order
+// Link resolution answers stay in request order
 export type ResolveDocumentLinksResponse = {
   answers: DocumentLinkAnswer[];
   holderUri?: string;

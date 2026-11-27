@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     ...sharedTest,
     name: "@meridian/server",
-    // keep: mocked server tests stay in the isolated config; a shared worker would leak their vi.mock
+    // Mocked server tests stay in the isolated config; a shared worker would leak their vi.mock
     isolate: false,
     exclude: [
       ...configDefaults.exclude,

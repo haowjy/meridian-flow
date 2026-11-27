@@ -25,7 +25,7 @@ export function useFocusWithinRow<T extends HTMLElement>(
     },
     onBlur: (event) => {
       if (event.relatedTarget && ref.current?.contains(event.relatedTarget as Node)) return;
-      // keep: In the blur microtask check target.isConnected; an unmounted control is disconnected and keeps the focus claim, a real blur stays connected.
+      // In the blur microtask check target.isConnected; an unmounted control is disconnected and keeps the focus claim, a real blur stays connected.
       const target = event.target;
       queueMicrotask(() => {
         if (target.isConnected) focusWithin.current = false;

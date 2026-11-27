@@ -64,7 +64,7 @@ export function reconcileSnapshotTurns(
     if (!localTurn) return serverTurn;
     const nextTurn = {
       ...serverTurn,
-      // keep: Forgetting is write-once; an older snapshot must not clear a stamp the store already holds
+      // Forgetting is write-once; an older snapshot must not clear a stamp the store already holds
       forgottenBy: localTurn.forgottenBy ?? serverTurn.forgottenBy,
       blocks: reconcileBlocks(localTurn.blocks, serverTurn.blocks, serverTurn.status),
     };

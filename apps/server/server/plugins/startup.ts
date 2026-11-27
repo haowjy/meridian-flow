@@ -52,7 +52,7 @@ async function boot() {
   });
 }
 
-// keep: Nitro does not await plugins and the crash policy survives rejections, so a failed boot must exit a built server; in `nitro dev` the worker stays up instead, which Nitro would restart without limit
+// Nitro does not await plugins and the crash policy survives rejections, so a failed boot must exit a built server; in `nitro dev` the worker stays up instead, which Nitro would restart without limit
 export default function startupPlugin() {
   boot().catch(async (error: unknown) => {
     const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);

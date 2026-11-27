@@ -15,7 +15,7 @@ export interface AppUserEvent {
   req: Request;
 }
 
-// keep: `x-meridian-account` naming another account is a 409 before anything runs, so a sender outliving a sign-in switch cannot act for the new account; WS upgrades and /api/auth/me carry no header and do not come here
+// `x-meridian-account` naming another account is a 409 before anything runs, so a sender outliving a sign-in switch cannot act for the new account; WS upgrades and /api/auth/me carry no header and do not come here
 export async function requireAppUser(event: AppUserEvent): Promise<AppUser> {
   const signedIn = await requireAppUserFromRequest(event.req);
   const expected = event.req.headers.get(EXPECTED_ACCOUNT_HEADER);

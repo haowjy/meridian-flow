@@ -20,7 +20,7 @@ const TEXT_MIMES = new Set([
   "application/xml",
 ]);
 
-// keep: Accept only bare MIME type/subtype; parameters would break the signed PUT header
+// Accept only bare MIME type/subtype; parameters would break the signed PUT header
 const MIME_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
 
 export function normalizeMime(mimeType: string): string {

@@ -76,7 +76,7 @@ export const asks = pgTable(
       .on(table.deadlineAt, table.id)
       .where(sql`${table.status} = 'open' AND ${table.deadlineAt} IS NOT NULL`),
     index("asks_thread_created").on(table.threadId, table.createdAt, table.id),
-    // keep: Lock live asks and owed continuations before the thread lock; this index preserves that lock order
+    // Lock live asks and owed continuations before the thread lock; this index preserves that lock order
     index("asks_held_by_thread")
       .on(table.threadId)
       .where(sql`${table.status} IN ('pending', 'open') OR ${table.continuation} = 'pending'`),

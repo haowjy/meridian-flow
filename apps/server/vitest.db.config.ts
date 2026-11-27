@@ -149,7 +149,7 @@ export default defineProject({
     ],
     fileParallelism: workerDatabaseUrls.length > 0,
     maxWorkers: databaseWorkers,
-    // keep: a timed-out hook's async DB work is not cancelled and overlaps the next test's destructive reset, so setup and cleanup get the same 30 s budget
+    // A timed-out hook's async DB work is not cancelled and overlaps the next test's destructive reset, so setup and cleanup get the same 30 s budget
     testTimeout: 30_000,
     hookTimeout: 30_000,
     sequence: { shuffle: true, hooks: "stack" },

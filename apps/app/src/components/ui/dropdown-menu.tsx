@@ -230,7 +230,7 @@ function useMenuActionDispatch() {
     const action = pending.current;
     if (!action) return;
     pending.current = null;
-    // keep: Radix focuses the trigger after onCloseAutoFocus in the same dispatch; defer the action to a microtask
+    // Radix focuses the trigger after onCloseAutoFocus in the same dispatch; defer the action to a microtask
     queueMicrotask(action);
   }, []);
   return { dispatch, onCloseAutoFocus };

@@ -74,7 +74,7 @@ function labelMeasurer() {
       else lines.push(word);
     }
     const text = Math.max(...lines.map((l) => context.measureText(l).width));
-    // keep: two pixels spare, so the browser's own wrapping never breaks a line the canvas kept whole
+    // Two pixels spare, so the browser's own wrapping never breaks a line the canvas kept whole
     const size = {
       width: Math.ceil(text) + 2 + style.padX,
       height: Math.ceil(lines.length * style.line + style.padY),
@@ -86,7 +86,7 @@ function labelMeasurer() {
 
 const Selection = createContext({ selectedId: null, linked: new Set() });
 
-// keep: arrows draw their own paths, so a box keeps one handle each way only because React Flow draws no edge without them
+// Arrows draw their own paths, so a box keeps one handle each way only because React Flow draws no edge without them
 const handles = () => [
   h(RF.Handle, { key: "in", type: "target", position: RF.Position.Top, isConnectable: false }),
   h(RF.Handle, { key: "out", type: "source", position: RF.Position.Bottom, isConnectable: false }),

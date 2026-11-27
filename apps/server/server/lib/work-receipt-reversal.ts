@@ -56,7 +56,7 @@ type PlannedStep = {
   message?: string;
 };
 
-// keep: read and lock the Works the receipts name before any document lock, or the Undo inverts against a Work mutation
+// Read and lock the Works the receipts name before any document lock, or the Undo inverts against a Work mutation
 export async function reverseTurnCard(
   app: Pick<
     AppServices,

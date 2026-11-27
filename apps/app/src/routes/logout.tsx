@@ -8,7 +8,7 @@ import { requestFromServerHeaders } from "@/server/ssr-request";
 
 const endSession = createServerFn({ method: "GET" }).handler(async () => {
   const { landingUrl } = getAppServerConfig();
-  // keep: With no WorkOS session, an absolute returnTo makes signOut redirect to itself forever
+  // With no WorkOS session, an absolute returnTo makes signOut redirect to itself forever
   const auth = await getAuth();
   if (!auth.user || !auth.sessionId) {
     throw landingUrl

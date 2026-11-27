@@ -183,7 +183,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         );
         const createdBy =
           project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000";
-        // keep: Insert the default draft before the Work row for the mint_work_default_draft trigger
+        // Insert the default draft before the Work row for the mint_work_default_draft trigger
         const draftId = (input.draftId ?? newDraftId()) as DraftId;
         await activeDb.insert(drafts).values({
           id: draftId,
@@ -344,7 +344,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (decideWorkRestore(existing) === "unchanged") {
           return { before: existing, after: existing, changed: false };
         }
-        // keep: Restore locks thread forest, Work, tree list, then namespaces before any row reappears
+        // Restore locks thread forest, Work, tree list, then namespaces before any row reappears
         await lockProjectTreeList(db, existing.projectId);
         const arriving = deps.arrivals ? await workSourceDocumentIds(id) : [];
         if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);

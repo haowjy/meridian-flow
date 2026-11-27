@@ -55,7 +55,7 @@ export function FindingsChip({
       <PopoverContent
         align="end"
         className="w-80 max-w-[calc(100vw-1rem)] p-2"
-        // keep: React portal clicks bubble up the component tree; stopPropagation here keeps popover clicks from opening the chip's row.
+        // React portal clicks bubble up the component tree; stopPropagation here keeps popover clicks from opening the chip's row.
         onClick={(event) => event.stopPropagation()}
       >
         <p className="px-2 pt-1 font-medium text-foreground text-sm">{heading}</p>

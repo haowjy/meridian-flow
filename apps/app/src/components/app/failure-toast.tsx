@@ -8,7 +8,7 @@ import { role } from "@/components/ui/roles";
 
 const BRIEF_MS = 5000;
 
-// keep: Each toast needs its own Sonner id; reusing one races its exit
+// Each toast needs its own Sonner id; reusing one races its exit
 const shown = new Map<string, string | number>();
 
 export function notifyFailure({

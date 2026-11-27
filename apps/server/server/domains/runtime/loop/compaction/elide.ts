@@ -53,7 +53,7 @@ export function collectRecordedDocuments(
         metadata?.documentRevisions as DocumentRevisionEvidence[] | undefined,
       );
     }
-    // keep: Insert compaction evidence in reverse Map order; the recent picker reverses insertion order
+    // Insert compaction evidence in reverse Map order; the recent picker reverses insertion order
     const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
     for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);

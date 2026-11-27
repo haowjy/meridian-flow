@@ -300,7 +300,7 @@ export function createSky(canvas: HTMLCanvasElement, signal: AbortSignal) {
     );
   };
 
-  // keep: without preventDefault on `webglcontextlost` the context never returns
+  // Without preventDefault on `webglcontextlost` the context never returns
   canvas.addEventListener(
     "webglcontextlost",
     (event) => {

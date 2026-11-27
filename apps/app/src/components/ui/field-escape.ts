@@ -1,4 +1,4 @@
-// keep: Radix hears Escape on the document before a field's own handler can stop it
+// Radix hears Escape on the document before a field's own handler can stop it
 export function ignoreFieldEscape(event: {
   target: EventTarget | null;
   preventDefault: () => void;

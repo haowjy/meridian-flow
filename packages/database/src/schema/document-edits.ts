@@ -129,7 +129,7 @@ export const treeEditReceipts = pgTable(
   ],
 );
 
-// keep: w_id is the shared write ordinal; Undo, Redo and revert order text and tree changes by it
+// W_id is the shared write ordinal; Undo, Redo and revert order text and tree changes by it
 export const treeEditReceiptNodes = pgTable(
   "tree_edit_receipt_nodes",
   {

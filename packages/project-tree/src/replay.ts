@@ -383,7 +383,7 @@ export function startReplay(
   const sourcesOf = (before: string | undefined, after: string | undefined) => [
     ...new Set([before, after].filter((s): s is string => s !== undefined)),
   ];
-  // keep: Every skip check in step() must precede any mutation so wouldTake stays pure
+  // Every skip check in step() must precede any mutation so wouldTake stays pure
   const step = (
     record: TreeRecord,
     index: number,
@@ -981,7 +981,7 @@ function common(a: string, b: string | undefined): number {
   return n;
 }
 
-// keep: Sort by rank then id so equal ranks from concurrent inserts converge everywhere
+// Sort by rank then id so equal ranks from concurrent inserts converge everywhere
 function byRankThenId(a: { rank: string; id: string }, b: { rank: string; id: string }): number {
   if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;

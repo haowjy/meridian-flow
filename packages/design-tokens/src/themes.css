@@ -9,7 +9,7 @@
 
   --color-foreground: oklch(0.93 0.006 60);
   --color-muted-foreground: oklch(0.75 0.006 60);
-  /* keep: Restate derived CSS tokens in each nested dark region or they inherit the light root's values */
+  /* Restate derived CSS tokens in each nested dark region or they inherit the light root's values */
   --color-ink-fill: color-mix(in oklab, var(--color-foreground) 5%, transparent);
   --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);

@@ -174,7 +174,7 @@ export function TurnList({
     initialOffset: restored?.offset,
   });
 
-  // keep: shouldAdjustScrollPositionOnItemSizeChange is an instance property in virtual-core@3.17 (an options-object value is silently ignored); use item.end, not item.start, or a straddling row silently re-captures follow.
+  // ShouldAdjustScrollPositionOnItemSizeChange is an instance property in virtual-core@3.17 (an options-object value is silently ignored); use item.end, not item.start, or a straddling row silently re-captures follow.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
 

@@ -182,7 +182,7 @@ async function subscribeThread(
   }
   const request = {};
   slot.request = request;
-  // keep: request arrival wins: hold the active lease until this request passes auth, but invalidate an older pending handoff at once
+  // Request arrival wins: hold the active lease until this request passes auth, but invalidate an older pending handoff at once
   if (slot.lease?.phase !== "active") {
     disposeLease(slot.lease);
     slot.lease = undefined;

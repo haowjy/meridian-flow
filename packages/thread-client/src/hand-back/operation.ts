@@ -241,7 +241,7 @@ export function createHandBackOperation(options: {
       return { kind: "refused", command, status: verdict.status };
     }
     if (verdict.kind === "ambiguous") {
-      // keep: A remount may confirm the command while this owner posts; drop the intent when its store entry is gone
+      // A remount may confirm the command while this owner posts; drop the intent when its store entry is gone
       if (!store.pending().some((pending) => pending.requestId === requestId)) {
         runState.dropIntent(requestId);
         retire(requestId, "resolved");

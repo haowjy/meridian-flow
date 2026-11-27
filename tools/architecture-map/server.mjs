@@ -169,7 +169,7 @@ export async function createArchitectureServer(configFile) {
   };
 }
 
-// keep: scripts come only from this origin and the pinned CDN, so an `<img onerror>` in rendered Markdown never runs; inline styles stay allowed for Mermaid and React Flow
+// Scripts come only from this origin and the pinned CDN, so an `<img onerror>` in rendered Markdown never runs; inline styles stay allowed for Mermaid and React Flow
 const PAGE_CSP = [
   "default-src 'none'",
   "script-src 'self' https://cdn.jsdelivr.net",

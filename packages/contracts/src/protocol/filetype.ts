@@ -59,7 +59,7 @@ export const filetypeSchema = z.enum(
 const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition | undefined>> =
   FILETYPE_DISPOSITIONS;
 
-// keep: classifyFiletype is frozen; a changed kind or schemaType changes replay of stored tree records and needs a migration
+// ClassifyFiletype is frozen; a changed kind or schemaType changes replay of stored tree records and needs a migration
 export function classifyFiletype(filetype: string | null | undefined): FiletypeClassification {
   if (!filetype) return { kind: "unknown" };
   return Object.hasOwn(dispositionsByPersistedValue, filetype)

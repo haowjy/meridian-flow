@@ -191,7 +191,7 @@ export function throwLocatorRefusal(refusal: LocatorRefusal): never {
   throw createError({ statusCode: 404, message: "Chat not found" });
 }
 
-// keep: authorize on the returned `address.id`, never on the id asked for: a join's forward makes the asked id name another row
+// Authorize on the returned `address.id`, never on the id asked for: a join's forward makes the asked id name another row
 export async function locateNode(
   deps: LocatorDeps & { availability: ProjectContextAvailabilityPort },
   input: {

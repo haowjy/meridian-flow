@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     });
   const { mimeType, contentDisposition } = result.value;
   setHeader(event, "Content-Type", mimeType);
-  // keep: this serves from the app's own origin, so `nosniff` keeps a stored page or script from running there
+  // This serves from the app's own origin, so `nosniff` keeps a stored page or script from running there
   setHeader(event, "X-Content-Type-Options", "nosniff");
   if (contentDisposition) setHeader(event, "Content-Disposition", contentDisposition);
   else if (ACTIVE_TYPE.test(mimeType)) setHeader(event, "Content-Disposition", "attachment");

@@ -87,7 +87,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       return rows.map(({ threadId }) => threadId as ThreadId);
     },
     async canMaterializeWork(threadId) {
-      // keep: Keep canMaterializeWork's thread lock weak; stronger locks invert Work-mutation order
+      // Keep canMaterializeWork's thread lock weak; stronger locks invert Work-mutation order
       const rows = await db_()
         .select({ id: schema.threads.id })
         .from(schema.threads)

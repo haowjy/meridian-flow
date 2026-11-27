@@ -28,7 +28,7 @@ export function apiHttpDevProxyPlugin(apiDevOrigin: string): Plugin {
         }
 
         const target = new URL(req.url, apiDevOrigin);
-        // keep: Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
+        // Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
         const proxyReq = request(
           target,
           { method: req.method, headers: req.headers },

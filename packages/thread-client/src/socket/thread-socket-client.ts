@@ -65,7 +65,7 @@ export class ThreadSocketClient implements ThreadTransport {
         wantsConnection: () => this.wantsConnection,
         onMessage: (data) => this.handleMessage(data),
         onClose: (event) => {
-          // keep: The closing generation is still currentGeneration here so sends tagged with it settle unconfirmed
+          // The closing generation is still currentGeneration here so sends tagged with it settle unconfirmed
           this.subscriptions.connectionLost();
           this.settleAskAnswers();
           for (const handler of this.subscriptions.handlers()) handler.onClose?.(event);

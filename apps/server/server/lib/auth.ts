@@ -8,7 +8,7 @@ import {
   type UserRepository,
 } from "../domains/projects/index.js";
 
-// keep: WorkOS's default session storage needs a Node request, which Nitro does not give us; split and rejoin on "=" so base64 values survive
+// WorkOS's default session storage needs a Node request, which Nitro does not give us; split and rejoin on "=" so base64 values survive
 class ApiCookieSessionStorage extends CookieSessionStorage<Request, Response> {
   async getCookie(request: Request, name: string): Promise<string | null> {
     const cookieHeader = request.headers.get("cookie");

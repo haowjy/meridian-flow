@@ -79,7 +79,7 @@ function TooltipContent({
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
-        // keep: Radix gives Escape to the topmost layer only; re-dispatch it after the tooltip closes
+        // Radix gives Escape to the topmost layer only; re-dispatch it after the tooltip closes
         onEscapeKeyDown={(event) => {
           onEscapeKeyDown?.(event);
           if (event.defaultPrevented) return;

@@ -842,7 +842,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           }
           const turn = activeAssistantTurn(store, threadId);
           if (!turn) return;
-          // keep: Output deltas can arrive before TOOL_CALL_START; drop them quietly until a host tool block exists
+          // Output deltas can arrive before TOOL_CALL_START; drop them quietly until a host tool block exists
           const existingTool = blockById(turn, `tool-${payload.toolCallId}`);
           if (existingTool?.blockType !== "tool_use") return;
           const content = blockContentRecord(existingTool);

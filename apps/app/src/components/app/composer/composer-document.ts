@@ -73,7 +73,7 @@ export type ComposerReferenceAttrs =
 export type ComposerPendingUploadAttrs = { intakeId: string; name: string };
 export type ComposerSkillAttrs = MessageSkill;
 
-// keep: Clipboard metadata is untrusted; turn admission must authorize reference identity
+// Clipboard metadata is untrusted; turn admission must authorize reference identity
 function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
   if (!raw) return null;
   let value: Record<string, unknown>;

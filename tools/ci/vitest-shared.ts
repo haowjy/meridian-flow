@@ -16,7 +16,7 @@ const maxWorkers = includeDatabase
     ? Math.min(8, availableParallelism())
     : localWorkers;
 
-// keep: Vitest 5 does not pass the root `test` options to project config files, and a config that forgets this spread makes Vitest refuse the run
+// Vitest 5 does not pass the root `test` options to project config files, and a config that forgets this spread makes Vitest refuse the run
 export const sharedTest = {
   maxWorkers,
   pool: "threads",

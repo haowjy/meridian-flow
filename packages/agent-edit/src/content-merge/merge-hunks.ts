@@ -249,6 +249,8 @@ export function dropMovedText(
 ): MovedText[] {
   const isContent = (t: Tok) => t.kind !== "block";
   const deleted: number[] = [];
+  // Select from every deletion before checking whether the draft touched the winner's source.
+  // Filtering first changes longest-run ties and can silently drop moved words.
   for (const h of liveHunks)
     for (let i = h.from; i < h.to; i++) if (isContent(baseToks[i])) deleted.push(i);
   if (!deleted.length) return [];

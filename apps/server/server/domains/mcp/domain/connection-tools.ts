@@ -138,7 +138,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
             { tool, arguments: request.arguments },
             { signal: request.signal, timeoutMs: CALL_TIMEOUT_MS },
           );
-    // keep: After a call answers, no later step may throw before the model receives its outcome
+    // After a call answers, no later step may throw before the model receives its outcome
     const replyRef =
       outcome.kind === "answered" || outcome.kind === "rejected"
         ? await keepReply(request.thread.id, recordId, outcome.reply)

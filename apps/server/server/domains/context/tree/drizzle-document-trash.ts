@@ -336,6 +336,9 @@ export function createDrizzleDocumentTrash(deps: {
       return await runInDrizzleTransaction(deps.db, async () => {
         const owner = await ownerOfDocument(tx(), documentId);
         if (!owner) return null;
+        // Its owner's list holds its create (no view shows it, so nothing moved it to another
+        // list) and is the one an Undo of the Discard reshows it from: a read of what is still
+        // unsettled, under the list's key.
         await deps.tree.submit({
           lists: [owner],
           make: (copies) => {

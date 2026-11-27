@@ -25,7 +25,7 @@ const withoutControls = (text: string) =>
     .join("");
 const LOOK_ALIKE: Record<string, string> = { "/": "\u2215", "@": "\uff20", "~": "\uff5e" };
 
-// keep: normalEntryName is frozen; changing its output changes replay of stored tree history and needs a migration
+// NormalEntryName is frozen; changing its output changes replay of stored tree history and needs a migration
 export function normalEntryName(kind: "document" | "folder", typed: string): string {
   let name = withoutControls(typed)
     .trim()

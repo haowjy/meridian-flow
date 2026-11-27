@@ -296,7 +296,7 @@
   border-bottom-right-radius: var(--radius-md);
 }
 
-/* keep: Name the cell with :is(td, th); a bare :last-child under :has() makes Chrome restyle the whole document */
+/* Name the cell with :is(td, th); a bare :last-child under :has() makes Chrome restyle the whole document */
 .document-prose table:has([rowspan]:not([rowspan="1"])) {
   border-bottom-right-radius: 0;
   & :is(tbody, tfoot):last-child > tr:last-child > :is(td, th):last-child {

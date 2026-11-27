@@ -60,7 +60,7 @@ export function browserUrl(port: number): string {
   return `http://localhost:${port}`;
 }
 
-// keep: processes talk over 127.0.0.1, where every service binds; `localhost` can resolve to ::1 first
+// Processes talk over 127.0.0.1, where every service binds; `localhost` can resolve to ::1 first
 export function loopbackOrigin(port: number): string {
   return `http://127.0.0.1:${port}`;
 }

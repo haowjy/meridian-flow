@@ -20,7 +20,7 @@ export function runGit(cwd: string, args: string[], timeout?: number): string {
   }).trim();
 }
 
-// keep: the one test for the main checkout. A linked worktree's `.git` is a file; only the main checkout has the directory. It throws for a directory that is not a checkout's root
+// The one test for the main checkout. A linked worktree's `.git` is a file; only the main checkout has the directory. It throws for a directory that is not a checkout's root
 export function isMainCheckout(checkout: string): boolean {
   return fs.statSync(path.join(checkout, ".git")).isDirectory();
 }

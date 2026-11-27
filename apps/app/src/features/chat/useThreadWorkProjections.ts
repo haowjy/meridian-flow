@@ -73,7 +73,7 @@ export function useThreadWorkProjections({
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   const queryClient = useQueryClient();
   const accountSignal = useOptionalAccountEpochSignal();
-  // keep: Bump generation only on thread change/unmount, never per trigger; per-trigger bumps cancel the previous request so a burst of gaps leaves the binding stale.
+  // Bump generation only on thread change/unmount, never per trigger; per-trigger bumps cancel the previous request so a burst of gaps leaves the binding stale.
   const generation = useRef(0);
   const bindingInFlight = useRef(false);
   const bindingAgain = useRef(false);

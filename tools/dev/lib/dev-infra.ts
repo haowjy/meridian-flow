@@ -22,7 +22,7 @@ function devPostgresIsHealthy(): boolean {
 export function ensureDevInfraUp(repoRoot: string): void {
   if (devPostgresIsHealthy()) return;
   const composeFile = path.join(repoRoot, "tools/dev/docker-compose.yml");
-  // keep: `--no-recreate`. Without it compose rebuilds a stopped or still-starting container to match this checkout's compose file, and the container serves every checkout; only `pnpm dev:infra:upgrade` may move it
+  // `--no-recreate`. Without it compose rebuilds a stopped or still-starting container to match this checkout's compose file, and the container serves every checkout; only `pnpm dev:infra:upgrade` may move it
   execFileSync("docker", ["compose", "-f", composeFile, "up", "-d", "--wait", "--no-recreate"], {
     cwd: repoRoot,
     stdio: "inherit",
@@ -32,7 +32,7 @@ export function ensureDevInfraUp(repoRoot: string): void {
 export async function prepareDevDatabases(
   repoRoot: string,
 ): Promise<{ database: string; created: boolean }[]> {
-  // keep: fills a copy. `pnpm dev` hands its own environment to the stack, and `.env` values baked into it would outlive a restart that is meant to read the file again
+  // Fills a copy. `pnpm dev` hands its own environment to the stack, and `.env` values baked into it would outlive a restart that is meant to read the file again
   const env = { ...process.env };
   applyDevEnvToProcess(repoRoot, env);
   const prepared: { database: string; created: boolean }[] = [];

@@ -18,7 +18,7 @@ export default function addressCachePolicy(app: unknown) {
     if (isAddressRequest(event)) setHeader(event, "Cache-Control", "private, no-store");
   });
   hooks.hook("response", (response, event) => {
-    // keep: set this header at both H3 stages: a throw discards event headers, and a successful object response takes them only from the prepared event
+    // Set this header at both H3 stages: a throw discards event headers, and a successful object response takes them only from the prepared event
     if (isAddressRequest(event)) response.headers.set("Cache-Control", "private, no-store");
   });
 }

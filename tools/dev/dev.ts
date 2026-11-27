@@ -103,7 +103,7 @@ async function waitUntilReady({
 
 const startupMs = (build: ClientBuild) => (build === "production" ? 180_000 : 60_000);
 
-// keep: pnpm and Nx set these for the script they are running; passed on, they would steer the stack's own pnpm and Nx calls
+// Pnpm and Nx set these for the script they are running; passed on, they would steer the stack's own pnpm and Nx calls
 function stackEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
     Object.entries(process.env).filter(
@@ -135,7 +135,7 @@ async function start(wanted: Wanted): Promise<DevStackState> {
     ],
     {
       cwd: repoRoot,
-      // keep: detached puts the supervisor in a session of its own, so it outlives the shell that started it
+      // Detached puts the supervisor in a session of its own, so it outlives the shell that started it
       detached: true,
       env: stackEnv(),
       stdio: ["ignore", logFd, logFd],

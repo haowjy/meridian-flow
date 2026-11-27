@@ -46,7 +46,7 @@ const pool = createWorkerPool<PreviewJob, PreviewReply>({
   entry: new URL("./image-preview-worker.ts", import.meta.url),
   size: 2,
   maxOldGenerationSizeMb: 256,
-  // keep: Retire a worker after a HEIC decode failure; libheif's WASM may be unusable
+  // Retire a worker after a HEIC decode failure; libheif's WASM may be unusable
   retireAfter: (job, reply) =>
     "reason" in reply && reply.reason === "decode_failed" && job.mime.startsWith("image/hei"),
 });

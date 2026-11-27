@@ -19,7 +19,7 @@ export type ParsedLinkRef =
 
 const REF = /^(doc|folder|ahead):(.*)$/s;
 
-// keep: parseLinkRef is the untrusted-ref boundary; ids must be canonical UUIDs normalized to lowercase
+// ParseLinkRef is the untrusted-ref boundary; ids must be canonical UUIDs normalized to lowercase
 export function parseLinkRef(value: unknown): ParsedLinkRef | null {
   if (typeof value !== "string") return null;
   const match = REF.exec(value);

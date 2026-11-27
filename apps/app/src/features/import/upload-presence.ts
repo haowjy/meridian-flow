@@ -36,7 +36,7 @@ export class UploadPresence {
   }
 
   async othersHolding(): Promise<Set<string>> {
-    // keep: A lock released during navigator.locks.query() still appears in the snapshot, so collect this tab's held ids both before and after the query.
+    // A lock released during navigator.locks.query() still appears in the snapshot, so collect this tab's held ids both before and after the query.
     const mine = new Set(this.leases.values());
     const snapshot = await navigator.locks?.query();
     for (const importId of this.leases.values()) mine.add(importId);

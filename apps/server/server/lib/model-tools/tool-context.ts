@@ -64,7 +64,7 @@ export interface ToolWiringDeps {
   notices: Pick<NoticePort, "record">;
   controls: Pick<ThreadControls, "enqueueControl">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  // keep: `threadIds` must be parents first (`parentsFirst`), or a Stop deadlocks against cancellation
+  // `threadIds` must be parents first (`parentsFirst`), or a Stop deadlocks against cancellation
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   drafts: Pick<CollabDrafts, "draftReview">;
   agentCatalog: Pick<BoundAgentCatalog, "savePackages">;

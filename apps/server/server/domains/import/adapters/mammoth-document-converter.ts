@@ -31,7 +31,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
         {
           convertImage: mammoth.images.imgElement(async (image) => {
             const data = await image.readAsBuffer();
-            // keep: No await after reading an image; the name counter must stay non-interleaved
+            // No await after reading an image; the name counter must stay non-interleaved
             const hash = createHash("sha256").update(data).digest("hex");
             let name = nameByHash.get(hash);
             if (!name) {
@@ -39,7 +39,7 @@ export function createMammothDocumentConverter(): DocumentConverterPort {
               nameByHash.set(hash, name);
               images.push({ name, bytes: data });
             }
-            // keep: Collapse Word alt-text whitespace; blank lines terminate a Markdown image
+            // Collapse Word alt-text whitespace; blank lines terminate a Markdown image
             return {
               src: `${encodeURIComponent(imageFolder)}/${name}`,
               alt: (image as { altText?: string }).altText?.replace(/\s+/g, " ").trim() ?? "",

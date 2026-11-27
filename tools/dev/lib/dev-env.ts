@@ -32,7 +32,7 @@ export function resolveMainCheckoutRoot(repoRoot: string): string {
   return path.dirname(path.isAbsolute(commonDir) ? commonDir : path.resolve(repoRoot, commonDir));
 }
 
-// keep: compare directories by device and inode, never by path text; on a disk that ignores letter case git and Node can spell one directory two ways
+// Compare directories by device and inode, never by path text; on a disk that ignores letter case git and Node can spell one directory two ways
 function isSameDirectory(a: string, b: string): boolean {
   const [first, second] = [statSync(a), statSync(b)];
   return first.dev === second.dev && first.ino === second.ino;

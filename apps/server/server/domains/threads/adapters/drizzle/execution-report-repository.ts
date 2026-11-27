@@ -30,7 +30,7 @@ type ExecutionReportRow = Omit<
 };
 
 function map(row: ExecutionReportRow): SavedExecutionReport {
-  // keep: Select JSONB columns as ::text; the driver otherwise re-parses JSON scalar strings
+  // Select JSONB columns as ::text; the driver otherwise re-parses JSON scalar strings
   return {
     childThreadId: row.childThreadId,
     executionTurnId: row.executionTurnId,

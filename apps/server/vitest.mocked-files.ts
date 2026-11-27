@@ -5,7 +5,7 @@ export const mockedServerTests = [
   "server/routes/api/threads/[threadId]/messages.post.test.ts",
 ];
 
-// keep: Vitest include/exclude treats brackets as character classes
+// Vitest include/exclude treats brackets as character classes
 export function asVitestGlob(path: string): string {
   return path.replaceAll("[", "[[]");
 }

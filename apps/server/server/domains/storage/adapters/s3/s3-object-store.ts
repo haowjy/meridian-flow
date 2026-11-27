@@ -56,7 +56,7 @@ function isNotFound(error: unknown): boolean {
 function clientConfig(opts: S3ObjectStoreOptions, endpoint?: string) {
   return {
     region: opts.region,
-    // keep: Disable SDK v3's default CRC32 PUT trailer; R2 rejects it
+    // Disable SDK v3's default CRC32 PUT trailer; R2 rejects it
     requestChecksumCalculation: "WHEN_REQUIRED" as const,
     responseChecksumValidation: "WHEN_REQUIRED" as const,
     ...(endpoint ? { endpoint } : {}),
@@ -196,7 +196,7 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
       const { ContentLength: sizeBytes = 0 } = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
       );
-      // keep: S3 returns 416 for a range read of an empty object; short-circuit before GetObject
+      // S3 returns 416 for a range read of an empty object; short-circuit before GetObject
       if (sizeBytes === 0 || headBytes === 0) return ok({ head: new Uint8Array(), sizeBytes });
       const response = await this.client.send(
         new GetObjectCommand({

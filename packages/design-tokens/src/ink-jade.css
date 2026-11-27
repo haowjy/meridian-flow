@@ -5,7 +5,7 @@
   --color-card: oklch(1 0 0);
   --color-chrome: oklch(0.962 0.006 60);
   --color-review: oklch(0.938 0.008 60);
-  /* keep: Paper body ink must hold 7:1 and muted foreground 4.5:1 on the paper surface */
+  /* Paper body ink must hold 7:1 and muted foreground 4.5:1 on the paper surface */
   --color-paper: oklch(0.978 0.005 80);
   --color-paper-ink: oklch(0.25 0.008 60);
 
@@ -17,7 +17,7 @@
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
   --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
-  /* keep: Keyboard focus must hold 3:1 against every surface in a current row */
+  /* Keyboard focus must hold 3:1 against every surface in a current row */
   --color-focus: oklch(0.52 0.1 165);
 
   --color-brand-jade: oklch(0.536 0.082 175);
@@ -37,7 +37,7 @@
   --color-cream: oklch(0.961 0.006 60);
   --color-cream-muted: oklch(0.82 0.012 60);
 
-  /* keep: Syntax colors must hold 4.5:1 on a code well except comments */
+  /* Syntax colors must hold 4.5:1 on a code well except comments */
   --color-syntax-keyword: oklch(0.42 0.1 175);
   --color-syntax-string: oklch(0.46 0.11 55);
   --color-syntax-comment: oklch(0.55 0.006 60);

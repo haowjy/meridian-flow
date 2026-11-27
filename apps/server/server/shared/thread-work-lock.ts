@@ -1,4 +1,4 @@
-// keep: canonical mutation lock order is thread, then Works by id, and threads parents first by `(spawn_depth, id)`; any other order deadlocks against a Stop
+// Canonical mutation lock order is thread, then Works by id, and threads parents first by `(spawn_depth, id)`; any other order deadlocks against a Stop
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { asks, threads, threadWorks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
@@ -30,7 +30,7 @@ export async function lockThreadAsks(
   await (options.skipLocked ? query.for("update", { skipLocked: true }) : query.for("update"));
 }
 
-// keep: distinct from the run-ownership lock seed (81); never share a seed across concerns
+// Distinct from the run-ownership lock seed (81); never share a seed across concerns
 export const THREAD_LOCK_SEED = 82n;
 
 export function threadLockKey(threadId: ThreadId): string {

@@ -507,7 +507,7 @@ button {
   opacity: 0.12;
 }
 
-/* keep: js/map.js measures arrow labels from these rules before drawing, so keep them here */
+/* Js/map.js measures arrow labels from these rules before drawing, so keep them here */
 .arrow-label {
   position: absolute;
   padding: 2px 6px;
