@@ -154,10 +154,6 @@ export function useOptionalLiveDocumentSessionRegistry(): LiveDocumentSessionReg
   return useContext(LiveDocumentRegistryAccountContext);
 }
 
-export function useOptionalProjectStandings(): ProjectStandings | null {
-  return useContext(ProjectStandingsAccountContext);
-}
-
 export function useAccountEpochSignal(): AbortSignal {
   const signal = useContext(AccountEpochContext);
   if (!signal) throw new Error("AccountFeatureComposition is required");

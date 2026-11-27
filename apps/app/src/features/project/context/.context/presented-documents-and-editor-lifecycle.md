@@ -114,7 +114,7 @@ Two owners:
 - **The list's standing.** `ProjectStandings.standing(projectId, documentId)` reads the replay of
   the project's list (and the account's, for `user://`): `in-tree`, `in-trash`, `purged`,
   `not-in-list`, or `waiting` until the list has been read. Nothing is polled and nothing is
-  stamped. `useRemovalAnswer` is the React reader: `SessionEditor` and the reopened review address.
+  stamped. `useDocumentStanding` is the React reader; `removalAnswer` folds its standing into removed or available for `SessionEditor` and the reopened review address.
 - **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
   `ProjectContextRemovalController`) watches the documents the app holds (views, account recents,
   retained sessions) and applies what the list says as one batch through
