@@ -23,6 +23,7 @@ export {
 export { requireWritableThread } from "./admission/require-writable-thread.js";
 export {
   AdmissionConflictError,
+  activatedSkillAuthorizer,
   createUserTurnAdmission,
   InvalidAdmissionError,
   MAX_USER_MESSAGE_TEXT,

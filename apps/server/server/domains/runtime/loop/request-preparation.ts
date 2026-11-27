@@ -110,10 +110,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
             thread: input.thread,
             agentRevisions: input.deps.agentRevisions,
             agentCatalog: input.deps.agentCatalog,
-            threads: input.deps.repos.threads,
-            toolRegistry: input.deps.toolRegistry,
             gateway: input.deps.gateway,
-            baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
           }),
           signal: input.signal,
           recordingFrontier: frontierLookup(input.deps, requestCreditedIds, {

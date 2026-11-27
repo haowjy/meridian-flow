@@ -102,7 +102,6 @@ imports one of them fails the check.
 | `spawn/resolve-readable-thread.ts` | `context` |
 | `spawn/thread-history.ts` | `context` |
 | `spawn/thread-ls.ts` | `context` |
-| `summary/conversation-summarizer.ts` | `packages` |
 | `tools/agent-thread-context.ts` | `packages` |
 | `tools/core-tools.ts` | `@meridian/agent-edit` |
 | `tools/core-tools.ts` | `@meridian/contracts/works` |

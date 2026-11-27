@@ -1048,10 +1048,7 @@ async function prepareReferenceReads(input: {
       thread: input.thread,
       agentRevisions: input.deps.agentRevisions,
       agentCatalog: input.deps.agentCatalog,
-      threads: input.deps.repos.threads,
-      toolRegistry: input.deps.toolRegistry,
       gateway: input.deps.gateway,
-      baseTools: input.deps.toolExecutor.getDefinitions?.(),
     }),
     signal: input.signal,
     recordingFrontier: frontierLookup(

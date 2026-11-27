@@ -8,7 +8,6 @@ import type {
 } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
 import { createToolRegistry } from "../tools/index.js";
@@ -86,8 +85,6 @@ function setup(
     gateway,
     eventSink,
     prefixCacheStateFor,
-    agentRevisions: createTestAgentBinding(threadModel.id, "", () => ["thread"]),
-    threads: { findById: async () => null },
     modelRequestDebug,
     toolRegistry: createToolRegistry(),
     config: { model: cheapModel.id },

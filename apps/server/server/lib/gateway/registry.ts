@@ -357,6 +357,18 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
 assertNoModelDataGaps(snapshotJson as ModelsSnapshot);
 export const MODEL_REGISTRY: ModelRegistry = buildModelRegistry(snapshotJson as ModelsSnapshot);
 
+export function compactionSummarizerModel(configured: string | undefined): string {
+  const model = configured ?? MODEL_REGISTRY.compactionSummarizerModel;
+  if (
+    !MODEL_REGISTRY.providers.some((provider) =>
+      provider.offerings.some((offering) => offering.model.id === model),
+    )
+  ) {
+    throw new Error(`Unknown compaction summarizer model: ${model}`);
+  }
+  return model;
+}
+
 export function resolveModelName(name: string, available: readonly { id: string }[]): string {
   const ids = new Set(available.map((model) => model.id));
   const found = MODEL_REGISTRY.providers

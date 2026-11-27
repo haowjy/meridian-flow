@@ -15,9 +15,15 @@ import type {
   UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { markdownLinkDestination } from "@meridian/markup/links";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
+import type { ThreadRepository } from "../../threads/ports/repositories.js";
+import {
+  resolveThreadUserInvocableSkills,
+  unavailableActivatedSkillSlugs,
+} from "../loop/available-skills.js";
 import type { RunClaim } from "../loop/ports.js";
 import type { ChatMediaPort } from "../ports/chat-media.js";
 
@@ -410,6 +416,24 @@ async function recoverAdmission(
   const refreshed = recovered ?? (await deps.records.lookup(threadId, submissionId));
   if (!refreshed) throw new Error("Admission record disappeared during recovery");
   return refreshed;
+}
+
+export function activatedSkillAuthorizer(
+  deps: Omit<Parameters<typeof resolveThreadUserInvocableSkills>[0], "thread"> & {
+    threads: Pick<ThreadRepository, "findById">;
+  },
+): (input: { threadId: string; slugs: readonly string[] }) => Promise<void> {
+  return async ({ threadId, slugs }) => {
+    const thread = await deps.threads.findById(threadId as ThreadId);
+    if (!thread) throw new InvalidAdmissionError("thread is unavailable");
+    const available = await resolveThreadUserInvocableSkills({
+      thread,
+      agentCatalog: deps.agentCatalog,
+      agentRevisions: deps.agentRevisions,
+    });
+    const missing = unavailableActivatedSkillSlugs(available, slugs);
+    if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
+  };
 }
 
 export function createUserTurnAdmission(deps: {
