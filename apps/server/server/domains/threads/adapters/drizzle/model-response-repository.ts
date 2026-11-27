@@ -1,12 +1,12 @@
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type {
   CreateModelResponseInput,
   CreateModelResponseResult,
   ModelResponseRepository,
 } from "../../ports/repositories.js";
 import { mapModelResponse } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 export async function writeModelResponse(
   db: DrizzleDb,

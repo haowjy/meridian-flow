@@ -34,6 +34,7 @@ import {
 } from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
+import type { DeliveryBoundary, DeliveryBoundarySelection } from "./delivery/runtime-delivery.js";
 import type { InboxDrain } from "./inbox-context.js";
 import { mediaUnitKey, mediaUnits } from "./media-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
@@ -65,7 +66,7 @@ export type PreparedCompaction =
       assemble: (
         turns: Turn[],
         blocks: Block[],
-        selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
+        selection?: DeliveryBoundarySelection,
       ) => ReturnType<typeof prepareRequestContext>;
     };
 
@@ -343,7 +344,7 @@ export async function prepareCompactionSuccessor(args: {
       const assemble = (
         lateTurns: Turn[],
         lateBlocks: Block[],
-        selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
+        selection?: DeliveryBoundarySelection,
       ) =>
         prepareRequestContext({
           deps: successorDeps,
@@ -435,7 +436,7 @@ export async function prepareCompactionSuccessor(args: {
 export async function prepareCompactionContext(
   drain: InboxDrain,
   prepared: PreparedCompaction | undefined,
-  selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
+  selection: DeliveryBoundarySelection,
 ) {
   if (!prepared) throw new Error("Missing prepared compaction");
   if (prepared.kind === "failed") throw new CompactionFailureError(prepared.failure);
@@ -547,7 +548,7 @@ export async function failCompactionSuccessor(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   placeholder: Turn;
-  boundary: import("./runtime-delivery.js").DeliveryBoundary;
+  boundary: DeliveryBoundary;
   optional?: boolean;
   settleResponses: () => Promise<void>;
   failure: unknown;

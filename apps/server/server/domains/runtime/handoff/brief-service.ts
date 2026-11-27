@@ -31,6 +31,7 @@ import { createTurnAccounting } from "../loop/turn-accounting.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
+import type { ToolRegistry } from "../tools/types.js";
 import type { HandoffBriefOutcome } from "./brief-request.js";
 import { completeHandoffSeed, handoffSeedBlock } from "./seed.js";
 
@@ -67,7 +68,7 @@ type HandoffBriefServiceDeps = {
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   billingUsage: Pick<BillingUsagePolicy, "canStartTurn">;
   rateSource: ModelTokenRateSource;
-  toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
+  toolRegistry?: Pick<ToolRegistry, "getRegistration">;
   generate: BriefGeneration;
   publishStatus(threadId: ThreadId): Promise<void>;
   schedulePostCommit(task: () => Promise<void>): void;

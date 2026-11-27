@@ -1,6 +1,6 @@
+import { type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
-import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import {
   LineageDraftsUnavailableError,
   lockLineageOwners,
@@ -13,7 +13,18 @@ import {
   scopedEditWorkIds,
 } from "./edit-confirmation.js";
 
-export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
+export type LockedWorkLifecycle = WorkLifecycleState | "missing";
+
+export class WorkLifecycleUnavailableError extends Error {
+  constructor(
+    readonly workId: string,
+    readonly state: Exclude<LockedWorkLifecycle, "active">,
+    readonly workHandle: string | null = null,
+  ) {
+    super(`Work lifecycle unavailable (${state})`);
+    this.name = "WorkLifecycleUnavailableError";
+  }
+}
 
 export type LockedOwners = {
   works: ReadonlyMap<string, LockedWork>;
@@ -25,10 +36,8 @@ export interface LockedWork {
   handle: string | null;
 }
 
-const lifecycleOf = (
-  row: { archivedAt: unknown; deletedAt: unknown } | undefined,
-): LockedWorkLifecycle =>
-  !row ? "missing" : row.deletedAt ? "deleted" : row.archivedAt !== null ? "archived" : "active";
+const lifecycleOf = (row: { archivedAt: Date | null; deletedAt: Date | null } | undefined) =>
+  row ? workLifecycleState(row) : "missing";
 
 export async function readOwners(
   db: DrizzleDb,

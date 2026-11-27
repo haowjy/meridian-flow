@@ -28,7 +28,7 @@ if (!RUN_DB_TESTS || !url) {
       "../collab/adapters/drizzle-model-evidence.js"
     );
     const { createDrizzleRepositoriesForTest } = await import(
-      "../threads/adapters/drizzle/repositories.js"
+      "../../test-support/thread-repositories.js"
     );
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });

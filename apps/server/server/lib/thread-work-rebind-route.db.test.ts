@@ -38,7 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../domains/runtime/adapters/drizzle-run-claim.js"
     );
     const { createDrizzleRepositoriesForTest } = await import(
-      "../domains/threads/adapters/drizzle/repositories.js"
+      "../test-support/thread-repositories.js"
     );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);

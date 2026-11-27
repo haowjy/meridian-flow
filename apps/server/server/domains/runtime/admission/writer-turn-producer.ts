@@ -13,11 +13,11 @@ import {
   writerSendMetadata,
 } from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
+import type { DeliveryProducer } from "../loop/delivery/runtime-delivery.js";
 import { queuedWriteModeSwitch } from "../loop/next-inbox-work.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { InboxReader } from "../loop/ports.js";
 import type { RunningTurnView } from "../loop/run-session.js";
-import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { persistWriterEnqueue, WriterEnqueueRollback } from "../loop/writer-enqueue.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import {

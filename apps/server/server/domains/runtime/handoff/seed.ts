@@ -10,6 +10,7 @@ import {
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
+import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 
 export function handoffSeedBlock(
   seed: Turn,
@@ -45,7 +46,7 @@ export function handoffSeedBlock(
 }
 
 type HandoffSeedOutcome = {
-  summarizer?: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
+  summarizer?: SummaryOutcome["summarizer"];
   failure?: HandoffFailureOutcome;
   cause?: string;
 };

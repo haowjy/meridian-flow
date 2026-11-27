@@ -10,7 +10,9 @@ if (!RUN || !DATABASE_URL) describe.skip("model response cache prediction (postg
 else
   describe("model response cache prediction (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
     const ids = THREAD_WORK_RACE;

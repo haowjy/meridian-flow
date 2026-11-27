@@ -4,8 +4,8 @@ import {
   enlistDrizzleTransactionParticipant,
   isInDrizzleTransaction,
   runAfterDrizzleCommit,
-} from "./drizzle-transaction.js";
-import type { InMemoryTransactionOwner } from "./in-memory-transaction.js";
+} from "../../shared/drizzle-transaction.js";
+import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 
 type Pending = { record: FailureRecord; emit: (record: FailureRecord) => void };
 type FailureState = { pending: Map<string, Pending> };

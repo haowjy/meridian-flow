@@ -1,6 +1,6 @@
 import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { expect } from "vitest";
-import type { ThreadRepositories } from "../../ports/repositories.js";
+import type { ThreadRepositories } from "../ports/repositories.js";
 
 export type ChatFeedConformanceHarness = {
   repos: Pick<ThreadRepositories, "threads" | "threadUserState" | "threadWorks" | "chatFeed">;

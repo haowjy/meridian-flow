@@ -1,4 +1,4 @@
-import { createWorkerPool, WorkerPoolError } from "../../../shared/worker-pool.js";
+import { createWorkerPool, WorkerPoolError } from "../worker-pool.js";
 import { CONVERSION_LIMITS, ConversionRefused } from "./limits.js";
 
 export type ConversionJob = { kind: "epub" | "pdf" | "pdf-pages"; bytes: Uint8Array };

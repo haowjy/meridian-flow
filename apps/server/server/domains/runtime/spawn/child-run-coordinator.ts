@@ -13,9 +13,9 @@ import type {
   ThreadRepository,
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
+import type { DeliveryProducer } from "../loop/delivery/runtime-delivery.js";
 import type { RunClaim, WakeRefusal } from "../loop/ports.js";
 import { WakeRefusedError } from "../loop/run-turn-port.js";
-import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { threadReferenceBlock } from "../thread-reference.js";
 import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/invalid-arguments.js";
 import { appendSubagentActivity } from "./activity-event.js";

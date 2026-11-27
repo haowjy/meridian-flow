@@ -2,9 +2,8 @@ import type { AcceptedAdmission, RetireAdmissionResult } from "@meridian/contrac
 import type { Database } from "@meridian/database";
 import { turns, userTurnAdmissions } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import { currentDrizzleDb } from "../../threads/adapters/drizzle/repositories.js";
 import type { AdmissionRecord, AdmissionRecordPort } from "./user-turn-admission.js";
 
 function map(row: typeof userTurnAdmissions.$inferSelect): AdmissionRecord {

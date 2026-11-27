@@ -18,7 +18,7 @@ else {
     const schema = await import("@meridian/database/schema");
     const { eq } = await import("drizzle-orm");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { beginPromptEpoch } = await import("../../runtime/loop/begin-prompt-epoch.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");

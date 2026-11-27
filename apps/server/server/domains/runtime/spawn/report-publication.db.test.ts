@@ -33,7 +33,7 @@ else
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../../threads/adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { CompactionMetadataCodec } = await import("../../threads/index.js");
     const { createInMemoryEventSink } = await import("../../observability/index.js");

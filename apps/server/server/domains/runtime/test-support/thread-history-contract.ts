@@ -8,6 +8,8 @@ import { z } from "zod";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
+import { type HistoryResult, renderHistoryResult } from "../spawn/history-result.js";
+import { readThreadHistory, type ThreadHistoryInput } from "../spawn/thread-history.js";
 import { WorkCommandSchema } from "../tools/core-tools.js";
 import {
   grepDocumentText,
@@ -25,8 +27,6 @@ import { modelToolSchema } from "../tools/model-tool-schema.js";
 import { SpawnInputSchema } from "../tools/spawn-tools.js";
 import { jsonContent } from "../tools/tool-content.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
-import { type HistoryResult, renderHistoryResult } from "./history-result.js";
-import { readThreadHistory, type ThreadHistoryInput } from "./thread-history.js";
 
 export function defineThreadHistoryContract(
   createHarness: () => Promise<{

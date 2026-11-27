@@ -1,8 +1,11 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   Block,
+  ControlBody,
+  EnqueueThreadControlResponse,
   HandBackRequest,
   HandBackResponse,
+  MessageProvenance,
   OrchestratorEvent,
   RunState,
   SendNowRequest,
@@ -10,16 +13,19 @@ import type {
   StopRequest,
   StopResponse,
   Turn,
+  WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { Notice } from "../../notices/index.js";
-import type { WorkContextNotices } from "../../projects/index.js";
-import type { CompactionDecision } from "./compaction/decision.js";
-import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
-import type { drainInbox, InboxDrain } from "./inbox-context.js";
-import type { InboxWorkSelection } from "./next-inbox-work.js";
-import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
-import type { ReferenceEvidence } from "./reference-context.js";
+import type { Notice } from "../../../notices/index.js";
+import type { WorkContextNotices } from "../../../projects/index.js";
+import type { CompactionDecision } from "../compaction/decision.js";
+import type { FinalizedExecution, TerminalCause } from "../execution-finalizer.js";
+import type { drainInbox, InboxDrain } from "../inbox-context.js";
+import type { InboxWorkSelection } from "../next-inbox-work.js";
+import type { InboxMessage, InboxReader, Lease, MessageDraft } from "../ports.js";
+import type { ReferenceEvidence } from "../reference-context.js";
+import type { PreparedContinuation } from "../request-preparation.js";
+import type { RenderedWorkContext } from "../work-context.js";
 
 export class HandBackConflictError extends Error {
   readonly code = "hand_back_conflict" as const;
@@ -79,7 +85,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     blocks: Block[];
     requiresSplit: boolean;
     compaction?: CompactionDecision;
-    context?: import("./request-preparation.js").PreparedContinuation;
+    context?: PreparedContinuation;
     successorFailure?: unknown;
   }>;
 };
@@ -88,7 +94,7 @@ export type DeliverySelectionFields = {
   deferred: InboxMessage[];
   continueTask?: boolean;
   outstanding: InboxMessage[];
-  workContext?: import("./work-context.js").RenderedWorkContext;
+  workContext?: RenderedWorkContext;
   notices: Notice[];
   activeLeafTurnId: TurnId | null;
 };
@@ -108,7 +114,7 @@ export type AdoptedBatch<TCurrent = undefined> = {
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;
-  context?: import("./request-preparation.js").PreparedContinuation;
+  context?: PreparedContinuation;
   yielded?: boolean;
 };
 export interface RuntimeDelivery
@@ -117,17 +123,14 @@ export interface RuntimeDelivery
   blockForUsage(lease: Lease): Promise<void>;
   enqueueControl(input: {
     threadId: ThreadId;
-    provenance: import("@meridian/contracts/threads").MessageProvenance;
+    provenance: MessageProvenance;
     id: string;
-    control: import("@meridian/contracts/threads").ControlBody;
+    control: ControlBody;
   }): Promise<{
     created: boolean;
-    response: import("@meridian/contracts/threads").EnqueueThreadControlResponse;
+    response: EnqueueThreadControlResponse;
   }>;
-  withdrawControl(
-    threadId: ThreadId,
-    controlId: string,
-  ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
+  withdrawControl(threadId: ThreadId, controlId: string): Promise<WithdrawThreadControlResponse>;
   effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   settleStaleExecution<T = void>(

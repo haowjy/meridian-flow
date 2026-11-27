@@ -10,6 +10,7 @@ import {
   type TestDestination,
   testFileGrant,
 } from "../../test-support/file-grants.js";
+import { quietWorkActivity } from "../../test-support/thread-repositories.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
@@ -98,7 +99,7 @@ async function fixture(
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     }),
-    threadWorks: createDrizzleThreadWorksRepository(db, null),
+    threadWorks: createDrizzleThreadWorksRepository(db, quietWorkActivity(db)),
   });
   const core = f.collab.agentEdit();
   const context = {

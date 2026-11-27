@@ -3,11 +3,11 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
+import { createDrizzleRepositoriesForTest } from "../../../test-support/thread-repositories.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createDrizzleProjectWorkRepository, updateWorkTransition } from "../../projects/index.js";
-import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { createDrizzleTopPrimaryChatResolver } from "../../threads/adapters/drizzle/top-primary-chat.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import {

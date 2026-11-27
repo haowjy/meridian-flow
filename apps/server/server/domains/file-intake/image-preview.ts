@@ -1,4 +1,3 @@
-import { createWorkerPool, WorkerPoolError } from "../../shared/worker-pool.js";
 import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
@@ -6,6 +5,7 @@ import {
   putDerivedObject,
 } from "../storage/index.js";
 import { sniffMime } from "./index.js";
+import { createWorkerPool, WorkerPoolError } from "./worker-pool.js";
 
 export const PREVIEW_MIME_TYPE = "image/webp";
 
