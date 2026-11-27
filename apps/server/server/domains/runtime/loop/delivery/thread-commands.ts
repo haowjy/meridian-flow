@@ -7,7 +7,7 @@ import type {
   StopRequest,
   StopResponse,
 } from "@meridian/contracts/threads";
-import { HandBackConflictError } from "../loop/runtime-delivery.js";
+import { HandBackConflictError } from "../runtime-delivery.js";
 import {
   decideHandBack,
   decideSendNow,
@@ -16,8 +16,8 @@ import {
   handBackFingerprint,
   type StopDecision,
   type StopFacts,
-} from "../loop/stop-rule.js";
-import type { ThreadLock } from "../loop/thread-lock.js";
+} from "../stop-rule.js";
+import type { ThreadLock } from "../thread-lock.js";
 import type {
   DeliveryLeaseStore,
   DeliveryStore,

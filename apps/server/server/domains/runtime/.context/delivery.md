@@ -10,7 +10,7 @@ The membership, delivery and end facts are in [run identity][kb-run-identity].
 Reservation sites write `turns.execution_id` and `turns.reserved_for_user_turn_ids`
 through `reservationTurn`. A Retry's reserved-for list is execution state carried
 through a start-time compaction to the first assistant. Every acknowledgement goes
-through `ack` in `adapters/execution-settlement.ts`; a yield, a cancelled compaction
+through `ack` in `loop/delivery/execution-settlement.ts`; a yield, a cancelled compaction
 and compaction orphan repair don't acknowledge, so a later execution takes the
 messages on.
 
@@ -35,7 +35,7 @@ messages on.
 ## Stop and hand-back
 
 The rule is [Stop hands waiting messages back][kb-stop]: `loop/stop-rule.ts`
-decides and `adapters/thread-commands.ts` applies. Adoption and `bindTurn` validate
+decides and `loop/delivery/thread-commands.ts` applies. Adoption and `bindTurn` validate
 under the same thread lock and refuse a flagged lease, so a message is handed back
 or answered, never both. `cancel_requested` is set on the lease row matched by
 execution id with no expiry predicate, so a replay never aborts a newer execution.

@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
+import type { DeliveryStore } from "../../loop/delivery/delivery-ports.js";
+import { createRuntimeDelivery } from "../../loop/delivery/runtime-delivery.js";
 import type { Lease } from "../../loop/ports.js";
 import {
   DEFAULT_LEASE_TTL_MS,
@@ -12,8 +14,6 @@ import {
 } from "../../loop/ports.js";
 import { projectRunState } from "../../loop/run-state.js";
 import type { ThreadLock } from "../../loop/thread-lock.js";
-import type { DeliveryStore } from "../delivery-ports.js";
-import { createDeliveryAdapter } from "../runtime-delivery.js";
 
 export function createInMemoryInbox(): DeliveryStore {
   const blocked = new Map<ThreadId, "credits_exhausted">();
@@ -147,7 +147,7 @@ export interface InMemoryRunClaimOptions {
 }
 
 export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
-  import("../delivery-ports.js").DeliveryLeaseStore & {
+  import("../../loop/delivery/delivery-ports.js").DeliveryLeaseStore & {
     readDeliveryRun(threadId: ThreadId): import("../../loop/ports.js").InboxProjection["run"];
   } {
   const holderId = options.holderId ?? crypto.randomUUID();
@@ -438,12 +438,12 @@ export function createInMemoryThreadLock(): ThreadLock {
 }
 
 export function createInMemoryRuntimeDelivery(
-  deps: Omit<Parameters<typeof createDeliveryAdapter>[0], "leaseStore" | "runClaim"> & {
+  deps: Omit<Parameters<typeof createRuntimeDelivery>[0], "leaseStore" | "runClaim"> & {
     runClaim: ReturnType<typeof createInMemoryRunClaim>;
     headSeq(threadId: ThreadId): Promise<bigint>;
   },
 ) {
-  return createDeliveryAdapter({
+  return createRuntimeDelivery({
     ...deps,
     leaseStore: deps.runClaim,
     inbox: {

@@ -58,7 +58,6 @@ imports one of them fails the check.
 
 | file | imports |
 |---|---|
-| `adapters/runtime-delivery.ts` | `notices` |
 | `admission/user-turn-admission.ts` | `context` |
 | `admission/user-turn-admission.ts` | `@meridian/markup` |
 | `agent-definition-support.ts` | `packages` |
@@ -71,6 +70,7 @@ imports one of them fails the check.
 | `loop/compaction-revisions.ts` | `context` |
 | `loop/compaction-successor.ts` | `@meridian/agent-edit` |
 | `loop/context-builder.ts` | `notices` |
+| `loop/delivery/runtime-delivery.ts` | `notices` |
 | `loop/frontier-recording.ts` | `@meridian/agent-edit` |
 | `loop/inbox-context.ts` | `notices` |
 | `loop/orchestrator.ts` | `billing` |

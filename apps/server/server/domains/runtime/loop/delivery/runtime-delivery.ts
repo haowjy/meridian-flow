@@ -1,30 +1,30 @@
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
-import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
-import type { NoticePort } from "../../notices/index.js";
-import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
-import { nextTurnPosition } from "../../threads/order-turns.js";
-import { turnGraph } from "../../threads/ports/turn-graph.js";
-import { finalizeExecution } from "../loop/execution-finalizer.js";
-import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
-import { latestRowAt } from "../loop/latest-row.js";
-import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
+import type { DetachedWorkTracker } from "../../../../shared/detached-work.js";
+import type { NoticePort } from "../../../notices/index.js";
+import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../../threads/index.js";
+import { nextTurnPosition } from "../../../threads/order-turns.js";
+import { turnGraph } from "../../../threads/ports/turn-graph.js";
+import { finalizeExecution } from "../execution-finalizer.js";
+import { drainInbox, planMessageTurns } from "../inbox-context.js";
+import { latestRowAt } from "../latest-row.js";
+import { currentTurnKind, reservationTurn } from "../local-turn.js";
 import {
   type InboxWorkSelection,
   isAskResolved,
   next,
   prefixRows,
   type WriteModeSwitchMessage,
-} from "../loop/next-inbox-work.js";
-import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
-import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
-import { preparationFailureError } from "../loop/preparation-failure.js";
-import { hasReferenceEvidence } from "../loop/reference-context.js";
+} from "../next-inbox-work.js";
+import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../persistence.js";
+import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../ports.js";
+import { preparationFailureError } from "../preparation-failure.js";
+import { hasReferenceEvidence } from "../reference-context.js";
 import {
   NoPendingWakeError,
   ReplyRetryUnavailableError,
   WakeRefusedError,
-} from "../loop/run-turn-port.js";
+} from "../run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -32,16 +32,16 @@ import type {
   DeliverySelection,
   DeliverySelectionFields,
   RuntimeDelivery,
-} from "../loop/runtime-delivery.js";
-import { createThreadControls } from "../loop/thread-controls.js";
-import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
+} from "../runtime-delivery.js";
+import { createThreadControls } from "../thread-controls.js";
+import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../write-mode-switch.js";
 import type { HandBackStore } from "./delivery-ports.js";
 import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
 import { createThreadCommands } from "./thread-commands.js";
 
 const PREPARATION_ATTEMPTS = 3;
 
-export function createDeliveryAdapter(
+export function createRuntimeDelivery(
   deps: ExecutionSettlementDeps & {
     backgroundTasks: DetachedWorkTracker;
     handBacks?: HandBackStore;
@@ -49,7 +49,7 @@ export function createDeliveryAdapter(
       RunClaim,
       "release" | "abandon" | "withExclusiveThread" | "cancelExecution" | "holder" | "wakeRefusal"
     >;
-    workContext: import("../loop/work-context.js").WorkContextReader;
+    workContext: import("../work-context.js").WorkContextReader;
     notices: NoticePort;
     runStarter: RunStarter;
     writeModeSwitch: WriteModeSwitchPort;
