@@ -1,11 +1,16 @@
 import {
+  batchEnd,
+  type DocKey,
   type DocVersion,
   decodeEnvelope,
   decodeRoomVersion,
   freshPeerId,
+  mergeVersion,
   RoomDocs,
   type RoomVersion,
   STRUCTURE_KEY,
+  updateEnd,
+  versionCovers,
   withVector,
 } from "@meridian/document-model";
 import type { LoroDoc } from "loro-crdt";
@@ -33,6 +38,24 @@ export function wordsBeyond(docs: RoomDocs, server: RoomVersion): boolean {
   for (const [key, doc] of docs.owned())
     if (key !== STRUCTURE_KEY && docHasWordsBeyond(doc, server.get(key))) return true;
   return false;
+}
+
+/**
+ * Whether a stored copy holds ops beyond its server mark, read from the bytes' headers without
+ * importing them: what an open session counts as unacknowledged (`DocumentSession.countStored`).
+ */
+export function storedOpsBeyondMark(loaded: LoadedCopy): boolean {
+  const stored = new Map<DocKey, DocVersion>();
+  try {
+    for (const [key, bytes] of loaded.snapshots)
+      mergeVersion(stored, new Map([[key, updateEnd(bytes)]]));
+    for (const batch of loaded.updates) mergeVersion(stored, batchEnd(batch));
+  } catch (error) {
+    reportError(error);
+    return true;
+  }
+  const mark = loaded.meta.get(SERVER_META);
+  return !versionCovers(mark instanceof Uint8Array ? decodeRoomVersion(mark) : new Map(), stored);
 }
 
 export function storedWordsBeyond(loaded: LoadedCopy, server?: RoomVersion): boolean {

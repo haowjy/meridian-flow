@@ -238,13 +238,13 @@ export class LocalDocumentCopies {
     );
   }
 
-  async wordsBeyondMark(name: string): Promise<boolean> {
+  async holds(name: string, beyondMark: (loaded: LoadedCopy) => boolean): Promise<boolean> {
     const idb = this.idb;
     if (!idb) return false;
     const hold = await this.hold(name);
     try {
       const loaded = await load(idb, name);
-      return loaded !== null && storedWordsBeyond(loaded);
+      return loaded !== null && beyondMark(loaded);
     } finally {
       hold.release();
     }

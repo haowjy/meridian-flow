@@ -59,7 +59,16 @@ stateDiagram-v2
   node's purge, its Work or chat purged, the account removed from the project:
   `list-removal-observer`) or at sign-out (`clearForSignOut` → `clearAccountCopies`, which fails
   the sign-out with `SignOutIncomplete("copies")` when one remains). Sign-out first waits up to
-  8 s for unsent edits (`SignOutIncomplete("unsent")` otherwise), its own and those another tab
-  typed into a copy this tab has open; the wait ends, or the next Retry passes, once that tab's
-  delivery comes back from the server. A session closing, or access
+  8 s for unsent edits (`SignOutIncomplete("unsent")` otherwise): its own, those another tab
+  typed into a copy this tab has open, and those in a stored copy no session has open. The
+  registry opens a session on each current copy that holds ops beyond its server mark (read from
+  the bytes' headers, `storedOpsBeyondMark`), with no lease, so it delivers like an open document
+  and then retires; on a timeout it stays held until acknowledged, so the next Retry passes once
+  it has delivered. A room the server won't take writes from (read access, ended) is not waited
+  for, open or stored, and its copy goes at sign-out. `clearAll` deletes without reading: by then
+  every deliverable copy has delivered.
+- **Another account's copies are deleted unread.** `clearCopiesOfOtherAccounts`, at each account
+  lifetime's start, deletes every copy of every other account in this browser. Their undelivered
+  ops are lost, since only that account's session may send them; keeping them for that account's
+  next sign-in is the owner's call (privacy on a shared browser against the typing). A session closing, or access
   the account lost for now, never deletes one.

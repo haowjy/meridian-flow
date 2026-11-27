@@ -48,6 +48,7 @@ export type { SchemaFence } from "./schema-fence";
 
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
 const NOTE_SERVER_MS = 1_000;
+const TAB_QUIET_MS = 2_000;
 const COMPACT_EVERY = 200;
 
 export type DocumentSessionStatus =
@@ -141,6 +142,7 @@ export class DocumentSession {
   private transportAcknowledged = false;
   private readonly pending = new Map<DocKey, DocVersion>();
   private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
+  private tabQuietTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private emittedKey = "";
@@ -363,11 +365,17 @@ export class DocumentSession {
       this.importRemote(batch, false);
       mergeVersion(this.pending, batchEnd(batch));
       this.recomputeStatus();
+      // A tab closed while offline never sends what it wrote: once it is quiet, this tab does.
+      clearTimeout(this.tabQuietTimer);
+      this.tabQuietTimer = setTimeout(() => {
+        if (this.hasUnacknowledgedEdits()) this.transportProvider?.sendLacking();
+      }, TAB_QUIET_MS);
     };
     this.tabs = tabs;
   }
 
   private stopTabs(): void {
+    clearTimeout(this.tabQuietTimer);
     this.tabs?.close();
     this.tabs = null;
   }
