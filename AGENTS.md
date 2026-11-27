@@ -113,9 +113,9 @@ budgets:
 
 Keep no new test the user didn't ask for (`/testing`); propose one with the risk it guards.
 A test you keep asserts what the code produces, not mocks or call counts. Prefer probes
-in `.context/qa/` beside their code, indexed in [docs/qa](docs/qa/README.md). A test pinned to a redesignable
-decision lists it under `Pins implementation decisions` in its header; change the
-decision, change the test.
+in `.context/qa/` beside their code, indexed in [docs/qa](docs/qa/README.md). A `.context/` page that
+records a redesignable decision may name the tests that pin it; change the decision, change
+those tests.
 
 ## Git
 

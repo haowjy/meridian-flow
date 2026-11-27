@@ -1,15 +1,3 @@
-/**
- * Production-composed model `write` tool in a Work's chat: a Draft chat's writes land in its draft
- * (the chapter's fork, a drafted create) while scratch stays live, and a later auto-apply chat still
- * reads the kept draft when asked; a chat's write-mode switch; a Draft chat's create refused in an
- * archived Work; copies of a section, of a text file's properties and of a binary file; and a
- * write that changes nothing, against real repositories.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - queued mode switches
- * - no-op write suppression
- */
-
 import { splitHashline } from "@meridian/agent-edit";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";

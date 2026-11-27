@@ -19,7 +19,7 @@ import {
   type TreeRecord,
 } from "@meridian/project-tree";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -141,7 +141,7 @@ export function createApplyTreeOperations(input: {
     if (perList.length > 0) {
       await input.arrivals?.settle([...documents]);
       for (const documentId of documents)
-        deferUntilDrizzleCommit(() => input.onCommitted(documentId));
+        runAfterDrizzleCommit(() => input.onCommitted(documentId));
     }
     return landed;
   }

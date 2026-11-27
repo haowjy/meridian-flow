@@ -1,9 +1,3 @@
-/** Durable unresolved-submission journal codec + account fence.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - journal subscriber notification policy
- */
-
 import { describe, expect, it } from "vitest";
 import { ComposerSessionDraft } from "@/client/composer-drafts";
 import {

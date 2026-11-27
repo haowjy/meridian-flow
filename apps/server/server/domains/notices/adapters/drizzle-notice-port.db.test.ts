@@ -1,10 +1,3 @@
-/**
- * Postgres coverage for model-context notice recording and transactional consumption.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - peek followed by explicit committed-ID acknowledgement
- */
-
 import { beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";

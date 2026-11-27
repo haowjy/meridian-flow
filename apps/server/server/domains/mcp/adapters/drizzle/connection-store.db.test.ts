@@ -1,9 +1,3 @@
-/**
- * Postgres guard on MCP pins: a pin is never edited or deleted on its own, only with its connection.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a re-pin is a new row, because a thread's bake holds the pin id it started with
- */
 import type { UserId } from "@meridian/contracts/runtime";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { mcpConnections, mcpPins, users } from "@meridian/database/schema";

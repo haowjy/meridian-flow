@@ -1,13 +1,6 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/**
- * Compaction's two commits exercise real inbox, lease, epoch, and journal transactions.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - two-commit compaction, bounded reconstruction retries, and rolling overflow recovery (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
- */
-
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import type { ContentPart, GenerateRequest } from "@meridian-flow/runtime/gateway";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";

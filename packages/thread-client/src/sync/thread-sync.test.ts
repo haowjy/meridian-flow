@@ -1,11 +1,3 @@
-/**
- * The thread sync's rules against a scripted transport: what a stream does to the turns while reads
- * are withheld, when it asks for a read, and the end-of-turn check. Fetching, storage and effects
- * are the host's and are not here.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Read-floor subscription and end-of-turn revalidation (kb/wiki/chat/sync.md#four-positions-never-interchanged)
- */
 import {
   type AGUIEvent,
   EventType,

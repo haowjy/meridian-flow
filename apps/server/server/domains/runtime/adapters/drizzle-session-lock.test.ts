@@ -1,8 +1,3 @@
-/** Failed session-lock releases clear local claims and make later claims usable.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Failed session-lock recovery
- */
 import type { Database } from "@meridian/database";
 import { describe, expect, it, vi } from "vitest";
 import { createDrizzleSessionLock } from "./drizzle-session-lock.js";

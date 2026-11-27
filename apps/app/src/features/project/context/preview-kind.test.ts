@@ -1,9 +1,3 @@
-/**
- * Preview kind behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - preview kind from stored classification
- */
 import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 

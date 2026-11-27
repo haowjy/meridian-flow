@@ -1,8 +1,3 @@
-/** Real process signals must settle paid runtime work before flushing and exiting.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Parallel process drains, deadlines, and second-signal exit
- */
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFile, rm } from "node:fs/promises";

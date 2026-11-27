@@ -1,16 +1,3 @@
-/**
- * Regression contract for the gap ↔ resubscribe storm.
- *
- * A thread whose journal outgrows the server replay cap makes the transport
- * request forever from the same unreplayable cursor. These tests drive the
- * real `ThreadSocketClient` against a fake server that models the cap: any
- * subscribe at/below the capped window answers `gap`, anything beyond answers
- * `subscribed`. The transport must move its resume point to the gap's `toSeq`
- * and converge after a single resubscribe.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Replay-gap cursor recovery (kb/wiki/chat/sync.md#four-positions-never-interchanged)
- */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { FakeThreadSocket } from "../test-support/fake-thread-socket";

@@ -1,14 +1,3 @@
-/**
- * The package fetch port's shared budgets: each aborts with its own name when its limit is
- * lowered, and the tar reader counts bytes as they stream (a 4 MB repository trips a 1 MB expanded
- * limit without reading the rest). GitHub is an in-process fake serving a generated repository, so
- * the probe makes no network calls; `./mf package fetch <url>` reads live GitHub. The fake's body
- * ignores the abort signal, so a download that stalls with no chunks arriving is checked only live.
- *
- *   pnpm exec tsx tools/qa/probes/package-fetch/run.mts
- *
- * Pins implementation decisions: the budget names `download`, `expanded`, `entries`, `wall-time`.
- */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";

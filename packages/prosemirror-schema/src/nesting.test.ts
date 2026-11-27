@@ -1,7 +1,3 @@
-/** Property test for `nest`: it reads any attribute values, and what it reads is stable.
- *
- * Pins implementation decisions: none; it states the model's totality.
- */
 import { describe, expect, it } from "vitest";
 import { type BlockFacts, type NestedNode, type NestInput, nest, nestTree } from "./nesting.js";
 

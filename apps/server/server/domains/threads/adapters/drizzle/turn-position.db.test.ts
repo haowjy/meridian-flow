@@ -1,10 +1,3 @@
-/**
- * PostgreSQL turn-repository contracts for positions and legacy delivery markers.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - delivered messages with nullable delivering-turn attribution (kb/wiki/chat/turns.md)
- */
-
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { noFailureRecorder } from "../../ports/event-journal.js";

@@ -1,5 +1,6 @@
 import {
   type AgentEditCodecFactory,
+  cutRevision,
   isDocumentNotFoundError,
   type LoroDocument,
   loroModel,
@@ -19,7 +20,7 @@ import type {
   HashlineRead,
   SyncError,
 } from "../contracts.js";
-import { cutRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
+import { inView, readHashlines, viewRevision } from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { BlockText } from "./ports/block-text.js";

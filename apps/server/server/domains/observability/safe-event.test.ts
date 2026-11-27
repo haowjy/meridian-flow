@@ -1,8 +1,3 @@
-/** Sanitizer boundary tests for sensitive fields and numeric gateway metrics.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Diagnostic category, code, and metric allowlists
- */
 import { describe, expect, it } from "vitest";
 import { errorMessageOf, unknownToEventPayload } from "./emit-event.js";
 import type { EventRecord } from "./ports/event-sink.js";

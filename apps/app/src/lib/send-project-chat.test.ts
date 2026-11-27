@@ -1,10 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Send project chat behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - durable intent precedes Composer departure (kb/wiki/chat/composer-and-queue.md)
- */
 
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { bindChatSubmissions } from "@/client/chat-submissions";

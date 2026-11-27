@@ -1,9 +1,3 @@
-/** Consolidated test contracts; each block retains its original fixture scope.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Bounded wake and recovery scheduling
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import { describe as __mergedSuite, expect, it, vi } from "vitest";

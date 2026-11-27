@@ -1,6 +1,5 @@
 import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { parseLinkRef } from "@meridian/contracts";
-import { cutRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -30,7 +29,6 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: cutRevision,
   };
 }
 

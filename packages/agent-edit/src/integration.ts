@@ -18,6 +18,7 @@ export * from "./index.js";
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
 export { assignLinkRefs, assignOccurrences } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
+export { cutRevision } from "./links/cut-revision.js";
 export type { OccurrenceAttrs } from "./links/occurrences.js";
 export { rebuildOccurrences, sameAttrs } from "./links/occurrences.js";
 export type { LinkShowing } from "./links/shown.js";

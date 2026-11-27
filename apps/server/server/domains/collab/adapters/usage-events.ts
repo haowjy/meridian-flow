@@ -3,7 +3,7 @@ import type { TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { threads, turns } from "@meridian/database";
 import { eq } from "drizzle-orm";
-import { deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 
 export type UsageEvents = {
@@ -21,19 +21,19 @@ const SOURCE = "collab.usage";
 export function createUsageEvents(db: Database, sink: EventSink | undefined): UsageEvents {
   if (!sink) return { pressUndone() {}, turnUndone() {} };
   const eventSink = sink;
-  const afterCommit = (send: () => void | Promise<void>) => {
-    if (!deferUntilDrizzleCommit(send))
-      void Promise.resolve()
-        .then(send)
-        .catch((cause) =>
-          emitEvent(eventSink, {
-            level: "warn",
-            source: SOURCE,
-            name: "usage.failed",
-            payload: unknownToEventPayload(cause),
-          }),
-        );
-  };
+  const afterCommit = (send: () => void | Promise<void>) =>
+    runAfterDrizzleCommit(async () => {
+      try {
+        await send();
+      } catch (cause) {
+        emitEvent(eventSink, {
+          level: "warn",
+          source: SOURCE,
+          name: "usage.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      }
+    });
   const ageSeconds = (since: Date) => Math.round((Date.now() - since.getTime()) / 1000);
   return {
     pressUndone({ projectId, verdict, pressedAt, documentIds }) {

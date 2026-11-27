@@ -1,10 +1,3 @@
-/**
- * The merge's named risks: a silent loss, invention, duplication or resurrection of a word, and the
- * case table's regressions. Seeded, so a failure replays.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - The draft wins a contested change, as one counted clash (`.context/content-merge.md#the-rule`)
- */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";

@@ -1,9 +1,3 @@
-/** Branch preparation stays read-only and stops at the selected source turn.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Prior oversize rejection informs summary routing
- */
-
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import { expect, it } from "vitest";

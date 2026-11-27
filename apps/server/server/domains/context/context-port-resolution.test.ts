@@ -1,10 +1,3 @@
-/**
- * Tests context port resolution behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Work and lineage Scratch ownership (kb/wiki/work/scratch.md)
- * - Active-Work authority and owner labels (kb/wiki/documents/addresses.md#handles-name-owners-names-are-labels)
- */
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";

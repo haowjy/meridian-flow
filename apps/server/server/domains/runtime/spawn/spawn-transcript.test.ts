@@ -1,9 +1,3 @@
-/** Return-result capture and tool settlement share one repository transaction.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Latest-response fallback selection
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";

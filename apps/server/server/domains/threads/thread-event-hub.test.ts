@@ -1,13 +1,3 @@
-/**
- * Live-delivery contract for the thread event hub: appending a persisted
- * orchestrator event must publish its projected AG-UI frames to subscribers at
- * append time, not only on journal replay. Background lifecycle events remain
- * journal-only; `subagent.activity` projects the recomputed direct-child activity.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Thread hub cache, eviction, gap, and projection policy
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";

@@ -1,9 +1,3 @@
-/** Consolidated test contracts; each block retains its original fixture scope.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Generated results path and provenance shape
- */
-
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import { testWorkHandle } from "../../../test-support/work-handle.js";

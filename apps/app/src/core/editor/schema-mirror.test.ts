@@ -5,11 +5,6 @@ import { Editor } from "@tiptap/core";
 import { afterEach, expect, it } from "vitest";
 import { createStandaloneEditorExtensions } from "./config";
 
-/**
- * Pins implementation decisions (rewrite or delete this case when one changes):
- * - the browser and shared schemas are assembled separately but have one wire surface
- */
-
 const editors: Editor[] = [];
 
 afterEach(() => {

@@ -1,21 +1,3 @@
-/**
- * The rule Save keeps, on the real Drizzle store and the computed catalog over a scratch Postgres:
- * an error, Mars's or Flow's, in one Agent's or skill's file stops that edit from being used (the
- * item keeps its last saved version, or is out with none) and the rest saves; an error in
- * `mars.toml` fails the Save; a warning or info saves with
- * the finding shown; and an Agent that runs never has more access than
- * its file says, except by a warning the Save showed. Writer files are fed through the level
- * reader, as the documents would hold them, and used only once saved. Also the built-in packages,
- * fixing a broken Agent, a chat keeping its revision, and a reader bump.
- *
- *   pnpm exec tsx tools/qa/probes/agents-through-mars/run.mts
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - an error on an Agent or skill file keeps its saved version or leaves it out; on mars.toml it
- *   fails the Save; a warning or info does neither
- * - an Agent naming a missing, unavailable or non-invocable subagent or skill is an error
- * - a tool rule with a pattern, or on a capability Mars has no Flow row for, is an error
- */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { shownFindings } from "@meridian/contracts/agents";

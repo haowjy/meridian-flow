@@ -1,11 +1,5 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/** Provider-request contract: dynamic context and same-Agent derivation preserve prompt bytes.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Frozen-prompt cache ownership and derivation
- */
-
 import { createHash } from "node:crypto";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import type {
   ContentPart,
   Gateway,

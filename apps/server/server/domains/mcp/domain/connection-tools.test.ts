@@ -1,12 +1,3 @@
-/**
- * Guards the order of a connection call: its record exists before the client is called and is
- * completed after, so a call that leaves is never missing from `mcp_calls`; once the server has
- * answered, a failing store, record or status write never keeps the outcome from the model; and
- * exact result text keeps model coaching from creeping back into MCP outcomes.
- *
- * Pins implementation decisions: model-facing MCP result text states facts without coaching.
- */
-
 import type { CallOutcome } from "@meridian-flow/runtime/mcp";
 import type { ScriptRequest, ScriptResult } from "@meridian-flow/runtime/script";
 import { describe, expect, it } from "vitest";

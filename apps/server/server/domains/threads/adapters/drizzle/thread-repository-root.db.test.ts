@@ -1,10 +1,4 @@
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/**
- * PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - denormalized root identity and distinct fork versus handoff lineage provenance (kb/wiki/agents/conversations.md)
- */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   resetThreadWorkRaceFixture,
