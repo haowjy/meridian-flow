@@ -1,9 +1,10 @@
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Code2, Copy, Download, Ellipsis } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
+import type { NodeHold } from "@/core/editor/anchors";
 import { type DiagramProvider, diagramProviderFor, useDiagramRender } from "@/core/editor/diagrams";
 import {
   EditorDialog,
@@ -25,6 +26,7 @@ const SOURCE_FOCUS_DELAY_MS = 120;
 
 export type ObjectLightboxProps = {
   editor: Editor;
+  hold: NodeHold | null;
   target: ObjectSurfaceTarget | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,6 +36,7 @@ export type ObjectLightboxProps = {
 
 export function ObjectLightbox({
   editor,
+  hold,
   target,
   open,
   onOpenChange,
@@ -70,7 +73,7 @@ export function ObjectLightbox({
         <DiagramFace
           key={provider.language}
           editor={editor}
-          target={target}
+          hold={hold}
           provider={provider}
           sourceOpen={sourceOpen}
           onSourceOpenChange={onSourceOpenChange}
@@ -102,20 +105,20 @@ function LightboxHeader({
 
 function DiagramFace({
   editor,
-  target,
+  hold,
   provider,
   sourceOpen,
   onSourceOpenChange,
 }: {
   editor: Editor;
-  target: ObjectSurfaceTarget;
+  hold: NodeHold | null;
   provider: DiagramProvider;
   sourceOpen: boolean;
   onSourceOpenChange: (open: boolean) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
-  const draft = useFenceDraft(editor, target);
+  const draft = useFenceDraft(editor, hold);
   const source = draft.value;
   const { svg, error, rendered } = useDiagramRender(provider, source);
 
@@ -175,6 +178,7 @@ function DiagramFace({
             name={provider.name}
             value={source}
             onChange={draft.onChange}
+            areaRef={draft.area}
             error={rendered === source ? error : null}
           />
         ) : null}
@@ -192,15 +196,15 @@ function SourcePane({
   name,
   value,
   onChange,
+  areaRef,
   error,
 }: {
   name: string;
   value: string;
   onChange: (next: string) => void;
+  areaRef: RefObject<HTMLTextAreaElement | null>;
   error: string | null;
 }) {
-  const areaRef = useRef<HTMLTextAreaElement>(null);
-
   // The writer asked for this pane and it exists to be typed in, so it takes
   // the caret — but it has to win an argument first. The dialog's focus scope
   // and the ⋯ menu that opened the pane both restore focus asynchronously on
@@ -209,7 +213,7 @@ function SourcePane({
   useEffect(() => {
     const timer = window.setTimeout(() => areaRef.current?.focus(), SOURCE_FOCUS_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [areaRef]);
 
   return (
     <div className="meridian-lightbox-source">

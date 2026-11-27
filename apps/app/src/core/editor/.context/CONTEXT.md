@@ -105,10 +105,12 @@ synchronously, then drains transports and leases.
   are left alone: their blocks already have ids. A block's id is its text doc's key, so a block
   is found by id (`findBlock` in `loro-points.ts`), never by a stored position.
 - Caret across a remote write: the binding carries the selection as Loro cursors. A
-  `NodeSelection` that still selects a node after mapping stays one. When the block a cursor was
-  in is gone (a peer deleted it while the writer composed in it), the caret goes to the nearest
-  position before where the block was; typing composed into it stays in its text doc, hidden
-  with the block.
+  `NodeSelection` that still selects a node after mapping stays one. A selection with neither end
+  in a textblock (a `CellSelection`, a gap cursor, select-all) has no cursors and keeps
+  ProseMirror's own mapping through the replace, so a peer's edit leaves a cell selection whole.
+  When the block a cursor was in is gone (a peer deleted it while the writer composed in it), the
+  caret goes to the nearest position before where the block was; typing composed into it stays in
+  its text doc, hidden with the block.
 - `EditorMountIdentity` holds every construction fact. `editorMountKey()` becomes the React key,
   with the session's peer id appended, so a replaced room remounts TipTap.
 - `useMountedEditor()` freezes construction options, binds through the session,
@@ -150,7 +152,9 @@ A remote write can move or replace any block. Long-lived UI uses `EditorAnchor` 
 cursors (`loro-points.ts`: `pointAt`, `encodePoint`/`decodePoint` for storage; `anchors.ts`:
 `resolveAnchor`), resolves it at use time, and validates the object found there. `NodeHold` adds the node's block id and
 type: a node with an id resolves by id, so a deleted node releases rather than retargeting a
-replacement; an inline atom with no id resolves by the seams around it. `carryAnchor` is used
+replacement, and following it skips the positional carry, since one remote replace can cover a
+node's edge (a move, or a batch touching the node and what follows); an inline atom with no id
+resolves by the seams around it. `carryAnchor` is used
 where plugin `apply` runs before the binding settles; read resolution happens later. Every
 resolution is bounds-checked.
 
