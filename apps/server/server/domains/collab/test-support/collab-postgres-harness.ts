@@ -285,10 +285,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(db), documentId),
     rooms,
-    transaction: (work) =>
-      isInDrizzleTransaction()
-        ? work(currentDrizzleDb(db))
-        : runInDrizzleTransaction(db, () => work(currentDrizzleDb(db))),
+    transaction: (work) => runInDrizzleTransaction(db, () => work(currentDrizzleDb(db))),
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
