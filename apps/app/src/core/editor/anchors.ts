@@ -150,7 +150,9 @@ function followHold(
   mapping: Mappable,
   resolve: (state: EditorState, hold: NodeHold) => AnchorRange | null,
 ): NodeHold | null {
-  const carried = carryAnchor(hold, mapping);
+  // A node's edges have no Loro cursor, and a peer's batch replaces one range that can cover an
+  // edge; a held id is found where it is now instead.
+  const carried = hold.identity === null ? carryAnchor(hold, mapping) : hold;
   const at = carried && resolve(state, carried);
   return at && { ...anchorRange(state, at), identity: hold.identity, nodeType: hold.nodeType };
 }

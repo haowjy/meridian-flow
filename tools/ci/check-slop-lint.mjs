@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import ts from "@typescript/typescript6";
+import { parseSource, sourceComments } from "./source-comments.mjs";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const BASELINE_PATH = resolve(ROOT, "tools/ci/slop-lint-baseline.json");
@@ -80,11 +81,9 @@ function trackedPaths() {
     .map((path) => resolve(ROOT, path));
 }
 
-function parseSource(filePath) {
+function readSource(filePath) {
   const text = readFileSync(filePath, "utf8");
-  const scriptKind = filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sourceFile = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, scriptKind);
-  return { lines: text.split("\n"), sourceFile, text };
+  return { lines: text.split("\n"), sourceFile: parseSource(filePath, text), text };
 }
 
 function lineAt(lines, position) {
@@ -179,25 +178,6 @@ function collectSwallowedErrors(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
-// The raw scanner loses its place after a template with a substitution, so comments come from the parse tree, and JsxText is skipped because its words are text
-function comments(sourceFile, text) {
-  const byStart = new Map();
-  const add = (pos, end) => {
-    byStart.set(pos, { text: text.slice(pos, end), start: pos });
-  };
-  function visit(node) {
-    if (node.kind === ts.SyntaxKind.JsxText) return;
-    if (node.getChildCount(sourceFile) === 0) {
-      ts.forEachLeadingCommentRange(text, node.pos, add);
-      ts.forEachTrailingCommentRange(text, node.end, add);
-      return;
-    }
-    for (const child of node.getChildren(sourceFile)) visit(child);
-  }
-  visit(sourceFile);
-  return [...byStart.values()];
-}
-
 function inBacktick(text, position) {
   let open = -1;
   for (let index = 0; index < position; index += 1) {
@@ -209,7 +189,7 @@ function inBacktick(text, position) {
 }
 
 function collectCommentFindings(sourceFile, text, lines, findings, directives) {
-  for (const comment of comments(sourceFile, text)) {
+  for (const comment of sourceComments(sourceFile, text)) {
     const allow = comment.text.match(ALLOW_PATTERN);
     if (allow || ALLOW_MARKER.test(comment.text)) {
       const info = lineInfo(sourceFile, lines, comment.start);
@@ -466,7 +446,7 @@ function collectFindings() {
   const directives = [];
   const paths = trackedPaths();
   for (const filePath of paths.filter((path) => !isExcluded(path))) {
-    const { lines, sourceFile, text } = parseSource(filePath);
+    const { lines, sourceFile, text } = readSource(filePath);
     collectSwallowedErrors(sourceFile, lines, findings.get("swallowed-error"));
     collectCommentFindings(sourceFile, text, lines, findings, directives);
     collectMiddleDotFindings(sourceFile, lines, findings.get("middle-dot"));
@@ -474,7 +454,7 @@ function collectFindings() {
       collectRowNoteFindings(sourceFile, lines, findings.get("row-note"));
   }
   for (const filePath of paths.filter((path) => TEST_FILE_PATTERN.test(path))) {
-    const { lines, sourceFile, text } = parseSource(filePath);
+    const { lines, sourceFile, text } = readSource(filePath);
     collectTestTimingFindings(sourceFile, text, lines, findings.get("test-timing"));
     collectTestTimingDirectives(sourceFile, lines, directives);
   }

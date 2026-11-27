@@ -20,8 +20,11 @@ swallow selection. Radix's disabled prop isn't equivalent, because it removes th
 ## Anchoring
 
 `OverlayIconRow` has two modes. `{ inside: element }` is a node view's attached CSS corner,
-so reflow can't leave a stale rect. `{ over: element }` is a measured pane overlay for
-ProseMirror-owned elements.
+so reflow can't leave a stale rect. It mounts only once TipTap's `NodeViewWrapper` is the
+element's first child: TipTap's node view throws from ProseMirror's DOM checks otherwise, and a
+node view a move makes renders its wrapper after our chrome would. The hook observes first and
+then checks, since the wrapper can land in the same commit as its render. `{ over: element }` is
+a measured pane overlay for ProseMirror-owned elements.
 
 `overlayRect` provides pane-relative geometry; `overlayViewport` answers visibility of the
 target, not placement. Pointer and Radix point anchors stay in viewport space.

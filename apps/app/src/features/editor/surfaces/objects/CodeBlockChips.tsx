@@ -1,7 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Copy, Ellipsis } from "lucide-react";
-import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -23,11 +22,14 @@ import type { ObjectSurfaceTarget } from "./object-anchors";
 import { copyText } from "./object-commands";
 import type { RunVerb } from "./verb-feedback";
 
+export type ObjectRowMenu = "overflow" | "language";
+
 export type CodeBlockChipsProps = {
   editor: Editor;
   target: ObjectSurfaceTarget;
   visible: boolean;
-  onMenuOpenChange: (open: boolean) => void;
+  menu: ObjectRowMenu | null;
+  onMenuChange: (menu: ObjectRowMenu | null) => void;
   run: RunVerb;
 };
 
@@ -35,18 +37,17 @@ export function CodeBlockChips({
   editor,
   target,
   visible,
-  onMenuOpenChange,
+  menu,
+  onMenuChange,
   run,
 }: CodeBlockChipsProps) {
   const chrome = useEditorChrome(editor);
   const suppressed = useChromeSuppressed(editor);
   const placement = useObjectOverlayCorner(editor, { inside: target.container });
-  const [languageOpen, setLanguageOpen] = useState(false);
-  const [overflowOpen, setOverflowOpen] = useState(false);
-
-  useEffect(() => {
-    onMenuOpenChange(languageOpen || overflowOpen);
-  }, [languageOpen, overflowOpen, onMenuOpenChange]);
+  const openChange = (which: ObjectRowMenu) => (open: boolean) => {
+    if (open) onMenuChange(which);
+    else if (menu === which) onMenuChange(null);
+  };
 
   if (!placement || !chrome) return null;
 
@@ -65,8 +66,8 @@ export function CodeBlockChips({
       <EditorMenu
         editor={editor}
         id="code-language"
-        open={languageOpen}
-        onOpenChange={setLanguageOpen}
+        open={menu === "language"}
+        onOpenChange={openChange("language")}
         align="end"
         trigger={
           <Button type="button" size="xs" variant="ghost" className="meridian-code-chip-language">
@@ -93,8 +94,8 @@ export function CodeBlockChips({
       <EditorMenu
         editor={editor}
         id="code-overflow"
-        open={overflowOpen}
-        onOpenChange={setOverflowOpen}
+        open={menu === "overflow"}
+        onOpenChange={openChange("overflow")}
         align="end"
         trigger={
           <IconButton type="button" size="xs" variant="ghost" label={t`More`}>

@@ -1,64 +1,41 @@
 /**
  * Editing a fence through a textarea, without eating a collaborator's words.
  *
- * A `<textarea>` reports a whole string, not an edit. Diffing that string
- * against the *current* document is wrong the moment anyone else is typing:
- * text a peer added since the pane rendered was never in the writer's textarea,
- * so the diff reads it as a deletion and the CRDT merges that faithfully. The
- * collaborator's line disappears, and nothing about the transaction says it was
- * an accident.
+ * A `<textarea>` reports a whole string, not an edit, so the draft diffs it
+ * against the text the textarea held before the input, and writes that edit
+ * only while the fence still holds exactly that text. Text a peer added since
+ * the textarea last rendered was never in it: a diff against the fence would
+ * read it as the writer's deletion. In that window the keystroke is dropped
+ * instead; the render that shows the peer's text is already on its way.
  *
- * So the diff runs against what the pane RENDERED — which is exactly what the
- * writer edited — and its offsets are mapped forward through every LOCAL
- * transaction that has landed since, ProseMirror's own answer to "where is
- * that text now". With nobody else typing the mapping is empty and this is one
- * `insertText`.
- *
- * A peer's write is the case the mapping cannot answer: it arrives as one
- * replacement over everything that differs, so an offset inside it maps to its
- * edge. The document is re-read instead, and when the fence itself changed underneath
- * the writer the pane has no usable base at all until the next render supplies
- * one — refusing there is what keeps the diff from reading the peer's new line
- * as the writer's deletion.
- *
- * The rebase resets on every render that shows new document text, so the base
- * and the mapping can never disagree about which version they describe.
+ * The fence is found through the lightbox's hold, by block id, so a peer moving
+ * the diagram doesn't lose it. The textarea's selection rides the binding's
+ * Loro cursors (`anchorRange`), taken while the fence and the textarea agree,
+ * because a controlled textarea whose value changes puts the caret at the end.
  */
 
 import type { Editor } from "@tiptap/core";
-import type { EditorState, Transaction } from "@tiptap/pm/state";
-import { Mapping } from "@tiptap/pm/transform";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import type { Transaction } from "@tiptap/pm/state";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-import { isBindingReread } from "@/core/editor/anchors";
+import {
+  anchorRange,
+  carryAnchor,
+  type EditorAnchor,
+  type NodeHold,
+  resolveAnchorIn,
+  resolveNodeHold,
+} from "@/core/editor/anchors";
 
-import { isDiagramFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
+import { useEditorRevision } from "@/features/editor/chrome";
 
-export type FenceRebase = {
-  source: string;
-  start: number;
-  mapping: Mapping;
-};
+import { isDiagramFence } from "./object-anchors";
 
-export function fenceRebaseAfter(rebase: FenceRebase, transaction: Transaction): FenceRebase {
-  const mapping = new Mapping(rebase.mapping.maps.slice());
-  mapping.appendMapping(transaction.mapping);
-  return { ...rebase, mapping };
-}
+type HeldCaret = { anchor: EditorAnchor; direction: "forward" | "backward" | "none" };
 
-export type FenceReading = { source: string; start: number };
+type TextPatch = { from: number; to: number; text: string };
 
-export function fenceRebaseAfterRemote(
-  rebase: FenceRebase,
-  fence: FenceReading | null,
-): FenceRebase | null {
-  if (!fence || fence.source !== rebase.source) return null;
-  return { ...fence, mapping: new Mapping() };
-}
-
-export type TextPatch = { from: number; to: number; text: string };
-
-export function minimalTextPatch(current: string, next: string): TextPatch | null {
+function minimalTextPatch(current: string, next: string): TextPatch | null {
   if (current === next) return null;
 
   let prefix = 0;
@@ -80,53 +57,66 @@ export function minimalTextPatch(current: string, next: string): TextPatch | nul
   };
 }
 
-export function fenceSourceTransaction(
-  state: EditorState,
-  rebase: FenceRebase,
-  next: string,
-): Transaction | null {
-  const patch = minimalTextPatch(rebase.source, next);
-  if (!patch) return null;
-
-  const from = rebase.mapping.map(rebase.start + patch.from);
-  // Bias the end backwards so text someone else inserted exactly at the
-  // boundary stays outside the range this edit replaces.
-  const to = Math.max(from, rebase.mapping.map(rebase.start + patch.to, -1));
-
-  if (from < 0 || to > state.doc.content.size) return null;
-
-  const $from = state.doc.resolve(from);
-  if (!isDiagramFence($from.parent)) return null;
-  if (from < $from.start() || to > $from.end()) return null;
-
-  return state.tr.insertText(patch.text, from, to);
-}
-
 export function useFenceDraft(
   editor: Editor,
-  target: ObjectSurfaceTarget | null,
-): { value: string; onChange: (next: string) => void } {
-  const source = target?.node.textContent ?? "";
-  const start = target ? target.pos + 1 : 0;
+  hold: NodeHold | null,
+): {
+  value: string;
+  onChange: (next: string) => void;
+  area: RefObject<HTMLTextAreaElement | null>;
+} {
+  const fence = useCallback(() => {
+    const at = hold && resolveNodeHold(editor.state, hold);
+    const node = at && editor.state.doc.nodeAt(at.from);
+    return node && isDiagramFence(node) ? { text: node.textContent, start: at.from + 1 } : null;
+  }, [editor, hold]);
 
-  const targetRef = useRef(target);
-  targetRef.current = target;
-  const rebaseRef = useRef<FenceRebase | null>({ source, start, mapping: new Mapping() });
+  // Re-render on every transaction at the store's sync priority, so no input event lands between
+  // a peer's write to the fence and the render that shows it: a keystroke in that window is dropped.
+  useEditorRevision(editor);
+  const source = fence()?.text ?? "";
 
-  // Showing new document text means everything up to it is now the base and
-  // nothing has happened since. Layout phase, so a keystroke in the same frame
-  // cannot land against a half-updated rebase.
+  const area = useRef<HTMLTextAreaElement | null>(null);
+  const shown = useRef(source);
+  const caret = useRef<HeldCaret | null>(null);
+
+  const takeCaret = useCallback(() => {
+    const element = area.current;
+    const found = fence();
+    if (!element || !found || found.text !== element.value) return;
+    caret.current = {
+      anchor: anchorRange(editor.state, {
+        from: found.start + element.selectionStart,
+        to: found.start + element.selectionEnd,
+      }),
+      direction: element.selectionDirection,
+    };
+  }, [editor, fence]);
+
   useLayoutEffect(() => {
-    rebaseRef.current = { source, start, mapping: new Mapping() };
-  }, [source, start]);
+    shown.current = source;
+    const element = area.current;
+    const held = caret.current;
+    const found = fence();
+    // Safari focuses a textarea whose selection is set, so only one the writer is in is touched.
+    if (!element || document.activeElement !== element || !held || !found || found.text !== source)
+      return;
+    const at = resolveAnchorIn(editor.state, held.anchor);
+    if (!at) return;
+    const offset = (pos: number) => Math.min(Math.max(pos - found.start, 0), source.length);
+    const [start, end] = [offset(at.from), offset(at.to)];
+    // The writer's own keystroke already left the selection here; setting it again would end an
+    // IME composition.
+    if (element.selectionStart === start && element.selectionEnd === end) return;
+    element.setSelectionRange(start, end, held.direction);
+  }, [editor, fence, source]);
 
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
-      const rebase = rebaseRef.current;
-      if (!transaction.docChanged || !rebase) return;
-      rebaseRef.current = isBindingReread(transaction)
-        ? fenceRebaseAfterRemote(rebase, readFence(editor, targetRef.current?.element))
-        : fenceRebaseAfter(rebase, transaction);
+      const held = caret.current;
+      if (!transaction.docChanged || !held) return;
+      const anchor = carryAnchor(held.anchor, transaction.mapping);
+      caret.current = anchor && { ...held, anchor };
     };
     editor.on("transaction", onTransaction);
     return () => {
@@ -136,25 +126,28 @@ export function useFenceDraft(
 
   const onChange = useCallback(
     (next: string) => {
-      const rebase = rebaseRef.current;
-      const transaction = rebase && fenceSourceTransaction(editor.state, rebase, next);
-      if (!transaction) return;
-      editor.view.dispatch(transaction);
-
-      // Read the base back from the document rather than trusting `next`: the
-      // merge may have produced something else, and the next keystroke has to
-      // diff against what the writer is about to see. This also closes the
-      // window between the dispatch and the render that would rebase anyway.
-      const after = readFence(editor, targetRef.current?.element);
-      rebaseRef.current = after && { ...after, mapping: new Mapping() };
+      const found = fence();
+      if (!found || found.text !== shown.current) return;
+      const patch = minimalTextPatch(shown.current, next);
+      if (!patch) return;
+      editor.view.dispatch(
+        editor.state.tr.insertText(patch.text, found.start + patch.from, found.start + patch.to),
+      );
+      shown.current = fence()?.text ?? next;
+      takeCaret();
     },
-    [editor],
+    [editor, fence, takeCaret],
   );
 
-  return { value: source, onChange };
-}
+  // React's onSelect misses a click that moves the caret in this dialog; the document's own event
+  // reports every change of the textarea's selection.
+  useEffect(() => {
+    const onSelectionChange = () => {
+      if (document.activeElement === area.current) takeCaret();
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, [takeCaret]);
 
-function readFence(editor: Editor, element: HTMLElement | undefined): FenceReading | null {
-  const found = element ? objectSurfaceAt(editor.view, element) : null;
-  return found && { source: found.node.textContent, start: found.pos + 1 };
+  return { value: source, onChange, area };
 }

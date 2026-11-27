@@ -3,7 +3,7 @@ import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { followBlock, holdBlock, type NodeHold } from "@/core/editor/anchors";
+import { followBlock, holdBlock, type NodeHold, resolveBlockHold } from "@/core/editor/anchors";
 import { CHROME_TIMING, editorChromeAttributes, hoverOwner } from "@/core/editor/chrome";
 import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 
@@ -65,18 +65,20 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     if (!chrome || !editable) return;
-    return chrome.registerHoverAnchor<number>({
+    return chrome.registerHoverAnchor<NodeHold>({
       id: BLOCK_MOVEMENT_SURFACE_ID,
       probe: ({ x, y }) => {
         if (gesture.inFlight() || editor.isDestroyed) return null;
         const block = blockUnderPointer(editor.view, x, y);
         if (!block) return null;
         const owner = hoverOwner(editor.view, blockElement(editor.view, block.pos));
-        return owner ? { owner, value: block.pos } : null;
+        const hold = holdBlock(editor.state, block.pos);
+        return owner && hold ? { owner, value: hold } : null;
       },
-      onSettle: (pos) => {
-        setHovered(pos !== null);
-        if (pos !== null) setAnchorHold(holdBlock(editor.state, pos));
+      onSettle: (hold) => {
+        setHovered(hold !== null);
+        const at = hold && resolveBlockHold(editor.state, hold);
+        if (at) setAnchorHold(holdBlock(editor.state, at.from));
       },
     });
   }, [chrome, editable, editor, gesture.inFlight]);

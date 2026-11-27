@@ -63,7 +63,6 @@ export function updateEnd(update: Uint8Array): DocVersion {
   return plainVersion(meta.partialEndVersionVector);
 }
 
-/** The version each doc in an envelope batch reaches. */
 export function batchEnd(batch: Uint8Array): RoomVersion {
   return new Map([...decodeEnvelope(batch)].map(([key, bytes]) => [key, updateEnd(bytes)]));
 }

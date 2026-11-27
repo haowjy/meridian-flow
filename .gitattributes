@@ -1,3 +1,4 @@
 # Regenerated baseline metadata stays tracked for schema review and Drizzle checks.
 # Do not merge snapshot conflicts by hand: resolve schema inputs, then db:generate.
 packages/database/src/migrations/meta/*_snapshot.json linguist-generated=true -diff
+tools/ci/comment-baseline.txt merge=union
