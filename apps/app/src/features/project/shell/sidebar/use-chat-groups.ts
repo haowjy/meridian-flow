@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { usePinnedChatIds } from "@/client/query/thread-user-state-commands";
+import { useCommands } from "@/client/commands/driver-context";
+import { projectPinnedChats } from "@/client/query/chat-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { groupChats } from "./chat-groups";
@@ -11,11 +12,15 @@ export function useChatGroups(
 ) {
   const { threads, isError } = useProjectThreads(projectId);
   const favoriteFeed = useProjectChatFeed(projectId, true);
-  const confirmedPins = useMemo(
-    () => favoriteFeed.items.map((item) => item.id),
-    [favoriteFeed.items],
+  const records = useCommands();
+  const pinnedIds = useMemo(
+    () =>
+      projectPinnedChats(
+        records,
+        favoriteFeed.items.map((item) => item.id),
+      ),
+    [records, favoriteFeed.items],
   );
-  const pinnedIds = usePinnedChatIds(projectId, confirmedPins, favoriteFeed.dataUpdatedAt);
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
   useEffect(() => {
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();

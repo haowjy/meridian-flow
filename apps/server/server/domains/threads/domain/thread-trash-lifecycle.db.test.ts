@@ -9,7 +9,7 @@ import { createProjectRepositoryForTest } from "../../projects/test-support/proj
 import { createDrizzleRunClaim } from "../../runtime/adapters/drizzle-run-claim.js";
 import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import { createLineageCancellation } from "../../runtime/spawn/lineage-cancellation.js";
-import { deleteOwnedThreadToTrash } from "../thread-access.js";
+import { setOwnedThreadTrashState } from "../thread-access.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -83,14 +83,13 @@ describe.skipIf(!enabled || !databaseUrl)("thread trash lifecycle (postgres)", a
     const projects = createProjectRepositoryForTest({ db });
     const threadRepos = createDrizzleRepositoriesForTest(db);
 
-    await deleteOwnedThreadToTrash(
+    await setOwnedThreadTrashState(
       {
         repos: threadRepos,
         projects,
         works: { findById: async () => null, findNoWork: async () => null },
         workContextNotices: {
           threadChanged: async () => {},
-          materializeIdle: async () => "delivered" as const,
         },
         workAuthorityResolver: {} as never,
         stopThreads: async (threadIds) => {
@@ -105,6 +104,7 @@ describe.skipIf(!enabled || !databaseUrl)("thread trash lifecycle (postgres)", a
       },
       ids.caller,
       ids.user,
+      "deleted",
     );
 
     const leases = await db

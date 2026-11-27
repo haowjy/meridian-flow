@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useAccountId } from "@/client/account/account-context";
+import { useCommandDriver } from "@/client/commands/driver-context";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { ChatDeletes } from "./chat-deletes";
 
@@ -23,11 +24,19 @@ export function ChatDeleteProvider({
 }) {
   const client = useQueryClient();
   const accountId = useAccountId();
+  const driver = useCommandDriver();
   const navigation = useChatNavigation();
-  const latest = useRef(navigation);
-  latest.current = navigation;
+  const latest = useRef({ navigation, driver });
+  latest.current = { navigation, driver };
   const [deletes] = useState(
-    () => new ChatDeletes({ client, accountId, projectId, navigation: () => latest.current }),
+    () =>
+      new ChatDeletes({
+        client,
+        accountId,
+        projectId,
+        driver: () => latest.current.driver,
+        navigation: () => latest.current.navigation,
+      }),
   );
   useEffect(() => {
     deletes.open();

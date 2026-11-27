@@ -112,9 +112,9 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
 1. Create a `zz-probe` No Work chat with `./mf thread create`, and script an AI
    `write create` to `scratch://zz-probe-note.md` on an owned mock-provider stack.
    Open the note beside the chat.
-2. Trash the last live chat with `./mf api DELETE /api/threads/$THREAD`. While
+2. Trash the last live chat with `./mf api DELETE /api/threads/$THREAD --data '{"commandId":"<uuid>"}'`. While
    hidden, follow a link to the note: expect "not available", never a Trash entry.
-3. Restore with `./mf api POST /api/threads/$THREAD/restore`. Reopen the chat
+3. Restore with `./mf api POST /api/threads/$THREAD/restore --data '{"commandId":"<uuid>"}'`. Reopen the chat
    and Scratch. The same note must return in the loaded profile and in a fresh one.
    Repeat with Work trash/restore cascading over the lineage's chats.
 4. Seed a `zz-probe` folder with nested documents. Keep descendants open in

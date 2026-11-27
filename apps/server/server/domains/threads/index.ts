@@ -165,9 +165,7 @@ export type { HandoffBriefHold, HandoffBriefLauncher } from "./ports/handoff-bri
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export {
-  deleteOwnedThreadToTrash,
   requireThreadOwner,
-  restoreOwnedThreadFromTrash,
   type SetOwnedThreadTrashStateDeps,
   setOwnedThreadTrashState,
   throwThreadDeleted,

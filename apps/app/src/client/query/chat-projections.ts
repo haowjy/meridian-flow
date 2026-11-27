@@ -15,13 +15,6 @@ export function flattenChatFeed(data: ChatFeedData | undefined): ProjectChatItem
   );
 }
 
-export function projectChatFeedPage(
-  page: ProjectChatFeedPage,
-  projectItem: (item: ProjectChatItem) => ProjectChatItem,
-): ProjectChatFeedPage {
-  return { ...page, items: page.items.map(projectItem) };
-}
-
 export type ChatRowPatch = {
   threadListItem?: (item: ThreadListItem) => ThreadListItem | null;
   projectChatItem?: (item: ProjectChatItem) => ProjectChatItem | null;
@@ -128,45 +121,5 @@ export function removeChatRow(client: QueryClient, projectId: string, threadId: 
   patchChatRow(client, projectId, threadId, {
     threadListItem: () => null,
     projectChatItem: () => null,
-  });
-}
-
-export type ChatRowSnapshot = {
-  threadList: ThreadListItem[] | null;
-  feeds: { queryKey: readonly unknown[]; data: ChatFeedData }[];
-};
-
-export function snapshotChatRow(
-  client: QueryClient,
-  projectId: string,
-  threadId: string,
-): ChatRowSnapshot {
-  const threadList =
-    client.getQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId)) ?? null;
-  const feeds = [
-    ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) }),
-  ]
-    .filter(
-      (entry): entry is [readonly unknown[], ChatFeedData] =>
-        !!entry[1] &&
-        entry[1].pages.some((page) => page.items.some((item) => item.id === threadId)),
-    )
-    .map(([queryKey, data]) => ({ queryKey, data }));
-  return { threadList, feeds };
-}
-
-export function restoreChatRow(
-  client: QueryClient,
-  projectId: string,
-  threadId: string,
-  snapshot: ChatRowSnapshot,
-): void {
-  notifyManager.batch(() => {
-    if (snapshot.threadList?.some((item) => item.id === threadId)) {
-      client.setQueryData(projectQueryKeys.threads(projectId), snapshot.threadList);
-    }
-    for (const { queryKey, data } of snapshot.feeds) {
-      client.setQueryData(queryKey, data);
-    }
   });
 }

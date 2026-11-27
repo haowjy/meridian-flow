@@ -556,6 +556,7 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
+    async keepWithDeletedWork() {},
   };
 
   const threadWorksRepo: ThreadWorksRepository = {
