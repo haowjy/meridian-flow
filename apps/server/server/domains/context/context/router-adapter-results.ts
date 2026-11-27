@@ -1,4 +1,5 @@
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import { isRetryableTransactionError } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { TreeOwnersMoved } from "../../../shared/tree-owners.js";
 import { NodeIdRefusedError } from "../adapters/tree-list-rows.js";
@@ -72,7 +73,7 @@ export async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
-    if (error instanceof TreeOwnersMoved) throw error;
+    if (error instanceof TreeOwnersMoved || isRetryableTransactionError(error)) throw error;
     if (error instanceof NodeIdRefusedError) return Err({ code: "conflict", uri });
     return Err({
       code: "io_error",

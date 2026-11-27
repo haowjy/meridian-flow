@@ -1,4 +1,5 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { isRetryableTransactionError } from "../../../shared/drizzle-transaction.js";
 import { DocumentSyncError } from "../../collab/domain/markdown-document.js";
 import type {
   BoundWrite,
@@ -92,6 +93,7 @@ export async function writeCollabMarkdown(input: {
       });
       return { ok: true, markdown: result.markdown };
     } catch (error) {
+      if (isRetryableTransactionError(error)) throw error;
       return { ok: false, error: thrownFault(error) };
     }
   }

@@ -103,17 +103,25 @@ const commandStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
 const COMMAND_CHECKS = process.env.NODE_ENV !== "production";
 
+const COMMAND_ATTEMPTS = 3;
+
 export async function runInCommandTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
 ): Promise<T> {
   if (activeTransaction())
     throw new Error("A command opens its own transaction; it cannot join one");
-  return runInDrizzleTransaction(db, () => {
-    const context = activeTransaction() as DrizzleTransactionContext;
-    context.locals.set(joinsRoots, true);
-    return commandStorage.run(context, operation);
-  });
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await runInDrizzleTransaction(db, () => {
+        const context = activeTransaction() as DrizzleTransactionContext;
+        context.locals.set(joinsRoots, true);
+        return commandStorage.run(context, operation);
+      });
+    } catch (cause) {
+      if (attempt === COMMAND_ATTEMPTS || !isRetryableTransactionError(cause)) throw cause;
+    }
+  }
 }
 
 export function assertOutsideCommandTransaction(what: string): void {

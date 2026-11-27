@@ -166,9 +166,13 @@ whose first write is the claim, then the list above from the Work rows on. A com
 live room reads its copy in the transaction under the document key. A
 read a command plans on is taken, or taken again, under the locks of what it read: the inverse
 captures off-lock to choose its steps, then reads the text each step writes under its Works,
-document keys. A miss the server retries (a deadlock, a serialization failure,
-a moved owner) rolls back past the claim and is never stored
-as an outcome. In dev and test, a second connection taken while a command
+document keys. A miss the server retries rolls back past the claim and is never stored as an
+outcome: `runInCommandTransaction` reruns the transaction, up to three attempts, on a deadlock or
+serialization failure (`isRetryableTransactionError`), and `untilOwnersHold` reruns it on a moved
+owner. Each attempt starts clean: its after-commit callbacks, locals and participants die with it,
+and the one state an effect keeps in memory, the reply's own updates, is reset at each attempt's
+start (`effectSettler`). A catch that turns errors into an answer (`callAdapter`, a bound write)
+lets a retryable error through, or the writer gets the deadlock as a failed edit. In dev and test, a second connection taken while a command
 transaction is open throws (`assertOutsideCommandTransaction`): a wait on it is invisible to
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory
 copy is marked `pending` by the root transaction that changed it, and any other transaction

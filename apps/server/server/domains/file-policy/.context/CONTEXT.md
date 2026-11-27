@@ -58,7 +58,8 @@ attempt rolls back, releasing every lock it took, before the next one starts wit
 in its first lock set; no restart waits on a lock while holding another. A command has one loop: a
 call made inside it (`runWithEditGrants`, an operation's `withTreeOwners`), or inside a transaction
 nobody there owns, runs once and lets `TreeOwnersMoved` reach the owner, so a committed command never
-runs again. `runWithEditGrants` restarts only when it has no transaction around it (a write whose
+runs again. A deadlock is the transaction's own rerun, not an owner restart: `runInCommandTransaction`
+reruns just its transaction, inside whichever owner loop is around it. `runWithEditGrants` restarts only when it has no transaction around it (a write whose
 seam opens its own). Each restart adds an owner and a project has finitely many, so it ends.
 A missing document or a denied level still answers `not_found` or the denial.
 

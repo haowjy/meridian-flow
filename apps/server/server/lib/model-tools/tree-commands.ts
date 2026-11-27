@@ -135,6 +135,7 @@ export async function runTreeToolCommand(
   let handle: string | undefined;
 
   const withinList = async (): Promise<InList> => {
+    handle = undefined;
     const run = await runWithEditGrants(deps.fileAccess, grants, () =>
       port.treeCommand(area, {
         origin,

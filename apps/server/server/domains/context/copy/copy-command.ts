@@ -11,7 +11,6 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { decodeRoomVersion, type RoomVersion, versionCovers } from "@meridian/document-model";
 import type { PMNode } from "@meridian/markup";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
-import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { CollabDomain } from "../../collab/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/index.js";
@@ -123,21 +122,21 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       // connection, so Copies that each held one while reading would starve the pool they
       // wait on.
       const prepared = replay ? null : await prepare(selected);
-      let claimed = false;
+      // The command reruns its transaction after a deadlock, so the bytes put before it are kept
+      // only when the answer is the result of an attempt that wrote them, the one that committed.
+      let wrote: unknown = null;
+      let answer: Awaited<ReturnType<CopyCommands["execute"]>> | undefined;
       try {
-        return await commands.execute(
+        answer = await commands.execute(
           input.request.operationId,
           receiptCommand(input.sources, input.destination.uri, input.request),
           input.destination.uri,
           async () => {
-            claimed = true;
             if (!prepared)
               throw new Error("A stored receipt vanished between its lookup and its use");
             if (!prepared.ok) return prepared;
-            const { putKeys } = prepared.value;
-            if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
             try {
-              return await commandTransaction.run(
+              const written = await commandTransaction.run(
                 (command) => write(selected, prepared.value, command.draft?.id ?? null),
                 [scopeOf(input.destination)],
                 {
@@ -145,16 +144,18 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                   ...(input.destination.draft ? { draft: input.destination.draft } : {}),
                 },
               );
+              if (written.ok) wrote = written;
+              return written;
             } catch (cause) {
               const returned = closedOwnerBounce(cause);
               if (!returned) throw cause;
-              await deps.release.keys(putKeys);
               return Ok({ status: "copied", entries: [], folders: [], settled: returned });
             }
           },
         );
+        return answer;
       } finally {
-        if (!claimed && prepared?.ok) await deps.release.keys(prepared.value.putKeys);
+        if (prepared?.ok && answer !== wrote) await deps.release.keys(prepared.value.putKeys);
       }
     } finally {
       release?.();
