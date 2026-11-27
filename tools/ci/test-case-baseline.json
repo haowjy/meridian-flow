@@ -39,7 +39,7 @@
     "apps/app/src/core/editor/objects/ObjectPhysicsExtension.test.ts": 5,
     "apps/app/src/core/editor/sanitize-paste.test.ts": 10,
     "apps/app/src/core/editor/schema-mirror.test.ts": 1,
-    "apps/app/src/features/account/useAccountSettings.test.tsx": 14,
+    "apps/app/src/client/account/useAccountSettings.test.tsx": 14,
     "apps/app/src/features/billing/checkout.test.ts": 7,
     "apps/app/src/features/billing/useCheckoutReturn.test.tsx": 5,
     "apps/app/src/features/chat/chat-scratch-owner.test.ts": 2,

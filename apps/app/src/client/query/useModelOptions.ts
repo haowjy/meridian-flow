@@ -1,10 +1,7 @@
 import { modelListSchema } from "@meridian/contracts/protocol";
 import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { getJson } from "@/client/api/http-client";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 
 export function useModelOptions(enabled = true) {
   const accountId = useAccountId();

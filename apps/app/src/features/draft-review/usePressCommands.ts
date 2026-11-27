@@ -18,7 +18,23 @@ import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
+import {
+  useDraftCommandOwner,
+  useOptionalContextRemovalCoordinator,
+  useOptionalLiveDocumentSessionRegistry,
+  useOptionalPresentedDocuments,
+  useOptionalTreeLists,
+} from "@/client/account/account-composition";
 import { useCommandDriver } from "@/client/commands/driver-context";
+import type { CommandOutcome, HeldNoticeRows } from "@/client/draft-commands/draft-command-owner";
+import { type NoticeSurface, workNoticeKey } from "@/client/draft-commands/draft-notices";
+import {
+  type EditorHistory,
+  EditorPressStep,
+  PressEntry,
+  type Seat,
+  type Undone,
+} from "@/client/draft-commands/press-history";
 import { pressDrafts, submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -31,23 +47,7 @@ import {
   shownSourceOf,
 } from "@/core/project-tree/tree-undo";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
-import {
-  useDraftCommandOwner,
-  useOptionalContextRemovalCoordinator,
-  useOptionalLiveDocumentSessionRegistry,
-  useOptionalPresentedDocuments,
-  useOptionalTreeLists,
-} from "@/features/project/context/account-feature-context";
 import { useItemLauncher } from "@/features/project/review-launch";
-import type { CommandOutcome, HeldNoticeRows } from "./draft-command-owner";
-import { type NoticeSurface, workNoticeKey } from "./draft-notices";
-import {
-  type EditorHistory,
-  EditorPressStep,
-  PressEntry,
-  type Seat,
-  type Undone,
-} from "./press-history";
 
 type Verdict = "apply" | "discard";
 type Scope = PressAction["scope"];

@@ -4,11 +4,11 @@ import { useMemo } from "react";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProjectTreeView, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
+import { useWorkState } from "@/client/query/work-state";
 import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
-import { useWorkState } from "../work/work-state";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
   buildMenuTree,

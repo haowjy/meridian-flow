@@ -1,6 +1,7 @@
 import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useState } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
@@ -13,7 +14,6 @@ import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { DocumentStatePortal, DocumentToolbarPortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { tabLocation } from "./identity-location";

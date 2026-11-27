@@ -1,9 +1,9 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { createContext, useContext, useLayoutEffect, useState } from "react";
-import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { changeLocale, resolveQueryLocale } from "@/lib/i18n";
 import { changeStatsForNerds } from "@/lib/stats-for-nerds";
 import { changeUiTheme } from "@/lib/ui-theme";
+import { useAccountEpochSignal } from "./account-context";
 import { useAccountSettings } from "./useAccountSettings";
 
 const AccountSettingsContext = createContext<ReturnType<typeof useAccountSettings> | null>(null);

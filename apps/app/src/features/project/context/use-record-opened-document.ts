@@ -13,15 +13,12 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { useOptionalTreeLists } from "@/client/account/account-composition";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import { accountQueryKeys } from "@/client/query/account-query-keys";
 import { type RecentOpening, touchAccountRecent } from "@/client/recents";
 import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-  useOptionalTreeLists,
-} from "./account-feature-context";
 
 function whenListSynced(
   lists: TreeListRegistry,

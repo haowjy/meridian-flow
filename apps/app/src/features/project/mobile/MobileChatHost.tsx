@@ -1,6 +1,6 @@
 import type { Work } from "@meridian/contracts/protocol";
+import type { ContextRouteRequest } from "@/client/project-shell/project-route";
 import { ChatScreen } from "../chat/ChatScreen";
-import type { ContextRouteRequest } from "../routing/project-route";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
 export type MobileChatHostProps = {

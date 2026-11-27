@@ -1,6 +1,9 @@
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+} from "@/client/project-shell/project-route";
 import type { OpenDocument } from "@/client/stores";
-import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 
 export function routeTargetForTab(tab: OpenDocument): ContextRouteRequest {
   if (tab.kind === "new") return { scheme: "unfiled", path: "", documentId: tab.documentId };

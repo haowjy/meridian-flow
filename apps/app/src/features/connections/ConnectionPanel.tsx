@@ -3,16 +3,13 @@ import { Trans } from "@lingui/react/macro";
 import type { McpConnectionView, McpToolView } from "@meridian/contracts/mcp";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { editMcpConnection, listMcpConnectionTools, pinMcpConnection } from "@/client/api/mcp-api";
 import { mcpConnectionsRoot, useMcpConnectionCache } from "@/client/query/useMcpConnections";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { role } from "@/components/ui/roles";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 import { useClock } from "@/hooks/use-clock";
 import {
   actionLabel,

@@ -24,6 +24,7 @@ import {
   waitingWriterMessages,
 } from "@meridian/thread-client";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
@@ -48,10 +49,6 @@ import {
 } from "@/features/chat/composer";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 import { FolderMenuContext } from "@/features/project/context/FolderMenu";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { displayThreadTitle } from "@/lib/thread-title";

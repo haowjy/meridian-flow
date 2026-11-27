@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-
+import { createLinkSettlements, useOptionalLinkSettlements } from "@/client/link-settlements";
 import {
   createLinkAnswerCache,
   isInternalLinkTarget,
   type LinkAnswerCache,
   type LinkTarget,
 } from "@/core/editor/links";
-
 import {
   type FollowPolicy,
   type FollowReporter,
   followProjectLink,
   type LinkDestination,
 } from "./follow-link";
-import { createLinkSettlements, useOptionalLinkSettlements } from "./link-settlements";
 import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 

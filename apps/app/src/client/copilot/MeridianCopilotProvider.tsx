@@ -1,11 +1,7 @@
 import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo } from "react";
-
+import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadActions } from "@/client/stores";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
 
 import { ThreadRunController } from "./ThreadRunController";
 

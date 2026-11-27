@@ -1,4 +1,8 @@
 import { readSegment } from "@meridian/contracts/protocol";
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+} from "@/client/project-shell/project-route";
 import type { OpenDocument } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { resolveLaunchLocator } from "./launch-locator";
@@ -15,7 +19,6 @@ import {
   scratchOwnerKey,
 } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
-import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
 type Navigation = ReturnType<typeof createProjectNavigation>;
 export type EditorCommandSnapshot = {

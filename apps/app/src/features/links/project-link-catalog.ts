@@ -1,10 +1,8 @@
 import type { CatalogDocument, CatalogFolder } from "@meridian/contracts";
 import { contextOwner } from "@meridian/contracts/protocol";
 import type { HolderCatalog } from "@meridian/markup/links";
-
+import type { ProjectLinkSettlements } from "@/client/link-settlements";
 import { indexedDocumentAt, indexedFolderAt } from "@/core/editor/links";
-
-import type { ProjectLinkSettlements } from "./link-settlements";
 import type {
   LinkableDocument,
   LinkableDocumentIndex,

@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { useDraftCommandOwner } from "@/client/account/account-composition";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import {
@@ -14,7 +15,6 @@ import {
   ReviewSurface,
   ReviewSurfaceProvider,
 } from "@/features/draft-review/review-mode";
-import { useDraftCommandOwner } from "./context/account-feature-context";
 import { useHostReviewMode } from "./use-review-mode";
 import { useWorkScopeState } from "./use-work-scope";
 import { type DocumentPaint, useDocumentPaint } from "./views";

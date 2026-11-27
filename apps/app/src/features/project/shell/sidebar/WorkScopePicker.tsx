@@ -5,6 +5,7 @@ import type { Work } from "@meridian/contracts/works";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
+import { workStateIn } from "@/client/query/work-state";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { WorkName } from "@/components/app/WorkName";
 import { Chip } from "@/components/ui/chip";
@@ -24,7 +25,6 @@ import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { useWorkReviewCount } from "../../tree-version";
 import { useBringWorkBack } from "../../work/EndedWorkNotice";
-import { workStateIn } from "../../work/work-state";
 import { useChangesScope } from "./ChangesSource";
 
 export function WorkScopePicker({

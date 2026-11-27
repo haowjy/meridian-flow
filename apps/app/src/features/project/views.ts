@@ -2,12 +2,15 @@ import { type DocumentId, draftItemKey } from "@meridian/contracts";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, useCallback, useContext, useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import {
   type DocumentView,
   type DraftPin,
   readDocumentView,
   useDocumentView,
 } from "@/client/project-shell/document-views";
+import { openDocumentFromFile } from "@/client/project-shell/open-document-from-file";
+import { contextRouteRequest } from "@/client/project-shell/project-route";
 import {
   readTreeVersionChoice,
   type TreeVersionChoice,
@@ -17,11 +20,8 @@ import { unwrapListQuery } from "@/client/query/list-query";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
-import { useAccountId } from "./context/account-feature-context";
-import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
-import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalChatOnScreen } from "./side/SideView";
 import { useScopeDraftOwner } from "./use-work-scope";
 

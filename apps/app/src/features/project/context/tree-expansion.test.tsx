@@ -11,7 +11,7 @@ import {
 } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
-vi.mock("./account-feature-context", () => ({ useAccountId: () => "account" }));
+vi.mock("@/client/account/account-context", () => ({ useAccountId: () => "account" }));
 afterEach(() => vi.restoreAllMocks());
 
 it("keeps live toggles in memory when storage is blocked", async () => {

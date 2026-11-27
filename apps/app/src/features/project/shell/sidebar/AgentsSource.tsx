@@ -11,6 +11,7 @@ import {
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { BookOpen, Bot, FilePlus, FolderPlus, Plus } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { useLiveDocumentSessionRegistry } from "@/client/account/account-composition";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
 import { RowWord } from "@/components/app/RowWord";
@@ -48,7 +49,6 @@ import {
   usePackageSaves,
 } from "@/features/agents/package-save";
 import { cn } from "@/lib/utils";
-import { useLiveDocumentSessionRegistry } from "../../context/account-feature-context";
 import { type ContextTree, ContextTreeBody, useContextTree } from "../../context/ContextTreePanel";
 import { validateContextEntryName } from "../../context/context-entry-name";
 import { EntryNameField } from "../../context/EntryNameField";

@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { LandingFault } from "@meridian/project-tree";
 import { type ReactNode, useState } from "react";
+import type { HeldNoticeRows } from "@/client/draft-commands/draft-command-owner";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { ListRow } from "@/components/ui/list-row";
@@ -11,7 +12,6 @@ import { useItemLauncher } from "@/features/project/review-launch";
 import { cn } from "@/lib/utils";
 import { draftCopyView } from "./copy-view";
 import { DraftImagePreview } from "./DraftImagePreview";
-import type { HeldNoticeRows } from "./draft-command-owner";
 import { ReviewActions } from "./ReviewActions";
 import { landingFaultSentence } from "./tree-groups";
 import { opensAsDocument, treeLineOf } from "./tree-line";

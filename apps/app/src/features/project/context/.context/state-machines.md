@@ -33,7 +33,7 @@ stateDiagram-v2
 ## Account lifetime
 
 Whether the signed-in account's features take new work (`AccountFeatureLifetime` in
-`account-feature-lifetime.ts`). Its one stored state is `epochSignal`: aborted means closing.
+`client/account/account-lifetime.ts`). Its one stored state is `epochSignal`: aborted means closing.
 The document session registry, the opener and every account-scoped fetch read that signal
 rather than keeping their own. Sign-out, switching accounts, and the account's sign-in in this
 browser ending elsewhere close it.

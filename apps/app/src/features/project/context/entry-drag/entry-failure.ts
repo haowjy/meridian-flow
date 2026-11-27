@@ -2,14 +2,14 @@ import { t } from "@lingui/core/macro";
 import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
-import { notifyFailure } from "@/components/app/failure-toast";
-import type { TreeStep } from "@/core/project-tree/tree-undo";
 import {
   type DraftNotices,
   deleteNoticeKey,
   type NoticeSurface,
-} from "@/features/draft-review/draft-notices";
-import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
+} from "@/client/draft-commands/draft-notices";
+import type { ContextRemovalCoordinator } from "@/client/project-shell/context-removal-coordinator";
+import { notifyFailure } from "@/components/app/failure-toast";
+import type { TreeStep } from "@/core/project-tree/tree-undo";
 import { revealPlaced } from "../tree-reveal";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";

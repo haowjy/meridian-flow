@@ -3,6 +3,12 @@ apps/app/dev/api-http-dev-proxy-plugin.ts	Host is forwarded unchanged; the serve
 apps/app/dev/vite-plugins.ts	Babel 8 dropped allExtensions/isTSX, so TSX macros need ignoreExtensions plus parserOpts jsx
 apps/app/e2e/pg.d.ts	Purpose: Minimal local pg typings for Playwright e2e seed scripts. Key decision: pg is root test tooling; this declaration covers only the Client methods the e2e smoke uses.
 apps/app/scripts/profile-dev-stack.ts	Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
+apps/app/src/client/account/AccountSettingsProvider.tsx	Bump the remount key on account-epoch change; otherwise a previous account's confirmed settings can seed or drive the next account.
+apps/app/src/client/account/account-lifetime.ts	Closed by anything but this sign-out, the wait no longer knows what was delivered.
+apps/app/src/client/account/account-lifetime.ts	No await before this abort: the wait answered from one synchronous pass, and a keystroke landing in between would be deleted unsent.
+apps/app/src/client/account/account-lifetime.ts	Refused, but another tab's sign-out moved the count meanwhile: end as that one asked.
+apps/app/src/client/account/account-lifetime.ts	Stored copies wait for the signing-out tab, or for their document's next open: opening them here would race a sign-out's deletion.
+apps/app/src/client/account/account-lifetime.ts	This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
 apps/app/src/client/announcements.ts	An atomic region must not rewrite the surviving sentences and announce them again.
 apps/app/src/client/announcements.ts	Push a polite announcement. Screen readers announce it at the next pause, and the region is cleared soon after, so a surface that has since moved on never leaves its old sentence behind.
 apps/app/src/client/announcements.ts	Push an assertive announcement (errors). Interrupts the current speech.
@@ -39,6 +45,8 @@ apps/app/src/client/chat-submissions/store.ts	Per-chat `seq` counters. Outside t
 apps/app/src/client/commands/browser-ports.ts	One tab at a time delivers for an account. Holding the lock is pending on a promise.
 apps/app/src/client/commands/driver-context.tsx	A page in the back-forward cache or frozen keeps a lock it cannot use.
 apps/app/src/client/copilot/ThreadRunController.ts	Pair provider effect setup with disposal; construction is render-pure.
+apps/app/src/client/draft-commands/draft-notices.ts	A page moving to another host is let go and taken up in one commit: decide after it.
+apps/app/src/client/project-shell/context-removal-coordinator.ts	The writer is deleting or Discarding these documents: main, if it shows one of them, goes at once to the document it showed before, else to Recently opened. Call before the removal. `landed` hears where main went, or null when it did not move; nothing when main did not show them. Returns the document main is leaving, if it shows one of them.
 apps/app/src/client/project-shell/main-tabs.ts	A tab stored before a node's handle became its document id carries `resourceHandle`: dropped.
 apps/app/src/client/query/delete-project-chat.ts	Reset, not invalidate: a kept "deleted" error would read as proof the chat is gone when it next mounts, and drop its unsent words.
 apps/app/src/client/query/draft-commands.ts	Points a chat's lineage at another draft of its Work. It goes in the Work's draft lane too, so a draft made just before (`+ New draft`) exists when the server points the chat at it.
@@ -353,7 +361,6 @@ apps/app/src/core/tree-list/tree-list-session.ts	A copy never joined holds only 
 apps/app/src/core/tree-list/tree-list-session.ts	A render may still hold the old copy's snapshot: it is freed with the session.
 apps/app/src/core/tree-list/tree-list-session.ts	Counts changes to any copy as they land: `version` publishes a microtask later, and a record appended in this one must be in the next replay.
 apps/app/src/core/tree-list/tree-list-session.ts	The copy. A copy of another list is replaced by a new document: read it from the snapshot each time.
-apps/app/src/features/account/AccountSettingsProvider.tsx	Bump the remount key on account-epoch change; otherwise a previous account's confirmed settings can seed or drive the next account.
 apps/app/src/features/account/SettingsDialog.tsx	A container can't query itself, so the direction switch lives one level in.
 apps/app/src/features/account/SettingsDialog.tsx	SettingsDialog — the single settings surface for the authenticated app, rendered as a routed overlay: setting `?settings=<section>` on any authenticated route opens it. URL-addressable by construction — Back closes it, refresh restores it, and a shared link lands on the exact section — while the one component behaves identically over every authenticated route. Two presentations, one mounted Dialog and one routed mechanism: - Desktop: centered modal with a left section rail. - Phone (`usePhoneShell()`): full-screen takeover (fade only, no zoom) via `PhoneSettingsContent` — WebKit blanks transform-animated content under overflow clipping + radius.
 apps/app/src/features/account/SettingsDialog.tsx	Translated control labels react to the active locale, independently of account values.
@@ -394,7 +401,6 @@ apps/app/src/features/debug/trace/thread-wire-tap.ts	Error accounting is observa
 apps/app/src/features/debug/use-debug-enabled.ts	Debug remains usable in memory when storage is unavailable.
 apps/app/src/features/debug/use-debug-enabled.ts	Storage is optional; resetting in-memory state is still sufficient.
 apps/app/src/features/draft-review/DraftSwitcher.tsx	The other owners' drafts, folded behind the scope's own unless one of them is on screen. The menu remounts it on each open, so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
-apps/app/src/features/draft-review/draft-notices.ts	A page moving to another host is let go and taken up in one commit: decide after it.
 apps/app/src/features/editor/EditorChromeHost.tsx	EditorChromeHost — the one place editor chrome mounts. `SessionEditor` renders this once and never learns about a surface. Surfaces arrive through `EDITOR_CHROME_SURFACES`, which is the seam; the alternative — six lanes each patching `SessionEditor` — is six lanes editing one file. The host renders nothing of its own. Every surface here portals or floats, so this element has no size and cannot push the manuscript around. It mounts for the ACTIVE editor only. The desktop context host keeps several editors warm behind the visible one and hides them with `hidden`, which does nothing to a menu, a dialog, or a suggestion list: those portal to the body and would paint over the document the writer is actually reading, anchored to a rect in a pane nobody can see.
 apps/app/src/features/editor/SessionEditor.tsx	A fence has to withdraw the catalog, not just the surface's editability: slash commands dispatch through TipTap chains, which run on a non-editable editor, so a menu already open when the fence lands would still insert.
 apps/app/src/features/editor/WordCount.tsx	A newline between blocks, or the last word of one and the first of the next would count as one.
@@ -498,13 +504,7 @@ apps/app/src/features/project/context/DocumentProperties.tsx	Scrollable regions 
 apps/app/src/features/project/context/EntryDestinationPicker.tsx	Radix DropdownMenu has no standalone anchor. This inert trigger positions the externally opened picker at the row actions.
 apps/app/src/features/project/context/InlineValidationOverlay.tsx	Capture phase catches the tree's own scroll container, not just window.
 apps/app/src/features/project/context/RecentDocumentsLanding.tsx	A link can't be pressed; `ListRow` names a selected link instead.
-apps/app/src/features/project/context/account-feature-lifetime.ts	Closed by anything but this sign-out, the wait no longer knows what was delivered.
-apps/app/src/features/project/context/account-feature-lifetime.ts	No await before this abort: the wait answered from one synchronous pass, and a keystroke landing in between would be deleted unsent.
-apps/app/src/features/project/context/account-feature-lifetime.ts	Refused, but another tab's sign-out moved the count meanwhile: end as that one asked.
-apps/app/src/features/project/context/account-feature-lifetime.ts	Stored copies wait for the signing-out tab, or for their document's next open: opening them here would race a sign-out's deletion.
-apps/app/src/features/project/context/account-feature-lifetime.ts	This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
 apps/app/src/features/project/context/context-entry-name.ts	A name that would read as another type (`data.json.md`) is kept whole, as the replay keeps it.
-apps/app/src/features/project/context/context-removal-coordinator.ts	The writer is deleting or Discarding these documents: main, if it shows one of them, goes at once to the document it showed before, else to Recently opened. Call before the removal. `landed` hears where main went, or null when it did not move; nothing when main did not show them. Returns the document main is leaving, if it shows one of them.
 apps/app/src/features/project/context/entry-drag/DropChoiceMenu.tsx	Radix DropdownMenu has no standalone anchor; this inert trigger holds the pointer's place.
 apps/app/src/features/project/context/entry-drag/drag-session.ts	An `<a>` carries its URL, and a drop on the window would navigate to it.
 apps/app/src/features/project/context/entry-drag/drag-session.ts	The browser snapshots the element during dragstart; it is not needed after.

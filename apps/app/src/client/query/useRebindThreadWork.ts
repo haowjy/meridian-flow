@@ -1,8 +1,8 @@
 import type { RebindThreadWorkResponse, Work } from "@meridian/contracts/works";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAccountEpochSignal } from "@/client/account/account-context";
 import { isMeridianApiError } from "@/client/api/http-client";
 import { rebindThreadWork } from "@/client/api/threads-api";
-import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import {

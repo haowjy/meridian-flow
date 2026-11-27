@@ -1,10 +1,13 @@
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+} from "@/client/project-shell/project-route";
 import type { OpenDocument } from "@/client/stores";
 import type { TreeView } from "@/core/project-tree/tree-view";
 import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/open-document-identity";
 import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
-import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
 export function resolveLaunchLocator(input: {
   requested: ContextRouteRequest;

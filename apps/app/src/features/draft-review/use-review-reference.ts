@@ -2,8 +2,8 @@ import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { RoomDocs } from "@meridian/document-model";
 import { useEffect, useId, useState } from "react";
+import { useOptionalLiveDocumentSessionRegistry } from "@/client/account/account-composition";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { useOptionalLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import type { ReviewMode } from "./review-mode";
 
 export type ReviewAgainst =

@@ -214,7 +214,7 @@ unavailable". The grammar lives in `features/project/routing/project-address.ts`
 
 `ReadableProjectRoute` is the browser address parser and
 `createProjectNavigation` owns history admission; keep route parsing and browser
-history out of `routing/project-route.ts`. Chat UUIDs resolve by snapshot
+history out of `client/project-shell/project-route.ts`. Chat UUIDs resolve by snapshot
 identity, including subagents absent from the primary list. Main-destination
 navigation pushes; the current chat (the side's chat beside a document) is browser-local and
 writes no history; canonicalization and repair replace only while their captured
@@ -228,8 +228,12 @@ Deleted.
 
 ## Authenticated shell and settings
 
-`/_authenticated` mounts one unconditional composition:
-Query → account lifetime → settings → project → thread → transport → copilot.
+`/_authenticated` mounts one unconditional composition, `AccountComposition`
+(`client/account/account-composition.tsx`), around the imports provider and the page:
+Query → connectivity → account lifetime → command driver → settings → failure log →
+thread → transport → copilot → density. What one account holds is read in that file; the
+lifetime (`account-lifetime.ts`) builds only from `client/` and `core/`, and the small
+context (account id, `requests`, epoch signal, sign-out) is `account-context.tsx`.
 Never gate providers by pathname; conditional light and workspace branches once
 dropped `ThreadStoreProvider` during transitions.
 Account replacement synchronously fences the old lifetime before constructing the

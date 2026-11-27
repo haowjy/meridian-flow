@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import { singleFlight } from "@/lib/single-flight";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";

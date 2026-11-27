@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
 import {
@@ -15,7 +16,6 @@ import {
 } from "@/core/project-tree/tree-undo";
 import type { TreeView } from "@/core/project-tree/tree-view";
 import { useShellTreeVersion } from "../tree-version";
-import { useAccountId } from "./account-feature-context";
 import { useEntryActions } from "./entry-drag/entry-actions";
 
 export type TreeNoticeWords = {

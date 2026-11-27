@@ -1,11 +1,14 @@
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+} from "@/client/project-shell/project-route";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
-import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { documentRow } from "./context-entry-name";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
 

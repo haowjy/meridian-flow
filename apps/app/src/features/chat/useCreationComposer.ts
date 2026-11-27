@@ -1,11 +1,11 @@
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useCallback, useState } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import type { ComposerSubmitEnvelope } from "@/client/chat-submissions/composer-document";
 import { useThreadActions } from "@/client/stores";
 import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
 import { sendProjectChat } from "@/features/chat/send-project-chat";
-import { useAccountId } from "@/features/project/context/account-feature-context";
 import { usePanePlace } from "@/features/project/pane-place";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";

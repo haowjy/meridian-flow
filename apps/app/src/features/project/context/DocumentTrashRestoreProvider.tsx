@@ -7,12 +7,12 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { type TrashEntry, useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { GoneRow } from "@/components/app/RowWord";
 import { endTreeNotice } from "@/core/project-tree/tree-undo";
 import type { TreeDestination } from "@/core/project-tree/tree-view";
-import { useAccountId } from "./account-feature-context";
 import type { EntryRef } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
 import { leaveSelections } from "./entry-drag/selection";

@@ -1,14 +1,14 @@
 import { t } from "@lingui/core/macro";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getAuthMe } from "@/client/api/auth-api";
-import { httpErrorStatus } from "@/client/api/http-client";
-import { Button } from "@/components/ui/button";
 import {
   AccountFeatureLifetime,
   SIGN_OUT_FAILURE,
   SignOutIncomplete,
-} from "@/features/project/context/account-feature-lifetime";
+} from "@/client/account/account-lifetime";
+import { getAuthMe } from "@/client/api/auth-api";
+import { httpErrorStatus } from "@/client/api/http-client";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/logout")({
   ssr: false,

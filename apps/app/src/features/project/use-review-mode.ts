@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo } from "react";
+import { useAccountId } from "@/client/account/account-context";
 import { useLastShownDocument, writeLastShownDocument } from "@/client/project-shell/store";
 import type { ReviewMode } from "@/features/draft-review/review-mode";
-import { useAccountId } from "./context/account-feature-context";
 import { useOptionalPanePlace } from "./pane-place";
 import type { MainReviewControls } from "./routing/main-review";
 import type { ReviewTarget } from "./routing/project-address";

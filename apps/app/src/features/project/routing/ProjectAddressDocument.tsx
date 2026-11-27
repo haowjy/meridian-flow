@@ -1,9 +1,12 @@
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
+import {
+  openDocumentFromFile,
+  treeFileFromCatalogEntry,
+} from "@/client/project-shell/open-document-from-file";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
-import { openDocumentFromFile, treeFileFromCatalogEntry } from "../context/open-document-from-file";
 import type { AddressedDocument } from "../context/route-document-owner";
 import { canonicalDocumentAddress } from "./document-address-canonical";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";

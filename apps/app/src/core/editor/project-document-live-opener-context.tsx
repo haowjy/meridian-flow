@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { ProjectDocumentLiveOpener } from "./open-project-document";
+import type { ProjectDocumentLiveOpener } from "./project-document-live-opener";
 
 export const ProjectDocumentLiveOpenerContext = createContext<ProjectDocumentLiveOpener | null>(
   null,

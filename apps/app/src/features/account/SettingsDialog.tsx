@@ -20,6 +20,8 @@ import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import type { LucideIcon } from "lucide-react";
 import { CircleUserRound, CreditCard, Plug, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect } from "react";
+import { useSharedAccountSettings } from "@/client/account/AccountSettingsProvider";
+import type { AccountPreference, SettingKey } from "@/client/account/useAccountSettings";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -42,10 +44,8 @@ import { SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
 import { UI_THEMES, type UiTheme } from "@/lib/ui-theme";
 import { cn } from "@/lib/utils";
-import { useSharedAccountSettings } from "./AccountSettingsProvider";
 import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSettings";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
-import type { AccountPreference, SettingKey } from "./useAccountSettings";
 
 export function useSettingsNavigation() {
   const navigate = useNavigate();
