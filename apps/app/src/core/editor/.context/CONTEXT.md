@@ -32,6 +32,17 @@ server or another tab, arrives by `importRemote`, which calls the binding's `imp
 and so goes through its composition guard: a batch is held, as bytes, while any editor on the
 room is composing.
 
+Whether the copy holds ops the server lacks (`hasUnacknowledgedEdits`) is one version map,
+`pending`: the end of every batch in the copy that the server hasn't been seen to hold, whoever
+wrote it. Opening merges in what the loaded copy holds beyond the stored server mark (one pass over
+the document, once), and until then the answer is yes. Each batch this tab publishes and each
+batch another tab posts merges in its own end, so a keystroke costs no pass over every block. The
+answer is whether the server's version covers `pending`, and each doc key goes once it does. The
+transport merges a server batch, or an acknowledged one, into `serverVersion()` before handing it
+on, and the session recounts after, so a sign-out waiting on another tab's typing wakes when that
+tab's delivery comes back. Another tab's typing that tab never delivers (it closed offline) stays
+pending here until this tab's next Join sends it.
+
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
 `local-copy-store.ts`): a snapshot per doc key, a log of envelope batches folded into snapshots

@@ -63,6 +63,11 @@ export function updateEnd(update: Uint8Array): DocVersion {
   return plainVersion(meta.partialEndVersionVector);
 }
 
+/** The version each doc in an envelope batch reaches. */
+export function batchEnd(batch: Uint8Array): RoomVersion {
+  return new Map([...decodeEnvelope(batch)].map(([key, bytes]) => [key, updateEnd(bytes)]));
+}
+
 export function encodeDocVersion(version: DocVersion): Uint8Array {
   // Loro encodes peers in insertion order, so one version could encode two ways and hash to two
   // revisions; sorted, equal versions encode to equal bytes. `encodeRoomVersion` sorts doc keys too.

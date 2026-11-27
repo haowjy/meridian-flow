@@ -59,5 +59,7 @@ stateDiagram-v2
   node's purge, its Work or chat purged, the account removed from the project:
   `list-removal-observer`) or at sign-out (`clearForSignOut` → `clearAccountCopies`, which fails
   the sign-out with `SignOutIncomplete("copies")` when one remains). Sign-out first waits up to
-  8 s for unsent edits (`SignOutIncomplete("unsent")` otherwise). A session closing, or access
+  8 s for unsent edits (`SignOutIncomplete("unsent")` otherwise), its own and those another tab
+  typed into a copy this tab has open; the wait ends, or the next Retry passes, once that tab's
+  delivery comes back from the server. A session closing, or access
   the account lost for now, never deletes one.

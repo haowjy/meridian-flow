@@ -2,10 +2,12 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { loroRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import {
+  batchEnd,
   type DocChange,
   type DocKey,
   type DocVersion,
   decodeRoomVersion,
+  docCovers,
   encodeChanges,
   encodeEnvelope,
   encodeRoomVersion,
@@ -137,7 +139,7 @@ export class DocumentSession {
   private transportInitialSyncComplete = false;
   private contentHeld = false;
   private transportAcknowledged = false;
-  private unsent: boolean | null = null;
+  private readonly pending = new Map<DocKey, DocVersion>();
   private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
@@ -238,7 +240,7 @@ export class DocumentSession {
   }
 
   private publishBatch(batch: Uint8Array): void {
-    this.unsent = true;
+    mergeVersion(this.pending, batchEnd(batch));
     this.append(batch);
     this.contentChanged();
     if (this.inert) return;
@@ -312,6 +314,7 @@ export class DocumentSession {
       this.forwardFromLive();
       const server = loaded.meta.get(SERVER_META);
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
+      this.countStored();
       this.store = store;
       store.db.onversionchange = () => {
         this.store = null;
@@ -323,9 +326,18 @@ export class DocumentSession {
       this.recomputeStatus();
     } catch (error) {
       reportError(error);
+      this.countStored();
       this.localPersistenceSynced = true;
       this.recomputeStatus();
     }
+  }
+
+  /** The copy's stored ops beyond the server's stored mark: one pass over the document, at open. */
+  private countStored(): void {
+    const stored = [...this.docs.version()].filter(
+      ([key, version]) => !docCovers(this.server.get(key), version),
+    );
+    mergeVersion(this.pending, new Map(stored));
   }
 
   private forwardFromLive(): void {
@@ -346,9 +358,11 @@ export class DocumentSession {
       return;
     const tabs = new BroadcastChannel(`meridian:copy:${this.storeName}`);
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
-      if (!(event.data?.batch instanceof Uint8Array)) return;
-      this.unsent = null;
-      this.importRemote(event.data.batch, false);
+      const batch = event.data?.batch;
+      if (!(batch instanceof Uint8Array)) return;
+      this.importRemote(batch, false);
+      mergeVersion(this.pending, batchEnd(batch));
+      this.recomputeStatus();
     };
     this.tabs = tabs;
   }
@@ -392,7 +406,10 @@ export class DocumentSession {
           const entries = this.docs.exportSince(since);
           return entries.size > 0 ? encodeEnvelope(entries) : null;
         },
-        importRemote: (batch) => this.importRemote(batch),
+        importRemote: (batch) => {
+          this.importRemote(batch);
+          this.recomputeStatus();
+        },
       },
       presence: this.localPresence.store,
     });
@@ -419,10 +436,7 @@ export class DocumentSession {
       }),
       provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
-        if (acknowledged) {
-          this.unsent = false;
-          this.noteServerSoon();
-        }
+        if (acknowledged) this.noteServerSoon();
         this.recomputeStatus();
       }),
     );
@@ -528,11 +542,14 @@ export class DocumentSession {
   }
 
   hasUnacknowledgedEdits(): boolean {
-    if (this.unsent === null) {
-      const server = this.transportProvider?.serverVersion() ?? this.server;
-      this.unsent = !versionCovers(server, this.docs.version());
+    // Until the copy loads, what it stores is uncounted, not absent.
+    if (!this.localPersistenceSynced) return true;
+    const server = this.transportProvider?.serverVersion() ?? this.server;
+    for (const [key, version] of this.pending) {
+      if (!docCovers(server.get(key), version)) return true;
+      this.pending.delete(key);
     }
-    return this.unsent;
+    return false;
   }
 
   canDeliverUnsentEdits(): boolean {
