@@ -48,7 +48,7 @@ import {
 } from "@/core/editor/objects";
 import { EditorMenu, OverlayIconRow, useEditorChrome, useNodeHold } from "@/features/editor/chrome";
 
-import { CodeBlockChips } from "./CodeBlockChips";
+import { CodeBlockChips, type ObjectRowMenu } from "./CodeBlockChips";
 import { FenceMenuItems } from "./fence-menu-items";
 import { fenceUnderPointer } from "./fence-triggers";
 import { ObjectFieldPopover } from "./ObjectFieldPopover";
@@ -67,9 +67,9 @@ const SURFACE_SPECS = EDITOR_OBJECT_TYPES.filter(
 
 export function ObjectControls({ editor }: { editor: Editor }) {
   const chrome = useEditorChrome(editor);
-  const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
 
+  const [rowMenu, holdRowMenu] = useNodeHold(editor);
   const [contextMenu, holdContextMenu] = useNodeHold(editor);
   const [fenceMenu, holdFenceMenu] = useNodeHold(editor);
   const [lightbox, holdLightbox] = useNodeHold(editor);
@@ -80,9 +80,24 @@ export function ObjectControls({ editor }: { editor: Editor }) {
   const contextAt = useRef<MenuPoint | null>(null);
   const fenceAt = useRef<MenuPoint | null>(null);
 
-  const { target, visible } = useApproachedObject(
+  const { target: approached, visible } = useApproachedObject(
     editor,
-    menuOpen || contextMenu !== null || fenceMenu !== null || fieldPopover !== null,
+    rowMenu !== null || contextMenu !== null || fenceMenu !== null || fieldPopover !== null,
+  );
+  // While the row's own menu is open, the row hangs off the object it opened on, wherever a write
+  // moves it; the pointer may meanwhile be over another object.
+  // Which menu is open is read through the hold, so a hold released by a peer's delete closes it.
+  const target = rowMenu === null ? approached : objectSurfaceForHold(editor.view, rowMenu);
+  const [rowMenuKind, setRowMenuKind] = useState<ObjectRowMenu>("overflow");
+  const openRowMenu = rowMenu === null ? null : rowMenuKind;
+  const opensOn = useRef<number | null>(null);
+  opensOn.current = target?.pos ?? null;
+  const setRowMenu = useCallback(
+    (menu: ObjectRowMenu | null) => {
+      if (menu) setRowMenuKind(menu);
+      holdRowMenu(menu ? opensOn.current : null);
+    },
+    [holdRowMenu],
   );
 
   const openLightbox = useCallback(
@@ -173,7 +188,8 @@ export function ObjectControls({ editor }: { editor: Editor }) {
           editor={editor}
           target={target}
           visible={visible}
-          onMenuOpenChange={setMenuOpen}
+          menu={openRowMenu}
+          onMenuChange={setRowMenu}
           run={run}
         />
       ) : null}
@@ -189,8 +205,8 @@ export function ObjectControls({ editor }: { editor: Editor }) {
             <EditorMenu
               editor={editor}
               id="object-row-menu"
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
+              open={openRowMenu === "overflow"}
+              onOpenChange={(open) => setRowMenu(open ? "overflow" : null)}
               align="end"
               trigger={chip}
             >
@@ -248,6 +264,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
 
       <ObjectLightbox
         editor={editor}
+        hold={lightbox}
         target={lightboxTarget}
         open={lightbox !== null}
         onOpenChange={(open) => {

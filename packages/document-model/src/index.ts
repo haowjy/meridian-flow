@@ -102,6 +102,7 @@ export {
 } from "./take-back.js";
 export { replaceText, type TextRules } from "./text.js";
 export {
+  batchEnd,
   type DocVersion,
   decodeDocVersion,
   decodeRoomVersion,

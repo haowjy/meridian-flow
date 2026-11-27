@@ -77,8 +77,9 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
     return new Set(taken.map(({ name }) => name));
   };
 
+  // Not FOR UPDATE: that conflicts with the key-share lock every insert referencing users takes.
   const lockAccount = (conn: DrizzleDb, accountId: UserId) =>
-    conn.select({ id: users.id }).from(users).where(eq(users.id, accountId)).for("update");
+    conn.select({ id: users.id }).from(users).where(eq(users.id, accountId)).for("no key update");
 
   return {
     async listLive(accountId, projectId) {

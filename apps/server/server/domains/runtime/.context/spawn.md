@@ -85,7 +85,8 @@ transaction holds is skipped, never waited on: its holder may be waiting on a th
 lock this command holds. After commit that holder sees the cancellation. A flagged
 run cancels its own live ask when it closes, and a writer's answer that took the row
 first wins, unless the command deleted the chat: then the answer's claim cancels the
-ask as the command would have. Nothing retries `40P01`.
+ask as the command would have. A command's transaction reruns on `40P01`;
+a runtime transaction outside a command does not (`collab/.context/CONTEXT.md`, What reruns).
 
 Work delete and a Work receipt reversal's delete run the command on the Work's tree
 before `lockWorkThreadTree` takes the tree's rows. Work lockers take the tree parents

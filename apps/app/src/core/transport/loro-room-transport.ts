@@ -11,15 +11,13 @@ import {
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
 import {
+  batchEnd,
   type DocKey,
   type DocVersion,
-  decodeEnvelope,
   decodeRoomVersion,
-  type Envelope,
   encodeRoomVersion,
   mergeVersion,
   type RoomVersion,
-  updateEnd,
   versionCovers,
 } from "@meridian/document-model";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaVersion } from "@meridian/prosemirror-schema";
@@ -114,10 +112,6 @@ function randomBatchId() {
 }
 
 const frame = (message: ProtocolMessage) => encode(message) as Uint8Array<ArrayBuffer>;
-
-function batchEnd(batch: Envelope): RoomVersion {
-  return new Map([...batch].map(([key, bytes]) => [key, updateEnd(bytes)]));
-}
 
 export function createLoroRoomTransport({
   room,
@@ -237,14 +231,15 @@ export function createLoroRoomTransport({
   };
   const sendDoc = (bytes: Uint8Array) => {
     if (!joined || access?.access === "read") return;
-    unacked.set(sendBatch(CrdtType.Loro, bytes), batchEnd(decodeEnvelope(bytes)));
+    unacked.set(sendBatch(CrdtType.Loro, bytes), batchEnd(bytes));
     emitAck();
   };
 
   const receiveBatch = (bytes: Uint8Array) => {
-    copy.importRemote(bytes);
-    const received = batchEnd(decodeEnvelope(bytes));
+    const received = batchEnd(bytes);
+    // Before the import: the session reads the server's version to learn another tab's ops landed.
     mergeVersion(server, received);
+    copy.importRemote(bytes);
     if (catchUp) mergeVersion(catchUp.handed, received);
     settleSynced();
   };

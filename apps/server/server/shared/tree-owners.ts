@@ -5,7 +5,12 @@ import { contextSources } from "@meridian/database/schema";
 import type { UndoAnswer, UndoReport } from "@meridian/project-tree";
 import { inArray } from "drizzle-orm";
 import { closedOwnerOf, mergeOwnerLocks, type OwnerLocks } from "./draft-owner.js";
-import { currentDrizzleDb, isInDrizzleTransaction } from "./drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  isInCommandTransaction,
+  isInDrizzleTransaction,
+  isRetryableTransactionError,
+} from "./drizzle-transaction.js";
 import { type LockedOwners, readOwners } from "./work-lifecycle-lock.js";
 
 export class TreeOwnersMoved extends Error {
@@ -16,6 +21,18 @@ export class TreeOwnersMoved extends Error {
     super("the command's owners changed while it locked them; it runs again");
     this.name = "TreeOwnersMoved";
   }
+}
+
+/**
+ * Whether a catch that turns errors into an answer must rethrow `cause`: a moved owner, or a
+ * deadlock or serialization failure inside a command, whose transaction then runs again. Outside a
+ * command nothing reruns a deadlock, so the catch answers it as before.
+ */
+export function restartsTransaction(cause: unknown): boolean {
+  return (
+    cause instanceof TreeOwnersMoved ||
+    (isRetryableTransactionError(cause) && isInCommandTransaction())
+  );
 }
 
 const MAX_UNNAMED_RESTARTS = 4;
