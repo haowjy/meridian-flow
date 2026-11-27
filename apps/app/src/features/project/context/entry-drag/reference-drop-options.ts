@@ -1,7 +1,7 @@
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import type { ReferenceDropOptions } from "@/core/editor/extensions/reference-drop";
 
-import { activeDragSession } from "./drag-session";
+import { entryDragOf } from "./drag-session";
 
 export function referenceDropOptions({
   catalog,
@@ -11,7 +11,7 @@ export function referenceDropOptions({
   labels: { accept: string; unavailable: string; code: string };
 }): ReferenceDropOptions {
   return {
-    activeDrag: () => activeDragSession()?.entries ?? null,
+    draggedEntries: (event) => entryDragOf(event)?.entries ?? null,
     content: (schema, entries) => {
       const host = catalog();
       if (!host) return null;

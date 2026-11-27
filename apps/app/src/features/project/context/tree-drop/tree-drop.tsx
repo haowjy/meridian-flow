@@ -17,6 +17,8 @@ import {
 import { clearDragHint, showDragHint } from "@/core/editor/landing/drag-hint-store";
 import { type DragPayloadKind, dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
+import { entryDragOf } from "../entry-drag/drag-session";
+import type { EntryDrag } from "../entry-drag/entry";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
@@ -28,8 +30,8 @@ export type TreeDropTarget = {
 export type EntriesVerdict = { kind: "accept" | "refuse"; label: string };
 
 export type EntriesRoute = {
-  verdict(target: TreeDropTarget): EntriesVerdict | null;
-  drop(target: TreeDropTarget, point: { x: number; y: number }): void;
+  verdict(drag: EntryDrag, target: TreeDropTarget): EntriesVerdict | null;
+  drop(drag: EntryDrag, target: TreeDropTarget, point: { x: number; y: number }): void;
 };
 
 export type FilesRoute = {
@@ -212,9 +214,11 @@ export function useTreeDropTarget(
   }, []);
 
   const verdictFor = useCallback(
-    (kind: DragPayloadKind, current: TreeDropTarget): EntriesVerdict | null => {
+    (event: DragEvent, kind: DragPayloadKind, current: TreeDropTarget): EntriesVerdict | null => {
       const routes = latest.current.scope?.routes;
-      return (kind === "entries" ? routes?.entries : routes?.files)?.verdict(current) ?? null;
+      if (kind === "files") return routes?.files?.verdict(current) ?? null;
+      const drag = entryDragOf(event);
+      return drag ? (routes?.entries?.verdict(drag, current) ?? null) : null;
     },
     [],
   );
@@ -264,7 +268,7 @@ export function useTreeDropTarget(
       const kind = claim(event);
       if (!kind) return;
       const current = resolve(event, kind);
-      const verdict = verdictFor(kind, current.target);
+      const verdict = verdictFor(event, kind, current.target);
       if (verdict) show(event, kind, current, verdict);
       else release();
     },
@@ -285,15 +289,15 @@ export function useTreeDropTarget(
         const kind = claim(event);
         if (!kind) return;
         const { target: dropped } = resolve(event, kind);
-        const verdict = verdictFor(kind, dropped);
+        const verdict = verdictFor(event, kind, dropped);
         release();
         if (!verdict || verdict.kind === "refuse") return;
         event.preventDefault();
         event.stopPropagation();
         const routes = latest.current.scope?.routes;
-        if (kind === "entries")
-          routes?.entries?.drop(dropped, { x: event.clientX, y: event.clientY });
-        else routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
+        const drag = entryDragOf(event);
+        if (kind === "files") routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
+        else if (drag) routes?.entries?.drop(drag, dropped, { x: event.clientX, y: event.clientY });
       },
     }),
     [hover, claim, resolve, verdictFor, release],

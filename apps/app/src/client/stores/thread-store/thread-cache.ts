@@ -11,6 +11,7 @@ import {
   invalidateThreadKeys,
   invalidateThreadProjectionDependencies,
 } from "@/client/query/thread-work-binding-cache";
+import { afterCurrentDispatch } from "@/lib/after-current-dispatch";
 
 export interface ThreadCachePort {
   upsertThread(thread: Thread, lifecycle?: ThreadListLifecycle): void;
@@ -39,12 +40,7 @@ export function createThreadCache(
     },
     invalidateThread(threadId, projectId, options) {
       const skipSnapshot = options?.snapshot === false;
-      // Deferred to a microtask: terminal-turn invalidation runs inside the
-      // live event reducer, so firing `invalidateQueries` synchronously could
-      // schedule a refetch + React update during a render/notification phase.
-      // The store writes its turn state synchronously first; the cache catches
-      // projector-only fields (final usage/cost metadata) on the next tick.
-      queueMicrotask(() => {
+      afterCurrentDispatch(() => {
         if (accountSignal?.aborted) return;
         if (projectId) {
           invalidateThreadProjectionDependencies(client, {
@@ -59,7 +55,7 @@ export function createThreadCache(
       });
     },
     invalidateThreadSnapshot(threadId) {
-      queueMicrotask(() => {
+      afterCurrentDispatch(() => {
         if (accountSignal?.aborted) return;
         void client.invalidateQueries(
           { queryKey: threadQueryKeys.snapshot(threadId), exact: true },

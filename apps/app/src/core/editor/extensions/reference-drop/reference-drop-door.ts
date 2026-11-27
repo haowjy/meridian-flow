@@ -14,19 +14,19 @@ export type ReferenceDropEntry = Readonly<{
 export type ReferenceDropRefusalReason = "unavailable" | "code";
 
 export type ReferenceDropOptions = {
-  activeDrag: () => readonly ReferenceDropEntry[] | null;
+  draggedEntries: (event: DragEvent) => readonly ReferenceDropEntry[] | null;
   content: (schema: Schema, entries: readonly ReferenceDropEntry[]) => readonly PMNode[] | null;
   label: (kind: "accept" | ReferenceDropRefusalReason) => string;
 };
 
 export function referenceDropDoor(options: ReferenceDropOptions): DropDoor {
   return {
-    plan: ({ view }, landing) => {
+    plan: ({ view }, landing, event) => {
       const refuse = (reason: ReferenceDropRefusalReason): DropPlan => ({
         kind: "refuse",
         hint: options.label(reason),
       });
-      const entries = options.activeDrag();
+      const entries = options.draggedEntries(event);
       if (!entries?.length) return refuse("unavailable");
       const nodes = options.content(view.state.schema, entries);
       if (!nodes || nodes.length !== entries.length) return refuse("unavailable");

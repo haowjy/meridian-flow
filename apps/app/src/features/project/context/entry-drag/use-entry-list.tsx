@@ -11,11 +11,11 @@ import {
   type EntriesVerdict,
   type FilesRoute,
   TreeDropScope,
+  type TreeDropTarget,
   treeDropTargetKey,
 } from "../tree-drop/tree-drop";
 import { revealPlaced } from "../tree-reveal";
 import { DropChoiceMenu, type DropChoiceState } from "./DropChoiceMenu";
-import { activeDragSession } from "./drag-session";
 import {
   askLabel,
   type DropAction,
@@ -25,7 +25,7 @@ import {
   noLongerThere,
   type PendingChoice,
 } from "./drop-choice";
-import { trashRef } from "./entry";
+import { type EntryDrag, trashRef } from "./entry";
 import { useEntryActions } from "./entry-actions";
 import { runCopy, runMove } from "./entry-failure";
 import {
@@ -80,13 +80,7 @@ export function useEntryList({
   );
 
   const route = useMemo<EntriesRoute>(() => {
-    const resolve = (target: Parameters<EntriesRoute["verdict"]>[0]) => {
-      const drag = activeDragSession();
-      if (!drag) return null;
-      const view = latest.current;
-      return { drag, resolved: resolveDrop(view, drag, target) };
-    };
-    const trashed = (drag: NonNullable<ReturnType<typeof activeDragSession>>) => {
+    const trashed = (drag: EntryDrag) => {
       const listed = latest.current.trashRows ?? [];
       const entries = drag.entries.flatMap(({ ref }) => {
         const found = listed.find(({ nodeId }) => nodeId === ref.id);
@@ -94,16 +88,14 @@ export function useEntryList({
       });
       return entries.length === drag.entries.length ? entries : ([] as TrashEntry[]);
     };
-    const judge = (target: Parameters<EntriesRoute["verdict"]>[0]): EntriesVerdict | null => {
-      const dragging = activeDragSession();
-      if (dragging?.source === "trash") {
-        const plan = planRestore(latest.current, trashed(dragging), target);
+    const judge = (drag: EntryDrag, target: TreeDropTarget): EntriesVerdict | null => {
+      if (drag.source === "trash") {
+        const plan = planRestore(latest.current, trashed(drag), target);
         if (plan.kind === "refuse") return { kind: "refuse", label: plan.label };
         return plan.kind === "ready" ? { kind: "accept", label: restoreLabel(plan) } : null;
       }
-      const drop = resolve(target);
-      const resolved = drop?.resolved;
-      if (!drop || !resolved) return null;
+      const resolved = resolveDrop(latest.current, drag, target);
+      if (!resolved) return null;
       if (resolved.unavailable.length > 0) return { kind: "refuse", label: noLongerThere() };
       if (resolved.insideItself) return { kind: "refuse", label: insideItself() };
       if (resolved.asks) {
@@ -118,20 +110,19 @@ export function useEntryList({
     let last: { key: string; inputs: readonly unknown[]; verdict: EntriesVerdict | null } | null =
       null;
     return {
-      verdict(target) {
+      verdict(drag, target) {
         const { areas } = latest.current;
         const key = treeDropTargetKey(target);
-        const inputs = [activeDragSession(), areas];
+        const inputs = [drag, areas];
         if (last?.key === key && last.inputs.every((input, index) => input === inputs[index]))
           return last.verdict;
-        const verdict = judge(target);
+        const verdict = judge(drag, target);
         last = { key, inputs, verdict };
         return verdict;
       },
-      drop(target, point) {
-        const dragging = activeDragSession();
-        if (dragging?.source === "trash") {
-          const plan = planRestore(latest.current, trashed(dragging), target);
+      drop(drag, target, point) {
+        if (drag.source === "trash") {
+          const plan = planRestore(latest.current, trashed(drag), target);
           if (plan.kind !== "ready") return;
           const restored = plan.entries.map((entry) => ({
             ref: trashRef(entry),
@@ -145,14 +136,12 @@ export function useEntryList({
           );
           return;
         }
-        const drop = resolve(target);
-        const resolved = drop?.resolved;
-        if (!drop || !resolved) return;
+        const resolved = resolveDrop(latest.current, drag, target);
+        if (!resolved) return;
         if (resolved.asks) {
           if (dropChoices(resolved, target).items.some((item) => item.enabled))
-            // `dragend` clears the drag session after this, so the choice keeps the drag.
             setPending({
-              drag: drop.drag,
+              drag,
               target,
               point,
               returnFocus: () => latest.current.selection.focus(),

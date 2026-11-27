@@ -2,7 +2,7 @@ import { type Editor, Extension } from "@tiptap/core";
 import { keydownHandler } from "@tiptap/pm/keymap";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
-
+import { KEYMAP_PRIORITY } from "../keymap-priority";
 import {
   caretHomeFromObjectTransaction,
   selectObjectTransaction,
@@ -51,7 +51,7 @@ export function isEditorChromeElement(chrome: EditorChrome, element: Element): b
 
 export const ChromeKernelExtension = Extension.create({
   name: CHROME_EXTENSION_NAME,
-  priority: 1050,
+  priority: KEYMAP_PRIORITY.chromeKernel,
 
   addStorage(): ChromeStorage {
     return createEditorChrome();

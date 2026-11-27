@@ -110,7 +110,7 @@ export function useMountedEditor({
       atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
       referenceDrop: referenceDrop
         ? {
-            activeDrag: () => referenceDropRef.current?.activeDrag() ?? null,
+            draggedEntries: (event) => referenceDropRef.current?.draggedEntries(event) ?? null,
             content: (schema, entries) =>
               referenceDropRef.current?.content(schema, entries) ?? null,
             label: (kind) => referenceDropRef.current?.label(kind) ?? referenceDrop.label(kind),
