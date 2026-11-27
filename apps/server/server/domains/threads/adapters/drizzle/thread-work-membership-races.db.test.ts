@@ -1,10 +1,3 @@
-/**
- * PostgreSQL coverage for thread Work membership and lifecycle serialization.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Work-first lifecycle locking across attachment, rebind, and deletion races (kb/wiki/work/model.md#rebinding-is-one-explicit-operation)
- */
-
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { waitForPostgresLock } from "../../../../test-support/lock-interleave.js";

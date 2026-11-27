@@ -1,9 +1,3 @@
-/**
- * PostgreSQL boundary coverage for immutable, exact per-execution report storage.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - latest-child report projection ordered by admission time (kb/wiki/agents/conversations.md)
- */
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionReportContract } from "../../../../test-support/execution-report-contract.js";

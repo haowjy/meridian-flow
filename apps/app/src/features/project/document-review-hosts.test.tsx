@@ -1,13 +1,4 @@
 // @vitest-environment jsdom
-/**
- * One paint per document across main and the side: off a document's address main's
- * frame stays mounted while the side holds the same document.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - main's frame stays mounted off its address, so both hosts call useDocumentReview and
- *   only the host that shows the document paints its draft
- * - painting a draft opens the plain draft, never Review changes
- */
 import "fake-indexeddb/auto";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

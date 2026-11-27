@@ -1,10 +1,3 @@
-/**
- * Tests run state behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Whole-record run-state folds and intent retirement
- */
-
 import type { ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";

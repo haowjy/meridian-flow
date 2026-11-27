@@ -1,10 +1,3 @@
-/**
- * Production-composition regression for a removed bound model and a No Work chat's draft.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - typed removed-model failure and No Work ownership of a lineage's draft
- */
-
 import { toolContentText } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";

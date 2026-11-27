@@ -1,9 +1,3 @@
-/** The summarizer's provider-neutral request and paid-attempt contracts.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Warm and rolling summary strategy (kb/wiki/chat/compaction.md#two-summary-paths)
- */
-
 import type { Block, Turn } from "@meridian/contracts/threads";
 import type {
   Gateway,

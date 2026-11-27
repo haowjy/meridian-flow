@@ -1,10 +1,3 @@
-/**
- * ContextFS over Postgres: a move or rename is a record of the project's list, and a write
- * overlapping it keeps one document identity.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - alias-only rename no-ops (kb/wiki/documents/placement-and-naming.md#a-document-has-one-canonical-name)
- */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, documents, projects, treeNodes, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";

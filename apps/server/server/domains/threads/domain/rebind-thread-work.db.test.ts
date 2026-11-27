@@ -1,10 +1,3 @@
-/**
- * PostgreSQL coverage for No Work and concurrent thread Work rebinds.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - asymmetric archived-Work rebind, historical membership, and atomic notice projection (kb/wiki/agents/conversations.md)
- */
-
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";

@@ -1,9 +1,3 @@
-/**
- * Link correspondence contracts: ranking counterexamples, normalization, reorder identity and exhaustive ranking.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Six-component link correspondence ranking (kb/wiki/documents/links.md#stored-identity-and-spelling)
- */
 import { expect, it } from "vitest";
 import {
   type CorrespondenceInput,

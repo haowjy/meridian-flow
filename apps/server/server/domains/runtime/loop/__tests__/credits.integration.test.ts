@@ -1,9 +1,3 @@
-/** Runtime credit-gate integration test for ledger exhaustion.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Pending usage projection and debt gate
- */
-
 import type { Gateway, GenerateResult, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it } from "vitest";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";

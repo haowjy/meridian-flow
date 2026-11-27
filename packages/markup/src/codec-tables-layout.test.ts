@@ -1,10 +1,3 @@
-/**
- * Tests codec tables layout behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Layout and delegated-table wire representation
- */
-
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 

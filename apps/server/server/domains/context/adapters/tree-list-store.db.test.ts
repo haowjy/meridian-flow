@@ -1,11 +1,3 @@
-/**
- * The tree list's store: the rows never trail the list.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - the list is stored as one `document_snapshots` row, `tree:<tree_list_id>`, rewritten by each change
- * - admission stores the update as sent and writes the rows in one transaction under the list's lock
- */
-
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

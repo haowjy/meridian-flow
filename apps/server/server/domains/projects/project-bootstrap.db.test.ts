@@ -1,10 +1,3 @@
-/**
- * PostgreSQL contract for project bootstrap with locked No Work.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - the default project, Manuscript, first chapter, and locked No Work bootstrap shape
- */
-
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";

@@ -1,9 +1,3 @@
-/**
- * Menu tree behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - project menu drill-in algorithm
- */
 import { describe, expect, it } from "vitest";
 import type { TreeView } from "@/core/project-tree/tree-view";
 import { buildMenuTree, crumbTrailFor, type MenuArea, menuEntryFor } from "./menu-tree";

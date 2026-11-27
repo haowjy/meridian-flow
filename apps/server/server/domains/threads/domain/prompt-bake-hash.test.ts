@@ -1,9 +1,3 @@
-/**
- * Guards the bake hash covering every field: two bakes that differ only in the connections they
- * were made from must not share a row.
- *
- * Pins implementation decisions: none.
- */
 import { describe, expect, it } from "vitest";
 import { hashPromptBakeContent } from "./prompt-bake-hash.js";
 

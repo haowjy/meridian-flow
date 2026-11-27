@@ -1,15 +1,3 @@
-/**
- * The crash test of the model's tree commands (`create`, `copy`, `move`, `delete`) and its
- * `undo`, through the real chat loop: a process is killed after the command commits and before
- * its result block, a second process recovers, and the tree must show the command once with
- * its result the model's. Stored rows only.
- *
- *   pnpm exec tsx tools/qa/probes/model-edit-tree/run.mts
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a tree command is one model-edit command under its call's key, like a text edit
- * - a create with content is undone as one edit (the node and its text), by the command it came from
- */
 import assert from "node:assert/strict";
 import {
   documentsNamed,

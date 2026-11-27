@@ -1,8 +1,3 @@
-/** Streaming snapshots stay identical to the canonical whole-source Markdown parse.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Streaming repair is confined to the canonical last block
- */
 import type { Node as PMNode } from "prosemirror-model";
 import { expect, it } from "vitest";
 

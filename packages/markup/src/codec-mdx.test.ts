@@ -1,10 +1,3 @@
-/**
- * Tests codec mdx behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - MDX fallback forms and lowercase HTML void parsing
- */
-
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { describe, expect, it } from "vitest";

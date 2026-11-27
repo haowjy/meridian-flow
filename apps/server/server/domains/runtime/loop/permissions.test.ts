@@ -1,9 +1,3 @@
-/** Consolidated test contracts; each block retains its original fixture scope.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Fresh permission resolution and subagent-only return_result
- */
-
 import {
   type AgentPermission,
   projectToolPolicy,

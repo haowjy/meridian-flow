@@ -1,9 +1,3 @@
-/** First bake persists Agent available; later account adds do not rebake.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Frozen prompt invocation overlays
- */
-
 import { describe, expect, it } from "vitest";
 import { testWorkHandle } from "../../../test-support/work-handle.js";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";

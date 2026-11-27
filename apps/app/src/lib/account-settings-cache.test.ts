@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-/** First-paint cache identity, validation and storage-unavailable contracts.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - account-settings prepaint cache and locale strategy (kb/wiki/architecture/state-tier-contract.md#account-and-device-settings)
- */
 import { runInNewContext } from "node:vm";
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import { afterEach, expect, it, vi } from "vitest";

@@ -1,8 +1,3 @@
-/** Reader probes must distinguish absence from a failed observation.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Draft-tree harness absence and malformed-result handling
- */
 import { describe, expect, it } from "vitest";
 import type { ContextPort } from "../domains/context/ports/context-port.js";
 import { draftTreeCommands } from "./draft-tree-commands.js";

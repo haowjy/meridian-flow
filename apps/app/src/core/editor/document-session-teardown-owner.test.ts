@@ -1,8 +1,3 @@
-/** Rejection ownership and retry contract for retired document sessions.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - retired-session quarantine and retry
- */
 import { describe, expect, it, vi } from "vitest";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
