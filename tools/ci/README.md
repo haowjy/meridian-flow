@@ -305,14 +305,19 @@ It counts what the TypeScript parse tree calls a comment (the walk it shares wit
 in `source-comments.mjs`), so `//` inside a string, template or URL is not one, and adjacent
 whole-line `//` comments are one comment. Skipped:
 
-- a comment that starts with a directive a tool reads: `/// <reference`, `@vitest-environment`,
-  `@jest-environment`, `@vite-ignore`, `@__PURE__`, `@jsxImportSource`, `@jsxRuntime`,
-  `@ts-check`, `slop-lint: allow`, `prettier-ignore`, `v8`/`c8`/`istanbul ignore`, webpack magic
-  comments, `@refresh`, `@generated`. Mentioning one later in a sentence doesn't skip it;
-- a comment that starts with a suppression (`biome-ignore`, `@ts-ignore`, `@ts-expect-error`,
-  `@ts-nocheck`): slop lint counts those;
-- in a JavaScript file, a JSDoc block made only of tag lines (`@type`, `@param` and the rest),
-  which TypeScript reads as types. A block with any other line is prose, tags included;
+- a comment that is only a directive a tool reads, with its argument: `/// <reference`,
+  `@vitest-environment jsdom`, `@jest-environment …`, `@vite-ignore`, `@__PURE__`,
+  `@jsxImportSource …`, `@jsxRuntime …`, `@ts-check`, `prettier-ignore`,
+  `v8`/`c8`/`istanbul ignore [next N]`, webpack magic comments, `@refresh [reset]`,
+  `@generated`. Any other words in the comment, after the directive or on another line, make
+  it prose;
+- a comment that starts with a suppression or an exception (`biome-ignore`, `@ts-ignore`,
+  `@ts-expect-error`, `@ts-nocheck`, `slop-lint: allow`), reason included: slop lint counts
+  those;
+- in a JavaScript file, a `/** */` block whose every line is a bare type tag that TypeScript
+  reads (`@type {T}`, `@param {T} name`, `@returns {T}`, `@typedef`, `@template`, `@import`
+  and the like). A description after a tag, any other tag (`@see`, `@deprecated`) or a line
+  of prose makes the whole block prose;
 - `node_modules`, `dist`, `build`, `vendor`, `migrations` and `locales` directories, and
   `.gen` and `.generated` files.
 
@@ -324,8 +329,16 @@ its line behind, which can only admit those exact words again; the next
 `--update-baseline` drops it. Per-file or per-area counts would be smaller but let one comment
 grow or stand in for another without a baseline diff.
 
-`.gitattributes` merges the baseline with `merge=union`, so two branches' additions merge
-without a conflict. A union merge never drops a line either side added. It can keep a line
-one side deleted (a stale line, harmless as above) and can collapse the same line added by
-both sides into one, which makes the check fail and ask for a refresh. After any merge, run
-`pnpm check:comments`.
+`.gitattributes` merges the baseline with `merge=union`, which only a local `git merge`
+reads: GitHub's server-side merge ignores it. When two PRs add baseline lines next to each
+other, GitHub shows the second as conflicting and refuses to merge it. Resolve it locally:
+
+```sh
+git merge origin/main     # the union driver keeps both sides' lines
+pnpm check:comments
+git push
+```
+
+A union merge never drops a line either side added. It can keep a line one side deleted (a
+stale line, harmless as above) and collapses the same line added by both sides into one,
+which makes the check fail and ask for `--update-baseline`.

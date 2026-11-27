@@ -11,9 +11,11 @@ const BASELINE_PATH = resolve(ROOT, BASELINE_NAME);
 const UPDATE_COMMAND = "pnpm check:comments --update-baseline";
 const EXCLUDED =
   /(^|\/)(node_modules|dist|build|vendor|migrations|locales)\/|\.(gen|generated)\.[cm]?[jt]sx?$/;
-const TOOL_READ =
-  /^(@vitest-environment|@jest-environment|@vite-ignore|[@#]__PURE__|@jsxImportSource|@jsxRuntime|@ts-check|slop-lint:\s*allow|prettier-ignore|(v8|c8|istanbul) ignore|webpack[A-Z]\w+:|@refresh|@generated)\b/;
-const SUPPRESSION = /^(biome-ignore(-all)?|@ts-(ignore|expect-error|nocheck))\b/;
+const DIRECTIVE =
+  /^(@vitest-environment \S+|@jest-environment \S+|@vite-ignore|[@#]__PURE__|@jsxImportSource \S+|@jsxRuntime \S+|@ts-check|prettier-ignore|(v8|c8|istanbul) ignore( (next|if|else|file|start|stop))?( \d+)?|(webpack[A-Z]\w+: ?("[^"]*"|'[^']*'|[\w.]+),? ?)+|@refresh( reset)?|@generated)$/;
+const SUPPRESSION = /^(biome-ignore(-all)?|@ts-(ignore|expect-error|nocheck)|slop-lint: ?allow)\b/;
+const TYPE_TAG =
+  /^@(type|satisfies|returns?|this|enum) \{.*\}$|^@(param|property|prop|arg|argument) \{.*\} \[?[\w$.]+(=[^\]]*)?\]?$|^@typedef (\{.*\} )?[\w$.]+$|^@template [\w$, ]+$|^@callback [\w$]+$|^@import .+ from ["'][^"']+["']$|^@(overload|override|private|protected|public|readonly|abstract)$/;
 
 const update = process.argv.slice(2).includes("--update-baseline");
 
@@ -44,10 +46,14 @@ function bodyLines(comment) {
 
 function proseText(comment, path) {
   if (/^\/\/\/\s*<reference/.test(comment)) return "";
-  const lines = bodyLines(comment);
-  if (lines.length > 0 && (TOOL_READ.test(lines[0]) || SUPPRESSION.test(lines[0]))) return "";
-  const prose = /\.[cm]?jsx?$/.test(path) ? lines.filter((line) => !line.startsWith("@")) : lines;
-  return prose.length === 0 ? "" : lines.join(" ").replace(/\s+/g, " ");
+  const lines = bodyLines(comment).map((line) => line.replace(/\s+/g, " "));
+  const words = lines.join(" ");
+  if (DIRECTIVE.test(words) || SUPPRESSION.test(words)) return "";
+  const typesOnly =
+    /\.[cm]?jsx?$/.test(path) &&
+    comment.startsWith("/**") &&
+    lines.every((line) => TYPE_TAG.test(line));
+  return typesOnly ? "" : words;
 }
 
 function fileComments(path) {
