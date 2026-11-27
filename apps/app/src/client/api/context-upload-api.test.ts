@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { chatUploadPort } from "./context-upload-api";
+import { uploadContextFile } from "./context-upload-api";
 import { MeridianApiError } from "./meridian-error";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -22,10 +22,12 @@ it("decodes the structured upload error response", async () => {
         headers: { "content-type": "application/json" },
       }),
   );
-  const result = chatUploadPort.intake({
+  const result = uploadContextFile({
+    projectId: "deleted",
+    scheme: "uploads",
+    query: { chatId: "chat" },
     file: new File(["words"], "draft.txt"),
     intakeId: "intake",
-    scope: { kind: "chat", projectId: "deleted", chatId: "chat" },
     signal: new AbortController().signal,
   });
   await expect(result).rejects.toBeInstanceOf(MeridianApiError);

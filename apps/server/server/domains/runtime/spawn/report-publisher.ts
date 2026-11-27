@@ -6,8 +6,8 @@ import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
+import type { DeliveryProducer } from "../loop/delivery/runtime-delivery.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "parked" | "already";

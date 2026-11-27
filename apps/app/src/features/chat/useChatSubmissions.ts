@@ -9,6 +9,7 @@ import {
   submissionReplayChanged,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
+import type { ComposerSubmitEnvelope } from "@/client/chat-submissions/composer-document";
 import {
   cleanDeletedChat,
   registerDeletedChatSurface,
@@ -21,7 +22,6 @@ import { useOptionalThreadTransport } from "@/client/providers/TransportProvider
 import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
-import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 const NO_SWITCHES: readonly JournalSwitch[] = [];

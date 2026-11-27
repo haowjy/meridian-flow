@@ -2,8 +2,8 @@ import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { groupDeliverySegments, isToolViewVisible, type ToolView } from "@meridian/thread-client";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
-import { announce } from "@/client/stores";
-import type { ComposerHandle } from "@/components/app/composer";
+import { announce } from "@/client/announcements";
+import type { ComposerHandle } from "@/features/chat/composer";
 import { toolActivityAnnouncement, toolActivityPhrase } from "./command-descriptor";
 import { useOwnerNames } from "./owner-names";
 

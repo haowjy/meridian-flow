@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
+import {
+  type ComposerDraftScope,
+  composerSessionDraft,
+} from "@/client/chat-submissions/composer-drafts";
 
 export function useComposerSessionDraft(accountId: string, scope: ComposerDraftScope) {
   const owner = useMemo(

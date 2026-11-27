@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { announce } from "@/client/stores/thread-store/announcements";
+import { announce } from "@/client/announcements";
 import type { ImportState } from "./import-presentation";
 export function useImportMilestone(state: ImportState, title: string) {
   const last = useRef<ImportState | null>(null);

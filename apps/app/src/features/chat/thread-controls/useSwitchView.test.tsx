@@ -11,6 +11,7 @@ const slices = vi.hoisted(() => ({
   feed: (_action: unknown): void => undefined,
   reset: (): void => undefined,
 }));
+vi.mock("@/client/announcements", () => announcements);
 vi.mock("@/client/stores", async () => {
   const { INITIAL_RUN_STATE_SLICE, reduceRunState } = await import("@meridian/thread-client");
   const { useSyncExternalStore } = await import("react");
@@ -27,7 +28,6 @@ vi.mock("@/client/stores", async () => {
     slice = INITIAL_RUN_STATE_SLICE;
   };
   return {
-    ...announcements,
     useThreadActions: () => actions,
     useRunStateSlice: () =>
       useSyncExternalStore(

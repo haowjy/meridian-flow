@@ -1,6 +1,6 @@
 import { DAY_MS, deletionPurgeAt } from "@meridian/contracts/retention";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { decodeWorkHandle } from "@meridian/contracts/works";
+import { decodeWorkHandle, workLifecycleState } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { contextSources, threads, threadWorks, works } from "@meridian/database/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
@@ -50,7 +50,7 @@ function toWorkOwner(row: {
   return {
     handle,
     name: row.name,
-    state: row.deletedAt ? "deleted" : row.archivedAt ? "archived" : "active",
+    state: workLifecycleState(row),
     restorableDays: remaining !== null && remaining > 0 ? remaining : null,
   };
 }

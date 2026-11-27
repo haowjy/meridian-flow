@@ -5,6 +5,7 @@ import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
 import { lazy, type ReactNode, Suspense, useEffect } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
+import { listProjects } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import {
@@ -25,7 +26,7 @@ import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
 import { useMcpConnectionsAtOpen, useRouteProjectId } from "@/client/query/useMcpConnections";
 import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
-import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
+import { ThreadStoreProvider } from "@/client/stores";
 import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
@@ -79,7 +80,6 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect({ href });
     }
 
-    const now = Date.now();
     const requestInit = ssrApiRequestInit();
     const accountSettingsReadGeneration = nextAccountSettingsGeneration();
     const settingsPromise = loadAccountSettingsWithDeadline((signal) =>
@@ -89,7 +89,7 @@ export const Route = createFileRoute("/_authenticated")({
 
     const [authMe, [settingsResult, projectsResult]] = await Promise.all([
       authMePromise,
-      Promise.allSettled([settingsPromise, loadProjectList()]),
+      Promise.allSettled([settingsPromise, listProjects(requestInit)]),
     ]);
     if (projectsResult.status === "rejected") {
       console.error("Failed to load project list during SSR:", projectsResult.reason);
@@ -102,7 +102,6 @@ export const Route = createFileRoute("/_authenticated")({
     return {
       user: currentUser,
       projects: projectsResult.status === "fulfilled" ? projectsResult.value : null,
-      now,
     };
   },
   staleTime: 60_000,
@@ -110,7 +109,7 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  const { projects, now, user } = Route.useLoaderData();
+  const { projects, user } = Route.useLoaderData();
   bindAccountRecents(user.userId);
   bindChatSubmissions(user.userId, (id) => {
     const route = parseProjectAddress(window.location.pathname, window.location.search);
@@ -125,17 +124,15 @@ function AuthenticatedLayout() {
   return (
     <AppQueryProvider initialProjects={projects}>
       <ConnectivityProvider>
-        <AuthenticatedAccountProviderTree now={now} user={user} />
+        <AuthenticatedAccountProviderTree user={user} />
       </ConnectivityProvider>
     </AppQueryProvider>
   );
 }
 
 function AuthenticatedAccountProviderTree({
-  now,
   user,
 }: {
-  now: number;
   user: {
     userId: string;
     externalId: string;
@@ -150,7 +147,7 @@ function AuthenticatedAccountProviderTree({
           serverValue={user.accountSettings}
           serverReadGeneration={user.accountSettingsReadGeneration}
         >
-          <AuthenticatedProviderTree now={now} user={user} />
+          <AuthenticatedProviderTree user={user} />
         </AccountSettingsProvider>
       </AccountCommandDriver>
     </AccountFeatureComposition>
@@ -188,10 +185,8 @@ function FollowPresses() {
 }
 
 function AuthenticatedProviderTree({
-  now,
   user,
 }: {
-  now: number;
   user: {
     userId: string;
     accountSettings: AccountSettings | null;
@@ -205,29 +200,27 @@ function AuthenticatedProviderTree({
 
   return (
     <FailureLogProvider accountId={user.userId}>
-      <ProjectStoreProvider now={now}>
-        <ThreadStoreProvider now={now}>
-          <TransportProvider>
-            <MeridianCopilotProvider>
-              <DensityPopoverCollisionProvider>
-                <ImportsProvider key={user.userId}>
-                  <div className="app-frame">
-                    <Outlet />
-                  </div>
-                  <SettingsDialog />
-                  <McpConnectionsAtOpen />
-                  <FailureToaster />
-                  {DebugOverlay ? (
-                    <Suspense fallback={null}>
-                      <DebugOverlay />
-                    </Suspense>
-                  ) : null}
-                </ImportsProvider>
-              </DensityPopoverCollisionProvider>
-            </MeridianCopilotProvider>
-          </TransportProvider>
-        </ThreadStoreProvider>
-      </ProjectStoreProvider>
+      <ThreadStoreProvider>
+        <TransportProvider>
+          <MeridianCopilotProvider>
+            <DensityPopoverCollisionProvider>
+              <ImportsProvider key={user.userId}>
+                <div className="app-frame">
+                  <Outlet />
+                </div>
+                <SettingsDialog />
+                <McpConnectionsAtOpen />
+                <FailureToaster />
+                {DebugOverlay ? (
+                  <Suspense fallback={null}>
+                    <DebugOverlay />
+                  </Suspense>
+                ) : null}
+              </ImportsProvider>
+            </DensityPopoverCollisionProvider>
+          </MeridianCopilotProvider>
+        </TransportProvider>
+      </ThreadStoreProvider>
     </FailureLogProvider>
   );
 }

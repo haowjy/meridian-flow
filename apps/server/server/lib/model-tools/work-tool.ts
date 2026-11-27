@@ -13,7 +13,6 @@ import {
   deleteWorkTransition,
   setWorkArchived,
   updateWorkTransition,
-  WorkLifecycleUnavailableError,
   WorkLockedError,
   WorkNameRequiredError,
   WorkStatusInvalidError,
@@ -30,6 +29,7 @@ import {
   type WorkShowResult,
 } from "../../domains/runtime/index.js";
 import { RebindThreadWorkError, switchThreadWork } from "../../domains/threads/index.js";
+import { WorkLifecycleUnavailableError } from "../../shared/work-lifecycle-lock.js";
 import {
   isToolError,
   type ToolErrorOutput,

@@ -26,12 +26,12 @@ flowchart LR
 
 The transcript and the composer.
 
-The transcript is drawn from the same view model `./mf` prints.
+The transcript is drawn from the same view model `./mf` prints. The composer, its toolbar and its Work and write-mode controls are in `composer/`.
 
 - Kind: feature
 - Paths: `apps/app/src/features/chat`
 - Docs: [CONTEXT](../../apps/app/src/features/chat/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/chat/AGENTS.md)
-- Machines: [chat](../../apps/app/src/features/chat/.context/state-machines.md)
+- Machines: [chat](../../apps/app/src/features/chat/.context/state-machines.md), [composer toolbar](../../apps/app/src/features/chat/composer/toolbar/.context/state-machines.md)
 
 ## agents
 

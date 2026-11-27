@@ -1,9 +1,10 @@
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { LockedWorkLifecycle } from "../../../shared/work-lifecycle-lock.js";
 import { ThreadWorkUnavailableAdmissionError } from "./user-turn-admission.js";
 
 type ThreadWorkLock = {
   primaryWorkId: WorkId | null;
-  workStates: Map<WorkId, "active" | "archived" | "deleted" | "missing">;
+  workStates: Map<WorkId, LockedWorkLifecycle>;
 };
 
 export async function requireWritableThread(

@@ -43,7 +43,7 @@ it("paints a document's draft only in the host that shows it", async () => {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <ThreadStoreProvider now={0}>
+        <ThreadStoreProvider>
           <AccountFeatureTestProvider accountId={accountId}>
             <Host showing={false} report={(review) => (main = review)} />
             <Host showing report={(review) => (side = review)} />

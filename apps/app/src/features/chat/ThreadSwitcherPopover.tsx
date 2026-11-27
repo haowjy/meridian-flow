@@ -3,7 +3,6 @@ import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { Pencil, Plus } from "lucide-react";
 import { type RefObject, useRef, useState } from "react";
-import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
@@ -16,6 +15,7 @@ import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { titleChipClass } from "@/features/project/shell/tab-chip";
+import { useClock } from "@/hooks/use-clock";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,7 @@ export function ThreadSwitcherPopover({
   const focusHandoff = useRef(false);
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
-  const now = useThreadStore((state) => state.now);
+  const now = useClock(30_000);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const search = query.trim();

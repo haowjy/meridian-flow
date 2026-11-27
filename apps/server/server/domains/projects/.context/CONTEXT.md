@@ -6,7 +6,10 @@ order][fence] and [pending count][count] rules.
 ## New-account bootstrap
 
 An account with no live project gets one at sign-in: the project, its locked No Work, its
-sources and its first `Chapter 1` commit in one transaction. Authenticated entry asks
+sources and its first `Chapter 1` commit in one transaction. The bootstrap
+(`adapters/drizzle-project-bootstrap.ts`) makes the project through the project repository's
+`create`, the same path as any new project, and adds only the per-user lock, the live-project
+check and the chapter. Authenticated entry asks
 "has a live project" lock-free (`ensureDefaultBootstrapReady`), and only an account without one
 enters the locked bootstrap: running it on every request made the warm path pay for work it no
 longer needed. So after the writer deletes their last project, the next sign-in makes another.

@@ -3,8 +3,8 @@ import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threa
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
+import type { DeliveryStore } from "../loop/delivery/delivery-ports.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
-import type { DeliveryStore } from "./delivery-ports.js";
 import {
   answerRunState,
   markRunStateChanged,

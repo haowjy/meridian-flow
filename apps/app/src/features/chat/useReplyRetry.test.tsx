@@ -10,8 +10,8 @@ const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
 const view = vi.hoisted(() => ({ current: undefined as unknown, dispatchRunState: vi.fn() }));
+vi.mock("@/client/announcements", () => announcements);
 vi.mock("@/client/stores", () => ({
-  ...announcements,
   useThreadActions: () => view,
   useRunState: () => view.current,
 }));

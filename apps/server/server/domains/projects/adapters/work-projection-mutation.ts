@@ -24,10 +24,10 @@ import {
   type LockedWork,
   lockSeamWorks,
   lockWorksInIdOrder,
+  WorkLifecycleUnavailableError,
 } from "../../../shared/work-lifecycle-lock.js";
 import type { ProjectHintPort } from "../../context/ports/project-hints.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
 import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.js";
 
 export type WorkWriteSet = {

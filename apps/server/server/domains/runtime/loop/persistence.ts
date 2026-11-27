@@ -1,4 +1,4 @@
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isClosingRow, type OrchestratorEvent, type Turn } from "@meridian/contracts/threads";
 import {
   type LiveEventWriter,
@@ -40,7 +40,7 @@ export async function persistAndAppendEvents<T>(
 export async function persistAndAppendTurnStartEvents<T>(
   deps: PersistenceDeps,
   threadId: ThreadId,
-  expectedActiveLeafTurnId: import("@meridian/contracts/runtime").TurnId | null,
+  expectedActiveLeafTurnId: TurnId | null,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
   options?: { afterEvents?: (result: T) => Promise<void>; expectedForgetting?: ForgettingDecision },
 ): Promise<{ result: T; events: OrchestratorEvent[]; createdTurns: Turn[] }> {

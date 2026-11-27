@@ -1,7 +1,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
+import type { RuntimeDelivery } from "./delivery/runtime-delivery.js";
 import { next } from "./next-inbox-work.js";
 import type { RunStarter } from "./ports.js";
-import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 export function createWakeIfRunnable(deps: {
   delivery: Pick<RuntimeDelivery, "selectPending">;

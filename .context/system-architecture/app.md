@@ -63,7 +63,7 @@ The largest feature: every other feature except `billing` imports it or is impor
 
 Chat and the Agent picker.
 
-`chat` draws the transcript from the same view model `./mf` prints; its composer is `components/app/composer`. `agents` is the picker and the Agent identity a new chat records.
+`chat` draws the transcript from the same view model `./mf` prints; its composer is `chat/composer`. `agents` is the picker and the Agent identity a new chat records.
 
 - Kind: group
 - Opens: [Conversation](app-conversation.md)

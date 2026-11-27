@@ -3,7 +3,12 @@ import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
 import { and, asc, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
-import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  type DrizzleDatabase,
+  type DrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
@@ -17,7 +22,6 @@ import type {
 import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
 import { inConversationSql, notHandedBackSql } from "./handed-back.js";
 import { mapTurn } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { createDrizzleTranscriptReader } from "./transcript-reader.js";
 
 export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
@@ -109,7 +113,7 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
 
 export function createDrizzleTurnRepository(
   db: DrizzleDatabase,
-  workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks">,
 ): TurnRepository {
   const active = () => currentDrizzleDb(db);
   const graph: TurnGraph = {
@@ -250,13 +254,7 @@ export function createDrizzleTurnRepository(
             .where(eq(schema.threads.id, row.threadId))
             .limit(1);
           if (thread?.workId) {
-            if (workActivity) await workActivity.touchWorks([thread.workId], now);
-            else {
-              await activeDb
-                .update(schema.works)
-                .set({ updatedAt: now })
-                .where(eq(schema.works.id, thread.workId));
-            }
+            await workActivity.touchWorks([thread.workId], now);
             await activeDb
               .update(schema.projects)
               .set({ updatedAt: now, lastActivityAt: now })

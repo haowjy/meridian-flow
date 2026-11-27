@@ -63,7 +63,7 @@ export function createRuntimeHarness(
   overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
     backgroundTasks?: DetachedWorkTracker;
     repos?: ThreadRepositories | InMemoryRepositories;
-    inbox?: import("../../adapters/delivery-ports.js").DeliveryStore;
+    inbox?: import("../delivery/delivery-ports.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];

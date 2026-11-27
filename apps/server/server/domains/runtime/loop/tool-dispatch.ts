@@ -13,6 +13,8 @@ import type { ModelInfo } from "@meridian-flow/runtime/gateway";
 import { testHook } from "../../../shared/test-hooks.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
+import type { ThreadRepositories } from "../../threads/ports/repositories.js";
+import type { AskRequest, AskRequestOutcome, AskService } from "../asks/ask-service.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { readModelThreadReport } from "../spawn/model-thread-report.js";
@@ -25,6 +27,7 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import type { RuntimeDelivery } from "./delivery/runtime-delivery.js";
 import { createDeltaJournal } from "./delta-journal.js";
 import {
   type CreditedBlocks,
@@ -35,24 +38,25 @@ import {
   shownNamesLookup,
 } from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
+import type { Lease, RunClaim } from "./ports.js";
 import { toJsonValue } from "./streaming.js";
 
 export interface ToolDispatchDeps extends FrontierRecordingDeps {
   toolExecutor: ToolExecutor;
   childRunCoordinator: ChildRunCoordinator;
   persistenceDeps: PersistenceDeps;
-  delivery: Pick<import("./runtime-delivery.js").RuntimeDelivery, "storeUnderLease">;
-  executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
-  readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
-  runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
-  askRequests: Pick<import("../asks/ask-service.js").AskService, "request">;
+  delivery: Pick<RuntimeDelivery, "storeUnderLease">;
+  executionReports: ThreadRepositories["executionReports"];
+  readSnapshot: ThreadRepositories["readSnapshot"];
+  runClaim: Pick<RunClaim, "readMany" | "setCurrentTool">;
+  askRequests: Pick<AskService, "request">;
 }
 
 export type RequestBatch = { deferred: string | null };
 
 export interface ToolDispatchContext {
   thread: Thread;
-  lease: import("./ports.js").Lease;
+  lease: Lease;
   agentSlug: string | null;
   responseId: string;
   threadId: ThreadId;
@@ -313,16 +317,14 @@ export async function dispatchToolCall(
       : undefined;
 
   let deferredAskId: string | null = null;
-  const request = async (
-    asked: import("../asks/ask-service.js").AskRequest,
-  ): Promise<import("../asks/ask-service.js").AskRequestOutcome> => {
+  const request = async (asked: AskRequest): Promise<AskRequestOutcome> => {
     const refused = ctx.batch.deferred
       ? {
           code: "one_request_at_a_time",
           message: "One request at a time: make this one after the answer arrives.",
         }
       : null;
-    const outcome: import("../asks/ask-service.js").AskRequestOutcome = refused
+    const outcome: AskRequestOutcome = refused
       ? { kind: "refused", refusal: refused }
       : await deps.askRequests.request({
           threadId: ctx.threadId,

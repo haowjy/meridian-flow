@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
+import { announce } from "@/client/announcements";
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useRenameThread } from "@/client/query/useRenameThread";
-import { announce } from "@/client/stores";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { TitleEditSlot } from "@/features/project/shell/TitleEditSlot";
 import { titleChipClass } from "@/features/project/shell/tab-chip";

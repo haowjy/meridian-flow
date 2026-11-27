@@ -4,10 +4,10 @@ import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contract
 import { useQueryClient } from "@tanstack/react-query";
 import { Pin } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { announce, announceError } from "@/client/announcements";
 import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useRenameThread } from "@/client/query/useRenameThread";
-import { announce, announceError } from "@/client/stores";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord, withGone } from "@/components/app/RowWord";

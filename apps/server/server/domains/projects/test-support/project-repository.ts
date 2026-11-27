@@ -1,13 +1,16 @@
 import type { Database } from "@meridian/database";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createDrizzleLineageScratchLifecycle } from "../../context/index.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
+import {
+  createDrizzleProjectBootstrapRepository,
+  type ProjectBootstrapRepository,
+} from "../adapters/drizzle-project-bootstrap.js";
 import {
   createDrizzleProjectRepository,
   type DrizzleProjectRepositoryDeps,
 } from "../adapters/project-repository/drizzle.js";
-import {
-  createDrizzleProjectBootstrapRepository,
-  type ProjectBootstrapRepository,
-} from "../index.js";
+import { createDrizzleWorkRepository } from "../adapters/work-repository/drizzle.js";
 
 export function createProjectRepositoryForTest(
   deps: Omit<DrizzleProjectRepositoryDeps, "ensureNoWork" | "fileAccessChanges"> &
@@ -21,7 +24,21 @@ export function createProjectRepositoryForTest(
 }
 
 export function createProjectBootstrapRepositoryForTest(
-  deps: Parameters<typeof createDrizzleProjectBootstrapRepository>[0],
+  deps: Omit<Parameters<typeof createDrizzleProjectBootstrapRepository>[0], "projects">,
 ): ProjectBootstrapRepository {
-  return createDrizzleProjectBootstrapRepository(deps);
+  const fileAccessChanges = createLocalFileAccessChanges();
+  const works = createDrizzleWorkRepository({
+    db: deps.db,
+    projectionMutation: createTestWorkProjectionMutation(deps.db),
+    fileAccessChanges,
+    lineageScratch: createDrizzleLineageScratchLifecycle(deps.db),
+  });
+  return createDrizzleProjectBootstrapRepository({
+    ...deps,
+    projects: createDrizzleProjectRepository({
+      db: deps.db,
+      fileAccessChanges,
+      ensureNoWork: (projectId) => works.ensureNoWork(projectId),
+    }),
+  });
 }

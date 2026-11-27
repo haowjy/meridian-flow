@@ -4,7 +4,7 @@ import { createContext, useContext } from "react";
 
 export type TreeVersion = {
   view: View;
-  ended?: "archived" | "deleted";
+  ended?: Exclude<WorkLifecycleState, "active">;
 };
 
 export const LIVE_VERSION: TreeVersion = { view: LIVE };

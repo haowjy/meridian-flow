@@ -6,7 +6,7 @@ import {
   type Work,
   workLifecycleState,
 } from "@meridian/contracts/works";
-import { WorkLifecycleUnavailableError } from "./domain/work-lifecycle.js";
+import { WorkLifecycleUnavailableError } from "../../shared/work-lifecycle-lock.js";
 import {
   type UpdateWorkInput,
   WorkLockedError,

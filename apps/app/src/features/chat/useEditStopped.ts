@@ -5,8 +5,8 @@ import {
   composerDocFromHandedBack,
 } from "@meridian/thread-client";
 import type { RefObject } from "react";
-import { composerSessionDraft } from "@/client/composer-drafts";
-import type { ComposerHandle } from "@/components/app/composer";
+import { composerSessionDraft } from "@/client/chat-submissions/composer-drafts";
+import type { ComposerHandle } from "@/features/chat/composer";
 import { useCommittedEvent } from "./useCommittedEvent";
 
 export function useEditStopped(input: {

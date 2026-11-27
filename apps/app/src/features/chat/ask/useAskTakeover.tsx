@@ -6,7 +6,7 @@ import {
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browserRecord, isRecord } from "@/client/storage/browser-record";
 import { useOpenAsk, useThreadStore } from "@/client/stores";
-import type { ComposerHandle } from "@/components/app/composer";
+import type { ComposerHandle } from "@/features/chat/composer";
 import { AskTakeover, type QuestionDraft } from "./AskTakeover";
 import { createPresenceReporter } from "./presence-reporter";
 import { useAnswerAsk } from "./useAnswerAsk";

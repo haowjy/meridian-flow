@@ -26,6 +26,7 @@ import {
   useTreeDropTarget,
 } from "@/features/project/context/tree-drop/tree-drop";
 import { useDeleteContextEntries } from "@/features/project/context/use-delete-context-entries";
+import { useClock } from "@/hooks/use-clock";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
 import { insertIntoChatComposer, removeFromChatComposer } from "./composer-insertion";
@@ -72,7 +73,7 @@ function FilesDropdown({
   const { uploads } = useChatUploads(projectId, chatId);
   const continuesFrom = useContinuesFrom(chatThread);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
-  const now = useThreadStore((state) => state.now);
+  const now = useClock(30_000);
   const [open, setOpen] = useState(false);
   const deleteEntries = useDeleteContextEntries(projectId, "main", LIVE_VERSION);
   const contentRef = useRef<HTMLDivElement>(null);

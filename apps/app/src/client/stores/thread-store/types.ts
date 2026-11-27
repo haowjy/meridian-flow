@@ -10,7 +10,6 @@ import type { SyncedThread, ThreadSyncPorts } from "@meridian/thread-client/sync
 export type { TurnStatusPatch };
 
 export type ThreadStoreState = {
-  now: number;
   syncedByThread: Record<string, SyncedThread>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;

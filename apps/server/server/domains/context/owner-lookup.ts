@@ -5,6 +5,7 @@ import {
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
 import { classifyHandleToken, type WorkHandle } from "@meridian/contracts/handles";
+import type { WorkLifecycleState } from "@meridian/contracts/works";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ScratchLineages } from "./scratch-owner.js";
 
@@ -13,12 +14,10 @@ export interface ChatFileAddresses {
   scratch: string;
 }
 
-export type WorkOwnerState = "active" | "archived" | "deleted";
-
 export interface WorkOwner {
   handle: WorkHandle;
   name: string;
-  state: WorkOwnerState;
+  state: WorkLifecycleState;
   restorableDays: number | null;
 }
 
@@ -81,7 +80,7 @@ export function workNameKey(name: string): string {
 
 export const NAMED_WORK_CANDIDATES = 5;
 
-export function worksNamedLike<T extends { name: string; state?: WorkOwnerState }>(
+export function worksNamedLike<T extends { name: string; state?: WorkLifecycleState }>(
   works: readonly T[],
   name: string,
 ): T[] {

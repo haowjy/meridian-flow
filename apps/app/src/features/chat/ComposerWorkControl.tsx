@@ -3,15 +3,12 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
-} from "@/components/app/composer-toolbar";
-import { WorkIdentity } from "@/components/app/WorkIdentity";
-import {
-  deriveWorkPickerViewModel,
-  WorkPickerPanel,
-} from "@/components/app/work-composer-controls";
+} from "@/features/chat/composer/toolbar";
+import { deriveWorkPickerViewModel, WorkPickerPanel } from "@/features/chat/composer/work-controls";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 
 export function useComposerWorkToolbarControl({

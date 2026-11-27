@@ -7,7 +7,7 @@ import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
-} from "@/components/app/composer-toolbar";
+} from "@/features/chat/composer/toolbar";
 import { WorkDraftRows } from "@/features/draft-review/DraftSwitcher";
 import { nextDraftName, workDraftName } from "@/features/draft-review/draft-names";
 import { workDraftVersions } from "@/features/draft-review/work-draft-menu";

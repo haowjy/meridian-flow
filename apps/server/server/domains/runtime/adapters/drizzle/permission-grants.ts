@@ -1,9 +1,6 @@
 import { projectActionGrants } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  type DrizzleDb,
-} from "../../../threads/adapters/drizzle/repositories.js";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type { PermissionGrantStore } from "../../loop/permissions/permission-grants.js";
 
 export function createDrizzlePermissionGrantStore(db: DrizzleDb): PermissionGrantStore {

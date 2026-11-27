@@ -1,10 +1,10 @@
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
-import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
-import { useWriteModeToolbarControl } from "@/components/app/work-composer-controls";
 import {
   type ComposerAgentControlProps,
   useComposerAgentToolbarControl,
 } from "@/features/agents/ComposerAgentControl";
+import { ComposerToolbar, createComposerToolbarModel } from "@/features/chat/composer/toolbar";
+import { useWriteModeToolbarControl } from "@/features/chat/composer/work-controls";
 import { useChatDraftToolbarControl } from "./ChatDraftControl";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 

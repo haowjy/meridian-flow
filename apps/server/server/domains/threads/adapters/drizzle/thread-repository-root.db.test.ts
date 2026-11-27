@@ -13,7 +13,9 @@ else
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { eq } = await import("drizzle-orm");
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
     const { createDrizzleTopPrimaryChatResolver } = await import("./top-primary-chat.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);

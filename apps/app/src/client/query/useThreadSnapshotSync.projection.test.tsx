@@ -121,7 +121,6 @@ function mountThreadProjectionScenario(
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const store = createThreadStore({
-    now: 0,
     threadCache: options.threadCache ?? createThreadCache(client),
   });
   const actions = store.getState();

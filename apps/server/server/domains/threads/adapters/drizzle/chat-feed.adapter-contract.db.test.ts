@@ -14,12 +14,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../../../test-support/thread-repositories.js"
+    );
     const {
       expectChatFeedCursorAcrossFilterContract,
       expectChatFeedSearchSemanticsContract,
       expectChatFeedWorkFilterContract,
-    } = await import("../__conformance__/chat-feed-contract.js");
+    } = await import("../../test-support/chat-feed-contract.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000901";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
