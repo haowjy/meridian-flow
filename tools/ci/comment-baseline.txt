@@ -818,6 +818,7 @@ apps/server/server/domains/context/uploads/upload-intake.ts	The length the write
 apps/server/server/domains/context/uploads/upload-intake.ts	The row goes first. Its conditional delete is atomic against claim and finalize, so only the sweep that wins it releases: a finish or start that touched the row after the list leaves it and its objects alone.
 apps/server/server/domains/context/uploads/upload-intake.ts	The type the writer's browser declared; the signed PUT carries exactly this.
 apps/server/server/domains/export/domain/project-export.ts	Fflate has no ZIP64; refuse archives over 4 GiB
+apps/server/server/domains/export/domain/project-export.ts	Info-ZIP unzip, macOS's /usr/bin/unzip, ignores the UTF-8 flag and decodes names from an MS-DOS entry (fflate's default) as code page 437, so a non-ASCII name fails to extract.
 apps/server/server/domains/file-intake/image-preview-worker.ts	Remove BMP alpha; 24-bit pixels report alpha 0
 apps/server/server/domains/file-intake/image-preview.ts	Retire a worker after a HEIC decode failure; libheif's WASM may be unusable
 apps/server/server/domains/file-intake/index.ts	Accept only bare MIME type/subtype; parameters would break the signed PUT header

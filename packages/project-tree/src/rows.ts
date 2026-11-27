@@ -1,3 +1,4 @@
+import { entryExtension } from "@meridian/contracts/protocol";
 import { isSourceRoot, type TreeRecord } from "./record.js";
 import type { TreeNode, TreeProjection } from "./replay.js";
 
@@ -16,12 +17,6 @@ export type ProjectedRow = {
 
 export type DraftRow = ProjectedRow & { existsOnlyInDraft: boolean; changed: boolean };
 
-function extensionOf(node: TreeNode): string {
-  if (node.kind === "folder") return "";
-  const dot = node.name.lastIndexOf(".");
-  return dot > 0 ? node.name.slice(dot + 1).toLowerCase() : "";
-}
-
 function toRow(node: TreeNode): ProjectedRow {
   return {
     id: node.id,
@@ -30,7 +25,7 @@ function toRow(node: TreeNode): ProjectedRow {
     sourceId: node.source,
     name: node.name,
     suffix: node.suffix ?? null,
-    extension: extensionOf(node),
+    extension: entryExtension(node),
     filetype: node.filetype ?? null,
     rank: node.rank,
     deleted: node.trashed,

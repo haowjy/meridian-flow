@@ -1,5 +1,6 @@
 import {
   canonicalLeaf,
+  entryExtension,
   type Filetype,
   readSegment,
   storedFilename,
@@ -485,9 +486,8 @@ function decideMove(
   if (!keepsName && toLeaf !== undefined) {
     if (node.kind === "folder") name = nameOf(toLeaf);
     else {
-      const ext = node.name.lastIndexOf(".");
       const parsed = storedFilename(nameOf(toLeaf), {
-        extension: ext > 0 ? node.name.slice(ext + 1).toLowerCase() : "",
+        extension: entryExtension(node),
         editable: node.kind === "document",
         filetype: node.filetype,
       });

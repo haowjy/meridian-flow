@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { IMPORT_ADMISSION, importNodeId } from "@meridian/contracts";
+import { numberedName } from "@meridian/contracts/protocol";
 import {
   type ImagePreviewFailureReason,
   saveImagePreview,
@@ -41,7 +42,7 @@ async function convertBesideTaken(
   taken: ReadonlySet<string>,
 ): Promise<{ document: ConvertedDocument; folder: string }> {
   for (let attempt = 1; attempt <= MAX_FOLDER_ATTEMPTS; attempt++) {
-    const folder = attempt === 1 ? name : `${name} (${attempt})`;
+    const folder = numberedName(name, attempt, "folder");
     const document = await converter.convert(bytes, folder);
     if (!document.images.some((image) => taken.has([...directory, folder, image.name].join("/"))))
       return { document, folder };

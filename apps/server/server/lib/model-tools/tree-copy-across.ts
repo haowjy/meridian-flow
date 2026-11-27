@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DraftId, ThreadId, TurnId } from "@meridian/contracts";
 import { joinContextUri } from "@meridian/contracts/context-uri";
-import { canonicalLeaf, storedFilename } from "@meridian/contracts/protocol";
+import { canonicalLeaf, entryExtension, storedFilename } from "@meridian/contracts/protocol";
 import { descendantsOf, listRecords, segmentOf } from "@meridian/project-tree";
 import type { TreeScope } from "../../domains/context/ports/context-adapter.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
@@ -225,9 +225,8 @@ function renameCopy(scope: TreeScope, node: string, name: string): string | unde
     return scope.writer.rename(scope.view, scope.actor, node, name).id;
   }
   if (canonicalLeaf(name) === canonicalLeaf(copied.name)) return undefined;
-  const ext = copied.name.lastIndexOf(".");
   const parsed = storedFilename(name, {
-    extension: ext > 0 ? copied.name.slice(ext + 1).toLowerCase() : "",
+    extension: entryExtension(copied),
     editable: copied.kind === "document",
     filetype: copied.filetype,
   });
