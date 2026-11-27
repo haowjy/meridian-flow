@@ -83,9 +83,8 @@ A document made in this browser has its session in the registry from the start, 
 id; there is no handover. Its room connects once the server has the `create` (a Join for a
 document the server does not know yet errors non-terminally, and the transport rejoins).
 
-The production registry has one immutable account epoch. When its signal aborts, the registry
-retires every session in the same synchronous step, then drains their teardowns; `close` joins
-that one attempt.
+The production registry has one immutable account epoch. Account close refuses new work
+synchronously, then drains transports and leases.
 
 ## Mount and collaboration
 

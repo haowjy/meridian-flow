@@ -73,7 +73,6 @@ export class DocumentSessionRegistry {
     private readonly signedIn: () => boolean,
   ) {
     this.copies = new LocalDocumentCopies(accountId);
-    accountClosing.addEventListener("abort", () => void this.close(), { once: true });
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
@@ -316,15 +315,26 @@ export class DocumentSessionRegistry {
   }
 
   private async retireRoom(room: Room): Promise<void> {
-    const key = sessionRoomKey(room.room);
-    const slot = room.slot;
-    room.slot = null;
-    if (slot) await this.teardownOwner.retire(key, slot.session);
-    await this.teardownOwner.drain(key);
+    const slot = await this.retireSession(room);
+    await this.teardownOwner.drain(sessionRoomKey(room.room));
     (await slot?.copy.hold)?.release();
   }
 
+  private async retireSession(room: Room): Promise<Slot | null> {
+    const slot = room.slot;
+    if (!slot) return null;
+    room.slot = null;
+    this.enter(slot, OPEN);
+    await this.teardownOwner.retire(slot.session.roomKey, slot.session);
+    return slot;
+  }
+
   private requireLease(lease: DocumentSessionLease): Room {
+    this.requireAccountOpen();
+    return this.leasedRoom(lease);
+  }
+
+  private leasedRoom(lease: DocumentSessionLease): Room {
     if (lease.accountId !== this.accountId) throw new Error("Lease belongs to another account");
     const room = this.find(lease.room);
     if (!room) throw new Error(`Lease is stale for ${sessionRoomKey(lease.room)}`);
@@ -591,7 +601,7 @@ export class DocumentSessionRegistry {
     const wanted = new Set<Room>();
     for (const retained of this.retainedByOwner.values())
       for (const lease of retained.values()) {
-        const room = this.requireLease(lease);
+        const room = this.leasedRoom(lease);
         if (lease.room.kind === "fork") {
           const live = this.find({ kind: "live", documentId: lease.documentId });
           if (live) wanted.add(live);
@@ -605,7 +615,7 @@ export class DocumentSessionRegistry {
 
   private deliverTabWrites(session: DocumentSession): void {
     const room = this.roomOf(session);
-    if (!room?.slot) return;
+    if (!room?.slot || this.accountClosing.aborted) return;
     if (session.getSnapshot().status !== "detached" || !this.mustKeepForUnsentEdits(session))
       return;
     this.enter(room.slot, OPEN);
@@ -684,17 +694,12 @@ export class DocumentSessionRegistry {
   }
 
   private retire(room: Room): void {
-    const slot = room.slot;
-    if (!slot) return;
-    room.slot = null;
-    this.enter(slot, OPEN);
-    const { session } = slot;
-    void this.teardownOwner
-      .retire(session.roomKey, session)
-      .then(async () => {
+    void this.retireSession(room)
+      .then(async (slot) => {
+        if (!slot) return;
         (await slot.copy.hold).release();
-        if (session.room.kind !== "fork") return;
-        const live = this.find({ kind: "live", documentId: session.room.documentId });
+        if (room.room.kind !== "fork") return;
+        const live = this.find({ kind: "live", documentId: room.room.documentId });
         if (live) this.scheduleTeardownIfUnretained(live);
       })
       .catch(() => undefined);
