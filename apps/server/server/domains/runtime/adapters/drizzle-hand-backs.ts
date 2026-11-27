@@ -3,8 +3,8 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
+import type { HandBackStore, StoredHandBack } from "../loop/delivery/delivery-ports.js";
 import type { StopFacts, WriterRow } from "../loop/stop-rule.js";
-import type { HandBackStore, StoredHandBack } from "./delivery-ports.js";
 
 export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
   const db_ = () => currentDrizzleDb(db);

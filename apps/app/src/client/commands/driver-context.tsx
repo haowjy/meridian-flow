@@ -16,7 +16,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { requireReload, sendsHeld, watchDelivery } from "@/client/release/release";
-import { appendTraceEvent } from "@/features/debug/trace/trace-store";
+import { appendTraceEvent } from "@/client/trace-store";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { createBroadcastChannel, createFetchTransport, createWebLock } from "./browser-ports";
 import { createIndexedDbJournal } from "./indexeddb-journal";

@@ -164,7 +164,7 @@ msgid "{0}"
 msgstr "{0}"
 
 #. placeholder {0}: upload.name
-#: src/components/app/composer/composer-document.ts
+#: src/client/chat-submissions/composer-document.ts
 msgid "{0} ({message} Click to retry, or remove it to send.)"
 msgstr "{0} ({message} Click to retry, or remove it to send.)"
 
@@ -755,11 +755,11 @@ msgstr "Actions for {title}"
 msgid "Active"
 msgstr "Active"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Active Work"
 msgstr "Active Work"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
 
@@ -855,11 +855,11 @@ msgstr "Agents"
 msgid "Agents not saved"
 msgstr "Agents not saved"
 
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/composer/work-controls/WriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
 
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/composer/work-controls/WriteModeControl.tsx
 msgid "AI write mode: {localizedValue}"
 msgstr "AI write mode: {localizedValue}"
 
@@ -1022,20 +1022,20 @@ msgstr "Assistant is thinking"
 msgid "At least {matches} results in {inDocuments}"
 msgstr "At least {matches} results in {inDocuments}"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Attach file"
 msgstr "Attach file"
 
-#: src/components/app/composer/use-file-drop.ts
+#: src/features/chat/composer/use-file-drop.ts
 msgid "Attach to this chat"
 msgstr "Attach to this chat"
 
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/composer/work-controls/WriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
 
-#: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/chat/ask/AskTakeover.tsx
+#: src/features/chat/composer/toolbar/ComposerToolbar.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Back"
 msgstr "Back"
@@ -1091,7 +1091,7 @@ msgstr "blockquote"
 msgid "Bold"
 msgstr "Bold"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Brainstorm away"
 msgstr "Brainstorm away"
 
@@ -1167,7 +1167,7 @@ msgstr "Can't land: the folder it goes to is gone."
 msgid "Can’t mention inside code"
 msgstr "Can’t mention inside code"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 #: src/features/editor/SessionEditor.tsx
 msgid "Can’t mention that here"
 msgstr "Can’t mention that here"
@@ -1269,7 +1269,7 @@ msgstr "Change discarded."
 msgid "Change position"
 msgstr "Change position"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 msgid "Change reference"
 msgstr "Change reference"
 
@@ -1277,7 +1277,7 @@ msgstr "Change reference"
 msgid "Change tools"
 msgstr "Change tools"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Change work for this chat"
 msgstr "Change work for this chat"
@@ -1344,7 +1344,7 @@ msgstr "Changing position"
 msgid "Changing the position of {source}…"
 msgstr "Changing the position of {source}…"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Changing work"
 msgstr "Changing work"
 
@@ -1357,8 +1357,8 @@ msgstr "Changing work to {0}"
 msgid "chart"
 msgstr "chart"
 
-#: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
+#: src/features/chat/composer/Composer.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
 #: src/features/project/shell/MainHeader.tsx
@@ -1366,7 +1366,7 @@ msgstr "chart"
 msgid "Chat"
 msgstr "Chat"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Chat away"
 msgstr "Chat away"
 
@@ -1435,7 +1435,7 @@ msgstr "checklist"
 msgid "Checkout unavailable."
 msgstr "Checkout unavailable."
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Chime in"
 msgstr "Chime in"
 
@@ -1580,7 +1580,7 @@ msgstr "Column"
 msgid "Column options"
 msgstr "Column options"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Commands"
 msgstr "Commands"
 
@@ -1791,7 +1791,7 @@ msgstr "Couldn't be read"
 msgid "Couldn't bring it back."
 msgstr "Couldn't bring it back."
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Couldn't change Work"
 msgstr "Couldn't change Work"
@@ -1961,7 +1961,7 @@ msgstr "Couldn't load Trash."
 msgid "Couldn't load what this chat runs."
 msgstr "Couldn't load what this chat runs."
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr "Couldn't load Work."
 
@@ -2132,8 +2132,8 @@ msgstr "Couldn't send now."
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
-#: src/components/app/composer/Composer.tsx
 #: src/features/chat/chat-card-copy.ts
+#: src/features/chat/composer/Composer.tsx
 msgid "Couldn't send."
 msgstr "Couldn't send."
 
@@ -2149,7 +2149,7 @@ msgstr "Couldn't start the retry."
 msgid "Couldn't start this handoff."
 msgstr "Couldn't start this handoff."
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Couldn't stop"
 msgstr "Couldn't stop"
 
@@ -2264,7 +2264,7 @@ msgstr "Creating project…"
 msgid "CRLF line ending"
 msgstr "CRLF line ending"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Current Work for this chat."
 msgstr "Current Work for this chat."
 
@@ -2513,7 +2513,7 @@ msgstr "Dismiss"
 msgid "Dismiss {name}"
 msgstr "Dismiss {name}"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Display text"
 msgstr "Display text"
@@ -2559,7 +2559,7 @@ msgstr "Download image"
 msgid "Downloaded"
 msgstr "Downloaded"
 
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/composer/work-controls/WriteModeControl.tsx
 #: src/features/chat/turn-card-drafts.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
@@ -2612,7 +2612,7 @@ msgstr "Earlier notes"
 msgid "Edit"
 msgstr "Edit"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 msgid "Edit display text"
 msgstr "Edit display text"
 
@@ -2766,7 +2766,7 @@ msgid "Failed"
 msgstr "Failed"
 
 #. placeholder {0}: upload.name
-#: src/components/app/composer/composer-document.ts
+#: src/client/chat-submissions/composer-document.ts
 msgid "Failed upload: {0}"
 msgstr "Failed upload: {0}"
 
@@ -2888,7 +2888,7 @@ msgstr "Folder not found"
 msgid "Folder…"
 msgstr "Folder…"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Folders can't be attached"
 msgstr "Folders can't be attached"
 
@@ -2904,7 +2904,7 @@ msgstr "Fork from here"
 msgid "From {senderName}: "
 msgstr "From {senderName}: "
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "Go ahead"
 
@@ -2921,7 +2921,7 @@ msgid "Goal saved"
 msgstr "Goal saved"
 
 #. placeholder {0}: work.goal
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Goal: {0}. "
 msgstr "Goal: {0}. "
 
@@ -2997,7 +2997,7 @@ msgstr "Hide source"
 msgid "High"
 msgstr "High"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Hold on…"
 msgstr "Hold on…"
 
@@ -3135,7 +3135,7 @@ msgstr "Insert row below"
 msgid "Interface language"
 msgstr "Interface language"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Interject"
 msgstr "Interject"
 
@@ -3249,7 +3249,7 @@ msgstr "Left"
 msgid "Left out:"
 msgstr "Left out:"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Let's work on it"
 msgstr "Let's work on it"
 
@@ -3394,7 +3394,7 @@ msgstr "Loading Trash…"
 msgid "Loading Work"
 msgstr "Loading Work"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Loading Work…"
 msgstr "Loading Work…"
 
@@ -3494,7 +3494,7 @@ msgstr "Maximum is {0}."
 msgid "Medium"
 msgstr "Medium"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 #: src/features/editor/SessionEditor.tsx
 msgid "Mention"
 msgstr "Mention"
@@ -3516,7 +3516,7 @@ msgstr "Merged cells stay where they are."
 msgid "Merging works on a rectangle of cells."
 msgstr "Merging works on a rectangle of cells."
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Message"
 msgstr "Message"
 
@@ -3565,7 +3565,7 @@ msgstr "More"
 msgid "More chats couldn't load."
 msgstr "More chats couldn't load."
 
-#: src/components/app/composer-toolbar/ComposerToolbar.tsx
+#: src/features/chat/composer/toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
 msgstr "More composer controls"
 
@@ -3948,16 +3948,16 @@ msgstr "No subagents match “{search}”."
 msgid "No tools chosen"
 msgstr "No tools chosen"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
 msgstr "No Work yet."
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "No Works match “{query}”."
 msgstr "No Works match “{query}”."
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ask/permission-request.ts
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 #: src/features/connections/ConnectionPanel.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
@@ -4220,7 +4220,7 @@ msgstr "Open full screen"
 msgid "Open in main"
 msgstr "Open in main"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 #: src/rich-content/TranscriptReference.tsx
 msgid "Open link"
@@ -4467,7 +4467,7 @@ msgstr "Put the caret in a table first."
 msgid "Queued commands"
 msgstr "Queued commands"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "Quick thought"
 
@@ -4567,7 +4567,7 @@ msgstr "Recently opened"
 msgid "Recommended"
 msgstr "Recommended"
 
-#: src/components/app/composer/ConnectionLine.tsx
+#: src/features/chat/composer/ConnectionLine.tsx
 msgid "Reconnect now"
 msgstr "Reconnect now"
 
@@ -4627,7 +4627,7 @@ msgstr "Remove connection"
 msgid "Remove link"
 msgstr "Remove link"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 msgid "Remove reference"
 msgstr "Remove reference"
 
@@ -4710,7 +4710,7 @@ msgstr "Reply declined"
 msgid "Reply failed"
 msgstr "Reply failed"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Reply in progress"
 msgstr "Reply in progress"
 
@@ -4907,7 +4907,7 @@ msgstr "Save {label}"
 msgid "Save all"
 msgstr "Save all"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 #: src/features/project/work/WorkDetail.tsx
 msgid "Save changes"
 msgstr "Save changes"
@@ -5030,7 +5030,7 @@ msgstr "Search Agents"
 msgid "Search chats"
 msgstr "Search chats"
 
-#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/chat/composer/ComposerReferenceMenu.tsx
 msgid "Search documents"
 msgstr "Search documents"
 
@@ -5038,7 +5038,7 @@ msgstr "Search documents"
 msgid "Search documents or paste a web link"
 msgstr "Search documents or paste a web link"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Search Work"
 msgstr "Search Work"
 
@@ -5102,7 +5102,7 @@ msgstr "Send answer"
 msgid "Send answers"
 msgstr "Send answers"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Send message"
 msgstr "Send message"
 
@@ -5229,7 +5229,7 @@ msgstr "Signed in"
 msgid "Skill name"
 msgstr "Skill name"
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "Skills"
 msgstr "Skills"
 
@@ -5321,8 +5321,8 @@ msgstr "status"
 msgid "Status unknown"
 msgstr "Status unknown"
 
-#: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/composer/Composer.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/import/ImportPanel.tsx
@@ -5381,8 +5381,8 @@ msgstr "Stopped."
 msgid "Stopped. Didn't run: {calls}."
 msgstr "Stopped. Didn't run: {calls}."
 
-#: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/composer/Composer.tsx
 #: src/features/chat/subagent/useSubagentStop.ts
 #: src/features/chat/useChatStop.ts
 msgid "Stopping"
@@ -5524,7 +5524,7 @@ msgstr "Tabs"
 msgid "Take"
 msgstr "Take"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "Talk it out"
 
@@ -5642,10 +5642,10 @@ msgstr "The upload failed."
 msgid "The upload to storage failed."
 msgstr "The upload to storage failed."
 
-#: src/components/app/composer/composer-document.ts
-#: src/components/app/composer/Composer.tsx
+#: src/client/chat-submissions/composer-document.ts
 #: src/core/editor/images/image-uploads.ts
 #: src/core/uploads/upload-store.ts
+#: src/features/chat/composer/Composer.tsx
 msgid "The upload was stopped."
 msgstr "The upload was stopped."
 
@@ -5665,7 +5665,7 @@ msgstr "There are no files to import here."
 msgid "Thinking"
 msgstr "Thinking"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "Thinking out loud?"
 
@@ -5802,7 +5802,7 @@ msgstr "This location is unavailable"
 msgid "This name can't be used. Try a different one."
 msgstr "This name can't be used. Try a different one."
 
-#: src/components/app/composer/Composer.tsx
+#: src/features/chat/composer/Composer.tsx
 msgid "This part of the message can’t hold mentions"
 msgstr "This part of the message can’t hold mentions"
 
@@ -6226,7 +6226,7 @@ msgid "Uploading"
 msgstr "Uploading"
 
 #. placeholder {0}: upload.name
-#: src/components/app/composer/composer-document.ts
+#: src/client/chat-submissions/composer-document.ts
 msgid "Uploading {0}"
 msgstr "Uploading {0}"
 
@@ -6352,15 +6352,15 @@ msgstr "What is your goal?"
 msgid "What this figure shows"
 msgstr "What this figure shows"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "What's next?"
 msgstr "What's next?"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "What's on your mind?"
 msgstr "What's on your mind?"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "Where were we?"
 
@@ -6411,11 +6411,11 @@ msgstr "Work couldn’t load"
 msgid "Work deleted"
 msgstr "Work deleted"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Work not found"
 msgstr "Work not found"
 
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/composer/work-controls/WorkPickerPanel.tsx
 msgid "Work unavailable"
 msgstr "Work unavailable"
 
@@ -6442,11 +6442,11 @@ msgstr "Wrap lines"
 msgid "Write"
 msgstr "Write"
 
-#: src/components/app/composer/placeholders.ts
+#: src/features/chat/composer/placeholders.ts
 msgid "Write away"
 msgstr "Write away"
 
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#: src/features/chat/composer/work-controls/WriteModeControl.tsx
 msgid "Write mode"
 msgstr "Write mode"
 

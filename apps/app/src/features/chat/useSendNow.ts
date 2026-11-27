@@ -11,9 +11,10 @@ import {
   stopStatus,
 } from "@meridian/thread-client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { announce } from "@/client/announcements";
 import { postCommand } from "@/client/api/threads-api";
 import { useFailureLog } from "@/client/failures/failure-log";
-import { announce, useRunState, useThreadActions, useThreadAsks } from "@/client/stores";
+import { useRunState, useThreadActions, useThreadAsks } from "@/client/stores";
 
 export type SendNow = {
   available: boolean;

@@ -78,7 +78,7 @@ saved before previews existed have none and show the card; nothing generates
 one later.
 
 Conversion runs in a two-worker `worker_threads` pool (`image-preview-worker.ts`; the pool is
-`shared/worker-pool.ts`, the one every conversion uses), never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
+`file-intake/worker-pool.ts`, the one every conversion uses), never on the event loop: libheif's WASM and `bmp-ts` are synchronous and froze the
 server for seconds per photo. The worker reads HEIC and BMP dimensions before
 decoding and refuses an image over 50 MP (a phone photo fits; at the cap a
 BMP peaks near 360 MB RSS per worker). A worker that crashes, runs out of memory
@@ -129,7 +129,7 @@ Conversion limits (`file-intake/text/limits.ts`): an EPUB's entry count, each en
 size and the total are checked from the zip's central directory before anything inflates, and only
 XML and XHTML entries are inflated; XML that declares an entity is refused whole; the package files go through htmlparser2 in XML mode, the XHTML goes
 through the HTML5 parser; neither has a DTD. Every conversion runs in a worker
-(`file-intake/text/convert.ts`, `conversion-worker.ts`, the shared `shared/worker-pool.ts`) that is
+(`file-intake/text/convert.ts`, `conversion-worker.ts`, the shared `file-intake/worker-pool.ts`) that is
 terminated at a 20 s deadline and capped at 512 MB of heap, so a hostile file can't freeze the
 event loop or outlive its read; the output cap is 1,000,000 characters (the text says where it
 was cut). A new converter is a new job kind there. `read` also counts a PDF's pages in that worker

@@ -1,5 +1,6 @@
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -7,7 +8,6 @@ import type {
 } from "../../ports/repositories.js";
 import { notHandedBackSql } from "./handed-back.js";
 import { mapBlock } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 const inConversation = notHandedBackSql("turn_blocks.turn_id");
 

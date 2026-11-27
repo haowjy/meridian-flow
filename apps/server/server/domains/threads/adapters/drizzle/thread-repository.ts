@@ -6,7 +6,12 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { rootDraftFor } from "../../../../shared/draft-owner.js";
-import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  type DrizzleDatabase,
+  type DrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { LineageScratchLifecycle } from "../../../context/index.js";
@@ -25,7 +30,6 @@ import type {
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
 import { mapPromptBake, mapThread } from "./mappers.js";
-import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { threadActionRequiredSql } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 

@@ -18,13 +18,13 @@ import { z } from "zod";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import type { DocumentDraftOrigin } from "../domains/collab/domain/ports/work-draft-pending-store.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-draft-review-service.js";
-import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import {
   type CommandEnvelope,
   type CommandLookup,
   commandDigest,
   replay,
 } from "../shared/commands/command-record.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 import type { AppServices } from "./app.js";
 import { throwCommandConflict } from "./command-route.js";
 import { throwWorkMutationHttpError } from "./work-http.js";

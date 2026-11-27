@@ -52,9 +52,7 @@ describe("thread snapshot account close", () => {
       await act(async () => {
         root.render(
           <QueryClientProvider client={client}>
-            <ThreadStoreProvider now={0} key={accountKey}>
-              ok
-            </ThreadStoreProvider>
+            <ThreadStoreProvider key={accountKey}>ok</ThreadStoreProvider>
           </QueryClientProvider>,
         );
       });

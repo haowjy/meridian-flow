@@ -3,7 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
 import type { BlockUpsertedRow, JsonValue, Turn } from "@meridian/contracts/threads";
 import type { Tool } from "@meridian-flow/runtime/gateway";
-import type { CurrentTurn, Lease } from "./ports.js";
+import type { CurrentTurn, Lease, WakeRefusal } from "./ports.js";
 
 interface RunTurnBase {
   threadId: ThreadId;
@@ -56,7 +56,7 @@ export class NoPendingWakeError extends Error {
 
 export class WakeRefusedError extends Error {
   constructor(
-    readonly refusal: import("./ports.js").WakeRefusal,
+    readonly refusal: WakeRefusal,
     readonly receiver: ThreadId | null,
   ) {
     super(`wake_refused:${refusal}`);

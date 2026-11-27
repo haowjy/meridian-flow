@@ -28,7 +28,7 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { runAfterDrizzleCommit } = await import("../../../shared/drizzle-transaction.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../../threads/adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     const { createTestDrizzleDelivery } = await import(

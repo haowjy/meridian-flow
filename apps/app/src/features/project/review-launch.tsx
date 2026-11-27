@@ -4,15 +4,16 @@ import { createContext, type ReactNode, useCallback, useContext, useRef } from "
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { OpenDocumentOutcome } from "@/client/stores";
+import { appendTraceEvent } from "@/client/trace-store";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-position-navigation";
-import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
-import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
+import { useOpenProjectDocument } from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ReviewTarget } from "./routing/project-address";
 import { contextRouteRequest } from "./routing/project-route";

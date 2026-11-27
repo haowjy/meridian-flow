@@ -29,9 +29,10 @@ export interface Work {
 
 export type WorkLifecycleState = "active" | "archived" | "deleted";
 
-export function workLifecycleState(
-  work: Pick<Work, "archivedAt" | "deletedAt">,
-): WorkLifecycleState {
+export function workLifecycleState(work: {
+  archivedAt: string | Date | null;
+  deletedAt: string | Date | null;
+}): WorkLifecycleState {
   if (work.deletedAt !== null) return "deleted";
   return work.archivedAt !== null ? "archived" : "active";
 }

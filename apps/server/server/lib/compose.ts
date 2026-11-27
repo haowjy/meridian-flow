@@ -316,7 +316,8 @@ export type AppServices = {
   /** Ends deleted threads' runs and subagent subtrees; `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   runStarter: RunStarter;
-  delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  delivery: DeliveryProducer &
+    import("../domains/runtime/loop/delivery/runtime-delivery.js").ThreadControls;
   asks: AskService;
   handoffBriefs: HandoffBriefs;
   shutdown(): Promise<void>;
@@ -685,6 +686,7 @@ export async function createProductionAppPorts(input: {
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
     db,
+    projects: projectRepo,
     documents: documentSync,
     treeLists,
   });

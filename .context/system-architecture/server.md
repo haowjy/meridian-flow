@@ -106,7 +106,6 @@ The composition root: builds every domain into `AppServices` and gives it to the
 - Paths: `apps/server/server/lib`, `apps/server/server/shared`
 - Docs: [lib CONTEXT](../../apps/server/server/lib/.context/CONTEXT.md)
 - Machines: [lib](../../apps/server/server/lib/.context/state-machines.md)
-- Drift: `shared/work-lifecycle-lock.ts` imports `projects/domain/work-lifecycle.ts` while `projects` imports `shared`, so the helper layer reaches up into a domain. No written rule covers `shared/`.
 
 ## browser
 

@@ -45,7 +45,7 @@ function render(mainChat: MainChat) {
   act(() =>
     root.render(
       <QueryClientProvider client={client}>
-        <ThreadStoreProvider now={0}>
+        <ThreadStoreProvider>
           <Harness mainChat={mainChat} />
         </ThreadStoreProvider>
       </QueryClientProvider>,

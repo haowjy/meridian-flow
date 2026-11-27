@@ -10,10 +10,10 @@ import {
 import {
   createInMemoryProjectRepository,
   createInMemoryWorkRepository,
-  WorkLifecycleUnavailableError,
 } from "../domains/projects/index.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 import {
   createThreadForProject,
   InvalidWorkAttachmentError,

@@ -9,6 +9,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { NO_OWNERS } from "../../../../shared/tree-owners.js";
+import { WorkLifecycleUnavailableError } from "../../../../shared/work-lifecycle-lock.js";
 import type {
   BoundWrite,
   CollabDomain,
@@ -21,7 +22,6 @@ import type {
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
 import { type FileDestination, sourceDestination } from "../../../file-policy/index.js";
-import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, splitPath } from "../../context/paths.js";
 import {

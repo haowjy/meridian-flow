@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-
+import type { OpenDocumentOutcome } from "@/client/stores";
 import { navigateToPassage } from "@/core/editor/passage-navigation";
 import { dismissPassageNotice, reportPassageChanged } from "@/core/editor/passage-notice-store";
 import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation";
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
-import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
 
 export type PassageDoors = {
   retire(): void;

@@ -13,8 +13,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/client/api/threads-api", () => api);
 const announcer = vi.hoisted(() => ({ announceError: vi.fn() }));
+vi.mock("@/client/announcements", () => announcer);
 vi.mock("@/client/stores", () => ({
-  announceError: announcer.announceError,
   useIsThreadPendingCreation: () => false,
 }));
 

@@ -60,7 +60,7 @@ have it:
 | Sync pill outage phase | Whether the pill is awaiting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |
 | Upload store | One file being sent from the editor or composer | [core/uploads](../../apps/app/src/core/uploads/.context/state-machines.md) |
 | Chat submission | One sent message, from the journal to the server's answer | [client/chat-submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md) |
-| Composer toolbar | Which toolbar surface is open, and whether it is locked | [composer-toolbar](../../apps/app/src/components/app/composer-toolbar/.context/state-machines.md) |
+| Composer toolbar | Which toolbar surface is open, and whether it is locked | [composer-toolbar](../../apps/app/src/features/chat/composer/toolbar/.context/state-machines.md) |
 | Composer Work binding | The Work picker while a chat changes Work | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Queued control | One compaction or write-mode switch waiting behind a running reply | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |

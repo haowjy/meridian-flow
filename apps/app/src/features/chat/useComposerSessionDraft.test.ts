@@ -2,11 +2,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComposerSessionDraft } from "@/client/composer-drafts";
 import {
   plainComposerDoc,
   serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
+} from "@/client/chat-submissions/composer-document";
+import { ComposerSessionDraft } from "@/client/chat-submissions/composer-drafts";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 const account = "01900000-0000-7000-8000-000000000002";

@@ -6,9 +6,9 @@ import {
   type WorkBindingState,
   workLifecycleState,
 } from "@meridian/contracts/works";
+import { WorkLifecycleUnavailableError } from "../../../shared/work-lifecycle-lock.js";
 import { createWorkSwitchedNotice, type NoticePort } from "../../notices/index.js";
-import type { WorkContextNotices } from "../../projects/index.js";
-import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
+import type { WorkContextNotices, WorkRepository } from "../../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../ports/repositories.js";
 import {
   ThreadMembershipUnavailableError,

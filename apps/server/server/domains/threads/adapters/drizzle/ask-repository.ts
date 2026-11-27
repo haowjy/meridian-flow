@@ -2,8 +2,8 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { asks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { continuationOwedSql } from "../../../../shared/ask-continuation-owed.js";
+import { currentDrizzleDb, type DrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import type { AskRepository, StoredAsk } from "../../ports/ask-repository.js";
-import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
 function storedAsk(row: typeof asks.$inferSelect): StoredAsk {
   return {

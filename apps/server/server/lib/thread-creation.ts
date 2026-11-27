@@ -16,7 +16,6 @@ import {
 import {
   type ProjectRepository,
   requireProjectOwner,
-  WorkLifecycleUnavailableError,
   type WorkRepository,
 } from "../domains/projects/index.js";
 import type { ThreadRepositories } from "../domains/threads/index.js";
@@ -25,6 +24,7 @@ import {
   threadAvailabilityCode,
   throwThreadDeleted,
 } from "../domains/threads/index.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 import { InvalidWorkAttachmentError, resolveRootWork } from "./work-attachment.js";
 
 export { InvalidWorkAttachmentError } from "./work-attachment.js";

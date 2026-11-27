@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ComposerSessionDraft } from "@/client/composer-drafts";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
+import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
+import { ComposerSessionDraft } from "./composer-drafts";
 import {
   CHAT_SUBMISSIONS_SCHEMA_VERSION,
   CHAT_SUBMISSIONS_STORAGE_PREFIX,

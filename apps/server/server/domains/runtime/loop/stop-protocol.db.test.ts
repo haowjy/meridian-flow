@@ -14,8 +14,8 @@ import { markRunStateChanged, readRunStateAtHead } from "../adapters/drizzle-run
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { HandBackConflictError } from "./delivery/runtime-delivery.js";
 import { NoPendingWakeError } from "./run-turn-port.js";
-import { HandBackConflictError } from "./runtime-delivery.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))

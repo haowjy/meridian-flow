@@ -1,8 +1,8 @@
 // Install trace capture before the thread and room sockets are created, or early frames are missed.
 
+import { appendTraceEvent, noteTapError } from "@/client/trace-store";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { setLoroWireTap, setThreadWireTap } from "@/core/transport/wire-tap";
-
 import { meridianTraceAPI } from "./agent-trace-api";
 import { createLoroWireTap, createLoroWireTapState, type LoroWireTapState } from "./loro-wire-tap";
 import {
@@ -10,7 +10,6 @@ import {
   createThreadWireTapState,
   type ThreadWireTapState,
 } from "./thread-wire-tap";
-import { appendTraceEvent, noteTapError } from "./trace-store";
 
 type HotData = {
   threadWireTapState?: ThreadWireTapState;

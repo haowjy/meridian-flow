@@ -3,12 +3,12 @@ import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { ExportOutsideArea, ProjectExportPreview } from "@meridian/contracts";
 import { useEffect, useId, useRef, useState } from "react";
+import { announce } from "@/client/announcements";
 import {
   downloadProjectExport,
   previewProjectExport,
   projectExportUrl,
 } from "@/client/api/project-export-api";
-import { announce } from "@/client/stores/thread-store/announcements";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {

@@ -3,18 +3,18 @@ import * as schema from "@meridian/database/schema";
 import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
+import type { DeliveryLeaseStore } from "../../loop/delivery/delivery-ports.js";
+import { createRuntimeDelivery } from "../../loop/delivery/delivery-service.js";
 import type { Lease } from "../../loop/ports.js";
-import type { DeliveryLeaseStore } from "../delivery-ports.js";
 import { createDrizzleHandBacks } from "../drizzle-hand-backs.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";
 import { markRunStateChanged } from "../drizzle-run-state.js";
 import { createDrizzleThreadLock } from "../drizzle-thread-lock.js";
-import { createDeliveryAdapter } from "../runtime-delivery.js";
 
 export function createDrizzleRuntimeDelivery(
   db: Database,
   deps: Omit<
-    Parameters<typeof createDeliveryAdapter>[0],
+    Parameters<typeof createRuntimeDelivery>[0],
     "inbox" | "handBacks" | "leaseStore" | "threadLock" | "schedulePostCommit"
   >,
 ) {
@@ -114,7 +114,7 @@ export function createDrizzleRuntimeDelivery(
       return row ?? null;
     },
   };
-  return createDeliveryAdapter({
+  return createRuntimeDelivery({
     ...deps,
     inbox: createDrizzleInbox(db),
     handBacks: createDrizzleHandBacks(db),

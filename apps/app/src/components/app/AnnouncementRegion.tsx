@@ -1,4 +1,4 @@
-import { useAnnouncement } from "@/client/stores";
+import { useAnnouncement } from "@/client/announcements";
 
 export function AnnouncementRegion() {
   const { current } = useAnnouncement();

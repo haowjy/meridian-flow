@@ -30,7 +30,6 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -39,13 +38,13 @@ import {
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import { announceError } from "@/client/announcements";
 import {
   getChatSubmissionAccountId,
   isThreadAwaitingCreation,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
-import { announceError } from "./announcements";
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type { ThreadStoreActions, ThreadStoreState } from "./types";
@@ -61,11 +60,7 @@ type ThreadStoreSliceState = ThreadStoreState & {
 
 type ThreadStoreSlice = ThreadStoreSliceState & ThreadStoreActions;
 
-type ThreadStoreSeed = {
-  now: number;
-};
-
-type ThreadStoreConfig = ThreadStoreSeed & {
+type ThreadStoreConfig = {
   threadCache: ThreadCachePort;
 };
 
@@ -118,7 +113,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
 }
 
 export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
-  const { now, threadCache } = config;
+  const { threadCache } = config;
   return createStore<ThreadStoreSlice>()(
     devtools(
       (set, get) => {
@@ -133,7 +128,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           const next = change(current);
           if (next !== current) writeCell(threadId, next);
         };
-        const storeNow = () => new Date(get().now).toISOString();
 
         const turnChanged = (
           threadId: string,
@@ -174,7 +168,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         };
 
         return {
-          now,
           syncedByThread: {},
           pendingCreation: { threadIds: {} },
           streamingThreadId: null,
@@ -206,11 +199,17 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           },
 
           appendUserTurn(threadId, blocks) {
-            const { now, turnCounter } = get();
+            const { turnCounter } = get();
             const { id, next } = nextTurnId(turnCounter);
             const existing = cellOf(threadId).turns;
             const prevTurnId = existing.length > 0 ? existing[existing.length - 1].id : null;
-            const turn = buildOptimisticUserTurn({ id, threadId, blocks, now, prevTurnId });
+            const turn = buildOptimisticUserTurn({
+              id,
+              threadId,
+              blocks,
+              now: Date.now(),
+              prevTurnId,
+            });
 
             set((state) => ({
               turnCounter: next,
@@ -233,7 +232,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 optimisticTurnId,
                 serverTurnId,
                 snapshotFloorNextSeq,
-                storeNow(),
+                new Date().toISOString(),
               ),
             );
           },
@@ -302,12 +301,11 @@ function useThreadStoreApi(): ThreadStoreApi {
   return store;
 }
 
-export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { children: ReactNode }) {
+export function ThreadStoreProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const accountSignal = useOptionalAccountEpochSignal();
   const [store] = useState(() =>
     createThreadStore({
-      now,
       threadCache: createThreadCache(queryClient, accountSignal ?? undefined),
     }),
   );
@@ -335,13 +333,6 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
       retireSnapshots();
     };
   }, [accountSignal, queryClient]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      store.setState((state) => ({ ...state, now: Date.now() }));
-    }, 30_000);
-    return () => clearInterval(timer);
-  }, [store]);
 
   return <ThreadStoreContext.Provider value={store}>{children}</ThreadStoreContext.Provider>;
 }

@@ -1,5 +1,4 @@
 import { AgentSelectionError } from "../domains/packages/index.js";
-import { WorkLifecycleUnavailableError } from "../domains/projects/index.js";
 import {
   DerivedSourceNotFoundError,
   DerivedThreadConflictError,
@@ -7,6 +6,7 @@ import {
   HandoffInProgressError,
   SubagentDerivationError,
 } from "../domains/threads/index.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 
 export function deriveConversationErrorStatus(error: unknown): number | null {
   if (error instanceof WorkLifecycleUnavailableError) return 400;

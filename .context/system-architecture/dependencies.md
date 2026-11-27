@@ -31,12 +31,10 @@ with no row and on a row with no break.
 | `collab` | `file-policy` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts` |
 | `context` | `collab` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/bound-writes.ts` |
 | `context` | `file-policy` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
-| `context` | `projects` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
 | `context` | `threads` | domains are acyclic | `apps/server/server/domains/context/document-revisions.ts` |
 | `file-policy` | `context` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
-| `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/index.ts` |
-| `threads` | `context` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/repositories.ts` |
-| `threads` | `projects` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/thread-works-repository.ts` |
+| `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/adapters/drizzle-project-bootstrap.ts` |
+| `threads` | `projects` | domains are acyclic | `apps/server/server/domains/threads/domain/derive-conversation.ts` |
 
 ## Reading the table
 
@@ -60,7 +58,6 @@ imports one of them fails the check.
 
 | file | imports |
 |---|---|
-| `adapters/runtime-delivery.ts` | `notices` |
 | `admission/user-turn-admission.ts` | `context` |
 | `admission/user-turn-admission.ts` | `@meridian/markup` |
 | `agent-definition-support.ts` | `packages` |
@@ -73,6 +70,10 @@ imports one of them fails the check.
 | `loop/compaction-revisions.ts` | `context` |
 | `loop/compaction-successor.ts` | `@meridian/agent-edit` |
 | `loop/context-builder.ts` | `notices` |
+| `loop/delivery/delivery-service.ts` | `notices` |
+| `loop/delivery/runtime-delivery.ts` | `notices` |
+| `loop/delivery/runtime-delivery.ts` | `projects` |
+| `loop/delivery/runtime-delivery.ts` | `@meridian/contracts/works` |
 | `loop/frontier-recording.ts` | `@meridian/agent-edit` |
 | `loop/inbox-context.ts` | `notices` |
 | `loop/orchestrator.ts` | `billing` |
@@ -85,9 +86,6 @@ imports one of them fails the check.
 | `loop/permissions/agent-chain.ts` | `projects` |
 | `loop/reference-context.ts` | `@meridian/agent-edit` |
 | `loop/run-state.ts` | `@meridian/contracts/works` |
-| `loop/runtime-delivery.ts` | `notices` |
-| `loop/runtime-delivery.ts` | `projects` |
-| `loop/runtime-delivery.ts` | `@meridian/contracts/works` |
 | `loop/skill-files.ts` | `file-policy` |
 | `loop/skill-files.ts` | `packages` |
 | `loop/thread-controls.ts` | `@meridian/contracts/works` |
@@ -102,7 +100,6 @@ imports one of them fails the check.
 | `spawn/child-run-coordinator.ts` | `packages` |
 | `spawn/resolve-child-invocation.ts` | `packages` |
 | `spawn/resolve-readable-thread.ts` | `context` |
-| `spawn/thread-history-contract.ts` | `@meridian/agent-edit` |
 | `spawn/thread-history.ts` | `context` |
 | `spawn/thread-ls.ts` | `context` |
 | `summary/conversation-summarizer.ts` | `packages` |

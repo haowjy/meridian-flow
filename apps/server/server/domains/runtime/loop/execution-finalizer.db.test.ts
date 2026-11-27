@@ -3,9 +3,9 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { processDetachedWork } from "../../../shared/detached-work.js";
-import { recordFailureAfterCommit } from "../../../shared/failure-records.js";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { recordFailureAfterCommit } from "../../threads/failure-records.js";
 import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
@@ -32,7 +32,7 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { journalEventsByThread } = await import("../../../test-support/journal-events.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../../threads/adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { finalizeExecution } = await import("./execution-finalizer.js");
 

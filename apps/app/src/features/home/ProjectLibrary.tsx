@@ -3,20 +3,20 @@ import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useProjectListStatus } from "@/client/query/useProjectList";
-import { useProjectStore } from "@/client/stores";
 import { AppStatus } from "@/components/app/AppStatus";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { preloadProjectWorkspace } from "@/features/project/preload-project-workspace";
+import { useClock } from "@/hooks/use-clock";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayProjectTitle } from "@/lib/project-title";
 import { cn } from "@/lib/utils";
 
 export function ProjectLibrary() {
   const { projects, isError, refetch } = useProjectListStatus();
-  const now = useProjectStore((state) => state.now);
+  const now = useClock(30_000);
 
   return (
     <main className="app-scroll h-full bg-background text-foreground">

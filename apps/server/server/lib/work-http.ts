@@ -1,11 +1,12 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { isError } from "nitro/h3";
-import { WorkLifecycleUnavailableError, WorkLockedError } from "../domains/projects/index.js";
+import { WorkLockedError } from "../domains/projects/index.js";
 import {
   HTTP_INTERRUPT_ENVELOPE_KEY,
   isHttpInterruptEnvelope,
   throwHttpInterrupt,
 } from "../shared/interrupt-boundary.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 
 export function throwWorkMutationHttpError(error: unknown): never {
   if (error instanceof WorkLockedError) {

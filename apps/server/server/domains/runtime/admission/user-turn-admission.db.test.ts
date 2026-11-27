@@ -13,7 +13,7 @@ if (!RUN) {
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import(
-      "../../threads/adapters/drizzle/repositories.js"
+      "../../../test-support/thread-repositories.js"
     );
     const { createDrizzleEventJournalReader } = await import(
       "../../threads/adapters/drizzle/event-reader.js"

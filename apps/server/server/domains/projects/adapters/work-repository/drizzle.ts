@@ -20,11 +20,13 @@ import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { lockProjectTreeList } from "../../../../shared/tree-list-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
-import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import {
+  lockWorkLifecycle,
+  WorkLifecycleUnavailableError,
+} from "../../../../shared/work-lifecycle-lock.js";
 import { type LineageScratchLifecycle, provisionWorkScratch } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
-import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
   CreateWorkInput,

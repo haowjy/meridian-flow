@@ -11,12 +11,12 @@ import type {
   ThreadTransportSubscribeOptions,
 } from "@meridian/thread-client";
 import { QueryClient } from "@tanstack/react-query";
-import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
-import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import {
   plainComposerDoc,
   serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
+} from "@/client/chat-submissions/composer-document";
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
+import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import { type SubmitOptions, ThreadRunController } from "../ThreadRunController";
 
 type AppendRequest = {
@@ -98,7 +98,6 @@ class ScenarioThreadTransport implements ThreadTransport {
 
 export class ThreadRunScenario {
   readonly store = createThreadStore({
-    now: 0,
     threadCache: createThreadCache(new QueryClient()),
   });
   readonly transport = new ScenarioThreadTransport();

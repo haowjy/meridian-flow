@@ -10,6 +10,9 @@ disagree about one row.
   switching accounts away and back keeps the first account's records.
 - Persist the exact validated authoring snapshot (blocks, references, skills,
   creation inputs). Replaying from text alone loses references.
+- `composer-document.ts` is the composer's draft model and `composer-drafts.ts`
+  its per-chat session drafts; the model's rules are in
+  [the composer's AGENTS.md](../../features/chat/composer/AGENTS.md).
 
 Contracts: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 

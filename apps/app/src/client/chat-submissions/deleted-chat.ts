@@ -1,15 +1,12 @@
+import { browserSubmissionLock } from "./adapters/browser-lock";
+import type { ComposerDraftSnapshot } from "./composer-document";
+import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 import {
   type ComposerDraftScope,
   type ComposerSessionDraft,
   composerSessionDraft,
   storedChatDraftIds,
-} from "@/client/composer-drafts";
-import type { ComposerDraftSnapshot } from "@/components/app/composer";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
-import { browserSubmissionLock } from "./adapters/browser-lock";
+} from "./composer-drafts";
 import {
   forgetChatSubmissionOrder,
   getChatSubmissionAccountId,

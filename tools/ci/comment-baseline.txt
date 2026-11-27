@@ -3,6 +3,9 @@ apps/app/dev/api-http-dev-proxy-plugin.ts	Host is forwarded unchanged; the serve
 apps/app/dev/vite-plugins.ts	Babel 8 dropped allExtensions/isTSX, so TSX macros need ignoreExtensions plus parserOpts jsx
 apps/app/e2e/pg.d.ts	Purpose: Minimal local pg typings for Playwright e2e seed scripts. Key decision: pg is root test tooling; this declaration covers only the Client methods the e2e smoke uses.
 apps/app/scripts/profile-dev-stack.ts	Host is forwarded unchanged; the server's dev sign-in rule compares Origin with it
+apps/app/src/client/announcements.ts	An atomic region must not rewrite the surviving sentences and announce them again.
+apps/app/src/client/announcements.ts	Push a polite announcement. Screen readers announce it at the next pause, and the region is cleared soon after, so a surface that has since moved on never leaves its old sentence behind.
+apps/app/src/client/announcements.ts	Push an assertive announcement (errors). Interrupts the current speech.
 apps/app/src/client/api/context-upload-api.ts	The signed PUT carries the type exactly; the server answers with the header to send.
 apps/app/src/client/api/direct-upload.ts	A failed or expired PUT cannot be told apart in the browser (the store sends no CORS headers on a refused request), so every failure reads the same.
 apps/app/src/client/api/direct-upload.ts	XMLHttpRequest rather than fetch: only it reports bytes sent.
@@ -12,6 +15,10 @@ apps/app/src/client/api/imports-api.ts	XHR exposes upload bytes; Fetch does not.
 apps/app/src/client/api/meridian-error.ts	Nitro/H3 serializes `createError({ data: envelope })` under `data` while retaining its own status/message fields at the top level.
 apps/app/src/client/api/ssr-api-request.ts	Server-only AppServerConfig is not imported here: this module is isomorphic (route loaders import it from client paths) and may run in the browser where process.env server vars are undefined.
 apps/app/src/client/api/upload-request.ts	`fetch` rejects with a bare TypeError ("Failed to fetch") when the network is down.
+apps/app/src/client/chat-submissions/composer-document.ts	Clipboard metadata is untrusted; turn admission must authorize reference identity
+apps/app/src/client/chat-submissions/composer-drafts.ts	Call only after the submission journal has durably accepted ownership.
+apps/app/src/client/chat-submissions/composer-drafts.ts	The thread id a New chat will be created with. Uploads attached before Send belong to it, so it is minted here, kept with the draft, and reused by Send. A sent draft mints the next one.
+apps/app/src/client/chat-submissions/composer-drafts.ts	Unreadable drafts do not authorize deletion.
 apps/app/src/client/chat-submissions/deleted-chat.ts	The caller's lock covers only an immediate claim; a deferred one runs after it was released.
 apps/app/src/client/chat-submissions/deleted-chat.ts	Unknown leaves browser words alone.
 apps/app/src/client/chat-submissions/driver.ts	A Send can arrive after the final scan but before the lock callback settles.
@@ -30,9 +37,6 @@ apps/app/src/client/chat-submissions/store.ts	Per-chat `seq` counters. Outside t
 apps/app/src/client/commands/browser-ports.ts	Every request names the account this tab believes it is, so a sign-in switch elsewhere cannot make it act for another.
 apps/app/src/client/commands/browser-ports.ts	One tab at a time delivers for an account. Holding the lock is pending on a promise.
 apps/app/src/client/commands/driver-context.tsx	A page in the back-forward cache or frozen keeps a lock it cannot use.
-apps/app/src/client/composer-drafts.ts	Call only after the submission journal has durably accepted ownership.
-apps/app/src/client/composer-drafts.ts	The thread id a New chat will be created with. Uploads attached before Send belong to it, so it is minted here, kept with the draft, and reused by Send. A sent draft mints the next one.
-apps/app/src/client/composer-drafts.ts	Unreadable drafts do not authorize deletion.
 apps/app/src/client/copilot/ThreadRunController.ts	Pair provider effect setup with disposal; construction is render-pure.
 apps/app/src/client/project-shell/main-tabs.ts	A tab stored before a node's handle became its document id carries `resourceHandle`: dropped.
 apps/app/src/client/query/delete-project-chat.ts	Reset, not invalidate: a kept "deleted" error would read as proof the chat is gone when it next mounts, and drop its unsent words.
@@ -60,25 +64,14 @@ apps/app/src/client/recents/store.ts	The in-memory boundary still refuses a cros
 apps/app/src/client/release/release.ts	The release changed under a tab whose route code is split into files the deploy removed. The import is left to throw: `preventDefault` would resolve it to undefined and break the render. TanStack Router's lazy route component reloads on the same error unless its own once-per-message key is set, and it has no option to turn that off, so set the key to leave the reload to this module.
 apps/app/src/client/storage/browser-record.ts	Failure reporting is also best effort.
 apps/app/src/client/stores/open-document.ts	A patch's owner, with the absent arm spelled out so a spread replaces the old owner.
-apps/app/src/client/stores/thread-store/announcements.ts	An atomic region must not rewrite the surviving sentences and announce them again.
-apps/app/src/client/stores/thread-store/announcements.ts	Push a polite announcement. Screen readers announce it at the next pause, and the region is cleared soon after, so a surface that has since moved on never leaves its old sentence behind.
-apps/app/src/client/stores/thread-store/announcements.ts	Push an assertive announcement (errors). Interrupts the current speech.
 apps/app/src/client/stores/thread-store/thread-store.tsx	The QueryClient outlives an account epoch. Retire only account-authorized snapshot Query objects synchronously at close, including inactive threads.
 apps/app/src/client/tab-first-remembered-id.ts	Freeze even an empty seed, so another tab cannot choose this tab's chat later.
+apps/app/src/client/trace-store.ts	Debug consumers cannot be allowed to disrupt the observed transport.
 apps/app/src/components/app/RowWord.tsx	A finger lifting leaves the button: the sentence a press opened stays.
 apps/app/src/components/app/RowWord.tsx	A long press is the phone's hover: it must not open the row's own menu or a drag.
 apps/app/src/components/app/RowWord.tsx	A word with no action keeps its sentence open: Radix's close on press is skipped.
 apps/app/src/components/app/RowWord.tsx	Called as an action starts, with what has the focus: returns where to send the focus once the action brings its row back, which waits for the row and gives it the focus unless the writer moved it meanwhile. Focus still on `from`, or on a box that held it (where the browser or a dialog's trap puts it when `from` leaves), is the action's to move.
 apps/app/src/components/app/RowWord.tsx	The sentence this click keeps or opens is the word's own: Radix's close on click is skipped.
-apps/app/src/components/app/composer/Composer.tsx	Autofocus must be false, not true; undefined keeps Tiptap's restored selection
-apps/app/src/components/app/composer/Composer.tsx	Editor.isEmpty counts an upload-only paragraph as empty; check childCount instead
-apps/app/src/components/app/composer/Composer.tsx	Microtask keeps Tiptap's React node view out of a commit; setContent selects the draft, so place the caret after the chip
-apps/app/src/components/app/composer/Composer.tsx	PreventDefault on Enter so ProseMirror's keymap doesn't eat the failed-upload button's action
-apps/app/src/components/app/composer/composer-document.ts	Clipboard metadata is untrusted; turn admission must authorize reference identity
-apps/app/src/components/app/composer/placeholders.ts	Storage can be unavailable in privacy-restricted browser contexts.
-apps/app/src/components/app/composer/placeholders.ts	Storage can be unavailable in privacy-restricted browser contexts.
-apps/app/src/components/app/composer/use-file-drop.ts	DataTransfer is emptied after the drop handler returns; read it synchronously
-apps/app/src/components/app/composer/use-file-drop.ts	Safari gives no relatedTarget on dragleave, so don't count enter/leave pairs
 apps/app/src/components/app/failure-toast.tsx	Each toast needs its own Sonner id; reusing one races its exit
 apps/app/src/components/ui/context-menu.tsx	Prevent the right-click release's pointerup or Radix selects the menu's first row
 apps/app/src/components/ui/dialog.tsx	Content must take focus on open or Radix's focus trap never engages and Tab escapes
@@ -367,9 +360,18 @@ apps/app/src/features/chat/ask/useAskTakeover.tsx	This effect must run before th
 apps/app/src/features/chat/command-descriptor.ts	Keep the quotes inside the value; an apostrophe in an ICU message escapes the placeholder beside it.
 apps/app/src/features/chat/compaction/CompactionDivider.tsx	aria-disabled, not disabled: disabling the focused button would drop keyboard focus to the page.
 apps/app/src/features/chat/compaction/useFocusWithinRow.ts	In the blur microtask check target.isConnected; an unmounted control is disconnected and keeps the focus claim, a real blur stays connected.
+apps/app/src/features/chat/composer/Composer.tsx	Autofocus must be false, not true; undefined keeps Tiptap's restored selection
+apps/app/src/features/chat/composer/Composer.tsx	Editor.isEmpty counts an upload-only paragraph as empty; check childCount instead
+apps/app/src/features/chat/composer/Composer.tsx	Microtask keeps Tiptap's React node view out of a commit; setContent selects the draft, so place the caret after the chip
+apps/app/src/features/chat/composer/Composer.tsx	PreventDefault on Enter so ProseMirror's keymap doesn't eat the failed-upload button's action
+apps/app/src/features/chat/composer/placeholders.ts	Storage can be unavailable in privacy-restricted browser contexts.
+apps/app/src/features/chat/composer/placeholders.ts	Storage can be unavailable in privacy-restricted browser contexts.
+apps/app/src/features/chat/composer/use-file-drop.ts	DataTransfer is emptied after the drop handler returns; read it synchronously
+apps/app/src/features/chat/composer/use-file-drop.ts	Safari gives no relatedTarget on dragleave, so don't count enter/leave pairs
 apps/app/src/features/chat/derivation/HandoffBriefCard.tsx	aria-disabled, not disabled: Stop gives way to Retry and keyboard focus follows it there even while the chat is busy, where the wait note it is described by is read with it.
 apps/app/src/features/chat/derivation/HandoffBriefCard.tsx	aria-disabled, not disabled: disabling the focused button would drop keyboard focus to the page.
 apps/app/src/features/chat/derivation/derive-conversation.ts	Storage refused: the in-tab job still creates the thread; only reload recovery is lost.
+apps/app/src/features/chat/send-project-chat.ts	Record the durable submission before showing or navigating to the destination
 apps/app/src/features/chat/thread-activity.ts	Liveness is the live lease (status.kind === 'awake'), not durable spawnStatus; a dead process can keep spawnStatus 'running' with no lease.
 apps/app/src/features/chat/useChatFollowScroll.ts	CommitMode is the only writer of modeRef; adding render-time sync would let a stale render clobber a transition committed between renders, so callbacks read the ref before React commits.
 apps/app/src/features/chat/useChatLinkFollowing.ts	Chat's half of link following: the scope, destination, and outcome host a transcript's links follow through, over the shared `features/links` follower. `ChatView` provides the returned navigation to transcript references and renders the returned dialog props. Scope: the thread's Work, and its lineage while the thread is on No Work (a bare `scratch://` is the lineage's), with no base URI (so relative links are text). It is pending only while the thread or the Works snapshot is loading; a click then waits, showing checking, and is never answered from a guessed Work. A null thread binding remains pending rather than guessing No Work. A No Work thread uses the locked row id whichever snapshot names it first, so the scope does not change identity mid-load and drop a click. A thread whose Work the loaded snapshot does not have (deleted, or not visible) asks with its own binding, and the server answers. Known gap: the server answers null once that Work is gone, so existing names read as missing; the thread normally disappears with its Work, and the fix is the server's. Destination: the Editor, opened the way chat's other document doors open it (exact-reference pills, tool-row names), with no explicit host Work: the route keeps the current Editor Work. Having the Editor adopt the chat's Work is a decision for all of chat's doors at once. Visibility: `active` is the chat's visibility, so hiding the side or opening Settings aborts a follow and dismisses its dialog. ChatView remounts per thread, so switching threads aborts too. Drawing: the chat owns one resolution cache and hands it to the follower and to the transcript, so a syntax link's chip and a click on it read the same answer. One requester asks about every link the transcript shows, batched. The cache is created once and never destroyed, as the follower's own would be: `destroy()` drops listeners, and a StrictMode remount keeps the instance. Doors: a URI door (a written-document name, a passage row) follows through this same follower, carrying its shell's placement policy. One chat, one latest click: a door and a transcript link cancel each other, and a hidden chat or a switched thread cancels both. Exact `@` references in writer messages read the replay by identity (`useReferenceAvailability`), so a deleted document turns its references dashed at once.
@@ -382,7 +384,6 @@ apps/app/src/features/debug/trace/loro-wire-tap.ts	Trace only room metadata; kee
 apps/app/src/features/debug/trace/server-feed.ts	A malformed debug frame is skipped without interrupting the native feed.
 apps/app/src/features/debug/trace/thread-wire-tap.ts	Allowlist every copied classification; arbitrary payload strings must never become searchable trace records, and nested data is ignored except a sequenced event's type.
 apps/app/src/features/debug/trace/thread-wire-tap.ts	Error accounting is observational too and cannot escape into transport.
-apps/app/src/features/debug/trace/trace-store.ts	Debug consumers cannot be allowed to disrupt the observed transport.
 apps/app/src/features/debug/use-debug-enabled.ts	Debug remains usable in memory when storage is unavailable.
 apps/app/src/features/debug/use-debug-enabled.ts	Storage is optional; resetting in-memory state is still sufficient.
 apps/app/src/features/draft-review/DraftSwitcher.tsx	The other owners' drafts, folded behind the scope's own unless one of them is on screen. The menu remounts it on each open, so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
@@ -548,7 +549,6 @@ apps/app/src/features/project/views.ts	Re-made when the toggle moves, and reads 
 apps/app/src/features/project/work/WorkMetadata.tsx	An expanded goal can't be measured for clamping, so new text starts folded and is measured afresh: a short one then drops Show less.
 apps/app/src/lib/account-settings-cache.ts	Storage never blocks a preference change.
 apps/app/src/lib/ios-focus-zoom.ts	Add maximum-scale=1 only on iOS; other platforms would lock pinch zoom
-apps/app/src/lib/send-project-chat.ts	Record the durable submission before showing or navigating to the destination
 apps/app/src/lib/single-flight.ts	A request during a run gets a run after it, never the run in flight: that one may have read before the request.
 apps/app/src/lib/text-size.ts	localStorage unavailable
 apps/app/src/lib/utils.ts	Tailwind-merge needs every custom text/shadow/tracking token listed or cn() drops the size

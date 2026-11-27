@@ -1,6 +1,6 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 
-import { appendTraceEvent } from "./trace-store";
+import { appendTraceEvent } from "@/client/trace-store";
 
 const SERVER_FEED_PATH = "/api/debug/events/stream";
 
