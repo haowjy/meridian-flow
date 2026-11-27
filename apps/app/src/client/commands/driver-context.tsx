@@ -17,7 +17,7 @@ import {
 } from "react";
 import { requireReload, sendsHeld, watchDelivery } from "@/client/release/release";
 import { appendTraceEvent } from "@/client/trace-store";
-import { useAccountId } from "@/features/project/context/account-feature-context";
+import { useRequestAccount } from "@/features/project/context/account-feature-context";
 import { createBroadcastChannel, createFetchTransport, createWebLock } from "./browser-ports";
 import { createIndexedDbJournal } from "./indexeddb-journal";
 
@@ -50,7 +50,8 @@ export function CommandDriverProvider({
   domains: (client: QueryClient) => CommandDomain;
   children: ReactNode;
 }) {
-  const accountId = useAccountId();
+  const account = useRequestAccount();
+  const accountId = account.id;
   const client = useQueryClient();
   const router = useRouter();
   const [{ driver, domain }] = useState(() => {
@@ -61,7 +62,7 @@ export function CommandDriverProvider({
       driver: new CommandDriver({
         journal: createIndexedDbJournal(accountId),
         lock: createWebLock(accountId),
-        transport: createFetchTransport(),
+        transport: createFetchTransport(account),
         changes: createBroadcastChannel(accountId),
         online: () => navigator.onLine,
         held: sendsHeld,

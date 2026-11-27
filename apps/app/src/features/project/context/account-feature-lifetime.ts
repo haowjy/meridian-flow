@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
-import { sendRequestsAs } from "@/client/api/http-client";
+import { type RequestAccount, sendRequestsAs } from "@/client/api/http-client";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
@@ -47,6 +47,7 @@ export class AccountFeatureLifetime {
     countSignOut(this.accountId);
     void this.signedOutElsewhere();
   };
+  readonly requests: RequestAccount;
   private stopWatchingSignOuts: (() => void) | null = null;
   private signingOut = false;
   private signOutRunning = false;
@@ -58,6 +59,7 @@ export class AccountFeatureLifetime {
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.signedIn = signedInSince(accountId);
+    this.requests = { id: accountId, changed: this.accountChanged };
     this.registry = new DocumentSessionRegistry(
       accountId as AccountId,
       this.epochSignal,
@@ -109,7 +111,7 @@ export class AccountFeatureLifetime {
 
   resumeFeatureLease(): void {
     if (this.epochSignal.aborted) return;
-    sendRequestsAs({ id: this.accountId, changed: this.accountChanged });
+    sendRequestsAs(this.requests);
     this.featureLease.resume();
     this.stopWatchingSignOuts ??= watchSignOuts(
       this.signedIn,

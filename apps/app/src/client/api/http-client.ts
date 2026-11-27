@@ -34,30 +34,42 @@ export function sendRequestsAs(account: RequestAccount): void {
   requestAccount = account;
 }
 
-export function namedAccount(): RequestAccount | null {
-  return requestAccount;
+// Another origin's URL (signed storage, a pasted web address) is never named: the header would cost it a CORS preflight it can't answer
+export function accountFor(
+  url: string,
+  account: RequestAccount | null = requestAccount,
+): RequestAccount | null {
+  return account && new URL(url, location.href).origin === location.origin ? account : null;
 }
 
 export function accountHeaders(account: RequestAccount | null): Record<string, string> {
   return account ? { [EXPECTED_ACCOUNT_HEADER]: account.id } : {};
 }
 
-export function refusedForAccount(status: number, payload: unknown): boolean {
-  return (
-    status === 409 && meridianApiErrorFromPayload(payload, status)?.code === WRONG_ACCOUNT_CODE
-  );
+export function answeredFor(
+  account: RequestAccount | null,
+  status: number,
+  payload: unknown,
+): void {
+  if (
+    account &&
+    status === 409 &&
+    meridianApiErrorFromPayload(payload, status)?.code === WRONG_ACCOUNT_CODE
+  )
+    account.changed();
 }
 
-export async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const account = requestAccount;
+export async function apiFetch(
+  url: string,
+  init: RequestInit = {},
+  account: RequestAccount | null = requestAccount,
+): Promise<Response> {
+  const named = accountFor(url, account);
   const headers = new Headers(init.headers);
-  for (const [name, value] of Object.entries(accountHeaders(account))) headers.set(name, value);
+  for (const [name, value] of Object.entries(accountHeaders(named))) headers.set(name, value);
   const response = await fetch(url, { ...init, headers });
-  if (
-    response.status === 409 &&
-    refusedForAccount(409, await readResponsePayload(response.clone()))
-  )
-    account?.changed();
+  if (named && response.status === 409)
+    answeredFor(named, 409, await readResponsePayload(response.clone()));
   return response;
 }
 

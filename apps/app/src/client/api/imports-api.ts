@@ -9,11 +9,11 @@ import type {
 } from "@meridian/contracts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import {
+  accountFor,
   accountHeaders,
+  answeredFor,
   apiFetch,
-  namedAccount,
   readResponsePayload,
-  refusedForAccount,
 } from "./http-client";
 
 export class ImportRequestError extends Error {
@@ -83,9 +83,10 @@ export function sendImportFiles(
       reject(new DOMException("Aborted", "AbortError"));
       return;
     }
-    const account = namedAccount();
+    const url = `${importsPath(projectId, importId)}/files`;
+    const account = accountFor(url);
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${importsPath(projectId, importId)}/files`);
+    xhr.open("POST", url);
     for (const [name, value] of Object.entries(accountHeaders(account)))
       xhr.setRequestHeader(name, value);
     xhr.responseType = "json";
@@ -104,7 +105,7 @@ export function sendImportFiles(
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.response as ImportFilesResult);
-      if (refusedForAccount(xhr.status, xhr.response)) account?.changed();
+      answeredFor(account, xhr.status, xhr.response);
       reject(requestError(xhr.status, xhr.response));
     };
     xhr.onerror = xhr.ontimeout = () => reject(requestError(0, null));

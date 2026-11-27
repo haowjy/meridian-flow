@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/client/api/http-client";
 
 export type TextPreviewSource = { content: string } | { url: string };
 
@@ -8,7 +9,7 @@ type TextPreviewStatus =
   | { status: "error" };
 
 async function fetchText(url: string, signal: AbortSignal): Promise<string> {
-  const response = await fetch(url, { signal });
+  const response = await apiFetch(url, { signal });
   if (!response.ok) throw new Error("Text preview request failed");
   return response.text();
 }

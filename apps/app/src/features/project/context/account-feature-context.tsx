@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import type { RequestAccount } from "@/client/api/http-client";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -22,7 +23,7 @@ const PresentedContext = createContext<AccountFeatureLifetime["presented"] | nul
 
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
 const AccountEpochContext = createContext<AbortSignal | null>(null);
-const AccountIdContext = createContext<string | null>(null);
+const AccountContext = createContext<RequestAccount | null>(null);
 const SignOutContext = createContext<(() => Promise<string>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
@@ -93,7 +94,7 @@ function AccountFeatureProviders({
   const signOut = useCallback(() => lifetime.clearForSignOut(), [lifetime]);
   return (
     <AccountEpochContext.Provider value={lifetime.epochSignal}>
-      <AccountIdContext.Provider value={lifetime.accountId}>
+      <AccountContext.Provider value={lifetime.requests}>
         <SignOutContext.Provider value={signOut}>
           <TreeListsAccountContext.Provider value={lifetime.treeLists}>
             <ContextRemovalAccountContext.Provider value={lifetime.removal}>
@@ -113,7 +114,7 @@ function AccountFeatureProviders({
             </ContextRemovalAccountContext.Provider>
           </TreeListsAccountContext.Provider>
         </SignOutContext.Provider>
-      </AccountIdContext.Provider>
+      </AccountContext.Provider>
     </AccountEpochContext.Provider>
   );
 }
@@ -161,9 +162,13 @@ export function useAccountEpochSignal(): AbortSignal {
 }
 
 export function useAccountId(): string {
-  const accountId = useContext(AccountIdContext);
-  if (!accountId) throw new Error("AccountFeatureComposition is required");
-  return accountId;
+  return useRequestAccount().id;
+}
+
+export function useRequestAccount(): RequestAccount {
+  const account = useContext(AccountContext);
+  if (!account) throw new Error("AccountFeatureComposition is required");
+  return account;
 }
 
 export function useOptionalAccountEpochSignal(): AbortSignal | null {

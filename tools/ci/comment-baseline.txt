@@ -11,6 +11,7 @@ apps/app/src/client/api/direct-upload.ts	A failed or expired PUT cannot be told 
 apps/app/src/client/api/direct-upload.ts	XMLHttpRequest rather than fetch: only it reports bytes sent.
 apps/app/src/client/api/figures-api.ts	A refusal keeps its status: a 404 is the route saying the document is gone (or unreadable, which it does not tell apart), not a failure.
 apps/app/src/client/api/figures-api.ts	The server route that saves a stored file under its own name. A store's signed URL can't be relied on for that: browsers ignore `download=` on another origin.
+apps/app/src/client/api/http-client.ts	Another origin's URL (signed storage, a pasted web address) is never named: the header would cost it a CORS preflight it can't answer
 apps/app/src/client/api/http-client.ts	Kept until the next lifetime mounts, not cleared on unmount: a request sent between one account's close and the next one's mount must be refused, not sent as the cookie's account
 apps/app/src/client/api/imports-api.ts	XHR exposes upload bytes; Fetch does not. Errors share the ordinary command contract.
 apps/app/src/client/api/meridian-error.ts	Nitro/H3 serializes `createError({ data: envelope })` under `data` while retaining its own status/message fields at the top level.
