@@ -20,7 +20,7 @@ stateDiagram-v2
   synced --> unauthenticated: close 4401
   offline --> unauthenticated: close 4401
   unauthenticated --> synced: it rejoins once the writer has signed in again
-  waiting --> broken: a bad-auth Join error ends the room
+  waiting --> broken: a bad-auth or account-changed Join error ends the room
   synced --> broken: the server ended the room (a corrupt update)
   offline --> broken: the same, on rejoining
   denied --> [*]

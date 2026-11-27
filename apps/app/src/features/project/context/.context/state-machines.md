@@ -35,12 +35,14 @@ stateDiagram-v2
 Whether the signed-in account's features take new work (`AccountFeatureLifetime` in
 `account-feature-lifetime.ts`). Its one stored state is `epochSignal`: aborted means closing.
 The document session registry, the opener and every account-scoped fetch read that signal
-rather than keeping their own. Sign-out and switching accounts close it.
+rather than keeping their own. Sign-out, switching accounts, and the account's sign-in in this
+browser ending elsewhere close it.
 
 ```mermaid
 stateDiagram-v2
   [*] --> open
   open --> closing: sign-out or an account switch aborts epochSignal
+  open --> closing: the sign-in ended elsewhere (the count moved, or a Join answered account-changed)
   closing --> closing: the close fails; the next close tries again
   closing --> closed: the registry's close retires every session
 ```
@@ -72,25 +74,38 @@ stateDiagram-v2
   (`clearForSignOut` awaits nothing in between). The account closing under it, a session that left
   with ops pending, or a room it could not open (a teardown outlasting the wait) is a no. If
   anything but this sign-out closed the account, `clearForSignOut` refuses too. Only the
-  signing-out tab reads stored copies: a tab told of the sign-out (`signedOutElsewhere`) waits on
-  its open sessions only.
+  signing-out tab reads stored copies: a tab whose sign-in ended elsewhere (`signedOutElsewhere`)
+  waits on its open sessions only.
 - **After a sign-out's deletion succeeds, no copy of the account exists in this browser, whatever
   other tabs do.** `clearAll` first counts a sign-out of the account here (`meridian:sign-outs:`
-  in `localStorage`), then deletes each copy under its exclusive Web Lock. Each account lifetime
-  notes the count when it starts (`copiesOpenSince`), and opens a copy only while the count is
-  unchanged: a document session only once its shared hold is granted, else it runs from memory;
-  a tree list before opening its copy, though with no lock, so one opened at the instant of the
+  in `localStorage`, `core/account-sign-outs.ts`), then deletes each copy under its exclusive Web
+  Lock. Each account lifetime notes the count when it starts (`signedInSince`), and opens a copy
+  only while the count is unchanged: a document session only once its shared hold is granted; a
+  tree list before opening its copy, though with no lock, so one opened at the instant of the
   deletion can still slip through. So a copy open in another tab is deleted once that tab lets
   go, and no lifetime that began before the sign-out opens or re-creates one after it; a sign-in
-  afterwards starts a lifetime that may. Two causes left a chapter's copy behind before: a tab
-  whose own sign-out was still opening a copy re-created one another tab had just deleted, and
-  in a development build React's StrictMode built a second, never-mounted lifetime per tab whose
-  sign-out channel heard the tab's own broadcast and navigated it to `/logout` before its
-  deletion finished. The channel now opens only while the lifetime is mounted
-  (`resumeFeatureLease`).
+  afterwards starts a lifetime that may.
+- **The count is the one signal that a lifetime's account is no longer the browser's.** The
+  cookie is the browser's, so a tab can't know from its own requests which account they go out
+  as. Four things count a sign-out: the sign-out's `clearAll`; `/logout`, which runs in the
+  browser and counts one for every account this browser has signed in, before the server ends
+  the session (`/end-session`), however the page was reached; a lifetime's start, for every
+  other account (`endOtherSignIns`); and a Join the server answers `account-changed` (each Join
+  names the account, and the server compares it with the socket's session). A lifetime hears the
+  count move through the `storage` event, which never fires in the tab that wrote it, so a tab's
+  own sign-out, and a lifetime React builds and never mounts, can't end it; it listens only while
+  mounted (`resumeFeatureLease`), and checks the count once on mounting. Hearing it, the lifetime
+  ends as on a sign-out elsewhere: it waits up to 8 s for its open sessions, closes, and navigates
+  to `/logout` if `/api/auth/me` still names its account, otherwise to `/`, since `/logout` would
+  end whichever account is signed in now. Between the count moving and the event's task running,
+  a session that opens gets no copy and runs from memory; the lifetime then ends.
+- **Words a lifetime ended this way holds undelivered** stay in that account's stored copies.
+  The next lifetime of another account in this browser deletes them unread (below), which is
+  what happens when the account changed; otherwise the account's next sign-in delivers them.
+  Whether to keep them for that account is the open account-switch question.
 - **What reaches `clearAll` without that wait**, as it stands: a Retry after
   `SignOutIncomplete("copies")` (the account is already closed, so it deletes again);
-  `signedOutElsewhere`, which ignores its wait's answer; an account switch, which deletes another
+  a lifetime ended elsewhere, which ignores its wait's answer; an account switch, which deletes another
   account's copies unread (below). A lapsed sign-in never reaches `clearAll`: its copies stay.
 - **Words in a room the server won't take writes from are dropped** at sign-out, open or stored:
   they aren't waited for and their copy is deleted. Read access shows one "Couldn't save" (likely

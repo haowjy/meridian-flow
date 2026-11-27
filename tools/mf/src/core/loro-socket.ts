@@ -1,4 +1,6 @@
 import {
+  API_AUTH_ME_PATH,
+  authIdentitySchema,
   createFrameReader,
   decodeLoroJoinExtra,
   docUpdateFrames,
@@ -18,7 +20,7 @@ import {
 } from "loro-protocol";
 import WebSocket from "ws";
 import { CliError } from "./cli-error";
-import type { Session } from "./session";
+import { jsonResponse, type Session } from "./session";
 
 const OPEN_TIMEOUT_MS = 15_000;
 const ACK_TIMEOUT_MS = 15_000;
@@ -36,7 +38,10 @@ export class LoroSocket {
   private readonly acks = new Map<string, (status: number | CliError) => void>();
   private ended: CliError | null = null;
 
-  private constructor(private readonly ws: WebSocket) {
+  private constructor(
+    private readonly ws: WebSocket,
+    private readonly account: string,
+  ) {
     ws.on("message", (data: Buffer) => {
       let message: ProtocolMessage | null;
       try {
@@ -51,7 +56,10 @@ export class LoroSocket {
     );
   }
 
-  static open(session: Session): Promise<LoroSocket> {
+  static async open(session: Session): Promise<LoroSocket> {
+    const me = await session.request("GET", API_AUTH_ME_PATH, undefined, {
+      decode: jsonResponse(authIdentitySchema),
+    });
     const ws = new WebSocket(`${session.serverUrl.replace(/^http/, "ws")}${LORO_WS_PATH}`, {
       ...(session.cookie ? { headers: { Cookie: session.cookie } } : {}),
     });
@@ -62,7 +70,7 @@ export class LoroSocket {
       }, OPEN_TIMEOUT_MS);
       ws.once("open", () => {
         clearTimeout(timer);
-        resolve(new LoroSocket(ws));
+        resolve(new LoroSocket(ws, me.user.userId));
       });
       ws.once("error", (error) => {
         clearTimeout(timer);
@@ -90,6 +98,7 @@ export class LoroSocket {
           auth: encodeLoroJoinAuth({
             schema: formatCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
             peer: input.peer,
+            account: this.account,
           }),
           version: input.version,
         }),

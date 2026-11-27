@@ -81,6 +81,7 @@ export class TreeListSession {
     readonly accountId: string,
     readonly list: TreeListRef,
     private readonly copiesOpen: () => boolean,
+    private readonly accountChanged: () => void,
   ) {
     const doc = freshDoc();
     this.current = { doc, version: 0, status: "waiting" };
@@ -201,6 +202,8 @@ export class TreeListSession {
     const transport = createLoroRoomTransport({
       room: { kind: "tree", list: this.list },
       peer: this.current.doc.peerIdStr,
+      account: this.accountId,
+      onAccountChanged: this.accountChanged,
       copy: {
         version: () => new Map([[LIST, docVersion(this.current.doc)]]),
         exportSince: (since) => {

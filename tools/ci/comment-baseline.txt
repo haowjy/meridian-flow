@@ -352,12 +352,12 @@ apps/app/src/core/transport/loro-room-transport.ts	A refused batch stays outstan
 apps/app/src/core/transport/loro-room-transport.ts	Before the import: the session reads the server's version to learn another tab's ops landed.
 apps/app/src/core/transport/loro-room-transport.ts	Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or signed out) is waited for until it joins and its Join's batch (what the server lacks, the typing done while away included) is acknowledged; it resolves when the room ends.
 apps/app/src/core/transport/loro-room-transport.ts	Room payload per fragment, under the protocol's 256 KiB message limit with header room.
+apps/app/src/core/transport/loro-room-transport.ts	The protocol carries appCode only on AppError; an AuthFailed refusal names it in message.
 apps/app/src/core/transport/loro-room-transport.ts	Until synced: the Join's version, and what the transport handed the copy (its version at the Join and each batch received since). Decided from what was handed, not `copy.version()`: the composition guard can hold a batch and import it later without the transport seeing it.
 apps/app/src/core/transport/wire-tap.ts	Late-bound observer seams for the thread WebSocket and the Loro room sockets. The transports call a tap inline, so a tap catches its own failures and never throws.
 apps/app/src/core/tree-list/tree-list-session.ts	A render may still hold the old copy's snapshot: it is freed with the session.
 apps/app/src/core/tree-list/tree-list-session.ts	Counts changes to any copy as they land: `version` publishes a microtask later, and a record appended in this one must be in the next replay.
 apps/app/src/core/tree-list/tree-list-session.ts	The copy. A copy of another list is replaced by a new document: read it from the snapshot each time.
-apps/app/src/features/account/AccountMenu.tsx	signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS.
 apps/app/src/features/account/AccountSettingsProvider.tsx	Bump the remount key on account-epoch change; otherwise a previous account's confirmed settings can seed or drive the next account.
 apps/app/src/features/account/SettingsDialog.tsx	A container can't query itself, so the direction switch lives one level in.
 apps/app/src/features/account/SettingsDialog.tsx	SettingsDialog — the single settings surface for the authenticated app, rendered as a routed overlay: setting `?settings=<section>` on any authenticated route opens it. URL-addressable by construction — Back closes it, refresh restores it, and a shared link lands on the exact section — while the one component behaves identically over every authenticated route. Two presentations, one mounted Dialog and one routed mechanism: - Desktop: centered modal with a left section rail. - Phone (`usePhoneShell()`): full-screen takeover (fade only, no zoom) via `PhoneSettingsContent` — WebKit blanks transform-animated content under overflow clipping + radius.
@@ -498,8 +498,8 @@ apps/app/src/features/project/context/InlineValidationOverlay.tsx	Capture phase 
 apps/app/src/features/project/context/RecentDocumentsLanding.tsx	A link can't be pressed; `ListRow` names a selected link instead.
 apps/app/src/features/project/context/account-feature-lifetime.ts	Closed by anything but this sign-out, the wait no longer knows what was delivered.
 apps/app/src/features/project/context/account-feature-lifetime.ts	No await before this abort: the wait answered from one synchronous pass, and a keystroke landing in between would be deleted unsent.
-apps/app/src/features/project/context/account-feature-lifetime.ts	Opened here, not in the constructor: React may build a lifetime it never mounts, and that one, hearing this tab's own sign-out, would navigate away before the copies are deleted.
-apps/app/src/features/project/context/account-feature-lifetime.ts	The signing-out tab delivers the stored copies; opening them here would race its deletion.
+apps/app/src/features/project/context/account-feature-lifetime.ts	Stored copies wait for the signing-out tab or this account's next sign-in: opening them here would race a sign-out's deletion.
+apps/app/src/features/project/context/account-feature-lifetime.ts	`/logout` would end whoever is signed in now, which may be another account.
 apps/app/src/features/project/context/context-entry-name.ts	A name that would read as another type (`data.json.md`) is kept whole, as the replay keeps it.
 apps/app/src/features/project/context/context-removal-coordinator.ts	The writer is deleting or Discarding these documents: main, if it shows one of them, goes at once to the document it showed before, else to Recently opened. Call before the removal. `landed` hears where main went, or null when it did not move; nothing when main did not show them. Returns the document main is leaving, if it shows one of them.
 apps/app/src/features/project/context/entry-drag/DropChoiceMenu.tsx	Radix DropdownMenu has no standalone anchor; this inert trigger holds the pointer's place.
@@ -562,7 +562,7 @@ apps/app/src/lib/text-size.ts	localStorage unavailable
 apps/app/src/lib/utils.ts	Tailwind-merge needs every custom text/shadow/tracking token listed or cn() drops the size
 apps/app/src/routes/_authenticated.tsx	Composition-root prerequisite: product descendants create both client sockets as soon as they render, so capture must be installed first.
 apps/app/src/routes/_authenticated.tsx	Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate so the entire feature (and its lazy chunk) is dead-code-eliminated from production builds. Off by default in dev; toggle with ?debug=1 / ⌘⌃D, then Alt+click any turn/block to inspect its record. See features/debug.
-apps/app/src/routes/logout.tsx	With no WorkOS session, an absolute returnTo makes signOut redirect to itself forever
+apps/app/src/routes/end-session.tsx	With no WorkOS session, an absolute returnTo makes signOut redirect to itself forever
 apps/app/src/server/api-route-ownership.ts	Route-owner rules are ordered; exact app routes precede server families and every new server family must be listed
 apps/app/src/server/content-security-policy.ts	Img-src allows no other origin: a remote image would send the writer's text to its host
 apps/app/src/server/ssr-no-external.ts	Keep AuthKit packages bundled in dev SSR; externalizing loses named exports

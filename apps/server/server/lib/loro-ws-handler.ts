@@ -245,10 +245,11 @@ export function createLoroGateway(services: LoroGatewayServices) {
     const auth = decodeLoroJoinAuth(message.auth);
     const parsedSchema = auth ? parseCollabSchemaVersion(auth.schema) : null;
     if (!auth || !parsedSchema) return refuse(LORO_JOIN_ERROR.BAD_AUTH);
+    const { userId } = connection.peer;
+    if (auth.account !== userId) return refuse(LORO_JOIN_ERROR.ACCOUNT_CHANGED);
     const room = parseLoroRoomName(name);
     if (!room || loroRoomName(room) !== name) return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
     drop(connection, name);
-    const { userId } = connection.peer;
     if (room.kind === "tree") return joinTree(connection, message, room.list, refuse);
     let admission: Admission;
     try {

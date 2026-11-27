@@ -39,7 +39,7 @@ flowchart LR
 
 The pages: TanStack file routes, and the server-side sign-in code.
 
-The `_authenticated` layout mounts one provider tree for every route: do not gate a provider by pathname. `/logout` is a full-document `<a href>`, never a `<Link>`. The code in `src/server` runs `meridianAuthkitMiddleware` and keeps the list of which `/api` routes the app owns and which go to the server.
+The `_authenticated` layout mounts one provider tree for every route: do not gate a provider by pathname. `/end-session`, which `/logout` loads after counting the sign-out in the browser, is reached only as a full document, never by a client-side navigation. The code in `src/server` runs `meridianAuthkitMiddleware` and keeps the list of which `/api` routes the app owns and which go to the server.
 
 - Kind: module
 - Paths: `apps/app/src/routes`, `apps/app/src/server`

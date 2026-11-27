@@ -73,19 +73,8 @@ export function AccountMenu() {
         >{t`Profile`}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => dispatch(() => open())}>{t`Settings`}</DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}
-          <a
-            href="/logout"
-            aria-disabled={leaving}
-            onClick={(event) => {
-              if (!clearBeforeSignOut) return;
-              event.preventDefault();
-              if (!leaving) leave();
-            }}
-          >
-            {leaving ? t`Logging out…` : t`Log out`}
-          </a>
+        <DropdownMenuItem disabled={leaving} onSelect={() => dispatch(leave)}>
+          {leaving ? t`Logging out…` : t`Log out`}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

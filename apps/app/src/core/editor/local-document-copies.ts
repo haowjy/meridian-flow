@@ -29,6 +29,7 @@ import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
+import { countSignOut } from "../account-sign-outs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
 import { type LoadedCopy, openCopyDatabase, readCopy } from "./local-copy-store";
@@ -342,24 +343,6 @@ async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
     if (account) accounts.add(decodeURIComponent(account) as AccountId);
   }
   return [...accounts];
-}
-
-const SIGN_OUTS_PREFIX = "meridian:sign-outs:";
-
-function signOuts(accountId: string): number {
-  return Number(browserStorage("local")?.getItem(`${SIGN_OUTS_PREFIX}${accountId}`) ?? 0);
-}
-
-function countSignOut(accountId: string): void {
-  browserStorage("local")?.setItem(
-    `${SIGN_OUTS_PREFIX}${accountId}`,
-    String(signOuts(accountId) + 1),
-  );
-}
-
-export function copiesOpenSince(accountId: string): () => boolean {
-  const at = signOuts(accountId);
-  return () => signOuts(accountId) === at;
 }
 
 export function clearAccountCopies(accountId: AccountId): Promise<boolean> {

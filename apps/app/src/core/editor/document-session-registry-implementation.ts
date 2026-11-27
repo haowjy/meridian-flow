@@ -2,6 +2,7 @@ import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { deferred } from "@/core/cross-context-locks";
+import { signedInSince } from "../account-sign-outs";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
   DocumentSession,
@@ -17,7 +18,6 @@ import type {
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import {
   type CopyHold,
-  copiesOpenSince,
   documentSessionPersistenceKey,
   incarnationName,
   LocalDocumentCopies,
@@ -71,7 +71,7 @@ export class DocumentSessionRegistry {
     private readonly transportFactory: DocumentSessionTransportFactory,
   ) {
     this.copies = new LocalDocumentCopies(accountId);
-    this.copiesOpen = copiesOpenSince(accountId);
+    this.copiesOpen = signedInSince(accountId);
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
@@ -412,13 +412,20 @@ export class DocumentSessionRegistry {
     const incarnation = this.copies.current(copyKey);
     // Named from the incarnation just read: another tab can advance the pointer in between.
     const name = incarnationName(copyKey, incarnation);
-    const hold = this.copies.hold(name);
+    const held = this.copies.hold(name).then(
+      (hold) => ({ hold, granted: this.copiesOpen() }),
+      (error: unknown) => {
+        reportError(error);
+        return { hold: { release: () => undefined }, granted: false };
+      },
+    );
+    const hold = held.then(({ hold }) => hold);
     const session = this.createSession(
       room,
       {
         kind: "indexeddb",
         key: name,
-        granted: hold.then(() => this.copiesOpen()),
+        granted: held.then(({ granted }) => granted),
       },
       replaced?.session.getSnapshot().access ?? null,
     );
@@ -475,6 +482,7 @@ export class DocumentSessionRegistry {
       persistence,
       access,
       persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.roomKey, fence),
+      onUndeliveredTabWrites: () => this.deliverTabWrites(session),
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
@@ -482,10 +490,9 @@ export class DocumentSessionRegistry {
       if (snapshot.holdsUndeliverableEdits)
         this.requestReplacement(session, historyCutOff(snapshot.connectionState));
     });
-    session.subscribe((snapshot) => {
+    session.subscribe(() => {
       this.settleDrainedRoom(session);
       this.settleRetainedTransport(session);
-      if (snapshot.undeliveredTabWrites) queueMicrotask(() => this.deliverTabWrites(session));
     });
     return session;
   }

@@ -63,6 +63,8 @@ export type TransportedCopy = {
 export type LoroRoomTransportOptions = {
   room: LoroRoom;
   peer: string;
+  account: string;
+  onAccountChanged: () => void;
   copy: TransportedCopy;
   presence?: EphemeralStore;
   onJoined?: (extra: Uint8Array | undefined) => "rejoin" | undefined;
@@ -118,6 +120,8 @@ const frame = (message: ProtocolMessage) => encode(message) as Uint8Array<ArrayB
 export function createLoroRoomTransport({
   room,
   peer,
+  account,
+  onAccountChanged,
   copy,
   presence,
   onJoined,
@@ -292,12 +296,18 @@ export function createLoroRoomTransport({
         return;
       }
       case MessageType.JoinError: {
-        const reset = message.appCode ? RESET_REASONS[message.appCode] : undefined;
+        // The protocol carries appCode only on AppError; an AuthFailed refusal names it in message.
+        const code = message.appCode ?? message.message;
+        const reset = RESET_REASONS[code];
         if (reset) return end(resetState(reset));
-        if (message.appCode === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode)
-          return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
-        if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
-          return end({ kind: "terminal", reason: message.appCode });
+        if (code === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode)
+          return end({ kind: "unauthorized", reason: code, code: message.code });
+        if (code === LORO_JOIN_ERROR.ACCOUNT_CHANGED.appCode) {
+          end({ kind: "terminal", reason: code });
+          return onAccountChanged();
+        }
+        if (code === LORO_JOIN_ERROR.BAD_AUTH.appCode)
+          return end({ kind: "terminal", reason: code });
         socket?.close(1000, "join-refused");
         return;
       }
@@ -369,6 +379,7 @@ export function createLoroRoomTransport({
         auth: encodeLoroJoinAuth({
           schema: formatCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
           peer,
+          account,
         }),
         version: encodeRoomVersion(copy.version()),
       });

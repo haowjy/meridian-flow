@@ -8,7 +8,9 @@ the same name with the ephemeral-store CRDT tag.
 The Join exchange, which the server's handler speaks too (local-first design §4):
 
 1. The client sends `JoinRequest` with its room version (`encodeRoomVersion`, one version
-   vector per doc key) and `encodeLoroJoinAuth({schema, peer})`.
+   vector per doc key) and `encodeLoroJoinAuth({schema, peer, account})`. `account` is the
+   account the tab's lifetime belongs to; the socket authenticates with the browser's cookie,
+   which may have changed account since.
 2. The server answers `JoinResponseOk` with the permission and its own room version, then
    sends what the copy lacks as one `DocUpdate` (fragmented when large).
 3. The client joins presence, sends its presence state, and sends
@@ -67,8 +69,11 @@ press of a whole draft or Work, the Live room of a document only the draft holds
 ## Errors
 
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
-  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, and `bad-auth` (a
-  Join this build formed wrong) ends it `terminal`;
+  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, `bad-auth` (a
+  Join this build formed wrong) ends it `terminal`, and `account-changed` (the cookie is another
+  account's) ends it `terminal` and calls `onAccountChanged`, which ends the account's lifetime.
+  `loro-protocol` carries `appCode` only on an `AppError`, so an `AuthFailed` refusal
+  (`permission-denied`, `bad-auth`, `account-changed`) is read from `message`;
   any other app code (`document-unknown`: the server hasn't seen this browser's `create` yet, or
   the draft is gone for good) closes and rejoins with backoff.
 - `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access

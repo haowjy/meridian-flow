@@ -1,8 +1,15 @@
 import { t } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
+import { getAuthMe } from "@/client/api/auth-api";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
+import {
+  countSignOut,
+  endOtherSignIns,
+  signedInSince,
+  watchSignOuts,
+} from "@/core/account-sign-outs";
 import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
 import {
   clearAccountCopies,
@@ -27,7 +34,6 @@ export class SignOutIncomplete extends Error {
 
 export const SIGN_OUT_FAILURE = "sign-out";
 const UNSENT_EDITS_WAIT_MS = 8_000;
-const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 
 export class AccountFeatureLifetime {
   private readonly closing = new AbortController();
@@ -44,19 +50,29 @@ export class AccountFeatureLifetime {
   readonly opener;
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
-  private signOutChannel: BroadcastChannel | null = null;
+  private readonly signedIn: () => boolean;
+  private stopWatchingSignOuts: (() => void) | null = null;
   private signingOut = false;
+  private endingHere = false;
 
   constructor(
     readonly accountId: string,
     connectivityHints?: ConnectivityHintsPort,
   ) {
+    this.signedIn = signedInSince(accountId);
+    const accountChanged = () => this.accountChanged();
     this.registry = new DocumentSessionRegistry(
       accountId as AccountId,
       this.epochSignal,
-      (options) => createLoroRoomTransport({ ...options, connectivityHints }),
+      (options) =>
+        createLoroRoomTransport({
+          ...options,
+          account: accountId,
+          onAccountChanged: accountChanged,
+          connectivityHints,
+        }),
     );
-    this.treeLists = new TreeListRegistry(accountId);
+    this.treeLists = new TreeListRegistry(accountId, accountChanged);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner();
@@ -72,6 +88,7 @@ export class AccountFeatureLifetime {
     );
     dropRetiredTabSession(accountId);
     dismissFailure(SIGN_OUT_FAILURE);
+    endOtherSignIns(accountId);
     if (typeof window !== "undefined")
       void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
         reportError(error),
@@ -84,35 +101,44 @@ export class AccountFeatureLifetime {
     this.featureLease = this.removal.createLifetimeLease();
   }
 
-  private async signedOutElsewhere(): Promise<void> {
-    // The signing-out tab delivers the stored copies; opening them here would race its deletion.
-    if (!this.epochSignal.aborted)
-      await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
-    await this.finishClose();
-    window.location.assign("/logout");
+  private accountChanged(): void {
+    countSignOut(this.accountId);
+    void this.signedOutElsewhere();
   }
 
-  // Opened here, not in the constructor: React may build a lifetime it never mounts, and that
-  // one, hearing this tab's own sign-out, would navigate away before the copies are deleted.
+  private async signedOutElsewhere(): Promise<void> {
+    if (this.endingHere || this.epochSignal.aborted) return;
+    this.endingHere = true;
+    // Stored copies wait for the signing-out tab or this account's next sign-in: opening them here
+    // would race a sign-out's deletion.
+    await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
+    await this.finishClose();
+    window.location.assign((await this.stillSignedInHere()) ? "/logout" : "/");
+  }
+
+  /** `/logout` would end whoever is signed in now, which may be another account. */
+  private async stillSignedInHere(): Promise<boolean> {
+    try {
+      return (await getAuthMe()).user.userId === this.accountId;
+    } catch {
+      return false;
+    }
+  }
+
   resumeFeatureLease(): void {
     if (this.epochSignal.aborted) return;
     this.featureLease.resume();
-    if (this.signOutChannel || typeof BroadcastChannel === "undefined") return;
-    this.signOutChannel = new BroadcastChannel(SIGN_OUT_CHANNEL);
-    this.signOutChannel.onmessage = ({ data }) => {
-      if ((data as { accountId?: string } | null)?.accountId === this.accountId)
-        void this.signedOutElsewhere();
-    };
+    this.stopWatchingSignOuts ??= watchSignOuts(
+      this.signedIn,
+      () => void this.signedOutElsewhere(),
+    );
+    if (!this.signedIn()) void this.signedOutElsewhere();
   }
 
   suspendFeatureLease(): void {
     this.featureLease.suspend();
-    this.closeSignOutChannel();
-  }
-
-  private closeSignOutChannel(): void {
-    this.signOutChannel?.close();
-    this.signOutChannel = null;
+    this.stopWatchingSignOuts?.();
+    this.stopWatchingSignOuts = null;
   }
 
   beginClose(): void {
@@ -131,7 +157,6 @@ export class AccountFeatureLifetime {
       const settled = await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
       if (!settled || this.epochSignal.aborted) throw new SignOutIncomplete("unsent");
       this.signingOut = true;
-      this.signOutChannel?.postMessage({ accountId: this.accountId });
     }
     // No await before this abort: the wait answered from one synchronous pass, and a keystroke
     // landing in between would be deleted unsent.
@@ -144,7 +169,8 @@ export class AccountFeatureLifetime {
     this.beginClose();
     this.featureLease.disposeIfSuspended();
     await this.registry.close();
-    this.closeSignOutChannel();
+    this.stopWatchingSignOuts?.();
+    this.stopWatchingSignOuts = null;
   }
 }
 
