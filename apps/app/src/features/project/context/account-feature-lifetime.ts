@@ -3,12 +3,14 @@ import type { AccountId } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
 import {
   clearAccountCopies,
   clearCopiesOfOtherAccounts,
 } from "@/core/editor/local-document-copies";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
@@ -28,8 +30,10 @@ const UNSENT_EDITS_WAIT_MS = 8_000;
 const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 
 export class AccountFeatureLifetime {
-  readonly runtime;
-  readonly registry;
+  private readonly closing = new AbortController();
+  readonly epochSignal = this.closing.signal;
+  private readonly sessions: DocumentSessionRegistry;
+  readonly registry: LiveDocumentSessionRegistry;
   readonly draftCommands;
   readonly presented = new PresentedDocuments((projectId, tab) =>
     this.removal.reconcileInstalledTab(projectId, tab),
@@ -42,19 +46,19 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
-  private closeAttempt: Promise<void> | null = null;
-  private featureOwnersSettled = false;
-  state: "open" | "closing" | "closed" = "open";
 
   constructor(
     readonly accountId: string,
-    _onInvalidated: (error: Error) => void = () => undefined,
     connectivityHints?: ConnectivityHintsPort,
   ) {
-    this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
+    this.sessions = new DocumentSessionRegistry(
+      accountId as AccountId,
+      this.epochSignal,
+      (options) => createLoroRoomTransport({ ...options, connectivityHints }),
+    );
+    this.registry = this.sessions;
     this.treeLists = new TreeListRegistry(accountId);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
-    this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner();
     this.removal = new ContextRemovalCoordinator({
@@ -75,7 +79,7 @@ export class AccountFeatureLifetime {
     this.opener = new ProjectDocumentLiveOpener({
       standings: this.standings,
       registry: this.registry,
-      epochSignal: this.runtime.epochSignal,
+      epochSignal: this.epochSignal,
     });
     this.featureLease = this.removal.createLifetimeLease();
     this.signOutChannel =
@@ -88,13 +92,13 @@ export class AccountFeatureLifetime {
   }
 
   private async signedOutElsewhere(): Promise<void> {
-    if (this.state === "open") await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
+    if (!this.epochSignal.aborted) await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
     await this.finishClose();
     window.location.assign("/logout");
   }
 
   resumeFeatureLease(): void {
-    if (this.state === "open") this.featureLease.resume();
+    if (!this.epochSignal.aborted) this.featureLease.resume();
   }
 
   suspendFeatureLease(): void {
@@ -102,17 +106,16 @@ export class AccountFeatureLifetime {
   }
 
   beginClose(): void {
-    if (this.state !== "open") return;
-    this.state = "closing";
+    if (this.epochSignal.aborted) return;
+    this.closing.abort(new Error("Account is closing"));
     this.stopTreeListDebugHook();
     this.treeLists.close();
     this.draftCommands.close();
-    this.runtime.beginClose();
     this.featureLease.suspend();
   }
 
   async clearForSignOut(): Promise<void> {
-    if (this.state === "open") {
+    if (!this.epochSignal.aborted) {
       if (!(await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS)))
         throw new SignOutIncomplete("unsent");
       this.signOutChannel?.postMessage({ accountId: this.accountId });
@@ -122,26 +125,11 @@ export class AccountFeatureLifetime {
       throw new SignOutIncomplete("copies");
   }
 
-  finishClose(): Promise<void> {
+  async finishClose(): Promise<void> {
     this.beginClose();
-    if (this.state === "closed") return Promise.resolve();
-    if (this.closeAttempt) return this.closeAttempt;
-    const attempt = (async () => {
-      if (!this.featureOwnersSettled) {
-        this.featureLease.disposeIfSuspended();
-        this.featureOwnersSettled = true;
-      }
-      await this.runtime.finishClose();
-      this.state = "closed";
-      this.signOutChannel?.close();
-    })();
-    this.closeAttempt = attempt;
-    void attempt
-      .finally(() => {
-        if (this.closeAttempt === attempt) this.closeAttempt = null;
-      })
-      .catch(() => undefined);
-    return attempt;
+    this.featureLease.disposeIfSuspended();
+    await this.sessions.close();
+    this.signOutChannel?.close();
   }
 }
 

@@ -40,17 +40,10 @@ export function AccountFeatureComposition({
   const connectivityHints = useConnectivityHints();
   const desired = useRef({ accountId });
   desired.current = { accountId };
-  const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
-    () =>
-      new AccountFeatureLifetime(
-        accountId,
-        (error) => invalidationHandler.current(error),
-        connectivityHints,
-      ),
+    () => new AccountFeatureLifetime(accountId, connectivityHints),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
-  invalidationHandler.current = setTeardownError;
   const transition = useRef<Promise<void> | null>(null);
 
   if (teardownError) throw teardownError;
@@ -65,13 +58,7 @@ export function AccountFeatureComposition({
       .finishClose()
       .then(() => {
         const next = desired.current;
-        setLifetime(
-          new AccountFeatureLifetime(
-            next.accountId,
-            (error) => invalidationHandler.current(error),
-            connectivityHints,
-          ),
-        );
+        setLifetime(new AccountFeatureLifetime(next.accountId, connectivityHints));
       })
       .catch((error: unknown) => setTeardownError(error))
       .finally(() => {
@@ -104,7 +91,7 @@ function AccountFeatureProviders({
   }, [lifetime]);
   const signOut = useCallback(() => lifetime.clearForSignOut(), [lifetime]);
   return (
-    <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
+    <AccountEpochContext.Provider value={lifetime.epochSignal}>
       <AccountIdContext.Provider value={lifetime.accountId}>
         <SignOutContext.Provider value={signOut}>
           <TreeListsAccountContext.Provider value={lifetime.treeLists}>
