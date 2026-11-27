@@ -74,7 +74,6 @@ export function ObjectLightbox({
           key={provider.language}
           editor={editor}
           hold={hold}
-          target={target}
           provider={provider}
           sourceOpen={sourceOpen}
           onSourceOpenChange={onSourceOpenChange}
@@ -107,21 +106,19 @@ function LightboxHeader({
 function DiagramFace({
   editor,
   hold,
-  target,
   provider,
   sourceOpen,
   onSourceOpenChange,
 }: {
   editor: Editor;
   hold: NodeHold | null;
-  target: ObjectSurfaceTarget;
   provider: DiagramProvider;
   sourceOpen: boolean;
   onSourceOpenChange: (open: boolean) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
-  const draft = useFenceDraft(editor, hold, target.node.textContent);
+  const draft = useFenceDraft(editor, hold);
   const source = draft.value;
   const { svg, error, rendered } = useDiagramRender(provider, source);
 

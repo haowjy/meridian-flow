@@ -27,6 +27,8 @@ import {
   resolveNodeHold,
 } from "@/core/editor/anchors";
 
+import { useEditorRevision } from "@/features/editor/chrome";
+
 import { isDiagramFence } from "./object-anchors";
 
 type HeldCaret = { anchor: EditorAnchor; direction: "forward" | "backward" | "none" };
@@ -58,22 +60,26 @@ function minimalTextPatch(current: string, next: string): TextPatch | null {
 export function useFenceDraft(
   editor: Editor,
   hold: NodeHold | null,
-  source: string,
 ): {
   value: string;
   onChange: (next: string) => void;
   onSelect: () => void;
   area: RefObject<HTMLTextAreaElement | null>;
 } {
-  const area = useRef<HTMLTextAreaElement | null>(null);
-  const shown = useRef(source);
-  const caret = useRef<HeldCaret | null>(null);
-
   const fence = useCallback(() => {
     const at = hold && resolveNodeHold(editor.state, hold);
     const node = at && editor.state.doc.nodeAt(at.from);
     return node && isDiagramFence(node) ? { text: node.textContent, start: at.from + 1 } : null;
   }, [editor, hold]);
+
+  // Re-render on every transaction at the store's sync priority, so no input event lands between
+  // a peer's write to the fence and the render that shows it: a keystroke in that window is dropped.
+  useEditorRevision(editor);
+  const source = fence()?.text ?? "";
+
+  const area = useRef<HTMLTextAreaElement | null>(null);
+  const shown = useRef(source);
+  const caret = useRef<HeldCaret | null>(null);
 
   const onSelect = useCallback(() => {
     const element = area.current;
@@ -97,7 +103,11 @@ export function useFenceDraft(
     const at = resolveAnchorIn(editor.state, held.anchor);
     if (!at) return;
     const offset = (pos: number) => Math.min(Math.max(pos - found.start, 0), source.length);
-    element.setSelectionRange(offset(at.from), offset(at.to), held.direction);
+    const [start, end] = [offset(at.from), offset(at.to)];
+    // The writer's own keystroke already left the selection here; setting it again would end an
+    // IME composition.
+    if (element.selectionStart === start && element.selectionEnd === end) return;
+    element.setSelectionRange(start, end, held.direction);
   }, [editor, fence, source]);
 
   useEffect(() => {
