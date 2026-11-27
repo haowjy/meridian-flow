@@ -219,11 +219,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
     claimHandlers: () => claims,
 
     registerKeymap(contribution) {
-      // Before the push, so a refused contribution leaves the registry exactly
-      // as it was and the next lane's registration still lands. The registry
-      // goes in with it: a collision is a question about what is already
-      // registered, and this is the last moment the stack still names the lane
-      // that wrote the binding.
       assertKeymapContribution(contribution, keymaps);
       keymaps.push(contribution);
       keymapRevision += 1;

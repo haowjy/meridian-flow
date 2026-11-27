@@ -43,15 +43,6 @@ export interface FileAccess {
     destination: FileDestination,
     need?: N,
   ): Promise<FileGrant<N> | FileAccessDenied>;
-  /**
-   * Authoritative, inside the ambient transaction (§5, §5.2). The caller has
-   * already locked the Works and lineages the grants' facts name (`grantOwnerLocks`), in one
-   * id-ordered select with its own (`locked`). Re-reads facts and each agent chain, and
-   * re-runs the policy at each grant's destination. A file whose owner or
-   * draft Work moved outside `locked` throws `TreeOwnersMoved` naming the new owners: locking
-   * them now would break the id order, so the caller runs again with them in its set. Refused grants are
-   * returned, not thrown, so the rest of the reply can commit.
-   */
   confirmEdit(
     grants: readonly FileGrant<"edit" | "command">[],
     locked: LockedOwners,

@@ -48,10 +48,6 @@ export interface AgentWriteRecord {
 export interface AgentEditRooms {
   readRoom(documentId: string): Promise<AgentRoomRead>;
 
-  /**
-   * Store one write's batch, and its record, in the host's command: its docs' snapshots and the
-   * record in the command's transaction, the import into the room after it commits.
-   */
   save(room: DocumentRoom, batch: Uint8Array, record: AgentWriteRecord | null): Promise<void>;
 }
 

@@ -734,5 +734,3 @@ export const userTurnAdmissions = pgTable(
     ),
   ],
 );
-
-// The origin-turn FK is deferrable; deleting a referenced turn requires a coordinated deferred delete

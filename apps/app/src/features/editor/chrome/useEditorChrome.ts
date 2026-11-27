@@ -58,25 +58,6 @@ const NO_REVISIONS: EditorRevisionStore = {
 
 const ZERO_REVISION = () => 0;
 
-/**
- * One revision store per editor, counting from the first read of it.
- *
- * The count has to live outside React. A hook that kept it in `useState` and
- * subscribed in an effect could not see a transaction that landed in between —
- * layout effects run before passive ones, so a surface that writes while it
- * measures moves the document in exactly that window — and the consumer would
- * then render the state before it with nothing to tell it otherwise.
- *
- * Keyed on the editor and held weakly: two surfaces reading the same editor
- * share one counter and one listener, and the store goes when the editor does.
- * The listener is attached for the editor's life rather than per subscriber,
- * because the missed transaction is the whole point — a store that only counted
- * while React was listening would have the same blind spot. `destroy` takes it
- * off with every other listener the editor holds.
- *
- * One subscription, not two: a selection change IS a transaction, so listening
- * for both rendered every caret move twice.
- */
 const EDITOR_REVISIONS = new WeakMap<Editor, EditorRevisionStore>();
 
 function editorRevisionStore(editor: Editor | null): EditorRevisionStore {

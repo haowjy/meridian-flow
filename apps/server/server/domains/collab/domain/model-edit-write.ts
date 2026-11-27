@@ -55,7 +55,6 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     const documentId = documentIdFromCommand(command);
     return runInLockedWrite(() =>
       runAtDestination(destination, async () => {
-        // An inverse takes its own locks in the turn-inverse service.
         if (command.command === "undo" || command.command === "revert") {
           return runWithInversePrincipal(grant.principal, () => deps.core.write(command, given));
         }

@@ -237,8 +237,6 @@ function openBlockMenuAt(editor: Editor, pos: number, open: (hold: NodeHold) => 
     ? selectObjectTransaction(editor.state, target.pos)
     : editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(target.pos + 1)));
   if (selection) editor.view.dispatch(selection);
-  // Held from the state the selection left behind: the block moved if the
-  // press selected an object, and the menu belongs to where it is now.
   const hold = holdBlock(editor.state, target.pos);
   if (hold) open(hold);
 }

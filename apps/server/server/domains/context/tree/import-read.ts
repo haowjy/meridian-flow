@@ -86,7 +86,6 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
         }),
       );
     },
-    // One snapshot: a delete between the list and the address read would otherwise throw below.
     linkCandidates: () =>
       runInRootDrizzleReadSnapshot(db, async () => {
         const sourceRows = await sources(["manuscript", "kb", "unfiled"]);

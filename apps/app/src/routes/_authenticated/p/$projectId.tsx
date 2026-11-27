@@ -19,7 +19,6 @@ export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
   loader: async ({ params, parentMatchPromise }) => {
     const { projectId } = params;
-    // The account this load is for, not the one whose provider happens to be mounted.
     const { user } = (await parentMatchPromise).loaderData ?? {};
     if (user && (await awaitPendingProjectCreation(user.userId, projectId)))
       return { projectId, project: null, data: null, unresolved: false };

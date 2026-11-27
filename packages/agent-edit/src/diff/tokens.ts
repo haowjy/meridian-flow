@@ -23,11 +23,6 @@ export const coreKey = (t: Tok) => (t.kind === "text" ? `T${t.core}` : t.key);
 const keyCache = new WeakMap<PMNode, string>();
 const tokCache = new WeakMap<PMNode, Tok[]>();
 
-/**
- * JSON with object keys sorted. A schema lists a node's attrs in its own order (the editor's extensions
- * and the server's schema differ), and a key is hashed into the review group ids the client sends and the
- * server recomputes, so a key must not depend on that order.
- */
 function stableJson(value: unknown): string {
   return JSON.stringify(value, (_k, v) =>
     v && typeof v === "object" && !Array.isArray(v)

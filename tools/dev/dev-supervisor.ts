@@ -27,7 +27,6 @@ const clientBuild: ClientBuild = process.argv.includes("--production-client")
   ? "production"
   : "development";
 const www = process.argv.includes("--www");
-// The environment the stack started with, before any `.env` is loaded; a restart reuses it and reads `.env` again
 const launchEnv = { ...process.env };
 const ports = resolveDevPorts(repoRoot);
 const idleMinutes = Number(launchEnv.DEV_IDLE_STOP_MINUTES || 60);

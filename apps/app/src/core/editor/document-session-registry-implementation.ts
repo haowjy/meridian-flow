@@ -76,7 +76,6 @@ export class DocumentSessionRegistry {
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
     this.requireAccountRuntimeOpen();
-    // A fork reads through its Live room, so the Live room is admitted with it.
     if (draftId !== undefined) this.admit(projectId, documentId);
     const room: DocumentRoom =
       draftId === undefined ? { kind: "live", documentId } : { kind: "fork", draftId, documentId };

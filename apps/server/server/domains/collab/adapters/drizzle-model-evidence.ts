@@ -96,10 +96,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
           )
           .onConflictDoUpdate({
             target: [links.threadId, links.documentId, links.showingDigest, links.turnId],
-            // `excluded.seq` was drawn before conflict arbitration, so a writer
-            // delayed after drawing may arrive second with the smaller value. The
-            // exact-tuple guard keeps a (never observed) digest collision from
-            // merging two different showings.
             set: { seq: sql`excluded.seq` },
             setWhere: sql`excluded.seq > ${links.seq}
               AND excluded.ref = ${links.ref} AND excluded.address = ${links.address}

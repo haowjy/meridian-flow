@@ -279,12 +279,6 @@ export class DeviceChatSubmissionJournal {
     }
   }
 
-  /**
-   * Write a record. A new one gets the chat's next `seq`: the larger of the chat's durable
-   * counter and its largest held `seq`, plus one, with the counter raised in the same
-   * synchronous step (localStorage has no await between them); an existing one keeps its
-   * `seq`. Two tabs appending in the same tick can tie, and the id breaks that tie.
-   */
   record(accountId: string, entry: NewChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
     const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));

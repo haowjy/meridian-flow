@@ -180,11 +180,6 @@ async function prepare(
   return { plans, undoneByWriter };
 }
 
-/**
- * Every document's steps as one sequence for the commit, newest original first, so a renumber
- * across documents never meets a location it vacated later. Each document's own steps already
- * run in that order.
- */
 function inSequence(plans: readonly PreparedDocumentInverse[]) {
   return plans
     .flatMap((plan) => plan.steps.map((step) => ({ plan, step })))

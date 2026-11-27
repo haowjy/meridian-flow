@@ -41,7 +41,6 @@ export function useFailure() {
         failure: classifyCommandFailure(commandFailureInput(error)),
         message,
       };
-      // Copy remains in UI state only; never send it to the diagnostics endpoint.
       const record = { occurrenceId: value.occurrenceId, failure: value.failure };
       log.record({ ...record, phase: "recorded" });
       if (!mounted.current || !actionable) {

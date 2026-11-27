@@ -160,8 +160,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
   const settle = (request: Request, answer: LinkResolutionEntry | null) => {
     const { generation, key } = request;
     const entry = settledOver(request.provisional, answer);
-    // This request's own entry and no other: after a re-registration the map
-    // under this key can hold the next generation's question about it.
     if (generation.asking.get(key) === request) generation.asking.delete(key);
     const previous = generation.answers.get(key) ?? null;
     if (answer) generation.failed.delete(key);
@@ -191,9 +189,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
           for (const request of batch) settle(request, null);
         })
         .finally(() => {
-          // The counter belongs to the generation that admitted the request. A
-          // question coming back from an abandoned one must not admit work into
-          // the live one, which is what a shared counter did.
           generation.running -= 1;
           pump(generation);
         });
@@ -351,8 +346,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
 
       const generation = current;
       return () => {
-        // Identity, not the function: the same port registered against a new
-        // catalog is a new generation, and the old unregister must not take it.
         if (current !== generation) return;
         current = null;
         retire(generation);

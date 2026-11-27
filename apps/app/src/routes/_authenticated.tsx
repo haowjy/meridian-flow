@@ -122,10 +122,6 @@ function AuthenticatedLayout() {
     );
   });
 
-  // One unconditional provider tree for every authenticated route — the settings
-  // overlay (`?settings=`) and the standalone /billing page render over the same
-  // stores. No pathname-based provider gating: a conditional tree dropped
-  // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
       <ConnectivityProvider>
@@ -201,8 +197,6 @@ function AuthenticatedProviderTree({
     accountSettingsReadGeneration: number;
   };
 }) {
-  // Browser persistence is initialized only after the Query composition root
-  // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();

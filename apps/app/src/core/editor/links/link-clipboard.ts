@@ -26,11 +26,6 @@ import {
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
 export const LINK_REF_ATTRIBUTE = "data-meridian-ref";
 export const LINK_PROJECT_ATTRIBUTE = "data-meridian-project";
-/**
- * What the paste transform leaves for the link mark's parser: a ref it chose
- * to keep. Never copied and never allowed through the paste sanitizer, so
- * clipboard HTML cannot set it.
- */
 export const LINK_KEPT_REF_ATTRIBUTE = "data-meridian-kept-ref";
 
 const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipboard");

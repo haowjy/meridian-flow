@@ -55,7 +55,6 @@ type LookupCallback = (
   family?: number,
 ) => void;
 
-// Refuse a name when any address it resolves to is not public, so a mixed answer cannot be picked from
 function publicLookup(hostname: string, options: LookupOptions, callback: LookupCallback): void {
   dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
     if (error) return callback(error, []);

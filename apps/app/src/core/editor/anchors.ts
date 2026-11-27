@@ -41,10 +41,6 @@ export function carryAnchor<Anchor extends EditorAnchor>(
   anchor: Anchor,
   mapping: Mappable,
 ): Anchor | null {
-  // An empty range is a caret, and both of its edges are the same edge: text a
-  // peer types there belongs to the document, so the caret stays in front of
-  // it. Biasing them apart would invert the range, and a commit against an
-  // inverted range writes somewhere nobody asked for.
   if (anchor.from === anchor.to) {
     const at = mapping.mapResult(anchor.from, -1);
     if (at.deleted && !anchor.relative) return null;

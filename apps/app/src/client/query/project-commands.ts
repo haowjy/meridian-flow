@@ -79,11 +79,6 @@ export function projectCreationFor(
   return found;
 }
 
-/**
- * The driver each account runs in this tab, for the loader and the read gate, which run outside
- * React. The loader asks for its own account's: during an account switch it runs before the new
- * provider mounts, while the old account's driver is still the mounted one.
- */
 type AccountJournal = { driver: CommandDriver | null; opened: Deferred };
 type Deferred = { promise: Promise<void>; resolve: () => void };
 

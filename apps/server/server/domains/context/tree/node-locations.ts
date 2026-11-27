@@ -6,11 +6,6 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 export type VacatedLocation = { contextSourceId: string; path: string; documentId: string };
 export type ClaimedLocation = { contextSourceId: string; path: string };
 
-/**
- * History for one relocation of a whole set (contract §8.5): every vacated alias first,
- * then every final claim, so no node's old path survives as an alias where another node
- * of the set now sits (a swap, a renumber). A node in no live view never appears in either list.
- */
 export async function recordLocationHistory(
   db: Database,
   history: { vacated: readonly VacatedLocation[]; claimed: readonly ClaimedLocation[] },

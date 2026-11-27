@@ -84,7 +84,6 @@ export type CommandSettling<R> = {
   beforeClaim?(): void;
 };
 
-// The claim is the transaction's first write, the effect runs in a savepoint, and the outcome stores before commit, so no committed row is ever unsettled
 export async function runCommand<R>(
   db: Database,
   envelope: CommandEnvelope,

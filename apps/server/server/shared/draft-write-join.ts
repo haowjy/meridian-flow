@@ -1,4 +1,3 @@
-// A draft write may only join a transaction that has locked nothing but Works; any other ambient caller is refused rather than joined
 import {
   getDrizzleTransactionLocal,
   isInDrizzleTransaction,

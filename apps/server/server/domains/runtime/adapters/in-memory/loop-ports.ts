@@ -154,11 +154,9 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
-  // Use a monotonic sequence, not millisecond time, to order fences and admissions
   let sequence = 0;
   const fences = new Map<ThreadId, number>();
   const shortClaims = new Set<ThreadId>();
-  // Track the claimant's execution; settling a stale row must not unlock the new claimant's thread
   const locked = new Map<ThreadId, ExecutionId>();
   const unlockIfHeldBy = (lease: Lease) => {
     if (locked.get(lease.threadId) === lease.executionId) locked.delete(lease.threadId);

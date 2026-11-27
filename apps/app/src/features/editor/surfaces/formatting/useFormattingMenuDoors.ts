@@ -83,10 +83,6 @@ export function useFormattingMenuDoors(
 
     return chrome.registerKeymap({
       id: "formatting-menu",
-      // The menu formats whatever the selection covers, so it belongs to the
-      // document: an open surface or a selected object answers these keys
-      // first, as it should. `appliesTo` is the other half of the split matrix
-      // — the keyboard twin must fall silent wherever the right-click declines.
       scope: "document",
       appliesTo: formattingOwnsContext,
       bindings: {

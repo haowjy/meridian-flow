@@ -162,10 +162,6 @@ export interface GrepPassage {
   excerpt: string;
   blockHash?: string;
   anchor?: { start: number; end: number };
-  /**
-   * The writer's text the first match covers (`excerpt` is markdown, which spells it
-   * escaped), for the app's door to find the passage again. Absent on results stored before grep.
-   */
   term?: string;
 }
 

@@ -232,12 +232,6 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
   return puts;
 }
 
-/**
- * Take `edits` back on `docs` (a press's Undo, an AI write's): each text doc by its inverse
- * (`textInverse`), in a commit by `by`; then every structure value in one commit by `by`
- * (`putBackValues`), after the text, so a removal record it writes counts the text put back.
- * `view` reads the structure as it is. Returns the changes.
- */
 export function takeBack(
   docs: RoomDocs,
   edits: readonly Edit[],

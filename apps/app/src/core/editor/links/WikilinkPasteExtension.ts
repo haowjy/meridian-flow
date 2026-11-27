@@ -24,12 +24,6 @@ declare module "@tiptap/core" {
   }
 }
 
-/**
- * The parse extensions this extension contributes to the Markdown paste door:
- * the one that keeps an escaped `\[[` visible to the transform below. Empty
- * where it is not mounted, so the door can never keep a backslash that
- * nothing spells out again.
- */
 export function wikilinkPasteParsePlugins(editor: Editor): PluggableList {
   return editor.storage[WIKILINK_PASTE_NAME]?.markdownPastePlugins ?? [];
 }

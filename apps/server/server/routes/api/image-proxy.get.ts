@@ -50,7 +50,6 @@ function refusalOf(error: unknown): Refusal {
   return new Refusal(timedOut ? "timeout" : "unreachable");
 }
 
-// Read the body only up to the cap: a Content-Length is the remote's claim, not a limit
 async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array<ArrayBuffer>> {
   const chunks: Uint8Array[] = [];
   let received = 0;

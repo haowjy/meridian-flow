@@ -40,8 +40,6 @@ function settlePendingImages(editor: Editor): void {
   if (editor.isDestroyed) return;
   const state = ingressState(editor);
 
-  // An import whose link the writer moved on from stops, because it has nowhere to land. An
-  // upload is the store's to stop (`upload-store.ts`); its record here goes when the store's does.
   for (const done of finishedPendingImages(state.pending, editor.state)) {
     if (done.kind === "import") done.abort();
     sendIngressMessage(editor, { drop: done.id });

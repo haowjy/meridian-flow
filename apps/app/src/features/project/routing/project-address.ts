@@ -96,7 +96,6 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   return { kind: "document", scheme, path };
 }
 
-/** Called with the router's original search string, before its default parser collapses duplicates. */
 export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedProjectAddress {
   let parts: string[];
   try {

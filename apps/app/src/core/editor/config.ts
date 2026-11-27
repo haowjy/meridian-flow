@@ -392,8 +392,6 @@ export function createEditorConfig({
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
-  // Sanitization runs last so a caller transform can never reintroduce markup
-  // the schema would otherwise accept.
   const callerTransformPastedHTML = editorProps?.transformPastedHTML;
   const sanitizedEditorProps = {
     ...editorProps,

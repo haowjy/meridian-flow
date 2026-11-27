@@ -78,10 +78,6 @@ function inOneTransaction<T>(
 
 const unchanged = (doc: LoroDoc, before: DocVersion) => docCovers(before, docVersion(doc));
 
-/**
- * A copy of the list as `snapshot` holds it, writing as a fresh server peer: the server's writers
- * take peer ids below `SERVER_PEER_LIMIT`, and no two copies share one.
- */
 function copyOf(snapshot: Uint8Array | null): Copy {
   const doc = new LoroDoc();
   doc.setPeerId(freshServerPeerId());

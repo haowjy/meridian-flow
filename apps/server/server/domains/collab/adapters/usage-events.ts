@@ -1,9 +1,3 @@
-/**
- * How far back writers reach for the Undos history keeps, as events: they decide how much of a
- * document's history a later history view must hold. Each names one document and its project and
- * no writer, and is emitted only once the command that did it commits, outside it, so it never
- * fails or slows the Undo.
- */
 import type { PressVerdict } from "@meridian/contracts/drafts";
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";

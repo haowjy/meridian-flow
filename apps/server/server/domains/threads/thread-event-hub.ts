@@ -26,7 +26,6 @@ import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 const HOT_CACHE_LIMIT = 500;
 const JOURNAL_PAGE_SIZE = 1_000;
 const DEFAULT_EVICTION_GRACE_MS = 60_000;
-// Socket seq is journal seq times 1000 plus the frame sub-index
 const EVENT_SEQ_FACTOR = 1_000n;
 const EVENT_SEQ_CURSOR_OFFSET = EVENT_SEQ_FACTOR - 1n;
 

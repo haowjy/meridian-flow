@@ -67,7 +67,6 @@ export async function handleDocumentLinkResolveRequest(
   let baseUri = request.baseUri;
   let linkAddresses: Array<ResolvedDocumentHref | null> = [];
 
-  // A ref is not a capability: the scope answers readability for this account
   await deps.linkScopes.within(
     {
       projectId,

@@ -79,7 +79,6 @@ export function AccountMenu() {
             aria-disabled={leaving}
             onClick={(event) => {
               if (!clearBeforeSignOut) return;
-              // The account's local copies go before the browser leaves for the sign-out.
               event.preventDefault();
               if (!leaving) leave();
             }}

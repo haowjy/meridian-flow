@@ -63,7 +63,6 @@ export class UndoHistory {
   private open: Step | null = null;
   private tag: { step: number; selection: SelectionCursors } | null = null;
   private readonly popped = new Map<End, Uint8Array>();
-  /** The cursors the last push handed to Loro: still ours to free. */
   private pushed: Cursor[] = [];
   private ids = 0;
   private joining = false;

@@ -89,7 +89,6 @@ export function resolveStoredLink(
     : stored.uri;
   const occupant = catalog.documentAt(stored.uri);
   if (occupant === undefined) return { kind: "unknown" };
-  // An unreadable or unnameable target must resolve gone; an unsettled ref must not reveal what sits at its address
   if (occupant && nameableLive(occupant)) return documentResolution(occupant);
   return { kind: "ahead", uri, suffix: stored.suffix };
 }
@@ -174,7 +173,6 @@ export interface SpelledHref {
   address: string | null;
 }
 
-// Unreachable links keep their stored href byte for byte so the reader never learns where the target went
 export function spellStoredLink(
   link: { ref: string | null; href: string },
   holder: LinkHolder,

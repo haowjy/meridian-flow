@@ -7,11 +7,6 @@ export type EditAdmissionResult<T> =
   | { ok: true; value: T }
   | { ok: false; refusal: FileEditRefusedError };
 
-/**
- * Binds grants before entering the caller's commit scope, then locks the Work seam before the
- * caller's mutation scope. The command's one restart loop is `untilOwnersHold`, owned by the transaction's
- * owner (`runCommand`): a moved owner any layer finds restarts the whole command.
- */
 export async function runEditAdmission<T>(input: {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   grants: readonly FileGrant<"edit">[] | null;

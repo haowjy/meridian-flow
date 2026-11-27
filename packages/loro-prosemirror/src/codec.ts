@@ -112,11 +112,6 @@ export function inlineOf(node: Node | Fragment): InlineItem[] {
 const blockOfNode = new WeakMap<Node, ShapeBlock>();
 const nodeOfBlock = new WeakMap<ShapeBlock, Node>();
 
-/**
- * A ProseMirror document as the shape's blocks. Every block must carry a unique `id`: the editor's
- * block-id fixer gives a split or a paste theirs in the same transaction, before the binding sees
- * it, and the binding never invents one (it would pair with nothing the editor holds).
- */
 export function blocksOf(doc: Node): ShapeBlock[] {
   const blocks: ShapeBlock[] = [];
   doc.forEach((node) => {

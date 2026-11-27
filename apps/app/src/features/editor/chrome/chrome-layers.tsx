@@ -67,16 +67,6 @@ export type UseChromeLayerOptions = {
   open: boolean;
   close: () => void;
   dismissal?: ChromeLayerDismissal;
-  /**
-   * Where focus goes when this surface closes and nothing took its place. The
-   * default hands the caret back to the prose, which is right for a surface the
-   * writer summoned at the caret.
-   *
-   * A surface supplies its own when the writer was typing somewhere else — the
-   * element that drives a suggestion menu (`SuggestionMenu`) — so they continue there,
-   * not at the caret. It runs under the same two guards, which is the point of
-   * routing it through here rather than racing this handler from its own timer.
-   */
   returnFocus?: () => void;
   keys?: Readonly<Record<string, KeymapBinding>>;
 };
@@ -154,8 +144,6 @@ export function useChromeLayer(
     (event: Event) => {
       event.preventDefault();
       if (!editor || editor.isDestroyed) return;
-      // A layer being dismissed may not have released yet, so "another
-      // surface" means any layer that is not this one.
       const successor = chrome?.layers.some((layer) => layer.id !== layerId);
       if (successor) return;
       if (editor.view.dom.closest('[aria-hidden="true"], [inert]')) return;

@@ -32,7 +32,6 @@ export const membersOf = (name: string, key: string): string[] => {
 
 export const TEXT_KEY = "t";
 
-/** An inline node is one U+FFFC carrying the `inline` style, written in the same commit. */
 export const SENTINEL = "￼";
 export const INLINE_STYLE = "inline";
 

@@ -1,15 +1,3 @@
-/**
- * The one frontmatter policy: which stored YAML Meridian reads and which aliases
- * it names. Import (link aliases, the unreadable finding) and the properties
- * display both read through here, so they never disagree about either.
- *
- * The text is untrusted (it arrives from imports), so parsing is bounded: a
- * size cap before the parser runs, the core schema only (a tag it does not
- * know makes the text unreadable), and a document-wide budget on the nodes and
- * depth the converter will visit. Aliases are resolved by that converter
- * rather than by the library, so a cycle or an expanding alias stops at the
- * budget. Every failure is `unreadable`, never an error.
- */
 import type { JsonValue } from "@meridian/contracts/threads";
 import YAML from "yaml";
 

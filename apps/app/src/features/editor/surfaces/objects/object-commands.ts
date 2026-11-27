@@ -61,15 +61,6 @@ export async function copyText(text: string): Promise<void> {
   await copiedOrThrown(writeClipboardText(text));
 }
 
-/**
- * A write as `verb-feedback` hears it.
- *
- * That layer reads the browser's own error names — `NotAllowedError` for a
- * blocked clipboard, `SecurityError` for a tainted canvas — so a refusal is
- * re-thrown as the error the browser threw rather than as a summary of it. A
- * browser that never offered the page a clipboard threw nothing to re-throw,
- * and reaches the writer as the generic failure it always has.
- */
 async function copiedOrThrown(work: Promise<ClipboardWrite>): Promise<void> {
   const write = await work;
   if (write.status === "done") return;

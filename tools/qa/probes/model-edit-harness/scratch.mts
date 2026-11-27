@@ -79,8 +79,6 @@ export async function openHarness(url: string) {
   const seeds = treeSeeder(db);
   const schema = buildDocumentSchema();
   const shape = shapeSchemaOf(schema);
-  // Read and written only inside transactions: the room is then built from the stored rows, so
-  // it sees what the child process committed, and nothing stays loaded here.
   const rooms = createPostgresDocumentRooms({
     db,
     shape,
@@ -114,8 +112,6 @@ export async function openHarness(url: string) {
         insert into project_handle_counters(project_id,kind,n) values (${ids.project},'work',1)
         on conflict (project_id,kind) do update set n=project_handle_counters.n+1 returning n`;
       const handle = `w${counter.n}`;
-      // One transaction: the draft's Work key is checked at commit, and a Work inserted with no
-      // default draft would mint its own.
       await raw.begin(async (tx) => {
         await tx`insert into drafts(id,project_id,work_id,is_default,created_by) values (${draftId},${ids.project},${workId},true,${ids.user})`;
         await tx`insert into works(id,project_id,created_by_user_id,name,handle) values (${workId},${ids.project},${ids.user},${label},${handle})`;

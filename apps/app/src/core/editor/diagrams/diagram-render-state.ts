@@ -14,14 +14,6 @@ export type DiagramRender = {
   rendered: string | null;
 };
 
-/**
- * Render `source` through `provider`.
- *
- * Every consumer gets its own id because a renderer writes it into the markup:
- * two faces of one diagram sharing an id would collide over the arrow markers
- * they reference by id, and the page's diagram would lose its arrowheads the
- * moment the dialog opened.
- */
 export function useDiagramRender(provider: DiagramProvider, source: string): DiagramRender {
   const { language, render } = provider;
   const reactId = useId();

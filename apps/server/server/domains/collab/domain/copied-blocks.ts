@@ -57,11 +57,6 @@ export function createCopyIdentityMap(input: {
   };
 }
 
-/**
- * A source maps to exactly one copy. Two targets for one source (a nested selection copied
- * twice) would let the last win and send the copied set's internal links outside it, so
- * the caller must collapse the selection first.
- */
 function indexOnce<Entry, Target>(
   entries: readonly Entry[],
   key: (entry: Entry) => string,

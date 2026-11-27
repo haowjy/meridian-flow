@@ -54,7 +54,6 @@ export function createAccountDocumentSessionRuntime(
     if (state !== "open") throw new Error(`Account document session runtime is ${state}`);
   };
 
-  // A closed runtime refuses new work, but a release still lets go of what it held.
   const registry = new Proxy(core.registry, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);

@@ -45,8 +45,6 @@ function SlotHost({ which, className }: { which: "element" | "toolbar"; classNam
   const slot = useContext(DocumentStateSlotContext);
   const set = which === "element" ? slot?.setElement : slot?.setToolbar;
   const [node, setNode] = useState<HTMLElement | null>(null);
-  // An editor swap (live to draft review) can mount the new row before the old one
-  // unmounts: a row may only clear the slot while it still holds it.
   useLayoutEffect(() => {
     if (!set || !node) return;
     set(node);

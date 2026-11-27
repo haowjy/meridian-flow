@@ -165,22 +165,6 @@ function writerWrote(docs: RoomDocs, changes: readonly { blocks: readonly string
   );
 }
 
-/**
- * `DocumentRooms` on Postgres (design §4): a room's docs live in this process, loaded together from
- * their `document_snapshots` rows, saved (the rows of the docs that changed) on the debounce or on
- * `flush`, forwarded into loaded forks, and freed together on unload.
- *
- * Every save, whoever asks for it, runs under the document's advisory lock and first imports any
- * stored row this process's copy lacks (a debounced save racing a command's commit, or a deploy
- * overlap where two processes save one room), sending what that brings to the room's subscribers
- * and loaded forks like any other batch, so a save never writes a row older than the one it
- * replaces.
- *
- * The cache is filled only outside a transaction: a read or commit inside one, for a room this
- * process has not loaded, builds its copy from the rows the transaction sees, so no loaded room
- * ever holds state a rolled-back transaction wrote. A read inside a transaction also imports the
- * rows the room lacks, which is how a command reads its own seed or commit back.
- */
 export function createPostgresDocumentRooms(input: {
   db: Database;
   shape: ShapeSchema;
@@ -200,11 +184,6 @@ export function createPostgresDocumentRooms(input: {
 
   const lockRoom = (tx: DrizzleDb, room: DocumentRoom) => lockDocumentMutation(tx, room.documentId);
 
-  /**
-   * Runs a commit or seed on the caller's ambient transaction, which is what `tx` names when the
-   * caller is in one, or on one of its own: its lock and rows must be one transaction's, and its
-   * import into the room waits for that transaction's commit.
-   */
   const inTransaction = <T>(given: DrizzleDb, work: (tx: DrizzleDb) => Promise<T>) =>
     isInDrizzleTransaction()
       ? work(currentDrizzleDb(given))
@@ -262,7 +241,6 @@ export function createPostgresDocumentRooms(input: {
 
   const subscribed = (name: string) => (listeners.get(name)?.size ?? 0) > 0;
 
-  /** The loaded room, loading it (and, for a fork, its Live room first) outside any transaction. */
   async function load(room: DocumentRoom): Promise<Loaded> {
     if (closed) throw new Error("Document rooms are closed");
     const name = loroRoomName(room);

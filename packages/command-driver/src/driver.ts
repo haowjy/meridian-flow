@@ -36,7 +36,6 @@ export class JournalUnavailableError extends Error {
 
 export type SubmitInput = {
   kind: string;
-  // Only the earliest unsettled record per lane is sent; lanes() receives journal records inside the save transaction
   lanes: readonly string[] | ((records: readonly CommandRecord[]) => readonly string[]);
   body: unknown;
 };

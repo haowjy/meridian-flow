@@ -46,7 +46,6 @@ export function contextUriFromWritePath(path: string): string | null {
   const parsed = parseUnifiedContextUri(path);
   if (parsed.ok) return parsed.value.normalized;
   if (parsed.error.unknownScheme !== undefined) return null;
-  // Model-written paths are untrusted; a reserved or traversing segment must render as text
   try {
     return canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
   } catch {

@@ -1,9 +1,3 @@
-/**
- * The one traversal of stored link occurrences: link runs, `image` and `figure`.
- *
- * The client binder and agent-edit's ref assignment walk ProseMirror through
- * here, and `parseWithSpans` aligns its source spans to this exact order.
- */
 import { storedLinkRef } from "@meridian/contracts";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
