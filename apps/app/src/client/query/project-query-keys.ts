@@ -1,8 +1,6 @@
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,
-  renamePrefix: ["projects", "rename"] as const,
-  rename: (projectId: string) => ["projects", "rename", projectId] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   documentProperties: (projectId: string, documentId: string) =>
     ["projects", projectId, "documents", documentId, "properties"] as const,
@@ -18,9 +16,6 @@ export const projectQueryKeys = {
   ) => [...projectQueryKeys.chatFeed(projectId), filter] as const,
   threadUserState: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-user-state", threadId] as const,
-  threadRename: (projectId: string, threadId: string) =>
-    ["projects", projectId, "thread-rename", threadId] as const,
-  threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
   drafts: (projectId: string, draft: string) => ["projects", projectId, "drafts", draft] as const,
   draftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,

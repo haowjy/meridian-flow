@@ -1,4 +1,7 @@
+import type { CommandDriver, CommandRecord } from "@meridian/command-driver";
 import { matchQuery, type QueryClient, type QueryFilters } from "@tanstack/react-query";
+
+type ReadFilters = Pick<QueryFilters, "queryKey" | "exact">;
 
 /**
  * Settles once every query `filters` match that is on screen has been read from the server since
@@ -6,11 +9,7 @@ import { matchQuery, type QueryClient, type QueryFilters } from "@tanstack/react
  * its projection over the list until the list has it. `loaded`: a read already held counts.
  * Call it before starting the reads, so their answers are seen.
  */
-export function whenRead(
-  client: QueryClient,
-  filters: Pick<QueryFilters, "queryKey" | "exact">,
-  loaded = false,
-) {
+export function whenRead(client: QueryClient, filters: ReadFilters, loaded = false) {
   const cache = client.getQueryCache();
   const shown = () => cache.findAll({ ...filters, type: "active" });
   const waiting = new Set(shown().filter((query) => !loaded || query.state.status !== "success"));
@@ -31,4 +30,16 @@ export function whenRead(
       if (done()) stop();
     });
   });
+}
+
+export function rereadThenObserve(
+  client: QueryClient,
+  driver: CommandDriver | null | undefined,
+  record: CommandRecord,
+  reads: readonly ReadFilters[],
+): void {
+  void Promise.all(reads.map((filters) => whenRead(client, filters))).then(() =>
+    driver?.observe((each) => each.id === record.id),
+  );
+  for (const filters of reads) void client.invalidateQueries(filters);
 }

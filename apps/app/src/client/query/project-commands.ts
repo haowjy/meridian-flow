@@ -1,14 +1,22 @@
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
 import type { StoredResult } from "@meridian/contracts/commands";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import { API_PROJECTS_PATH } from "@meridian/contracts/protocol";
+import { API_PROJECTS_PATH, apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
+import { useCommandDriver } from "@/client/commands/driver-context";
 import { upsertProjectInList } from "./project-list-cache";
 import { projectIdOfQueryKey, projectQueryKeys } from "./project-query-keys";
+import { projectRenames, renameCommand } from "./rename-command";
+import { rereadThenObserve } from "./when-read";
 
 export const PROJECT_CREATE_KIND = "project_create";
+
+export const PROJECT_RENAME_KIND = "project_rename";
+
+type ProjectRenameBody = { projectId: string; title: string };
 
 export type ProjectCreateBody = { id: string; title: string; userId: string };
 
@@ -121,7 +129,29 @@ export async function awaitPendingProjectCreation(
   return pendingCreationIn(accountId, projectId);
 }
 
+export const projectProjectTitles = (records: readonly CommandRecord[], projects: Project[]) =>
+  projectRenames(
+    records,
+    PROJECT_RENAME_KIND,
+    (body) => (body as ProjectRenameBody).projectId,
+    projects,
+  );
+
+export function useRenameProject(projectId: string): (title: string) => Promise<void> {
+  const driver = useCommandDriver();
+  return useCallback(
+    (title: string) =>
+      renameCommand(driver, {
+        kind: PROJECT_RENAME_KIND,
+        lanes: [projectLane(projectId)],
+        body: { projectId, title: title.trim() } satisfies ProjectRenameBody,
+      }),
+    [driver, projectId],
+  );
+}
+
 export function projectDomain(client: QueryClient): CommandDomain {
+  let bound: CommandDriver | null = null;
   const kinds: Record<string, CommandKind> = {
     [PROJECT_CREATE_KIND]: {
       version: 1,
@@ -146,16 +176,33 @@ export function projectDomain(client: QueryClient): CommandDomain {
         });
       },
     },
+    [PROJECT_RENAME_KIND]: {
+      version: 1,
+      migrate: (body) => body as ProjectRenameBody,
+      request: ({ body }) => {
+        const { projectId, title } = body as ProjectRenameBody;
+        return { method: "PATCH", path: apiProjectPath(projectId), body: { title } };
+      },
+      onSettled: (record) => {
+        const { projectId } = record.body as ProjectRenameBody;
+        rereadThenObserve(client, bound, record, [
+          { queryKey: projectQueryKeys.list, exact: true },
+          { queryKey: projectQueryKeys.detail(projectId), exact: true },
+        ]);
+      },
+    },
   };
   return {
     kinds,
     bind: (driver, accountId, opened = Promise.resolve()) => {
+      bound = driver;
       const journal = journalOf(accountId);
       journal.driver = driver;
       mountedAccount = accountId;
       const { resolve } = journal.opened;
       void opened.then(resolve, resolve);
       return () => {
+        if (bound === driver) bound = null;
         if (journal.driver !== driver) return;
         journal.driver = null;
         journal.opened = deferred();

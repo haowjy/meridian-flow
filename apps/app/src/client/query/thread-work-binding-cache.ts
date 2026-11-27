@@ -183,7 +183,7 @@ export async function readStableThreadWorkBinding(
         exact: true,
       });
       const [threads, catalog] = await Promise.all([
-        client.fetchQuery({ ...projectThreadsQueryOptions(client, input.projectId), staleTime: 0 }),
+        client.fetchQuery({ ...projectThreadsQueryOptions(input.projectId), staleTime: 0 }),
         refreshWorksSnapshot(client, input.projectId),
       ]);
       if (accountSignal?.aborted) throw accountSignal.reason;

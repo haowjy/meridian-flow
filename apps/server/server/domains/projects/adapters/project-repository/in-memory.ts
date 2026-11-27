@@ -4,7 +4,6 @@ import type {
   CreateProjectInput,
   ListProjectsOptions,
   ProjectRepository,
-  UpdateProjectInput,
 } from "../../ports/project-repository.js";
 import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
@@ -77,15 +76,10 @@ export function createInMemoryProjectRepository(options?: {
         .map((p) => ({ ...p }));
     },
 
-    async update(id: ProjectId, input: UpdateProjectInput): Promise<Project> {
+    async rename(id: ProjectId, title: string): Promise<Project> {
       const row = rows.get(id);
       if (!row) throw new Error(`Project not found: ${id}`);
-      if (input.title !== undefined) {
-        row.name = input.title;
-      }
-      if (input.description !== undefined) {
-        row.systemPrompt = input.description;
-      }
+      row.name = title;
       const timestamp = now();
       row.updatedAt = timestamp;
       row.lastActivityAt = timestamp;

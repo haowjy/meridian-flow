@@ -15,7 +15,7 @@ export function useDraftStanding(
   const { works, deleted, creations } = useWorks(projectId, { enabled: !!draftId });
   const { list: worksList } = useWorksSnapshot(projectId, !!draftId);
   const threadsList = useQuery({
-    ...projectThreadsQueryOptions(client, projectId),
+    ...projectThreadsQueryOptions(projectId),
     enabled: projectReadEnabled(!!draftId),
   });
   const namedCheaply =

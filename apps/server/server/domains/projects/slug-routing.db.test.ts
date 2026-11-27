@@ -89,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await repo.findById(first.id)).toEqual(first);
       expect(await repo.findLiveByOwnerSlug(userId, first.slug)).toEqual(first);
       expect(await repo.findLiveByOwnerSlug(anotherUserId, first.slug)).toBeNull();
-      await repo.update(first.id, { title: "Changed title" });
+      await repo.rename(first.id, "Changed title");
       await repo.softDelete(first.id);
       expect(await repo.findLiveByOwnerSlug(userId, first.slug)).toBeNull();
       expect((await repo.create({ userId, title: "Silver Moon" })).slug).toBe("silver-moon-5");

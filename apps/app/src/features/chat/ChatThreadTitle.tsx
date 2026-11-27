@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
 import { announce } from "@/client/announcements";
+import { useRenameChat } from "@/client/query/chat-rename-command";
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
-import { useRenameThread } from "@/client/query/useRenameThread";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { TitleEditSlot } from "@/features/project/shell/TitleEditSlot";
 import { titleChipClass } from "@/features/project/shell/tab-chip";
@@ -35,7 +35,7 @@ function ExistingThreadTitle({
   failureClassName,
 }: ChatThreadTitleProps & { threadId: string }) {
   const title = useChatTitle(projectId, threadId);
-  const rename = useRenameThread(projectId, threadId, (confirmed) => {
+  const rename = useRenameChat(projectId, threadId, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
   return (

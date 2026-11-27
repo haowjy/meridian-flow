@@ -15,7 +15,6 @@ import type {
   CreateProjectInput,
   ListProjectsOptions,
   ProjectRepository,
-  UpdateProjectInput,
 } from "../../ports/project-repository.js";
 import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
@@ -124,11 +123,12 @@ export function createDrizzleProjectRepository(
         .orderBy(desc(projects.lastActivityAt));
       return rows.map(mapProject);
     },
-    async update(id: ProjectId, input: UpdateProjectInput): Promise<Project> {
-      const patch: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
-      if (input.title !== undefined) patch.name = input.title;
-      if (input.description !== undefined) patch.systemPrompt = input.description;
-      const [row] = await db.update(projects).set(patch).where(eq(projects.id, id)).returning();
+    async rename(id: ProjectId, title: string): Promise<Project> {
+      const [row] = await db
+        .update(projects)
+        .set({ name: title, updatedAt: new Date() })
+        .where(eq(projects.id, id))
+        .returning();
       if (!row) throw new Error(`Project not found: ${id}`);
       return mapProject(row);
     },
