@@ -3,9 +3,10 @@ import {
   type ResolvedAgentConfiguration,
   type RetainedSkillReference,
 } from "@meridian/contracts/agents";
+import { canonicalizeJsonObject } from "../../../shared/canonical-json.js";
 import type { AgentRevision, AgentRevisionStore } from "../ports/agent-revision-store.js";
 import { isError } from "./compile-package.js";
-import { canonicalizeJsonObject, sha256 } from "./helpers.js";
+import { sha256 } from "./helpers.js";
 import { readSkill, skillPath, skillSlugOf } from "./mars.js";
 import type { SkillFiles } from "./types.js";
 
