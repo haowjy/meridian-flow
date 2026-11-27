@@ -18,10 +18,18 @@ export function compareDefaultSiblings(
 
 export type RankedSibling = { rank?: string | null; entryId: string };
 
-// Compare catalog ranks bytewise, never with the name collator, then by identity
 export function compareCatalogSiblings(left: RankedSibling, right: RankedSibling): number {
-  const leftRank = left.rank ?? "";
-  const rightRank = right.rank ?? "";
+  return compareRankThenId(left.rank ?? "", left.entryId, right.rank ?? "", right.entryId);
+}
+
+// Compare ranks bytewise, never with the name collator, then by id, so equal ranks from
+// concurrent inserts converge everywhere
+export function compareRankThenId(
+  leftRank: string,
+  leftId: string,
+  rightRank: string,
+  rightId: string,
+): number {
   if (leftRank !== rightRank) return leftRank < rightRank ? -1 : 1;
-  return left.entryId < right.entryId ? -1 : left.entryId > right.entryId ? 1 : 0;
+  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }

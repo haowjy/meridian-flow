@@ -11,6 +11,7 @@ import {
   type TreeRecord,
 } from "./record.js";
 import { descendantsOf } from "./shape.js";
+import { compareRankThenId } from "./siblings.js";
 import { readStored } from "./validate.js";
 
 export type TreeNode = {
@@ -590,7 +591,9 @@ export function startReplay(
       const kidsOf = (parent: string) => {
         let kids = sorted.get(parent);
         if (!kids) {
-          kids = [...(children.get(parent) ?? [])].sort(byRankThenId);
+          kids = [...(children.get(parent) ?? [])].sort((a, b) =>
+            compareRankThenId(a.rank, a.id, b.rank, b.id),
+          );
           sorted.set(parent, kids);
         }
         return kids;
@@ -925,7 +928,12 @@ function derive(
   const ordered = new Map<string, TreeNode[]>();
   for (const [parent, kids] of children)
     if (!absent(parent))
-      ordered.set(parent, kids.flatMap((kid) => out.get(kid.id) ?? []).sort(byRankThenId));
+      ordered.set(
+        parent,
+        kids
+          .flatMap((kid) => out.get(kid.id) ?? [])
+          .sort((a, b) => compareRankThenId(a.rank, a.id, b.rank, b.id)),
+      );
   const inTrash = deletesInTrash(nodes, deletes, hides);
   const covered = (entry: DeleteInForce) =>
     [...entry.cascade].filter((member) => {
@@ -979,12 +987,6 @@ function common(a: string, b: string | undefined): number {
   let n = 0;
   while (n < a.length && a[n] === b[n]) n += 1;
   return n;
-}
-
-// Sort by rank then id so equal ranks from concurrent inserts converge everywhere
-function byRankThenId(a: { rank: string; id: string }, b: { rank: string; id: string }): number {
-  if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 const isTracked = (type: string | undefined): boolean =>
