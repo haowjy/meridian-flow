@@ -8,7 +8,7 @@ import {
   documents,
   treeNodes,
 } from "@meridian/database";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -278,6 +278,7 @@ export function createDrizzleDocumentDerivationStore(
         .where(
           and(
             livingDocumentSql(documents.id),
+            isNull(documents.storageUrl),
             staleForSweep,
             page?.only ? eq(documents.id, page.only) : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,

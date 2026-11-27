@@ -1,5 +1,5 @@
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
-import { entrySegment, filetypeForMimeType } from "@meridian/contracts/protocol";
+import { entrySegment, filetypeForStoredFile } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
@@ -56,7 +56,7 @@ function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
     const row = rows.get(node.id);
     if (node.purged) rows.delete(node.id);
     else if (row && node.kind === "file")
-      row.filetype = filetypeForMimeType(node.blob?.mime ?? "application/octet-stream");
+      row.filetype = filetypeForStoredFile(node.blob?.mime ?? "application/octet-stream");
   }
   return rows;
 }

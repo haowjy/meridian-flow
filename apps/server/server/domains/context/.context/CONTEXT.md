@@ -369,7 +369,12 @@ uses persisted classification; path-driven filetype changes happen only in a
 location commit within the same tracked schema. Document/code or tracked/
 binary conversion is refused until an explicit conversion seam exists.
 Unknown suffixes remain tracked prose; registered non-tracked types fail with
-a typed error. Binary creation and upload use the binary storage path and do
+a typed error. A stored file's row `file_type` comes from its blob's MIME type
+(`filetypeForStoredFile` in `shownRows`), never from a text type: an unmapped or
+text MIME type projects `binary`, or `image`/`docx` the way the client classifies it.
+A tracked `file_type` therefore means text everywhere it is read; a projection that
+fell back to `markdown` made the derivation sweep read a GIF or docx as an empty
+document and certify its size as 0. Binary creation and upload use the binary storage path and do
 not erase storage or MIME metadata through a text write. `writeBinary` takes
 `hasPreview`: the caller stores the original and its preview first
 (`saveImagePreview`, [storage](../../storage/.context/CONTEXT.md#previews)).
