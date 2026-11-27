@@ -45,7 +45,7 @@ stateDiagram-v2
   lasts until a Join is answered: a retry doesn't pass through `connecting`, and a retry that
   closes with any other code (the network dropped too, or the browser went offline) stays
   `signed-out`, so the sign-in prompt goes only on a rejoin and doesn't flicker. Only a 4403 ends
-  it. Barriers and `whenSentAcknowledged` waiters stay pending, so a press waits for
+  it. `whenSentAcknowledged` waiters stay pending, so a press waits for
   the writer to sign in (in any tab: the cookie is shared) and leaves once the Join's batch, which
   carries the typing, is acknowledged. `DocumentSession` reads it as `offline`, `TreeListSession`
   as `unauthenticated`. Signing in from the prompt reloads the page, and the journaled press waits
