@@ -34,6 +34,12 @@ function mapProject(row: ProjectRow): Project {
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
   };
 }
+export async function lockUserProjects(db: Database, userId: UserId): Promise<void> {
+  await currentDrizzleDb(db).execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`,
+  );
+}
+
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
@@ -49,9 +55,7 @@ export function createDrizzleProjectRepository(
         const id = input.id ?? crypto.randomUUID();
         const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
         const tx = currentDrizzleDb(db);
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0::bigint))`,
-        );
+        await lockUserProjects(db, input.userId);
         const reserved = await tx
           .select({ slug: projects.slug })
           .from(projects)

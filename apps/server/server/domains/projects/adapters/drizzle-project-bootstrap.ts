@@ -3,7 +3,7 @@ import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/c
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database";
 import { LIVE, sourceRoot } from "@meridian/project-tree";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../../collab/index.js";
 import { treeListOfSource } from "../../context/adapters/tree-list-facts.js";
@@ -11,6 +11,7 @@ import { MANUSCRIPT_URI } from "../../context/manuscript-uri.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { presentSourceId } from "../../context/tree/tree-addresses.js";
 import type { ProjectRepository } from "../ports/project-repository.js";
+import { lockUserProjects } from "./project-repository/drizzle.js";
 
 class BootstrapDocumentSeedError extends Error {
   constructor(cause: unknown) {
@@ -41,11 +42,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   treeLists: TreeListStore;
 }): ProjectBootstrapRepository {
   const { db } = deps;
-  type BootstrapDb = Pick<Database, "execute" | "select">;
-
-  async function lockBootstrap(tx: BootstrapDb, userId: UserId): Promise<void> {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`);
-  }
+  type BootstrapDb = Pick<Database, "select">;
 
   async function hasLiveProject(tx: BootstrapDb, userId: UserId): Promise<boolean> {
     const [existing] = await tx
@@ -103,7 +100,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   async function attemptDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult | null> {
     return runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db) as BootstrapDb;
-      await lockBootstrap(tx, userId);
+      await lockUserProjects(db, userId);
       if (await hasLiveProject(tx, userId)) return null;
       const project = await deps.projects.create({
         userId,
