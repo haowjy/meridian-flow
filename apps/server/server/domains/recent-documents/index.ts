@@ -1,5 +1,4 @@
 export { createDrizzleRecentDocumentsRepository } from "./adapters/drizzle/recent-documents-repository.js";
-export { createInMemoryRecentDocumentsRepository } from "./adapters/in-memory/recent-documents-repository.js";
 export {
   type RecentDocumentsRepository,
   RecentDocumentUnavailableError,

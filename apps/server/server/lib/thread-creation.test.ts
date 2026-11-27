@@ -1,7 +1,9 @@
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { createNoopEventSink } from "../domains/observability/index.js";
 import {
   createBoundAgentCatalog,
+  createInMemoryAgentRevisionStore,
   generalAgentSource,
   noLevelFiles,
 } from "../domains/packages/index.js";
@@ -10,15 +12,30 @@ import {
   createInMemoryWorkRepository,
   WorkLifecycleUnavailableError,
 } from "../domains/projects/index.js";
-import { createInMemoryAppServices } from "./compose.js";
+import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
+import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import {
   createThreadForProject,
   InvalidWorkAttachmentError,
   ThreadCreationConflictError,
 } from "./thread-creation.js";
 
+function inMemoryThreads() {
+  const transactionOwner = new InMemoryTransactionOwner();
+  const threadRepos = createInMemoryRepositories({
+    transactionOwner,
+    boundAgent: (id) => agentRevisions.boundAgent(id),
+  });
+  const agentRevisions = createInMemoryAgentRevisionStore({
+    transactionOwner,
+    threadExists: async (id) =>
+      Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
+  });
+  return { threadRepos, agentRevisions, eventSink: createNoopEventSink() };
+}
+
 async function fixture() {
-  const app = createInMemoryAppServices();
+  const app = inMemoryThreads();
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "owner", title: "Agents" });
   const agentCatalog = createBoundAgentCatalog({

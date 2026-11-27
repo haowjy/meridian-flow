@@ -7,13 +7,13 @@ import type { WorkContextReader } from "../domains/runtime/loop/work-context.js"
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import type { ConnectionsPort } from "../domains/runtime/ports/connections.js";
 import type { ToolExecutor, ToolRegistry } from "../domains/runtime/tools/index.js";
+import type { ThreadRepositories } from "../domains/threads/index.js";
 import {
   loadThreadConversationContext,
   requireThreadOwner,
   ThreadConversationContextError,
 } from "../domains/threads/index.js";
 import { throwHttpInterruptForStatus } from "../shared/interrupt-boundary.js";
-import type { ThreadRepositories } from "./compose.js";
 
 export interface TurnContextPreviewRouteDeps {
   repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks" | "promptBakes">;

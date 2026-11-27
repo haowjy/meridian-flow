@@ -19,12 +19,12 @@ import {
   WorkLifecycleUnavailableError,
   type WorkRepository,
 } from "../domains/projects/index.js";
+import type { ThreadRepositories } from "../domains/threads/index.js";
 import {
   createBoundConversation,
   threadAvailabilityCode,
   throwThreadDeleted,
 } from "../domains/threads/index.js";
-import type { ThreadRepositories } from "./compose.js";
 import { InvalidWorkAttachmentError, resolveRootWork } from "./work-attachment.js";
 
 export { InvalidWorkAttachmentError } from "./work-attachment.js";

@@ -8,13 +8,14 @@ provides no domain implementation. Concrete adapters are chosen in `compose.ts`;
 
 `app.ts` owns the process singleton and binds the deferred EventSink and DB.
 `compose.ts` constructs production adapters and the typed `AppServices` graph;
-`composeAppServices()` is pure service wiring. In-memory composition supplies
-explicit test adapters and the same hub aliases as production. Adapter choice,
+`composeAppServices()` is pure service wiring. There is no in-memory app: a
+unit test builds the few in-memory adapters it reads (as
+`domains/runtime/loop/__tests__/runtime-harness.ts` does). Adapter choice,
 provider configuration, and disabled behavior stay at this boundary.
 
 The live hub is process-local even though journal rows are durable. The app
 singleton keeps one `AppServices` instance across hot reload, and `hub` and
-`threadEventHub` are the same alias in production and test composition.
+`threadEventHub` are the same alias.
 
 The service graph includes runtime Gateway/orchestrator/runner/claim/tools,
 thread repositories/journal/hub/runtime, collab document sync, context ports,

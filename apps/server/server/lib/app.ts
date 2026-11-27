@@ -102,13 +102,7 @@ async function createAppServices(): Promise<AppServices> {
   return app;
 }
 
-export type { Gateway, GenerateRequest, StreamEvent } from "@meridian-flow/runtime/gateway";
-export type { AppServices, ThreadRepositories } from "./compose.js";
-export {
-  composeAppServices,
-  createInMemoryAppServices,
-  createProductionAppPorts,
-} from "./compose.js";
+export type { AppServices } from "./compose.js";
 
 export async function getApp(): Promise<AppServices> {
   const globalStore = globalThis as AppGlobal;

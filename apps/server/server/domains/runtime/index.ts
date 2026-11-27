@@ -17,15 +17,6 @@ export { readRunStateAtHead } from "./adapters/drizzle-run-state.js";
 export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
 export { createInMemoryDocumentEvidence } from "./adapters/in-memory/document-evidence.js";
 export {
-  createInMemoryInbox,
-  createInMemoryRunClaim,
-  createInMemoryRunStarter,
-  createInMemoryRuntimeDelivery,
-  createInMemoryThreadLock,
-  type InMemoryRunClaimOptions,
-  type InMemoryRunStarter,
-} from "./adapters/in-memory/loop-ports.js";
-export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
 } from "./admission/drizzle-admission-records.js";
@@ -141,11 +132,7 @@ export {
   renderWorkContext,
   type WorkContextReader,
 } from "./loop/work-context.js";
-export {
-  createWriteModeSwitchPort,
-  type WriteModeSwitchPort,
-  writeModeSwitchNotice,
-} from "./loop/write-mode-switch.js";
+export { createWriteModeSwitchPort, type WriteModeSwitchPort } from "./loop/write-mode-switch.js";
 export type { ChatMediaPort } from "./ports/chat-media.js";
 export type { CommandResolver } from "./ports/command-resolver.js";
 export type {

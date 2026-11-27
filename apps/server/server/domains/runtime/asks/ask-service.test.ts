@@ -1,23 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryAppServices } from "../../../lib/compose.js";
+import { createInMemoryRepositories } from "../../threads/index.js";
+import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
+import { createAskService, refusingPermissionExecutor } from "./ask-service.js";
 
 const USER_ID = "writer";
 
 async function openQuestion() {
-  const app = createInMemoryAppServices();
-  const thread = await app.threadRepos.threads.create({
+  const { repos, eventWriter, delivery } = createRuntimeHarness({
+    repos: createInMemoryRepositories(),
+  });
+  const asks = createAskService({
+    repos,
+    eventWriter,
+    delivery,
+    permission: refusingPermissionExecutor,
+  });
+  const thread = await repos.threads.create({
     aiWriteMode: "direct",
     projectId: "project",
     userId: USER_ID,
   });
-  const turn = await app.threadRepos.turns.create({
+  const turn = await repos.turns.create({
     threadId: thread.id,
     role: "assistant",
     origin: "assistant",
     status: "awaiting_answer",
     executionId: "execution",
   });
-  const ask = await app.threadRepos.asks.create({
+  const ask = await repos.asks.create({
     threadId: thread.id,
     askingTurnId: turn.id,
     executionId: "execution",
@@ -39,14 +49,14 @@ async function openQuestion() {
     resolution: null,
     submissionId: null,
   });
-  return { app, ask, thread, turn };
+  return { asks, repos, ask, thread, turn };
 }
 
 describe("durable ask claims", () => {
   it("returns the first result for a repeated submission id", async () => {
-    const { app, ask, thread, turn } = await openQuestion();
+    const { asks, repos, ask, thread, turn } = await openQuestion();
     const submit = () =>
-      app.asks.answer({
+      asks.answer({
         userId: USER_ID,
         threadId: thread.id,
         askId: ask.id,
@@ -64,7 +74,7 @@ describe("durable ask claims", () => {
         resolution: { kind: "answers", answers: [{ kind: "option", label: "Right" }] },
       },
     });
-    expect((await app.threadRepos.blocks.listByTurn(turn.id)).filter(isAskResult)).toHaveLength(1);
+    expect((await repos.blocks.listByTurn(turn.id)).filter(isAskResult)).toHaveLength(1);
   });
 });
 
