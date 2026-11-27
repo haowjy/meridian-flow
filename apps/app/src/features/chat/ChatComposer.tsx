@@ -1,14 +1,10 @@
 import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { memo, type ReactNode, type Ref, useCallback, useEffect, useRef } from "react";
+import type { ComposerSubmitEnvelope } from "@/client/chat-submissions/composer-document";
 import type { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
-import {
-  Composer,
-  type ComposerChatCommand,
-  type ComposerHandle,
-  type ComposerSubmitEnvelope,
-} from "@/features/chat/composer";
+import { Composer, type ComposerChatCommand, type ComposerHandle } from "@/features/chat/composer";
 import { chatUploadPort } from "@/features/chat/composer/chat-upload-port";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";

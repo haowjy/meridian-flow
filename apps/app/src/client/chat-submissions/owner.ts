@@ -26,7 +26,6 @@ import {
 import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import type { ThreadStoreActions } from "@/client/stores";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
-import { makeOptimisticThread } from "@/features/chat/optimistic-thread";
 import { browserSubmissionLock } from "./adapters/browser-lock";
 import type { ComposerSubmitEnvelope } from "./composer-document";
 import { type ComposerDraftScope, composerSessionDraft } from "./composer-drafts";
@@ -40,6 +39,7 @@ import {
   retireChatSubmission,
 } from "./index";
 import { abortable } from "./lock";
+import { makeOptimisticThread } from "./optimistic-thread";
 import type { UserTurnRecovery } from "./presentation";
 import { type ChatSubmission, compareSubmissions, type NewChatSubmission } from "./store";
 import { threadAvailability } from "./thread-availability";
@@ -129,7 +129,6 @@ export function recordAndProjectSubmission(
           overrides: entry.creation.overrides,
           agent: {
             name: entry.creation.agentName,
-            slug: entry.creation.agentSlug,
             selection: entry.creation.agentSelection,
           },
         }),

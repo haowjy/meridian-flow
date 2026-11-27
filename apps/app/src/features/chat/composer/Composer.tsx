@@ -69,16 +69,6 @@ import { useComposerPlaceholder } from "./placeholders";
 import { type DroppedEntry, useFileDrop } from "./use-file-drop";
 import { useLiveReferences } from "./useLiveReferences";
 
-export type {
-  ComposerDraftChange,
-  ComposerDraftRevision,
-  ComposerDraftSnapshot,
-  ComposerOwnedUpload,
-  ComposerSelection,
-  ComposerSubmitEnvelope,
-} from "@/client/chat-submissions/composer-document";
-export { serializeComposerDraft } from "@/client/chat-submissions/composer-document";
-
 export type ComposerUploadScope = { kind: "chat"; projectId: string; chatId: string };
 
 function authorityForUpload(

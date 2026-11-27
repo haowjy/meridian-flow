@@ -1,7 +1,7 @@
+import type { AgentCatalogItem, AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { CreationAgent } from "@/features/agents/creation-agent";
 
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
 export function makeOptimisticThread(input: {
@@ -12,7 +12,7 @@ export function makeOptimisticThread(input: {
   timestamp: string;
   workId?: string | null;
   aiWriteMode: AiWriteMode;
-  agent?: CreationAgent;
+  agent?: Pick<AgentCatalogItem, "name"> & { selection: AgentSelection };
   overrides?: ThreadOverrides;
 }): Thread {
   return {
