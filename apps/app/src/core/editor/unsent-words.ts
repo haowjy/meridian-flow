@@ -40,10 +40,6 @@ export function wordsBeyond(docs: RoomDocs, server: RoomVersion): boolean {
   return false;
 }
 
-/**
- * Whether a stored copy holds ops beyond its server mark, read from the bytes' headers without
- * importing them: what an open session counts as unacknowledged (`DocumentSession.countStored`).
- */
 export function storedOpsBeyondMark(loaded: LoadedCopy): boolean {
   const stored = new Map<DocKey, DocVersion>();
   try {

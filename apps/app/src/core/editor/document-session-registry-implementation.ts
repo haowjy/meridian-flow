@@ -116,11 +116,6 @@ export class DocumentSessionRegistry {
     await this.copies.clear(documentId, () => this.dropWords());
   }
 
-  /**
-   * Whether every session's deliverable unsent edits were acknowledged within `timeoutMs`, and
-   * unless `storedCopies` is false every stored copy's too. What keeps the wait from knowing (the account
-   * closing, a session destroyed with ops pending, a room it could not open) is false.
-   */
   async settleUnsentEdits(timeoutMs: number, { storedCopies = true } = {}): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     const stored = storedCopies ? await this.openStoredUnsent(deadline) : [];
@@ -152,11 +147,6 @@ export class DocumentSessionRegistry {
     return (await Promise.all(settled)).every(Boolean);
   }
 
-  /**
-   * Opens a session on each stored copy no session has open that holds ops beyond its server
-   * mark, so it delivers them as an open document does and retires once they are acknowledged.
-   * Returns those rooms, or null when the account closed or a room's teardown outlasted the wait.
-   */
   private async openStoredUnsent(deadline: number): Promise<DocumentRoom[] | null> {
     const unsent: DocumentRoom[] = [];
     // One at a time: holding every copy's bytes at once costs their sum.
@@ -665,7 +655,6 @@ export class DocumentSessionRegistry {
     }
   }
 
-  /** Its socket back, the session's Join sends them; it is held until they are acknowledged. */
   private deliverTabWrites(session: DocumentSession): void {
     const key = session.roomKey;
     const state = this.rooms.get(key);

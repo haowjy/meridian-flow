@@ -100,7 +100,7 @@ export class LocalCopyStore {
     return request(this.db.transaction(META, "readonly").objectStore(META).get(key));
   }
 
-  /** A batch the server sent is stored with the mark that covers it, in one transaction. */
+  /** One transaction: a tab closed right after a server batch must not leave it beyond the mark. */
   append(batch: Uint8Array, server?: RoomVersion): Promise<void> {
     return this.queue(async () => {
       const transaction = this.db.transaction(server ? [UPDATES, META] : UPDATES, "readwrite");

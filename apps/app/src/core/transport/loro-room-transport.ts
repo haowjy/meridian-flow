@@ -71,7 +71,6 @@ export type LoroRoomTransportOptions = {
 
 export type LoroRoomTransport = {
   send(batch: Uint8Array): void;
-  /** Sends what the copy holds that the server lacks and nothing in flight carries; joined only. */
   sendLacking(): void;
   /**
    * Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or

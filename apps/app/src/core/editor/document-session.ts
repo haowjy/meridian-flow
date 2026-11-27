@@ -80,7 +80,6 @@ export type DocumentSessionSnapshot = {
   contentHeld: boolean;
   schemaFence: SchemaFence | null;
   holdsUndeliverableEdits: boolean;
-  /** Off its socket, it holds another tab's writes the server lacks and that tab has gone quiet. */
   undeliveredTabWrites: boolean;
 };
 
@@ -257,7 +256,6 @@ export class DocumentSession {
     this.recomputeStatus();
   }
 
-  /** `server`: the batch came from the server, which holds that version; it is stored with it. */
   private importRemote(batch: Uint8Array, server?: RoomVersion): void {
     if (this.destroyed || this.docs.isFreed) return;
     this.importing = true;
@@ -379,11 +377,6 @@ export class DocumentSession {
     this.tabs = tabs;
   }
 
-  /**
-   * Another tab's writes are its to send, but a tab closed while offline never will: once the
-   * tabs are quiet, a connected session sends what the server lacks. One off its socket first
-   * reads the server mark the writing tab keeps in the copy, and flags only what that leaves.
-   */
   private async tabsQuiet(): Promise<void> {
     if (this.transportProvider) {
       if (this.hasUnacknowledgedEdits()) this.transportProvider.sendLacking();
