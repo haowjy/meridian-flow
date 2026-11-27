@@ -5,6 +5,8 @@ import {
   SystemUpdateMetadataCodec,
 } from "./turn-metadata.js";
 
+export const MAX_LINEAGE_DEPTH = 10_000;
+
 export function isVisibleConversationalTurn(input: {
   role: TurnRole;
   metadata: JsonValue | null;
@@ -20,6 +22,29 @@ export function isVisibleConversationalTurn(input: {
   if (InboxMessageMetadataCodec.safeParse(input.metadata).success) return false;
   const systemUpdate = SystemUpdateMetadataCodec.safeParse(input.metadata);
   return !systemUpdate.success || systemUpdate.data.section !== "work_context";
+}
+
+export function findConversationalHead(
+  leaf: Turn | undefined,
+  parent: (turn: Turn) => Turn | undefined,
+  hasCustomBlock: (turn: Turn) => boolean,
+): Turn | undefined {
+  for (
+    let turn = leaf, depth = 0;
+    turn && depth <= MAX_LINEAGE_DEPTH;
+    turn = parent(turn), depth++
+  ) {
+    if (turn.forgottenBy) continue;
+    if (
+      isVisibleConversationalTurn({
+        role: turn.role,
+        metadata: turn.metadata ?? null,
+        hasCustomBlock: hasCustomBlock(turn),
+      })
+    )
+      return turn;
+  }
+  return undefined;
 }
 
 export function isThreadActionRequired(input: {

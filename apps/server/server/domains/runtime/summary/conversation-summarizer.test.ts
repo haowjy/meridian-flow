@@ -111,7 +111,13 @@ describe("conversation summarizer", () => {
   it.each([
     ["max_tokens", reply("partial", { finishReason: "max_tokens" })],
     ["provider_error", reply("", { finishReason: "error" })],
-    ["tool_use", reply("", { toolCalls: [{ id: "call", name: "read", arguments: {} }] })],
+    [
+      "tool_use",
+      reply("", {
+        content: [{ type: "tool_use", toolCallId: "call", toolName: "read", input: {} }],
+        toolCalls: [{ id: "call", name: "read", arguments: {} }],
+      }),
+    ],
     ["empty_text", reply("   ")],
   ] as const)("labels rejected summary output as %s", async (reason, result) => {
     const rig = setup({

@@ -1,8 +1,8 @@
 import type { ThreadAvailableSkillsResponse } from "@meridian/contracts/protocol";
 import type { AgentRevisionStore, BoundAgentCatalog } from "../domains/packages/index.js";
 import { resolveThreadUserInvocableSkills } from "../domains/runtime/loop/available-skills.js";
+import type { ThreadRepositories } from "../domains/threads/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
-import type { ThreadRepositories } from "./compose.js";
 
 export interface ThreadAvailableSkillsRouteDeps {
   repos: Pick<ThreadRepositories, "threads">;

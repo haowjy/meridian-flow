@@ -11,7 +11,7 @@ import {
   type TurnTreeFolder,
   turnEditDestination,
 } from "../domains/collab/domain/turn-live-lineage.js";
-import { parseContextUri } from "../domains/context/context/uri.js";
+import { parseContextUriResult } from "../domains/context/context/uri.js";
 import { isFileAccessDenied } from "../domains/file-policy/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
@@ -100,7 +100,7 @@ async function filterAccessibleLiveLineageDocuments(
 }
 
 function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocumentItem {
-  const parsed = parseContextUri(folder.at);
+  const parsed = parseContextUriResult(folder.at);
   if (!parsed.ok) {
     throw createError({ statusCode: 500, message: "Live-lineage folder URI is invalid" });
   }
@@ -117,7 +117,7 @@ function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocu
 }
 
 function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLineageDocumentItem {
-  const parsed = parseContextUri(document.uri);
+  const parsed = parseContextUriResult(document.uri);
   if (!parsed.ok) {
     throw createError({ statusCode: 500, message: "Live-lineage document URI is invalid" });
   }
@@ -143,7 +143,7 @@ function inTreeOrder<Row extends { placement?: TreePlacement; uri?: string; at?:
   rows: Row[],
 ): Row[] {
   const section = (row: Row) => {
-    const parsed = parseContextUri(row.uri ?? row.at ?? "");
+    const parsed = parseContextUriResult(row.uri ?? row.at ?? "");
     return parsed.ok ? SECTIONS.indexOf(parsed.value.scheme) : SECTIONS.length;
   };
   return [...rows].sort((a, b) => {

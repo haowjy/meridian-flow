@@ -1,15 +1,14 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
+  findConversationalHead,
   isThreadActionRequired,
-  isVisibleConversationalTurn,
+  MAX_LINEAGE_DEPTH,
 } from "../../domain/visible-conversation-policy.js";
 import type {
   ProjectChatFeedRepository,
   ThreadUserStateRepository,
 } from "../../ports/repositories.js";
-
-const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
 
 export type InMemoryThreadUserState = {
   isFavorite: boolean;
@@ -41,7 +40,7 @@ export function createInMemoryProjectChatAdapter(
   function activeLineage(thread: Thread): Turn[] {
     const lineage: Turn[] = [];
     let turn = thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined;
-    while (turn && lineage.length <= MAX_ACTIVE_LINEAGE_DEPTH) {
+    while (turn && lineage.length <= MAX_LINEAGE_DEPTH) {
       lineage.push(turn);
       if (turn.role === "assistant") break;
       turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
@@ -50,21 +49,16 @@ export function createInMemoryProjectChatAdapter(
   }
 
   function conversationalHead(thread: Thread): Turn | null {
-    for (const turn of activeLineage(thread)) {
-      const hasCustomBlock = [...source.blocks()].some(
-        (block) => block.turnId === turn?.id && block.blockType === "custom",
-      );
-      if (
-        isVisibleConversationalTurn({
-          role: turn.role,
-          metadata: turn.metadata ?? null,
-          hasCustomBlock,
-        })
-      ) {
-        return turn;
-      }
-    }
-    return null;
+    return (
+      findConversationalHead(
+        thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined,
+        (turn) => (turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined),
+        (turn) =>
+          [...source.blocks()].some(
+            (block) => block.turnId === turn.id && block.blockType === "custom",
+          ),
+      ) ?? null
+    );
   }
 
   function actionRequired(thread: Thread): boolean {

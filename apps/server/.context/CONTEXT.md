@@ -5,7 +5,7 @@ and the conventions for extending the server without bypassing domain seams.
 
 ## Composition root
 
-`server/lib/app.ts` owns the production singleton and binds process resources. `server/lib/compose.ts` defines the `AppServices` aggregate, constructs production adapter ports, keeps test/in-memory service stubs, and owns pure runtime service wiring.
+`server/lib/app.ts` owns the production singleton and binds process resources. `server/lib/compose.ts` defines the `AppServices` aggregate, constructs production adapter ports, and owns pure runtime service wiring.
 
 The production graph is intentionally assembled at the edge:
 

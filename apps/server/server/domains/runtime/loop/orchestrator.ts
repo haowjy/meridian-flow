@@ -895,27 +895,6 @@ async function persistModelResponse(input: {
           }
         }
 
-        for (const call of toolCalls) {
-          if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
-            continue;
-          }
-          const block = contentForBlockInput({
-            turnId: updatedTurn.id,
-            blockType: "tool_use",
-            sequence: blockSeq++,
-            responseId: response.id,
-            content: {
-              toolCallId: call.id,
-              toolName: call.name,
-              input: toJsonValue(call.arguments),
-            },
-            provider: result.provider,
-            status: "complete",
-          });
-          createdBlocks.push(localBlockFromEvent(block));
-          events.push({ type: "block.upserted", block });
-        }
-
         events.push({
           type: "usage",
           responseId: response.id,
@@ -2149,10 +2128,6 @@ async function executeLoop({
           errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),
         );
       }
-    } finally {
-      // Helper result delivery is flushed by callers after their live-turn registry
-      // is cleared. Draining here would race queued helper system turns into a
-      // still-running parent thread.
     }
     break;
   }

@@ -879,8 +879,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             undo: () => card(script),
             delete: () =>
-              runWorkLifecycleCommand(app.works.transaction, () =>
-                app.works.softDelete(NEW_WORK_ID as never, app.stopThreads),
+              runWorkLifecycleCommand(app.workRepo.transaction, () =>
+                app.workRepo.softDelete(NEW_WORK_ID as never, app.stopThreads),
               ),
           },
           "undo",

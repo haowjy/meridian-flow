@@ -35,7 +35,7 @@ import type {
   TreeListStore,
 } from "../ports/tree-list-store.js";
 import { listIdOf, readConnection } from "./tree-list-facts.js";
-import { claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
+import { claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-list-rows.js";
 
 type Copy = { doc: LoroDoc; writer: TreeWriter; pending: object | null; retired: boolean };
 
@@ -244,7 +244,8 @@ export function createDrizzleTreeListStore(deps: {
     created: readonly TreeRecord[],
     claimed: readonly TreeRecord[],
   ): Promise<CommittedTreeUpdate> {
-    await claimNodeIds(tx, listId, claimed);
+    const [refused] = await claimNodeIds(tx, listId, claimed);
+    if (refused !== undefined) throw new NodeIdRefusedError(refused);
     const update = withVector(before, (from) => copy.doc.export({ mode: "update", from }));
     await writeSnapshots(tx, [{ roomKey: roomKeyOf(listId), docKey: LIST_DOC, doc: copy.doc }]);
     // Delivered at the commit, to every instance: a room on another process catches up from it.
@@ -326,7 +327,7 @@ export function createDrizzleTreeListStore(deps: {
         copy.pending = owner;
         const dropped = new Set(admitted.dropped);
         const live = admitted.records.filter((record) => !dropped.has(record.id));
-        const failed = await claimNodeIdsEach(tx, listId, live);
+        const failed = await claimNodeIds(tx, listId, live);
         const made = live.filter((record) => record.type !== "create" || !failed.has(record.node));
         return { committed: await commitChange(tx, list, copy, listId, before, made, []) };
       }),

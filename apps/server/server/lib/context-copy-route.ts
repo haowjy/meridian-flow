@@ -17,7 +17,7 @@ import {
   type CopySourceView,
   contextPortForProjectAuthorities,
   type ProjectContextAvailabilityPort,
-  parseUnifiedContextUri,
+  parseUnifiedContextUriResult,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
 import type { FileAccess, FileTarget } from "../domains/file-policy/index.js";
@@ -454,7 +454,7 @@ export async function handleContextCopyRequest(
   if (folder && !folder.ok) contextErrorToHttp(folder.error);
   const folderUri = folder?.ok ? folder.value.uri : null;
   if (folderUri !== null) {
-    const parsed = parseUnifiedContextUri(folderUri);
+    const parsed = parseUnifiedContextUriResult(folderUri);
     if (parsed.ok && parsed.value.scheme === "uploads") throw uploadsOutOnly();
   }
   const destinationUri =

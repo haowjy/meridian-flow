@@ -2,7 +2,7 @@ import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration
 import { formatParsedContextUri, joinContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseActor } from "../../domains/context/adapters/context-fs/tree-writes.js";
-import { parseUnifiedContextUri } from "../../domains/context/index.js";
+import { parseUnifiedContextUriResult } from "../../domains/context/index.js";
 import {
   addDelta,
   decodeDelta,
@@ -44,7 +44,7 @@ export async function printedNames(
 }
 
 export function areaOfPath(path: string): { area: string; rest: string } | null {
-  const parsed = parseUnifiedContextUri(path);
+  const parsed = parseUnifiedContextUriResult(path);
   if (!parsed.ok) return null;
   const { path: rest } = parsed.value;
   return {
