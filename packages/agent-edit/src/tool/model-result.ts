@@ -1,38 +1,15 @@
 import type { ReturnedWhy } from "@meridian/contracts/commands";
-import type { DocumentRemovalRecord, PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type {
+  DocumentRemovalRecord,
+  PermissionDeniedReason,
+  WriteStatus,
+} from "@meridian/contracts/protocol";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
 
 export const AGENT_EDIT_RESULT_SCHEMA = "meridian.agent-edit.v1" as const;
 
 export type AgentEditResultCommand = DocumentCommandName | "unknown";
-
-export type WriteErrorStatus =
-  | "not_found"
-  | "ambiguous_match"
-  | "invalid_write"
-  | "document_not_found"
-  | "partial_failure"
-  | "work_archived"
-  | "binary_file"
-  | "permission_denied"
-  | "internal_error";
-
-export type UndoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "expired"
-  | "cant_undo_applied"
-  | "cant_undo_discarded"
-  | "cant_undo_changed"
-  | "purged"
-  | "insufficient_undo"
-  | "nothing_to_revert";
-
-// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
-export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
 
 export interface AgentEditBlockItem {
   hash: string;
