@@ -1,8 +1,8 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
+  findConversationalHead,
   isThreadActionRequired,
-  isVisibleConversationalTurn,
 } from "../../domain/visible-conversation-policy.js";
 import type {
   ProjectChatFeedRepository,
@@ -50,21 +50,16 @@ export function createInMemoryProjectChatAdapter(
   }
 
   function conversationalHead(thread: Thread): Turn | null {
-    for (const turn of activeLineage(thread)) {
-      const hasCustomBlock = [...source.blocks()].some(
-        (block) => block.turnId === turn?.id && block.blockType === "custom",
-      );
-      if (
-        isVisibleConversationalTurn({
-          role: turn.role,
-          metadata: turn.metadata ?? null,
-          hasCustomBlock,
-        })
-      ) {
-        return turn;
-      }
-    }
-    return null;
+    return (
+      findConversationalHead(
+        thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined,
+        (turn) => (turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined),
+        (turn) =>
+          [...source.blocks()].some(
+            (block) => block.turnId === turn.id && block.blockType === "custom",
+          ),
+      ) ?? null
+    );
   }
 
   function actionRequired(thread: Thread): boolean {

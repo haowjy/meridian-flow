@@ -22,6 +22,25 @@ export function isVisibleConversationalTurn(input: {
   return !systemUpdate.success || systemUpdate.data.section !== "work_context";
 }
 
+export function findConversationalHead(
+  leaf: Turn | undefined,
+  parent: (turn: Turn) => Turn | undefined,
+  hasCustomBlock: (turn: Turn) => boolean,
+): Turn | undefined {
+  for (let turn = leaf; turn; turn = parent(turn)) {
+    if (turn.forgottenBy) continue;
+    if (
+      isVisibleConversationalTurn({
+        role: turn.role,
+        metadata: turn.metadata ?? null,
+        hasCustomBlock: hasCustomBlock(turn),
+      })
+    )
+      return turn;
+  }
+  return undefined;
+}
+
 export function isThreadActionRequired(input: {
   activeLineage: ReadonlyArray<Pick<Turn, "role" | "status">>;
 }): boolean {
