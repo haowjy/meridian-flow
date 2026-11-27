@@ -11,7 +11,10 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { decodeRoomVersion, type RoomVersion, versionCovers } from "@meridian/document-model";
 import type { PMNode } from "@meridian/markup";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
-import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import {
+  assertOutsideTransaction,
+  runAfterDrizzleCommit,
+} from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { CollabDomain } from "../../collab/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/index.js";
@@ -119,9 +122,8 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const release = replay ? null : await holdOperation(input.request.operationId);
     try {
       replay = replay ?? (await commands.lookup(input.request.operationId));
-      // Reading holds no transaction. A source room that is not open loads through a second
-      // connection, so Copies that each held one while reading would starve the pool they
-      // wait on.
+      // A source room that is not open loads through a second connection, so Copies that each
+      // held a transaction while reading would starve the pool they wait on.
       const prepared = replay ? null : await prepare(selected);
       // The bytes are put once, before the command, which may rerun its transaction: only the
       // attempt that commits a write marks them kept, a rolled-back one's callback is dropped.
@@ -169,6 +171,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
    * transaction or lock is taken.
    */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
+    assertOutsideTransaction("A Copy's read");
     const roots: PreparedRoot[] = [];
     const purged: string[] = [];
     const looping: string[] = [];

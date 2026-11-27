@@ -4,11 +4,11 @@ import {
   type ImageProxyReason,
 } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery } from "nitro/h3";
-import { fetch } from "undici";
 import { requireAppUser } from "../../lib/auth-gate.js";
 import {
   PrivateAddressError,
-  publicAddressDispatcher,
+  type PublicFetchPolicy,
+  publicFetch,
 } from "../../lib/public-address-dispatcher.js";
 
 const MAX_REDIRECTS = 5;
@@ -30,15 +30,15 @@ class Refusal extends Error {
   }
 }
 
-// Default ports only: a writer-chosen address is not a way to probe other ports
-function remoteImageUrl(raw: string): URL {
-  const url = URL.canParse(raw) ? new URL(raw) : null;
-  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
-    throw new Refusal("not_allowed");
-  }
-  if (url.port !== "") throw new Refusal("port");
-  return url;
-}
+const IMAGE_FETCH: PublicFetchPolicy = {
+  // Default ports only: a writer-chosen address is not a way to probe other ports
+  check(url) {
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Refusal("not_allowed");
+    if (url.port !== "") throw new Refusal("port");
+  },
+  maxRedirects: MAX_REDIRECTS,
+  redirectRefusal: () => new Refusal("unreachable"),
+};
 
 function refusalOf(error: unknown): Refusal {
   if (error instanceof Refusal) return error;
@@ -82,33 +82,21 @@ async function withAccountSlot<T>(accountId: string, run: () => Promise<T>): Pro
 }
 
 async function fetchImage(raw: string): Promise<{ type: string; bytes: Uint8Array<ArrayBuffer> }> {
-  const signal = AbortSignal.timeout(TIMEOUT_MS);
-  let url = remoteImageUrl(raw);
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const response = await fetch(url, {
-      dispatcher: publicAddressDispatcher,
-      redirect: "manual",
-      signal,
-      headers: { accept: "image/*" },
-    });
-    const location = response.headers.get("location");
-    if (response.status >= 300 && response.status < 400 && location) {
-      await response.body?.cancel();
-      url = remoteImageUrl(new URL(location, url).href);
-      continue;
-    }
-    const type = response.headers.get("content-type") ?? "";
-    if (!response.ok || !response.body) {
-      await response.body?.cancel();
-      throw new Refusal("unreachable");
-    }
-    if (!/^image\//i.test(type)) {
-      await response.body.cancel();
-      throw new Refusal("not_image");
-    }
-    return { type, bytes: await readCapped(response.body as ReadableStream<Uint8Array>) };
+  if (!URL.canParse(raw)) throw new Refusal("not_allowed");
+  const response = await publicFetch(new URL(raw), IMAGE_FETCH, {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    headers: { accept: "image/*" },
+  });
+  const type = response.headers.get("content-type") ?? "";
+  if (!response.ok || !response.body) {
+    await response.body?.cancel();
+    throw new Refusal("unreachable");
   }
-  throw new Refusal("unreachable");
+  if (!/^image\//i.test(type)) {
+    await response.body.cancel();
+    throw new Refusal("not_image");
+  }
+  return { type, bytes: await readCapped(response.body as ReadableStream<Uint8Array>) };
 }
 
 export default defineEventHandler(async (event) => {
