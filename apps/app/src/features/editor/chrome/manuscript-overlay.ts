@@ -37,6 +37,17 @@ export function overlayRect(overlay: HTMLElement, element: Element): OverlayBox 
   };
 }
 
+export function overlayToViewport(
+  overlay: HTMLElement,
+  at: { left: number; top: number },
+): { x: number; y: number } {
+  const pane = overlay.getBoundingClientRect();
+  return {
+    x: pane.left + overlay.clientLeft - overlay.scrollLeft + at.left,
+    y: pane.top + overlay.clientTop - overlay.scrollTop + at.top,
+  };
+}
+
 export function overlayViewport(overlay: HTMLElement): OverlayBox {
   return {
     left: overlay.scrollLeft,

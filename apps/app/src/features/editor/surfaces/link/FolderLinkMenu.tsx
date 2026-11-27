@@ -35,7 +35,6 @@ export function FolderLinkMenu({
   if (!host) return null;
   return (
     <DropdownMenu
-      key={folder.seq}
       open
       modal={false}
       onOpenChange={(next) => {

@@ -32,10 +32,7 @@ export type LinkMenuTarget = {
   identity: Mark;
 };
 
-export type LinkMenuRequest = LinkMenuTarget & {
-  at: LinkPoint;
-  seq: number;
-};
+export type LinkMenuRequest = LinkMenuTarget & { at: LinkPoint };
 
 export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
   return { from: menu.anchor.from, to: menu.anchor.to };
@@ -47,7 +44,7 @@ export type LinkFollowOutcome = {
   address: string | null;
 };
 
-export type LinkFolderRequest = { folderId: string; at: LinkPoint; seq: number };
+export type LinkFolderRequest = { folderId: string; at: LinkPoint };
 
 export type FollowHandlers = { dismiss: () => void; retry: () => void };
 
@@ -66,11 +63,11 @@ export type LinkSurface = {
   showHint: (hint: LinkHint | null) => void;
   openForm: (at: LinkPoint) => void;
   closeForm: () => void;
-  openMenu: (request: LinkMenuTarget & { at: LinkPoint }) => void;
+  openMenu: (request: LinkMenuRequest) => void;
   retargetMenu: (target: LinkMenuTarget | null) => void;
   closeMenu: () => void;
 
-  openFolder: (request: { folderId: string; at: LinkPoint }) => void;
+  openFolder: (request: LinkFolderRequest) => void;
   closeFolder: () => void;
 
   reportFollow: (outcome: LinkFollowOutcome) => void;
@@ -148,8 +145,7 @@ export function createLinkSurface(): LinkSurface {
     },
 
     openMenu(request) {
-      sequence += 1;
-      set({ menu: { ...request, seq: sequence }, form: null, folder: null, hint: null });
+      set({ menu: request, form: null, folder: null, hint: null });
     },
     retargetMenu(target) {
       if (!state.menu) return;
@@ -160,8 +156,7 @@ export function createLinkSurface(): LinkSurface {
     },
 
     openFolder(request) {
-      sequence += 1;
-      set({ folder: { ...request, seq: sequence }, menu: null, form: null, hint: null });
+      set({ folder: request, menu: null, form: null, hint: null });
     },
     closeFolder() {
       set({ folder: null });

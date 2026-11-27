@@ -7,7 +7,7 @@ import { holdBlock, type NodeHold, resolveBlockHold } from "@/core/editor/anchor
 import { CHROME_TIMING, editorChromeAttributes, hoverOwner } from "@/core/editor/chrome";
 import { isEditorObject, selectObjectTransaction } from "@/core/editor/objects";
 
-import { manuscriptOverlay } from "../../chrome/manuscript-overlay";
+import { manuscriptOverlay, overlayToViewport } from "../../chrome/manuscript-overlay";
 import {
   useChromeCoarsePointer,
   useChromeSuppressed,
@@ -56,15 +56,9 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const targetPos = (menuHold ?? anchorHold)?.from ?? null;
   const targetPosRef = useRef<number | null>(null);
   targetPosRef.current = targetPos;
-  const handleRef = useRef<HTMLButtonElement | null>(null);
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   const openMenu = useCallback(
-    (pos: number) => {
-      if (!handleRef.current) return;
-      setMenuAt(handleAnchorPoint(handleRef.current));
-      openBlockMenuAt(editor, pos, takeMenu);
-    },
+    (pos: number) => openBlockMenuAt(editor, pos, takeMenu),
     [editor, takeMenu],
   );
 
@@ -131,8 +125,9 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   }, [chrome, editable, gesture.inFlight, openMenu]);
 
   const runOnBlock = useCallback(
-    (pos: number, build: BlockTransactionBuilder) => {
-      const target = blockAt(editor.state.doc, pos);
+    (hold: NodeHold, build: BlockTransactionBuilder) => {
+      const at = resolveBlockHold(editor.state, hold);
+      const target = at && blockAt(editor.state.doc, at.from);
       if (!target || !editor.isEditable) return;
       const transaction = build(editor.state, target);
       if (transaction) editor.view.dispatch(transaction);
@@ -157,7 +152,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       {handle
         ? createPortal(
             <button
-              ref={handleRef}
               type="button"
               className="meridian-block-handle"
               data-block-handle
@@ -196,31 +190,26 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
           )
         : null}
 
-      {target && menuHold !== null && menuAt ? (
+      {target && menuHold !== null && handle ? (
         <BlockMenu
           editor={editor}
           target={target}
-          at={menuAt}
+          at={overlayToViewport(overlay, handle)}
           open
           onOpenChange={(open) => {
             if (!open) takeMenu(null);
           }}
           onMove={(direction) =>
-            runOnBlock(menuHold.from, (state, source) =>
+            runOnBlock(menuHold, (state, source) =>
               moveBlockStepTransaction(state, source, direction),
             )
           }
-          onDuplicate={() => runOnBlock(menuHold.from, duplicateBlockTransaction)}
-          onDelete={() => runOnBlock(menuHold.from, deleteBlockTransaction)}
+          onDuplicate={() => runOnBlock(menuHold, duplicateBlockTransaction)}
+          onDelete={() => runOnBlock(menuHold, deleteBlockTransaction)}
         />
       ) : null}
     </>
   );
-}
-
-function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
-  const box = handle.getBoundingClientRect();
-  return { x: box.left, y: box.top };
 }
 
 function openBlockMenuAt(editor: Editor, pos: number, open: TakeNodeHold): void {
