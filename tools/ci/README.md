@@ -3,7 +3,7 @@
 [CI](../../.github/workflows/ci.yml) runs on manual dispatch, or when Deploy Staging calls it,
 and its four parallel quality jobs are:
 
-- `quality-static`: lint, debug probes, negative space, slop lint, i18n, the Nx graph, the architecture map and PR-body checks.
+- `quality-static`: lint, debug probes, negative space, slop lint, the comment check, i18n, the Nx graph, the architecture map and PR-body checks.
 - `quality-typecheck`: typecheck, with runner-local Nx caching only.
 - `quality-test-1` and `quality-test-2`: the default unit test projects, using
   Vitest `--shard=1/2` and `--shard=2/2` on the same `test` script.
@@ -286,3 +286,36 @@ handle or surface the error, fix the type or lint error, delete the decision ID,
 separate facts with spacing, weight or muted color in UI and with a sentence or
 parentheses in text, or wait for the event instead of the clock. A middle-dot
 finding has no exception: rewrite the text.
+
+## Comment check
+
+`pnpm check:comments` fails when a change adds a prose comment to a source file
+(`.ts`, `.tsx`, `.js`, `.mjs` and the other script extensions) under `apps`, `packages`
+or `tools`. Adding one is allowed but deliberate:
+
+```sh
+pnpm check:comments --accept
+```
+
+records the tree in `tools/ci/comment-baseline.json`, and the reviewer questions the new line
+there. The failure names each new comment and states the rule from `AGENTS.md`.
+
+It counts what the TypeScript parse tree calls a comment (the walk it shares with slop lint
+in `source-comments.mjs`), so `//` inside a string, template or URL is not one, and adjacent
+whole-line `//` comments are one comment. It skips comments a tool reads
+(`@vitest-environment`, `/// <reference`, `@__PURE__`, `slop-lint: allow`, JSDoc type tags in
+JavaScript and the like), suppressions (slop lint counts those), and generated, vendored,
+migration and locale files.
+
+The baseline names each comment by its file and its first line of words, with a count.
+A comment passes when the baseline has its file and words, or its words in a file that lost
+them (a moved file or function), or when its own file lost a comment (a reworded comment).
+Per-comment entries let the failure name the comment and the reviewer read it; per-file or
+per-area counts would be smaller but let one comment hide behind another's deletion and
+could not say which comment is new.
+
+Falling is free: when the check passes and the tree differs from the baseline, it rewrites
+the baseline to match and says so; commit it with the change. That tightening keeps a
+deleted comment's entry from later admitting a new one. When two branches conflict on the
+baseline, run `pnpm check:comments --accept` on the merged tree, then check that the baseline's
+diff against each parent adds only comments the other parent had accepted.

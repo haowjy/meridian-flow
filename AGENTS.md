@@ -84,6 +84,7 @@ a picture that went wrong. The map opens at the `map` URL `pnpm dev` prints.
 
 **Comments.** Few. Write one only for what the code can't show and a wrong edit
 would break silently, at the line it guards. No file headers, no decision ids.
+`pnpm check` fails on a new comment until `pnpm check:comments --accept` records it.
 
 ## Dev environment
 
