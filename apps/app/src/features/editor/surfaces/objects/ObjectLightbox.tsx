@@ -4,6 +4,7 @@ import { Code2, Copy, Download, Ellipsis } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
+import type { NodeHold } from "@/core/editor/anchors";
 import { type DiagramProvider, diagramProviderFor, useDiagramRender } from "@/core/editor/diagrams";
 import {
   EditorDialog,
@@ -25,6 +26,7 @@ const SOURCE_FOCUS_DELAY_MS = 120;
 
 export type ObjectLightboxProps = {
   editor: Editor;
+  hold: NodeHold | null;
   target: ObjectSurfaceTarget | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,6 +36,7 @@ export type ObjectLightboxProps = {
 
 export function ObjectLightbox({
   editor,
+  hold,
   target,
   open,
   onOpenChange,
@@ -70,6 +73,7 @@ export function ObjectLightbox({
         <DiagramFace
           key={provider.language}
           editor={editor}
+          hold={hold}
           target={target}
           provider={provider}
           sourceOpen={sourceOpen}
@@ -102,12 +106,14 @@ function LightboxHeader({
 
 function DiagramFace({
   editor,
+  hold,
   target,
   provider,
   sourceOpen,
   onSourceOpenChange,
 }: {
   editor: Editor;
+  hold: NodeHold | null;
   target: ObjectSurfaceTarget;
   provider: DiagramProvider;
   sourceOpen: boolean;
@@ -115,7 +121,7 @@ function DiagramFace({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
-  const draft = useFenceDraft(editor, target);
+  const draft = useFenceDraft(editor, hold, target.node.textContent);
   const source = draft.value;
   const { svg, error, rendered } = useDiagramRender(provider, source);
 
@@ -175,6 +181,7 @@ function DiagramFace({
             name={provider.name}
             value={source}
             onChange={draft.onChange}
+            onSelect={draft.onSelect}
             areaRef={draft.area}
             error={rendered === source ? error : null}
           />
@@ -193,12 +200,14 @@ function SourcePane({
   name,
   value,
   onChange,
+  onSelect,
   areaRef,
   error,
 }: {
   name: string;
   value: string;
   onChange: (next: string) => void;
+  onSelect: () => void;
   areaRef: RefObject<HTMLTextAreaElement | null>;
   error: string | null;
 }) {
@@ -221,6 +230,7 @@ function SourcePane({
         aria-label={t`${name} source`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onSelect={onSelect}
       />
       {error ? (
         <p className="meridian-diagram-parse-note meridian-lightbox-parse-note" role="status">

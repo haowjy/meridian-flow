@@ -248,6 +248,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
 
       <ObjectLightbox
         editor={editor}
+        hold={lightbox}
         target={lightboxTarget}
         open={lightbox !== null}
         onOpenChange={(open) => {
