@@ -5,6 +5,8 @@ import {
   SystemUpdateMetadataCodec,
 } from "./turn-metadata.js";
 
+export const MAX_LINEAGE_DEPTH = 10_000;
+
 export function isVisibleConversationalTurn(input: {
   role: TurnRole;
   metadata: JsonValue | null;
@@ -27,7 +29,11 @@ export function findConversationalHead(
   parent: (turn: Turn) => Turn | undefined,
   hasCustomBlock: (turn: Turn) => boolean,
 ): Turn | undefined {
-  for (let turn = leaf; turn; turn = parent(turn)) {
+  for (
+    let turn = leaf, depth = 0;
+    turn && depth <= MAX_LINEAGE_DEPTH;
+    turn = parent(turn), depth++
+  ) {
     if (turn.forgottenBy) continue;
     if (
       isVisibleConversationalTurn({

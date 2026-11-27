@@ -3,13 +3,12 @@ import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/t
 import {
   findConversationalHead,
   isThreadActionRequired,
+  MAX_LINEAGE_DEPTH,
 } from "../../domain/visible-conversation-policy.js";
 import type {
   ProjectChatFeedRepository,
   ThreadUserStateRepository,
 } from "../../ports/repositories.js";
-
-const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
 
 export type InMemoryThreadUserState = {
   isFavorite: boolean;
@@ -41,7 +40,7 @@ export function createInMemoryProjectChatAdapter(
   function activeLineage(thread: Thread): Turn[] {
     const lineage: Turn[] = [];
     let turn = thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined;
-    while (turn && lineage.length <= MAX_ACTIVE_LINEAGE_DEPTH) {
+    while (turn && lineage.length <= MAX_LINEAGE_DEPTH) {
       lineage.push(turn);
       if (turn.role === "assistant") break;
       turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
