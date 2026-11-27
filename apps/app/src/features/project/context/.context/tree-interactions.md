@@ -275,7 +275,9 @@ row grants `move`: a row in an ended Work's Scratch can be copied from, not move
 that holds a row without the grant an action needs, or one that lost a row (a peer
 deleted it, or its parent isn't known yet), does nothing for that action rather
 than silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
-data until the drop). The transfer carries only Meridian's entries type, no
+data until the drop), and the only way to read it is `entryDragOf(event)`, from the
+drag event in hand: a drop target passes the `EntryDrag` on as an argument and never
+reads it later. The transfer carries only Meridian's entries type, no
 `text/plain` or `text/uri-list` fallback. The composer and manuscript editor
 resolve selected row identities through their live `@` tree and copy files and folders as mentions;
 other surfaces ignore the drop instead of pasting names that look like a
@@ -379,9 +381,8 @@ is a new item there and a draft in the list's `choose`. The contract:
   again.
 - `PendingChoice` (`drop-choice.ts`): a drop that asks, waiting for its choice, held
   by the list. It carries the drag, the target, the pointer point and the
-  focus-return callback, captured at the drop because
-  `dragend` clears the drag session right after it. `EntriesRoute.drop`
-  therefore receives the point.
+  focus-return callback. `EntriesRoute.drop` receives the drag and the point from the
+  drop event, because `dragend` clears the drag session right after it.
 - `DropChoiceItem` (`drop-choice.ts`): `{ action, label, enabled, reason? }`. The
   menu is `dropChoices(resolved, target)`, derived from `resolveDrop`
   against the trees as they are when the menu draws and again when the writer

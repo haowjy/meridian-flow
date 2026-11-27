@@ -144,9 +144,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           threadCache.patchThread(threadId, liveThreadListPatchForTurnStatus(turnId, status));
           if (!isTerminalTurnStatus(status)) return;
           const state = get();
-          // Cache side effects stay outside Zustand's `set()` call: the terminal write stores
-          // state first, then asks the cache to catch projector-only fields such as final
-          // usage/cost metadata. The port owns the render-safe deferral.
           threadCache.invalidateThread(
             threadId,
             state.streamingThreadId === threadId ? state.streamingProjectId : null,

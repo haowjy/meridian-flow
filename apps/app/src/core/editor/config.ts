@@ -127,11 +127,8 @@ function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
  * registries (`getEditorChrome`, `registerObjectEngagement`), not through a
  * new configuration knob here.
  *
- * Order is precedence. The kernel comes first because it resolves the context
- * everything below reads; object physics next because it is the deepest thing
- * in the document. Above all of it, unlisted, sits `UndoRedoKeymapExtension`
- * at TipTap priority 1100 — undo is the writer's recovery over LLM
- * writes and no surface may shadow it.
+ * Order is precedence; the lanes that must outrank the rest, and undo above
+ * them all, take their priority from `EXTENSION_PRIORITY`.
  */
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,

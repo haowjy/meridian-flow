@@ -10,8 +10,8 @@ import type { DragEntry, DragSource, EntryDrag } from "./entry";
 
 let active: EntryDrag | null = null;
 
-export function activeDragSession(): EntryDrag | null {
-  return active;
+export function entryDragOf(event: Pick<globalThis.DragEvent, "dataTransfer">): EntryDrag | null {
+  return event.dataTransfer?.types.includes(MERIDIAN_ENTRIES_MIME) ? active : null;
 }
 
 export function startEntryDrag(

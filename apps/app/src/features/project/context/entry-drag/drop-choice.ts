@@ -21,10 +21,6 @@ export type DropChoiceItem = {
   reason?: string;
 };
 
-/**
- * A drop waiting for its choice. Captured at the drop, before `dragend` clears
- * the drag session, so it holds identities and the target, not the drag's data.
- */
 export type PendingChoice = {
   drag: EntryDrag;
   target: TreeDropTarget;

@@ -5,6 +5,7 @@ import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client"
 import { patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 import { readProjectThreadList } from "./project-thread-cache";
+import { writeOverReads } from "./write-over-reads";
 
 export type ThreadRenameFailureKind = "rejected" | "ambiguous" | "abandoned";
 
@@ -144,25 +145,24 @@ export function beginThreadRename(
   threadId: string,
   title: string,
 ): ThreadRenameMutationContext {
-  // The list read is part of the fence: a response already in flight must not
-  // land on top of the title this intent is about to project.
-  void client.cancelQueries({ queryKey: projectQueryKeys.threads(projectId), exact: true });
-  const current = readThreadRenameRecord(client, projectId, threadId);
-  const baseTitle =
-    current.pendingCount === 0
-      ? readCachedThreadTitle(client, projectId, threadId)
-      : current.baseTitle;
-  const revision = current.revision + 1;
-  writeRecord(client, projectId, threadId, {
-    ...current,
-    baseTitle,
-    desiredTitle: title,
-    revision,
-    pendingCount: current.pendingCount + 1,
-    failure: undefined,
+  return writeOverReads(client, [projectQueryKeys.threads(projectId)], () => {
+    const current = readThreadRenameRecord(client, projectId, threadId);
+    const baseTitle =
+      current.pendingCount === 0
+        ? readCachedThreadTitle(client, projectId, threadId)
+        : current.baseTitle;
+    const revision = current.revision + 1;
+    writeRecord(client, projectId, threadId, {
+      ...current,
+      baseTitle,
+      desiredTitle: title,
+      revision,
+      pendingCount: current.pendingCount + 1,
+      failure: undefined,
+    });
+    projectTitle(client, projectId, threadId, title);
+    return { projectId, threadId, revision };
   });
-  projectTitle(client, projectId, threadId, title);
-  return { projectId, threadId, revision };
 }
 
 export function confirmThreadRename(

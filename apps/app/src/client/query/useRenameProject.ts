@@ -4,6 +4,7 @@ import { useCallback, useRef } from "react";
 
 import { updateProject } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
+import { writeOverReads } from "./write-over-reads";
 
 type RenameVariables = { title: string; revision: number };
 
@@ -35,29 +36,29 @@ export function useRenameProject(project: Project): (title: string) => Promise<v
   const mutation = useMutation({
     mutationKey: projectQueryKeys.rename(projectId),
     mutationFn: ({ title }: RenameVariables) => updateProject(projectId, { title }),
-    onMutate: async ({ title }) => {
-      await Promise.all([
-        queryClient.cancelQueries({ queryKey: projectQueryKeys.list }),
-        queryClient.cancelQueries({ queryKey: projectQueryKeys.detail(projectId) }),
-      ]);
-      showTitle(queryClient, fallback.current, title);
-    },
+    onMutate: ({ title }) =>
+      writeOverReads(queryClient, [projectQueryKeys.list, projectQueryKeys.detail(projectId)], () =>
+        showTitle(queryClient, fallback.current, title),
+      ),
     onError: (_error, { revision }) => {
       record.current.pending -= 1;
       if (revision === record.current.revision)
         showTitle(queryClient, fallback.current, record.current.confirmed);
     },
-    onSuccess: async (confirmed, { revision }) => {
+    onSuccess: (confirmed, { revision }) => {
       record.current.pending -= 1;
       record.current.confirmed = confirmed.title;
       if (revision !== record.current.revision) return;
-      // A list read started while the mutation was pending may return an old
-      // title after PATCH succeeds. Fence it before publishing confirmation.
-      await queryClient.cancelQueries({ queryKey: projectQueryKeys.list });
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (list) =>
-        list?.map((item) => (item.id === confirmed.id ? confirmed : item)),
+      writeOverReads(
+        queryClient,
+        [projectQueryKeys.list, projectQueryKeys.detail(projectId)],
+        () => {
+          queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (list) =>
+            list?.map((item) => (item.id === confirmed.id ? confirmed : item)),
+          );
+          queryClient.setQueryData(projectQueryKeys.detail(projectId), confirmed);
+        },
       );
-      queryClient.setQueryData(projectQueryKeys.detail(projectId), confirmed);
     },
   });
 

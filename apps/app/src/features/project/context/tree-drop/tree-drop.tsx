@@ -15,8 +15,10 @@ import {
   useState,
 } from "react";
 import { clearDragHint, showDragHint } from "@/core/editor/landing/drag-hint-store";
-import { type DragPayloadKind, dragPayloadKind } from "@/core/editor/landing/drag-payload";
+import { dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
+import { entryDragOf } from "../entry-drag/drag-session";
+import type { EntryDrag } from "../entry-drag/entry";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
@@ -28,8 +30,8 @@ export type TreeDropTarget = {
 export type EntriesVerdict = { kind: "accept" | "refuse"; label: string };
 
 export type EntriesRoute = {
-  verdict(target: TreeDropTarget): EntriesVerdict | null;
-  drop(target: TreeDropTarget, point: { x: number; y: number }): void;
+  verdict(drag: EntryDrag, target: TreeDropTarget): EntriesVerdict | null;
+  drop(drag: EntryDrag, target: TreeDropTarget, point: { x: number; y: number }): void;
 };
 
 export type FilesRoute = {
@@ -162,6 +164,8 @@ const NO_PROPS: DropProps = {};
 
 const claimed = new WeakSet<Event>();
 
+type Payload = { kind: "entries"; drag: EntryDrag } | { kind: "files" };
+
 export type RowEdges = {
   folder: TreeDropTarget["folder"];
   siblingId: string;
@@ -197,24 +201,32 @@ export function useTreeDropTarget(
   const latest = useRef({ target, scope, ...options });
   latest.current = { target, scope, ...options };
 
-  const claim = useCallback((event: DragEvent): DragPayloadKind | null => {
+  const claim = useCallback((event: DragEvent): Payload | null => {
     if (!latest.current.scope || claimed.has(event.nativeEvent)) return null;
     const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
     if (kind === "none" || !latest.current.scope.routes[kind]) return null;
+    let payload: Payload = { kind: "files" };
+    if (kind === "entries") {
+      const drag = entryDragOf(event);
+      if (!drag) return null;
+      payload = { kind, drag };
+    }
     claimed.add(event.nativeEvent);
-    return kind;
+    return payload;
   }, []);
 
-  const resolve = useCallback((event: DragEvent, kind: DragPayloadKind) => {
+  const resolve = useCallback((event: DragEvent, payload: Payload) => {
     const { target: own, edges } = latest.current;
-    const current = kind === "entries" ? targetAt(own, edges, event) : own;
+    const current = payload.kind === "entries" ? targetAt(own, edges, event) : own;
     return { target: current, key: treeDropTargetKey(current) };
   }, []);
 
   const verdictFor = useCallback(
-    (kind: DragPayloadKind, current: TreeDropTarget): EntriesVerdict | null => {
+    (payload: Payload, current: TreeDropTarget): EntriesVerdict | null => {
       const routes = latest.current.scope?.routes;
-      return (kind === "entries" ? routes?.entries : routes?.files)?.verdict(current) ?? null;
+      return payload.kind === "files"
+        ? (routes?.files?.verdict(current) ?? null)
+        : (routes?.entries?.verdict(payload.drag, current) ?? null);
     },
     [],
   );
@@ -235,7 +247,7 @@ export function useTreeDropTarget(
   const show = useCallback(
     (
       event: DragEvent,
-      kind: DragPayloadKind,
+      payload: Payload,
       current: { target: TreeDropTarget; key: string },
       verdict: EntriesVerdict,
     ) => {
@@ -254,18 +266,18 @@ export function useTreeDropTarget(
         return;
       }
       event.preventDefault();
-      event.dataTransfer.dropEffect = kind === "files" ? "copy" : "move";
+      event.dataTransfer.dropEffect = payload.kind === "files" ? "copy" : "move";
     },
     [holding, release],
   );
 
   const hover = useCallback(
     (event: DragEvent) => {
-      const kind = claim(event);
-      if (!kind) return;
-      const current = resolve(event, kind);
-      const verdict = verdictFor(kind, current.target);
-      if (verdict) show(event, kind, current, verdict);
+      const payload = claim(event);
+      if (!payload) return;
+      const current = resolve(event, payload);
+      const verdict = verdictFor(payload, current.target);
+      if (verdict) show(event, payload, current, verdict);
       else release();
     },
     [claim, resolve, verdictFor, show, release],
@@ -282,18 +294,17 @@ export function useTreeDropTarget(
         if (claim(event)) release();
       },
       onDrop(event) {
-        const kind = claim(event);
-        if (!kind) return;
-        const { target: dropped } = resolve(event, kind);
-        const verdict = verdictFor(kind, dropped);
+        const payload = claim(event);
+        if (!payload) return;
+        const { target: dropped } = resolve(event, payload);
+        const verdict = verdictFor(payload, dropped);
         release();
         if (!verdict || verdict.kind === "refuse") return;
         event.preventDefault();
         event.stopPropagation();
         const routes = latest.current.scope?.routes;
-        if (kind === "entries")
-          routes?.entries?.drop(dropped, { x: event.clientX, y: event.clientY });
-        else routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
+        if (payload.kind === "files") routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
+        else routes?.entries?.drop(payload.drag, dropped, { x: event.clientX, y: event.clientY });
       },
     }),
     [hover, claim, resolve, verdictFor, release],

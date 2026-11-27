@@ -14,6 +14,7 @@ import {
   classifyFiletype,
   MAX_UPLOAD_BYTES,
   renderFilename,
+  splitExtension,
 } from "@meridian/contracts/protocol";
 import {
   needsPreviewConversion,
@@ -23,7 +24,6 @@ import {
 import {
   classifyUpload,
   intakeFilename,
-  keptFileName,
   normalizeFilename,
   normalizeMime,
   TRACKED_TEXT_MAX_BYTES,
@@ -251,10 +251,10 @@ function uploadName(
 ) {
   const { filename, mimeType } = upload;
   const named = keptAsFile
-    ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
+    ? { ok: true as const, value: { ...splitExtension(filename), filetype: "binary" as const } }
     : intakeFilename(filename, fileType, mimeType);
   return named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
-    ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
+    ? { ok: true as const, value: { ...named.value, ...splitExtension(named.value.name) } }
     : named;
 }
 

@@ -36,6 +36,18 @@ export class ExportReadError extends Error {
   }
 }
 
+// Info-ZIP unzip, macOS's /usr/bin/unzip, ignores the UTF-8 flag and decodes names from an
+// MS-DOS entry (fflate's default) as code page 437, so a non-ASCII name fails to extract.
+function zipEntry(name: string, attrs: number): ZipPassThrough {
+  const entry = new ZipPassThrough(name);
+  entry.os = 3;
+  entry.attrs = attrs;
+  return entry;
+}
+const FILE_ATTRS = 0o100644 << 16;
+const MSDOS_DIRECTORY = 0x10;
+const FOLDER_ATTRS = (0o40755 << 16) | MSDOS_DIRECTORY;
+
 // Fflate has no ZIP64; refuse archives over 4 GiB
 const ZIP_LIMIT_BYTES = 4 * 1024 ** 3;
 const ZIP_HEADROOM_BYTES = 64 * 1024 ** 2;
@@ -48,13 +60,18 @@ export function createProjectExport(deps: {
   objects: Pick<ObjectStorePort, "getStream">;
 }) {
   async function createScope(projectId: string, accountId: string, options: ProjectExportOptions) {
-    const { documents: inventory, sources, settlements } = await deps.snapshot.read(projectId);
+    const {
+      documents: inventory,
+      folders,
+      sources,
+      settlements,
+    } = await deps.snapshot.read(projectId);
     const access = await deps.files.listAccess(
       { accountId: accountId as UserId },
       inventory.map((doc) => doc.id as DocumentId),
     );
     const documents = inventory.filter((doc) => access.has(doc.id as DocumentId));
-    const { paths, roots } = buildExportLayout(documents, options, sources);
+    const { paths, roots, emptyFolders } = buildExportLayout(documents, options, sources, folders);
     const addresses = new Map(
       documents.flatMap((doc) => {
         const path = paths.get(doc.id);
@@ -157,7 +174,7 @@ export function createProjectExport(deps: {
                 missing.push(path);
                 continue;
               }
-              const entry = new ZipPassThrough(`${root}/${path}`);
+              const entry = zipEntry(`${root}/${path}`, FILE_ATTRS);
               zip.add(entry);
               yield* drain();
               const { chunks: content, excludedLinks: excluded } = opened;
@@ -172,7 +189,7 @@ export function createProjectExport(deps: {
               yield* drain();
             }
             if (missing.length) {
-              const note = new ZipPassThrough(`${root}/Missing files.txt`);
+              const note = zipEntry(`${root}/Missing files.txt`, FILE_ATTRS);
               zip.add(note);
               note.push(
                 new TextEncoder().encode(
@@ -182,7 +199,13 @@ export function createProjectExport(deps: {
               );
               yield* drain();
             }
-            const marker = new ZipPassThrough(`${root}/${EXPORT_MARKER_FILENAME}`);
+            for (const path of emptyFolders) {
+              const folder = zipEntry(`${root}/${path}/`, FOLDER_ATTRS);
+              zip.add(folder);
+              folder.push(new Uint8Array(), true);
+              yield* drain();
+            }
+            const marker = zipEntry(`${root}/${EXPORT_MARKER_FILENAME}`, FILE_ATTRS);
             zip.add(marker);
             marker.push(
               new TextEncoder().encode(

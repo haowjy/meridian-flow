@@ -1762,7 +1762,7 @@ export function createInMemoryAppServices(
       },
       snapshot: {
         async read() {
-          return { documents: [], sources: [], settlements: new Map() };
+          return { documents: [], folders: [], sources: [], settlements: new Map() };
         },
       },
       documents: exportDocumentsFrom(documentSync),
