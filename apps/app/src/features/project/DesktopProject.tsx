@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { DismissableLayer } from "radix-ui/internal";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { useShownDocuments } from "@/client/account/account-composition";
+import { useShownDocuments } from "@/client/account/account-context";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import { mainTabKey } from "@/client/project-shell/main-tabs";
 import type { OpenDocument } from "@/client/stores";

@@ -27,7 +27,7 @@ export class SignOutIncomplete extends Error {
 export const SIGN_OUT_FAILURE = "sign-out";
 const UNSENT_EDITS_WAIT_MS = ROOM_SAVE_MAX_WAIT_MS + 2_000;
 
-export class AccountFeatureLifetime {
+export class AccountLifetime {
   private readonly closing = new AbortController();
   readonly epochSignal = this.closing.signal;
   readonly registry: DocumentSessionRegistry;

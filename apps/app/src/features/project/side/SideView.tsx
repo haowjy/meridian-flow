@@ -9,8 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useShownDocuments } from "@/client/account/account-composition";
-import { useAccountId } from "@/client/account/account-context";
+import { useAccountId, useShownDocuments } from "@/client/account/account-context";
 import {
   type DraftPin,
   readDocumentView,

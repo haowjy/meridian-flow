@@ -19,8 +19,8 @@ redirect URI, and `MERIDIAN_WWW_ORIGIN`; isomorphic helpers keep guarded environ
 importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
 sealed `wos-session` cookie and logout clears it. `/logout` runs in the browser: it builds an
 account lifetime for the session's account and runs its sign-out (`clearForSignOut`: deliver,
-then delete every copy, or "Couldn't log out" with Retry), the same one the menu runs (Account
-lifetime in `features/project/context/.context/state-machines.md`), then loads `/end-session` as a
+then delete every copy, or "Couldn't log out" with Retry), the same one the menu runs ([Account
+lifetime](../src/client/account/.context/state-machines.md)), then loads `/end-session` as a
 full document. Without JavaScript `/logout` ends nothing. `/end-session?account=` names the WorkOS
 user id (`AuthMeResponse.user.externalId`); `/end-session` ends the session on the server unless
 that id isn't the session's (`getAuth().user.id`), when it goes to `/`: an account signed in
@@ -231,9 +231,12 @@ Deleted.
 `/_authenticated` mounts one unconditional composition, `AccountComposition`
 (`client/account/account-composition.tsx`), around the imports provider and the page:
 Query → connectivity → account lifetime → command driver → settings → failure log →
-thread → transport → copilot → density. What one account holds is read in that file; the
-lifetime (`account-lifetime.ts`) builds only from `client/` and `core/`, and the small
-context (account id, `requests`, epoch signal, sign-out) is `account-context.tsx`.
+thread → transport → copilot → density. The lifetime (`account-lifetime.ts`) builds what one
+account holds, only from `client/` and `core/`. Every context and hook that hands it out (account
+id, `requests`, epoch signal, sign-out, tree lists, standings, removal, the session registry,
+draft commands, presented documents) is in `account-context.tsx`, which imports the lifetime's
+parts only as types: modules under the composition's providers import those hooks, so a hook
+that lives with a provider makes an import loop.
 Never gate providers by pathname; conditional light and workspace branches once
 dropped `ThreadStoreProvider` during transitions.
 Account replacement synchronously fences the old lifetime before constructing the

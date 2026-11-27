@@ -3,7 +3,7 @@ import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState
 import {
   useOptionalContextRemovalCoordinator,
   useOptionalLiveDocumentSessionRegistry,
-} from "@/client/account/account-composition";
+} from "@/client/account/account-context";
 import { type TrashEntry, useTrashRows } from "@/client/query/useDocumentTrash";
 import { useDocumentTrashRestore } from "../DocumentTrashRestoreProvider";
 import {

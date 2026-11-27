@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useProjectStandings } from "@/client/account/account-composition";
+import { useProjectStandings } from "@/client/account/account-context";
 import { openDocumentFromFile } from "@/client/project-shell/open-document-from-file";
 import { contextRouteRequest } from "@/client/project-shell/project-route";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";

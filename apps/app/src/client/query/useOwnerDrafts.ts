@@ -3,7 +3,7 @@ import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import type { WorksSnapshot } from "@meridian/contracts/works";
 import { type QueryClient, useQueries } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
-import { useOptionalDraftCommandOwner } from "@/client/account/account-composition";
+import { useOptionalDraftCommandOwner } from "@/client/account/account-context";
 import { listOwnerDrafts } from "@/client/api/drafts-api";
 import { useCreatedDrafts } from "./created-drafts";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";

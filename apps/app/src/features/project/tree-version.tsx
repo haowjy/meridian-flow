@@ -11,8 +11,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { useDraftCommandOwner } from "@/client/account/account-composition";
-import { useAccountId } from "@/client/account/account-context";
+import { useAccountId, useDraftCommandOwner } from "@/client/account/account-context";
 import { enterScope } from "@/client/project-shell/document-views";
 import {
   useTreeVersionChoice,
