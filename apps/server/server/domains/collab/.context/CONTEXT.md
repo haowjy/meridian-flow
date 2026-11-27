@@ -191,7 +191,7 @@ command (REST writes and creates, upload finish) fail, and the context port answ
 In dev and test, a second connection taken while a command
 transaction is open throws (`assertOutsideCommandTransaction`): a wait on it is invisible to
 Postgres and can hang both sides for good. A step that must run before any transaction opens
-(the press saving its loaded forks, a Copy's read) calls `requireOutsideTransaction`, which
+(the press saving its loaded forks, a Copy's read) calls `assertOutsideTransaction`, which
 throws on the same switch inside any transaction. The tree list store takes no mutex (its in-memory
 copy is marked `pending` by the root transaction that changed it, and any other transaction
 reloads; a rollback at any depth drops the copies the transaction held), so it joins the command's

@@ -887,6 +887,7 @@ apps/server/server/lib/model-tools/copy-source.ts	Never the write's tool call id
 apps/server/server/lib/model-tools/document-tools.ts	What a command's effect leaves in memory outlives its rollback. The reply's own updates are the one such state an effect writes; each attempt, including the command transaction's own rerun after a deadlock, starts from what the reply held before it, and a rolled-back or refused one returns to it.
 apps/server/server/lib/model-tools/tool-context.ts	`threadIds` must be parents first (`parentsFirst`), or a Stop deadlocks against cancellation
 apps/server/server/lib/outbound-http1.ts	Flow pins HTTP/1.1 until undici#6147 ships: aborting an HTTP/2 request before its headers throws UND_ERR_INFO as an uncaught exception later and the crash policy ends the process
+apps/server/server/lib/public-address-dispatcher.ts	A hop resends the request to whatever origin the redirect names, so only a request with nothing to carry there (a GET or HEAD without a body or any header outside the safe list) follows one.
 apps/server/server/lib/work-receipt-reversal.ts	Read and lock the Works the receipts name before any document lock, or the Undo inverts against a Work mutation
 apps/server/server/lib/ws-thread-handler.ts	Request arrival wins: hold the active lease until this request passes auth, but invalidate an older pending handoff at once
 apps/server/server/lib/ws-upgrade-auth.ts	Nitro dev's WS proxy crashes the dev server on a non-101 upgrade hook, so a rejection accepts the socket first and closes it from open()

@@ -1,6 +1,6 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { BlockList, isIP } from "node:net";
-import { Agent, buildConnector, fetch, type RequestInit, type Response } from "undici";
+import { Agent, buildConnector, fetch, Headers, type RequestInit, type Response } from "undici";
 import { OUTBOUND_CONNECT_OPTIONS } from "./outbound-http1";
 
 const IPV4_SPECIAL = new BlockList();
@@ -92,11 +92,22 @@ export interface PublicFetchPolicy {
   redirectRefusal(status: number): Error;
 }
 
+const REDIRECT_SAFE_HEADERS = new Set(["accept", "accept-language", "user-agent"]);
+
+// A hop resends the request to whatever origin the redirect names, so only a request with nothing
+// to carry there (a GET or HEAD without a body or any header outside the safe list) follows one.
+function carriesNothing(init: Omit<RequestInit, "dispatcher" | "redirect">): boolean {
+  const method = (init.method ?? "GET").toUpperCase();
+  if ((method !== "GET" && method !== "HEAD") || init.body != null) return false;
+  return [...new Headers(init.headers).keys()].every((name) => REDIRECT_SAFE_HEADERS.has(name));
+}
+
 export async function publicFetch(
   url: URL,
   policy: PublicFetchPolicy,
   init: Omit<RequestInit, "dispatcher" | "redirect"> = {},
 ): Promise<Response> {
+  const maxRedirects = carriesNothing(init) ? policy.maxRedirects : 0;
   let next = url;
   for (let hop = 0; ; hop++) {
     policy.check(next);
@@ -108,7 +119,7 @@ export async function publicFetch(
     if (response.status < 300 || response.status >= 400) return response;
     await response.body?.cancel();
     const location = response.headers.get("location");
-    if (!location || hop >= policy.maxRedirects) throw policy.redirectRefusal(response.status);
+    if (!location || hop >= maxRedirects) throw policy.redirectRefusal(response.status);
     next = new URL(location, next);
   }
 }

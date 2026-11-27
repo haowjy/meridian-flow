@@ -134,7 +134,7 @@ export function assertOutsideCommandTransaction(what: string): void {
     throw new Error(`${what} inside a command transaction`);
 }
 
-export function requireOutsideTransaction(what: string): void {
+export function assertOutsideTransaction(what: string): void {
   if (COMMAND_CHECKS && isInDrizzleTransaction()) throw new Error(`${what} inside a transaction`);
 }
 

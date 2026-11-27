@@ -61,9 +61,9 @@ import type { LoroDoc } from "loro-crdt";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
+  assertOutsideTransaction,
   currentDrizzleDb,
   type DrizzleDb,
-  requireOutsideTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { NO_OWNERS, type TreeOwners, withTreeOwners } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
@@ -198,7 +198,7 @@ export function createDrizzlePress(
    * in the room but not yet in a row. The press's transaction holds the locks a save takes.
    */
   async function saveLoadedForks(drafts: readonly string[]): Promise<void> {
-    requireOutsideTransaction("Saving a press's loaded forks");
+    assertOutsideTransaction("Saving a press's loaded forks");
     for (const name of deps.rooms.loaded()) {
       const room = parseLoroRoomName(name);
       if (room?.kind === "fork" && drafts.includes(room.draftId)) await deps.rooms.flush(room);

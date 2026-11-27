@@ -12,7 +12,7 @@ import { decodeRoomVersion, type RoomVersion, versionCovers } from "@meridian/do
 import type { PMNode } from "@meridian/markup";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import {
-  requireOutsideTransaction,
+  assertOutsideTransaction,
   runAfterDrizzleCommit,
 } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -171,7 +171,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
    * transaction or lock is taken.
    */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
-    requireOutsideTransaction("A Copy's read");
+    assertOutsideTransaction("A Copy's read");
     const roots: PreparedRoot[] = [];
     const purged: string[] = [];
     const looping: string[] = [];
