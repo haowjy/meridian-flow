@@ -1,5 +1,5 @@
 import type { CommandDriver, CommandRecord, SubmitInput } from "@meridian/command-driver";
-import { DeviceRefusedError, submitCommand } from "@/client/commands/submit";
+import { settleCommand } from "@/client/commands/submit";
 
 export async function renameCommand(
   driver: CommandDriver | null,
@@ -7,14 +7,7 @@ export async function renameCommand(
   onRenamed?: (title: string) => void,
 ): Promise<void> {
   if (!input.body.title) return;
-  if (!driver) throw new Error("Commands are not available yet");
-  const record = await submitCommand(driver, input);
-  if (!record) throw new DeviceRefusedError();
-  const settled = await driver.whenSettled(record.id);
-  if (settled?.state === "done") return onRenamed?.(input.body.title);
-  if (settled?.state !== "never") return;
-  void driver.dismiss(record.id);
-  throw new Error(`${input.kind} ended never`);
+  if (await settleCommand(driver, input)) onRenamed?.(input.body.title);
 }
 
 export function projectRenames<Item extends { id: string; title: string | null }>(

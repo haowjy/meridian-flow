@@ -14,8 +14,6 @@ export const projectQueryKeys = {
     projectId: string,
     filter: { favorite?: boolean; search?: string | null; workId?: string | null },
   ) => [...projectQueryKeys.chatFeed(projectId), filter] as const,
-  threadUserState: (projectId: string, threadId: string) =>
-    ["projects", projectId, "thread-user-state", threadId] as const,
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
   drafts: (projectId: string, draft: string) => ["projects", projectId, "drafts", draft] as const,
   draftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,

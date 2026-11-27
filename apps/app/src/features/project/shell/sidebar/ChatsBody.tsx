@@ -1,12 +1,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { Pin } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { announce, announceError } from "@/client/announcements";
-import { useRenameChat } from "@/client/query/chat-rename-command";
-import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
+import { useCommandDriver } from "@/client/commands/driver-context";
+import { pinChat, useRenameChat } from "@/client/query/chat-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -414,7 +413,7 @@ function DeletedRow({
   takeFocus: () => boolean;
   onUndo: () => void;
 }) {
-  const { title } = notice;
+  const { title, keptWith } = notice;
   const failed = notice.status === "failed";
   return (
     <div data-chat-delete-notice={notice.threadId}>
@@ -422,15 +421,23 @@ function DeletedRow({
         gone
         title={title}
         notice={
-          <RowWord
-            focus={{ take: takeFocus }}
-            word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
-            tone={failed ? "warning" : "action"}
-            label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
-            sentence={failed ? t`Couldn't restore` : t`Deleted just now`}
-            pending={notice.status === "restoring"}
-            onAction={onUndo}
-          />
+          keptWith ? (
+            <RowWord
+              tone="note"
+              word={<Trans>With {keptWith}</Trans>}
+              sentence={t`Comes back when ${keptWith} is restored`}
+            />
+          ) : (
+            <RowWord
+              focus={{ take: takeFocus }}
+              word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
+              tone={failed ? "warning" : "action"}
+              label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
+              sentence={failed ? t`Couldn't restore` : t`Deleted just now`}
+              pending={notice.status === "restoring"}
+              onAction={onUndo}
+            />
+          )
         }
       />
     </div>
@@ -456,7 +463,7 @@ const ChatRow = memo(function ChatRow({
   current: boolean;
   nested: boolean;
 }) {
-  const client = useQueryClient();
+  const driver = useCommandDriver();
   const title = displayThreadTitle(chat.title);
   const [menuOpen, setMenuOpen] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -465,12 +472,15 @@ const ChatRow = memo(function ChatRow({
     announce(t`Renamed to ${confirmed}`);
   });
   const onPin = (value: boolean) =>
-    void runFavoriteCommand(client, projectId, chat.id, value).then((outcome) => {
-      if (outcome.status !== "success") {
+    void pinChat(driver, projectId, chat.id, value).then(
+      (done) => {
+        if (done) announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
+      },
+      () => {
         announceError(value ? t`Couldn’t pin ${title}` : t`Couldn’t unpin ${title}`);
         onMoved(chat.id, !value);
-      } else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
-    });
+      },
+    );
   const onDelete = () =>
     replying ? setAsking(true) : deletes.delete(chat.id, title, placeOf(chat.id));
   return (

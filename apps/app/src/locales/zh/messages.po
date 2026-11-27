@@ -602,6 +602,10 @@ msgid "{submitLabel} (enter a name first)"
 msgstr ""
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
+msgid "{title} comes back when {work} is restored"
+msgstr ""
+
+#: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "{title} restored"
 msgstr ""
 
@@ -1578,6 +1582,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Column options"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Comes back when {keptWith} is restored"
 msgstr ""
 
 #: src/features/chat/composer/Composer.tsx
@@ -6366,6 +6374,10 @@ msgstr "你在想什么？"
 #: src/features/chat/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "With {keptWith}"
+msgstr ""
 
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Withdrawn"

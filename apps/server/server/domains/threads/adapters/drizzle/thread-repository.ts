@@ -615,6 +615,12 @@ export function createDrizzleThreadRepository(
     async updateCost(id, deltaCostUsd, turnCountIncrement = 0) {
       await writeThreadCostUpdate(db, id, deltaCostUsd, turnCountIncrement);
     },
+    async keepWithDeletedWork(id, workId) {
+      await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({ deletedByWorkId: workId })
+        .where(and(eq(schema.threads.id, id), isNotNull(schema.threads.deletedAt)));
+    },
     async setTrashState(id, target) {
       const deletedAt = target === "deleted" ? new Date() : null;
       const [row] = await currentDrizzleDb(db)

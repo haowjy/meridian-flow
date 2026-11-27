@@ -1,4 +1,4 @@
-import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type {
   ProjectRepository,
@@ -20,6 +20,7 @@ export type ThreadTrashState = "deleted" | "visible";
 export interface ThreadTrashTransition {
   thread: Thread;
   changed: boolean;
+  keptWith?: { workId: WorkId; name: string };
 }
 
 interface TransitionThreadTrashDeps {
@@ -46,15 +47,22 @@ export async function transitionThreadTrash(
         throw new ThreadTrashUnavailableError(input.threadId);
       }
       const project = await deps.projects.findById(before.projectId);
-      if (!project || project.deletedAt || project.userId !== input.userId) {
+      if (!project || project.userId !== input.userId) {
         throw new ThreadTrashUnavailableError(input.threadId);
       }
       if (!before.deletedAt) return { thread: before, changed: false };
       const rootThreadId = before.rootThreadId ?? before.id;
       const primary = await deps.repos.threadWorks.findPrimary(rootThreadId);
-      const primaryWork = primary ? await deps.works.findById(primary.workId) : null;
-      if (before.deletedByWorkId || primaryWork?.deletedAt) {
-        throw new ThreadTrashUnavailableError(input.threadId);
+      const holder = before.deletedByWorkId ?? primary?.workId;
+      const holderWork = holder ? await deps.works.findById(holder) : null;
+      if (before.deletedByWorkId || holderWork?.deletedAt) {
+        if (holderWork && !before.deletedByWorkId)
+          await deps.repos.threads.keepWithDeletedWork(input.threadId, holderWork.id);
+        return {
+          thread: before,
+          changed: false,
+          ...(holderWork && { keptWith: { workId: holderWork.id, name: holderWork.name } }),
+        };
       }
       const threadPrimary = await deps.repos.threadWorks.findPrimary(input.threadId);
       const availableAuthority = threadPrimary
@@ -76,14 +84,11 @@ export async function transitionThreadTrash(
       throw new ThreadTrashUnavailableError(input.threadId);
     }
     const project = await deps.projects.findById(before.projectId);
-    if (!project || project.deletedAt || project.userId !== input.userId) {
+    if (!project || project.userId !== input.userId) {
       throw new ThreadTrashUnavailableError(input.threadId);
     }
-    const alreadyAtTarget =
-      input.target === "deleted" ? Boolean(before.deletedAt) : !before.deletedAt;
-    if (alreadyAtTarget) return { thread: before, changed: false };
-
-    const thread = await deps.repos.threads.setTrashState(input.threadId, input.target);
+    if (before.deletedAt) return { thread: before, changed: false };
+    const thread = await deps.repos.threads.setTrashState(input.threadId, "deleted");
     return { thread, changed: true };
   });
 }

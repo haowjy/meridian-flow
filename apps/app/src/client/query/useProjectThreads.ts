@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { listProjectThreads } from "@/client/api/projects-api";
 import { useCommands } from "@/client/commands/driver-context";
-import { projectChatTitles } from "./chat-rename-command";
+import { projectChats } from "./chat-commands";
 import { projectChatDrafts } from "./draft-commands";
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
@@ -35,7 +35,7 @@ export function useProjectThreads(
 
   const records = useCommands();
   const threads = useMemo(
-    () => (data ? projectChatTitles(records, projectChatDrafts(records, data)) : data),
+    () => (data ? projectChats(records, projectChatDrafts(records, data)) : data),
     [records, data],
   );
   return { threads, isError, isFetching, refetch };

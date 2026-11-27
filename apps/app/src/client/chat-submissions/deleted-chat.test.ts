@@ -15,15 +15,10 @@ import {
 import type { ChatSubmission } from "./store";
 import { threadAvailability } from "./thread-availability";
 
-const deleteApi = vi.hoisted(() => vi.fn());
 const probe = vi.hoisted(() => vi.fn());
 vi.mock("./thread-availability", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   probeChatDestination: probe,
-}));
-vi.mock("@/client/api/threads-api", async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  deleteThread: deleteApi,
 }));
 
 function proof(code = "thread_deleted", accountId = "owner", projectDeleted = false) {

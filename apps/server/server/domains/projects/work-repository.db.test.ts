@@ -746,7 +746,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toEqual([]);
       expect(await shown()).toEqual([]);
-      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      const { setOwnedThreadTrashState } = await import("../threads/thread-access.js");
       const threadTrashDeps = {
         repos: threadRepos,
         projects: {
@@ -756,9 +756,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         workContextNotices: {
           async threadChanged() {},
-          async materializeIdle() {
-            return "delivered" as const;
-          },
         },
         workAuthorityResolver: authorities,
         works,
@@ -766,18 +763,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       for (const threadId of [THREAD_ID, childThreadId, separatelyDeletedThreadId]) {
         await expect(
-          restoreOwnedThreadFromTrash(threadTrashDeps, threadId, USER_ID as never),
-        ).rejects.toMatchObject({ statusCode: 404 });
+          setOwnedThreadTrashState(threadTrashDeps, threadId, USER_ID as never, "visible"),
+        ).resolves.toMatchObject({
+          thread: { id: threadId, deletedAt: expect.any(String) },
+          keptWith: { workId: work.id },
+        });
       }
       await expect(
         db
           .select({ id: schema.threads.id, deletedByWorkId: schema.threads.deletedByWorkId })
           .from(schema.threads)
-          .where(inArray(schema.threads.id, [THREAD_ID as never, childThreadId as never])),
+          .where(
+            inArray(schema.threads.id, [
+              THREAD_ID as never,
+              childThreadId as never,
+              separatelyDeletedThreadId as never,
+            ]),
+          ),
       ).resolves.toEqual(
         expect.arrayContaining([
           { id: THREAD_ID, deletedByWorkId: work.id },
           { id: childThreadId, deletedByWorkId: work.id },
+          { id: separatelyDeletedThreadId, deletedByWorkId: work.id },
         ]),
       );
 
@@ -786,8 +793,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db
           .select({ deletedByWorkId: schema.threads.deletedByWorkId })
           .from(schema.threads)
-          .where(inArray(schema.threads.id, [THREAD_ID as never, childThreadId as never])),
-      ).resolves.toEqual([{ deletedByWorkId: null }, { deletedByWorkId: null }]);
+          .where(
+            inArray(schema.threads.id, [
+              THREAD_ID as never,
+              childThreadId as never,
+              separatelyDeletedThreadId as never,
+            ]),
+          ),
+      ).resolves.toEqual([
+        { deletedByWorkId: null },
+        { deletedByWorkId: null },
+        { deletedByWorkId: null },
+      ]);
       await expect(threadRepos.threads.findById(THREAD_ID as never)).resolves.toMatchObject({
         id: THREAD_ID,
       });
@@ -796,8 +813,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(
         threadRepos.threads.findById(separatelyDeletedThreadId as never),
-      ).resolves.toBeNull();
-      await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toHaveLength(1);
+      ).resolves.toMatchObject({ id: separatelyDeletedThreadId });
+      await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toHaveLength(2);
       expect(await shown()).toContain(document.id);
       await expect(
         db
@@ -812,7 +829,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toHaveLength(1);
     });
 
-    it("refuses restoring a marked child after its root moves to another Work", async () => {
+    it("keeps a marked child with its deleted Work after its root moves to another Work", async () => {
       const noWork = await works.ensureNoWork(PROJECT_ID as never);
       const deletedWork = await works.create({ projectId: PROJECT_ID, name: "Deleted Work" });
       const liveWork = await works.create({ projectId: PROJECT_ID, name: "Live Work" });
@@ -862,9 +879,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await threadRepos.threadWorks.rebindPrimary(THREAD_ID as never, liveWork.id);
       await works.softDelete(deletedWork.id);
 
-      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      const { setOwnedThreadTrashState } = await import("../threads/thread-access.js");
       await expect(
-        restoreOwnedThreadFromTrash(
+        setOwnedThreadTrashState(
           {
             repos: threadRepos,
             projects: {
@@ -874,9 +891,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             workContextNotices: {
               async threadChanged() {},
-              async materializeIdle() {
-                return "delivered" as const;
-              },
             },
             workAuthorityResolver: authorities,
             works,
@@ -884,8 +898,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           childThreadId as never,
           USER_ID as never,
+          "visible",
         ),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      ).resolves.toMatchObject({
+        thread: { id: childThreadId, deletedAt: expect.any(String) },
+        keptWith: { workId: deletedWork.id },
+      });
       await expect(
         threadRepos.threadWorks.findPrimary(childThreadId as never),
       ).resolves.toMatchObject({ workId: deletedWork.id });
