@@ -802,23 +802,29 @@ function effectSettler(
   command: WriteToolInput["command"],
 ): (effect: () => Promise<unknown>) => Promise<unknown> {
   // What a command's effect leaves in memory outlives its rollback. The reply's own updates are
-  // the one such state an effect writes; each attempt starts from, and a rolled-back one returns
-  // to, what the reply held before it.
+  // the one such state an effect writes; each attempt, including the command transaction's own
+  // rerun after a deadlock, starts from what the reply held before it, and a rolled-back or
+  // refused one returns to it.
   const run = async (effect: () => Promise<unknown>, retried: boolean) => {
     const restore = ctx.frontiers?.reply?.checkpoint();
-    const settled = await attempt(effect, retried).catch((cause) => {
+    const settled = await attempt(effect, retried, restore).catch((cause) => {
       restore?.();
       throw cause;
     });
     if (settled.outcome.status === "refused") restore?.();
     return settled;
   };
-  const attempt = (effect: () => Promise<unknown>, retried: boolean) =>
+  const attempt = (
+    effect: () => Promise<unknown>,
+    retried: boolean,
+    restore: (() => void) | undefined,
+  ) =>
     deps.documentSync.modelEdits().run({
       key: edit.key,
       owner: { threadId: ctx.threadId, turnId: ctx.turnId },
       signal: ctx.signal,
       async effect() {
+        restore?.();
         const raw = await effect();
         if (!retried && isServerFailure(raw)) throw new TransientEditFailure();
         const rendered = edit.render(raw);

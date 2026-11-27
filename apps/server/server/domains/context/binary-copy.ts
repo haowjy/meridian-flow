@@ -1,4 +1,5 @@
 import { copiedFilename, readSegment, renderFilename } from "@meridian/contracts/protocol";
+import { deferUntilDrizzleRollback } from "../../shared/drizzle-transaction.js";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
@@ -90,6 +91,8 @@ export async function copyBinaryDocument(
     source: input.source,
   });
   if (!prepared.ok) return prepared;
+  const { key } = prepared.value;
+  deferUntilDrizzleRollback(() => input.release.keys([key]));
 
   const written = await input.port.writeBinary(destinationUri, {
     fileType: input.source.fileType,
@@ -101,7 +104,7 @@ export async function copyBinaryDocument(
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });
-  if (!written.ok) await input.release.keys([prepared.value.key]);
+  if (!written.ok) await input.release.keys([key]);
   return written;
 }
 
