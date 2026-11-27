@@ -252,6 +252,7 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
   return true;
 }
 
+// Inside a transaction this resolves at once; the callback runs after commit.
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): Promise<void> {
   const active = activeTransaction();
   if (active) {
@@ -262,7 +263,7 @@ export function runAfterDrizzleCommit(callback: () => void | Promise<void>): Pro
     Promise.resolve(runOutsideWrite(callback)),
     "after-commit callback",
   );
-  run.catch((cause) => process.emitWarning(`after-commit callback failed: ${String(cause)}`));
+  run.catch(warnAfterCommitFailed);
   return run;
 }
 
@@ -304,9 +305,15 @@ export function runOutsideWrite<T>(operation: () => T): T {
 }
 
 async function dispatchAfterCommit(callbacks: Array<() => void | Promise<void>>): Promise<void> {
-  await Promise.allSettled(
+  const settled = await Promise.allSettled(
     callbacks.map((callback) => Promise.resolve().then(() => runOutsideWrite(callback))),
   );
+  for (const result of settled)
+    if (result.status === "rejected") warnAfterCommitFailed(result.reason);
+}
+
+function warnAfterCommitFailed(cause: unknown): void {
+  process.emitWarning(`after-commit callback failed: ${String(cause)}`);
 }
 
 async function dispatchAfterRollback(
