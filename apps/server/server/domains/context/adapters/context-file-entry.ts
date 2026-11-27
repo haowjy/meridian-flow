@@ -9,13 +9,6 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-export function isStorageBackedDocument(document: {
-  fileType: string;
-  storageUrl: string | null;
-}): boolean {
-  return document.storageUrl !== null || classifyFiletype(document.fileType).kind === "binary";
-}
-
 export type CatalogFileRow = {
   id: string;
   contextSourceId: string;
@@ -64,9 +57,8 @@ export function mapAuthoritativeFile(input: {
   const filename = document.name;
   const path = [...input.parentPath, document.segment];
   const classification = classifyFiletype(document.fileType);
-  const storageBacked = isStorageBackedDocument(document);
   const persistedClassification =
-    !storageBacked && classification.kind === "tracked"
+    classification.kind === "tracked"
       ? {
           editable: true as const,
           filetype: document.fileType as Filetype,
