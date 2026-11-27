@@ -9,7 +9,6 @@ import {
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { processDetachedWork } from "../../shared/detached-work.js";
-import { recordFailureAfterCommit } from "../../shared/failure-records.js";
 import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import {
   type EventSink,
@@ -21,6 +20,7 @@ import {
   createOrchestratorEventProjector,
   PROJECTOR_RESET_EVENT_TYPES,
 } from "./domain/orchestrator-event-projector.js";
+import { recordFailureAfterCommit } from "./failure-records.js";
 import type { EventJournalReader, EventJournalWriter } from "./ports/index.js";
 
 const HOT_CACHE_LIMIT = 500;

@@ -63,7 +63,7 @@ record (no column holds it). The projector itself never logs.
 Records go to the `recordFailure` a `LiveEventWriter` carries (required by
 `PersistenceDeps`; `noFailureRecorder` is the explicit opt-out; the raw journal stays
 append-only), which queues them on the
-`FailureRecord` transaction participant (`shared/failure-records.ts`): own
+`FailureRecord` transaction participant (`threads/failure-records.ts`): own
 state, forked and merged across savepoints, emitted through `recordFailure` over
 `emitEvent` after the outermost commit. Within one Drizzle transaction a repeated
 `(occurrenceId, phase)` emits once; across transactions uniqueness comes from the

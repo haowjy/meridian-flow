@@ -1,12 +1,12 @@
 import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { recordFailureAfterCommit } from "../../../../shared/failure-records.js";
 import {
   type InMemoryTransactionOwner,
   noTransactionOwner,
 } from "../../../../shared/in-memory-transaction.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { deriveJournalTurnId } from "../../domain/journal-turn-id.js";
+import { recordFailureAfterCommit } from "../../failure-records.js";
 import type {
   EventJournalReader,
   JournalEntry,
