@@ -146,8 +146,10 @@ const mimeToFiletype: Record<string, Filetype> = {
   "image/svg+xml": "svg",
 };
 
-export function filetypeForMimeType(mimeType: string): Filetype {
-  return filetypeForKnownMimeType(mimeType) ?? DEFAULT_FILETYPE;
+export function filetypeForStoredFile(mimeType: string): Filetype {
+  const known = filetypeForKnownMimeType(mimeType);
+  if (known !== null && classifyFiletype(known).kind !== "tracked") return known;
+  return documentFileTypeFor({ filetype: null, mimeType }) ?? "binary";
 }
 
 export function filetypeForKnownMimeType(mimeType: string): Filetype | null {

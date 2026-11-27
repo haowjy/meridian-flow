@@ -27,7 +27,6 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
-import { isStorageBackedDocument } from "../context-file-entry.js";
 
 type DocumentRow = Pick<
   VisibleDocument,
@@ -58,7 +57,8 @@ function binaryKind(fileType: string | null): DocumentFileType {
 }
 
 export function mapDocument(row: DocumentRow): ContextDocument {
-  const isBinary = isStorageBackedDocument(row);
+  const { kind } = classifyFiletype(row.fileType);
+  const isBinary = kind === "binary" || kind === "custom";
   return {
     id: row.id,
     folderId: row.folderId,
