@@ -294,6 +294,7 @@ export interface ThreadRepository {
   recomputeCostFromModelResponses(id: ThreadId): Promise<void>;
   updateCost(id: ThreadId, deltaCostUsd: string, turnCountIncrement?: number): Promise<void>;
   setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
+  keepWithDeletedWork(id: ThreadId, workId: WorkId): Promise<void>;
 }
 
 export interface WorkThreadSummary {

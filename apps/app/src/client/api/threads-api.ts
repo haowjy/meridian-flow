@@ -11,14 +11,11 @@ import {
   apiThreadHandoffPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
-  apiThreadPath,
-  apiThreadRestorePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
   apiThreadTurnRetryPath,
-  apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
   cancelTurnResponseSchema,
@@ -41,8 +38,6 @@ import {
   type TurnContextPreview,
   threadAvailableSkillsResponseSchema,
   threadSnapshotSchema,
-  type UpdateThreadUserStateRequest,
-  type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
 import type {
   EnqueueThreadControlRequest,
@@ -56,9 +51,7 @@ import type { HttpResult } from "@meridian/thread-client";
 import {
   apiFetch,
   deleteJson,
-  deleteRequest,
   getJson,
-  patchJson,
   postJson,
   putJson,
   readResponsePayload,
@@ -205,14 +198,6 @@ export function withdrawThreadControl(
   return postJson(apiThreadControlWithdrawPath(threadId, controlId), {});
 }
 
-export function deleteThread({ data }: { data: { threadId: string } }): Promise<void> {
-  return deleteRequest(apiThreadPath(data.threadId));
-}
-
-export function restoreThread(threadId: string): Promise<unknown> {
-  return postJson(apiThreadRestorePath(threadId), {});
-}
-
 export async function getThreadSnapshot({
   data,
   signal,
@@ -224,13 +209,6 @@ export async function getThreadSnapshot({
     signal,
     schema: threadSnapshotSchema,
   });
-}
-
-export function updateThreadUserState(
-  threadId: string,
-  request: UpdateThreadUserStateRequest,
-): Promise<UpdateThreadUserStateResponse> {
-  return patchJson(apiThreadUserStatePath(threadId), request);
 }
 
 export function rebindThreadWork(

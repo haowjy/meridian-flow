@@ -1,17 +1,15 @@
 import { t } from "@lingui/core/macro";
+import type { CommandDriver } from "@meridian/command-driver";
 import type { QueryClient } from "@tanstack/react-query";
 import { announce, announceError } from "@/client/announcements";
 import {
   cleanDeletedChat,
   restoreOwnDeletedChatWords,
 } from "@/client/chat-submissions/deleted-chat";
-import { probeChatDestination } from "@/client/chat-submissions/thread-availability";
 import { readLastShownChat, writeLastShownChat } from "@/client/project-shell/store";
-import {
-  type ChatCommandOutcome,
-  deleteProjectChat,
-  restoreProjectChat,
-} from "@/client/query/delete-project-chat";
+import { CHAT_DELETE_KIND, CHAT_RESTORE_KIND, trashChat } from "@/client/query/chat-commands";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { whenRead } from "@/client/query/when-read";
 import type { ChatNavigation } from "../../routing/chat-navigation";
 
 export type ChatDeleteNotice = {
@@ -28,6 +26,7 @@ export type ChatDeleteRefusal = { threadId: string; title: string };
 
 type Ports = {
   client: QueryClient;
+  driver: () => CommandDriver | null;
   accountId: string;
   projectId: string;
   navigation(): ChatNavigation;
@@ -39,7 +38,6 @@ type Held = {
   notice: ChatDeleteNotice;
   taken: Taken;
   moved: Promise<unknown>;
-  landed: Promise<boolean>;
   ended: boolean;
 };
 
@@ -66,7 +64,7 @@ export class ChatDeletes {
     if (this.closed) return;
     this.end();
     this.refusal = null;
-    const { client, accountId, projectId } = this.ports;
+    const { accountId, projectId } = this.ports;
     const taken = this.takeAway(threadId);
     const moved = this.moveWords(threadId, title);
     const notice: ChatDeleteNotice = {
@@ -76,16 +74,12 @@ export class ChatDeletes {
       status: "ready",
       place,
     };
-    const held: Held = {
-      notice,
-      taken,
-      moved,
-      ended: false,
-      landed: deleteProjectChat(client, projectId, threadId).then((outcome) => {
-        if (outcome.status === "success") {
-          announce(t`Chat deleted`);
-          return true;
-        }
+    const held: Held = { notice, taken, moved, ended: false };
+    void trashChat(this.ports.driver(), CHAT_DELETE_KIND, projectId, threadId).then(
+      (done) => {
+        if (done) announce(t`Chat deleted`);
+      },
+      () => {
         if (this.held === held) this.held = null;
         void moved.then(() => restoreOwnDeletedChatWords(accountId, threadId));
         if (!this.closed) {
@@ -94,9 +88,8 @@ export class ChatDeletes {
         }
         this.publish();
         announceError(t`Couldn't delete ${title}`);
-        return false;
-      }),
-    };
+      },
+    );
     this.held = held;
     this.focusPending = notice.id;
     this.publish();
@@ -112,13 +105,11 @@ export class ChatDeletes {
     const held = this.held;
     if (!held || held.notice.status === "restoring") return false;
     this.update(held, "restoring");
-    if (!(await held.landed)) return false;
     const { threadId, title } = held.notice;
     await held.moved;
     restoreOwnDeletedChatWords(this.ports.accountId, threadId);
     if (!held.ended) this.putBack(threadId, held.taken);
-    const outcome = await restoreProjectChat(this.ports.client, this.ports.projectId, threadId);
-    if (outcome.status === "success") {
+    if (await this.restored(threadId)) {
       if (this.held === held) this.held = null;
       this.publish();
       announce(t`${title} restored`);
@@ -130,20 +121,6 @@ export class ChatDeletes {
     this.update(held, "failed");
     announceError(t`Couldn't restore ${title}`);
     return false;
-  }
-
-  async restore(threadId: string): Promise<ChatCommandOutcome> {
-    const outcome = await restoreProjectChat(this.ports.client, this.ports.projectId, threadId);
-    const held = this.held;
-    if (outcome.status !== "success" || !held || held.notice.status === "restoring") return outcome;
-    if (!(await held.landed)) return outcome;
-    const back =
-      held.notice.threadId === threadId || (await this.probe(held.notice.threadId)) === "present";
-    if (back && this.held === held) {
-      this.held = null;
-      this.publish();
-    }
-    return outcome;
   }
 
   dismiss = () => this.end();
@@ -179,8 +156,20 @@ export class ChatDeletes {
     ).catch(reportError);
   }
 
-  private probe(threadId: string) {
-    return probeChatDestination(this.ports.accountId, threadId);
+  private async restored(threadId: string): Promise<boolean> {
+    const { client, projectId } = this.ports;
+    const read = Promise.all([
+      whenRead(client, { queryKey: projectQueryKeys.threads(projectId), exact: true }),
+      whenRead(client, { queryKey: projectQueryKeys.chatFeed(projectId) }),
+    ]);
+    try {
+      if (!(await trashChat(this.ports.driver(), CHAT_RESTORE_KIND, projectId, threadId)))
+        return false;
+    } catch {
+      return false;
+    }
+    await read;
+    return true;
   }
 
   private takeAway(threadId: string): Taken {

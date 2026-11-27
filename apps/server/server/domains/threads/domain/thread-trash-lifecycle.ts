@@ -46,15 +46,16 @@ export async function transitionThreadTrash(
         throw new ThreadTrashUnavailableError(input.threadId);
       }
       const project = await deps.projects.findById(before.projectId);
-      if (!project || project.deletedAt || project.userId !== input.userId) {
+      if (!project || project.userId !== input.userId) {
         throw new ThreadTrashUnavailableError(input.threadId);
       }
-      if (!before.deletedAt) return { thread: before, changed: false };
+      if (!before.deletedAt || before.deletedByWorkId) return { thread: before, changed: false };
       const rootThreadId = before.rootThreadId ?? before.id;
       const primary = await deps.repos.threadWorks.findPrimary(rootThreadId);
       const primaryWork = primary ? await deps.works.findById(primary.workId) : null;
-      if (before.deletedByWorkId || primaryWork?.deletedAt) {
-        throw new ThreadTrashUnavailableError(input.threadId);
+      if (primaryWork?.deletedAt) {
+        await deps.repos.threads.keepWithDeletedWork(input.threadId, primaryWork.id);
+        return { thread: before, changed: false };
       }
       const threadPrimary = await deps.repos.threadWorks.findPrimary(input.threadId);
       const availableAuthority = threadPrimary
@@ -76,14 +77,11 @@ export async function transitionThreadTrash(
       throw new ThreadTrashUnavailableError(input.threadId);
     }
     const project = await deps.projects.findById(before.projectId);
-    if (!project || project.deletedAt || project.userId !== input.userId) {
+    if (!project || project.userId !== input.userId) {
       throw new ThreadTrashUnavailableError(input.threadId);
     }
-    const alreadyAtTarget =
-      input.target === "deleted" ? Boolean(before.deletedAt) : !before.deletedAt;
-    if (alreadyAtTarget) return { thread: before, changed: false };
-
-    const thread = await deps.repos.threads.setTrashState(input.threadId, input.target);
+    if (before.deletedAt) return { thread: before, changed: false };
+    const thread = await deps.repos.threads.setTrashState(input.threadId, "deleted");
     return { thread, changed: true };
   });
 }
