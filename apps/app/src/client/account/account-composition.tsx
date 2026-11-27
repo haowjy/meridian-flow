@@ -167,8 +167,8 @@ function LifetimeContexts({
   children: ReactNode;
 }) {
   useInsertionEffect(() => {
-    lifetime.resumeFeatureLease();
-    return () => lifetime.suspendFeatureLease();
+    lifetime.mount();
+    return () => lifetime.unmount();
   }, [lifetime]);
   const signOut = useCallback(() => lifetime.clearForSignOut(), [lifetime]);
   return (
