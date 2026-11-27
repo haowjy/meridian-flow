@@ -4,8 +4,6 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { FileDestination } from "../../file-policy/index.js";
 import type { TurnReceiptStateStore } from "./turn-receipt.js";
 
-export type TurnEditedDocumentScope = "live" | "draft";
-
 export type TurnEditedDocumentId = (
   | { documentId: DocumentId; scope: "live" }
   | { documentId: DocumentId; scope: "draft"; draft: DraftId; ownerHandle: string | null }

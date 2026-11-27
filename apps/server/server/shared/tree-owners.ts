@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ClosedOwnerWhy, Settlement } from "@meridian/contracts/commands";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { contextSources } from "@meridian/database/schema";
 import type { UndoAnswer, UndoReport } from "@meridian/project-tree";
@@ -165,9 +165,3 @@ export function answerOf(report: UndoReport, judge: TreeJudge): UndoAnswer {
   const source = report.sources.find(judge.closed);
   return source === undefined ? "undoes" : closedAnswer(judge, source);
 }
-
-export const returnedFor = ({ why }: ClosedSource, items?: readonly string[]): Settlement => ({
-  rule: "returned",
-  why,
-  ...(items ? { items: [...items] } : {}),
-});

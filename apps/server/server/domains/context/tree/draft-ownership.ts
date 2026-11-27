@@ -4,8 +4,8 @@
  * another project's documents. Every check that pairs a draft with a document (draft
  * admission, file facts) asks here.
  */
-import type { ContextSourceId, DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
-import { contextSources, drafts, projects, works } from "@meridian/database/schema";
+import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
+import { contextSources, projects, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList } from "../ports/tree-list-store.js";
@@ -63,36 +63,4 @@ export async function loadDocumentOwners(
     if (owner) result.set(id, owner);
   }
   return result;
-}
-
-export async function loadDocumentOwner(
-  db: DrizzleDb,
-  documentId: DocumentId,
-): Promise<SourceOwner | null> {
-  return (await loadDocumentOwners(db, [documentId])).get(documentId) ?? null;
-}
-
-export async function loadDraftHolder(
-  db: DrizzleDb,
-  draftId: DraftId,
-): Promise<DraftHolder | null> {
-  const [row] = await currentDrizzleDb(db)
-    .select({ projectId: drafts.projectId, accountId: projects.userId })
-    .from(drafts)
-    .innerJoin(projects, eq(projects.id, drafts.projectId))
-    .where(eq(drafts.id, draftId))
-    .limit(1);
-  return row ?? null;
-}
-
-export async function loadProjectHolder(
-  db: DrizzleDb,
-  projectId: ProjectId,
-): Promise<DraftHolder | null> {
-  const [row] = await currentDrizzleDb(db)
-    .select({ projectId: projects.id, accountId: projects.userId })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-  return row ?? null;
 }

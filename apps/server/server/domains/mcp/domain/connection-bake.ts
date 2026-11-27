@@ -12,8 +12,6 @@ export interface ConnectionBake {
   catalogue: string | null;
 }
 
-export const NO_CONNECTIONS: ConnectionBake = { bakedConnections: [], catalogue: null };
-
 const HEADER =
   "Connections (not loaded). Before the first call to one of these tools, call mcp_describe with its name to read its arguments. Then call it with mcp_call.";
 

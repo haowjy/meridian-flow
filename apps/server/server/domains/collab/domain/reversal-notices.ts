@@ -1,9 +1,5 @@
 import type { DraftId } from "@meridian/contracts";
-import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
-
-export { documentTitleFromUri } from "@meridian/contracts/context-uri";
 
 export type ReversalNoticeDiagnostics = {
   documentUriMissing(input: {
@@ -12,34 +8,6 @@ export type ReversalNoticeDiagnostics = {
     representativeTurnId?: string | null;
   }): void;
 };
-
-export function createDocumentPresentationResolver(resolveDocumentUri: DocumentUriResolver) {
-  return {
-    async resolveTitle(documentId: string): Promise<string | null> {
-      return documentTitleFromUri(await resolveDocumentUri(documentId));
-    },
-  };
-}
-
-export async function recordAwarenessDegradedNotice(input: {
-  notices: NoticePort;
-  resolveDocumentUri: DocumentUriResolver;
-  threadId: string;
-  documentIds: readonly string[];
-}): Promise<void> {
-  const documentNames = await Promise.all(
-    input.documentIds.map(async (documentId) => {
-      const uri = await input.resolveDocumentUri(documentId);
-      return documentTitleFromUri(uri) ?? documentId;
-    }),
-  );
-  await input.notices.record({
-    kind: "awareness_degraded",
-    scope: { kind: "thread", threadId: input.threadId },
-    message: "Your changes are committed, but concurrent user content could not be verified.",
-    data: { documentIds: [...input.documentIds], documentNames },
-  });
-}
 
 export interface TurnInverseNoticePort {
   record(input: {

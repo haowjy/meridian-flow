@@ -38,13 +38,3 @@ export function createDocumentLastAddress(db: Database): DocumentLastAddress {
     return (await loadDocumentAddresses(db, { ids: [documentId] }, view))[0] ?? null;
   };
 }
-
-export function createDocumentUrisResolver(db: Database) {
-  return async (documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>> => {
-    const addresses = await loadDocumentAddresses(db, { ids: documentIds });
-    const result = new Map<string, string | null>(documentIds.map((id) => [id, null]));
-    for (const address of addresses)
-      if (!address.deleted) result.set(address.documentId, address.uri);
-    return result;
-  };
-}

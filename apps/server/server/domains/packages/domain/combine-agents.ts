@@ -79,7 +79,3 @@ export function layerByName<T>(levels: LevelItems<T>[]): Layered<T>[] {
   }
   return all;
 }
-
-export function combineByName<T>(levels: LevelItems<T>[]): Combined<T>[] {
-  return layerByName(levels).filter((item) => item.hiddenBy === null);
-}

@@ -1,9 +1,6 @@
 import type { TurnReversalAccess } from "../contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
-import type {
-  ReversalNoticeDiagnostics,
-  TurnInverseNoticePort,
-} from "../domain/reversal-notices.js";
+import type { TurnInverseNoticePort } from "../domain/reversal-notices.js";
 import type { TurnReversalServiceDeps } from "../domain/turn-reversal-service.js";
 
 function threadContextReversalUnsupported(): never {
@@ -33,8 +30,4 @@ export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnosti
   payload() {
     return {};
   },
-};
-
-export const SILENT_REVERSAL_NOTICE_DIAGNOSTICS: ReversalNoticeDiagnostics = {
-  documentUriMissing() {},
 };

@@ -50,8 +50,6 @@ export const NO_TREE_STEPS: TreePlan = {
   createdDocuments: [],
 };
 
-export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
-
 export function createTurnTreeInverse(deps: {
   db: Database;
   treeLists: Pick<TreeListStore, "read" | "submit">;

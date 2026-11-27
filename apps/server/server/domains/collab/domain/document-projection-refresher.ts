@@ -2,10 +2,6 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentWriteHook } from "../contracts.js";
 import type { DocumentProjectionEffects } from "./ports/document-projection-effects.js";
 
-export type DocumentProjectionRefreshService = {
-  refresh(input: { documentId: DocumentId; threadId?: ThreadId }, source?: string): Promise<void>;
-};
-
 export type DocumentProjectionDiagnostics = {
   failed(input: {
     documentId: DocumentId;

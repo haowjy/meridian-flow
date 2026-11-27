@@ -174,5 +174,3 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
     },
   };
 }
-
-export type ConnectionChecks = ReturnType<typeof createConnectionChecks>;

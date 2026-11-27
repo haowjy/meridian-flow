@@ -1,9 +1,9 @@
 import type { DraftId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { DraftDocumentTree, DraftTreeStateReader } from "./ports/draft-tree-state.js";
 import type { WorkDraftTextChanges } from "./ports/work-draft-pending-store.js";
-import { documentTitleFromUri } from "./reversal-notices.js";
 
 export type DraftReviewItem = {
   draftId: DraftId;

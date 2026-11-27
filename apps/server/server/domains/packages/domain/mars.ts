@@ -55,8 +55,6 @@ export const checkFiles = (files: Record<string, string>, unreadable: string[]):
 };
 
 export const readManifest = (text: string): ManifestRead => read(MANIFEST_PATH, text);
-export const readAgent = (slug: string, text: string): DefinitionRead<AgentFields> =>
-  read(agentPath(slug), text);
 export const readSkill = (slug: string, text: string): DefinitionRead<SkillFields> =>
   read(skillPath(slug), text);
 

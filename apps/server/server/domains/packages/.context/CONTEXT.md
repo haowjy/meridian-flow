@@ -128,7 +128,7 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   means "all".
 - `files` is read from the files, not the saves: every level's Agent and skill file, winner or not,
   with its reasons (errors only), its `change` since the saved version, whether the writer picks it (`pickable`: false for a subagent or a model-only skill, which are not
-  broken), what it hides and what hides it (`layerByName`; `combineByName` is its winners), and every package's Save state. A
+  broken), what it hides and what hides it (`layerByName`), and every package's Save state. A
   file's own findings drop the file name. `savedFile` reads a file's text by that path as its package's latest Save holds it, a
   built-in's as shipped.
   Routes: `GET /api/agents/files`, `GET /api/agents/saved-file`.

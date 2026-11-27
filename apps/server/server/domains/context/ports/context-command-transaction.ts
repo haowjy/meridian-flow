@@ -37,10 +37,3 @@ export interface ContextCommandTransaction {
     options?: ContextCommandOptions,
   ): Promise<T>;
 }
-
-export const directContextCommandTransaction: ContextCommandTransaction = {
-  async run(operation, scopes) {
-    if (typeof scopes === "function") await scopes();
-    return operation({ draft: null });
-  },
-};
