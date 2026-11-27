@@ -1,14 +1,3 @@
-/**
- * Checkout return reconciliation contract.
- *
- * Stripe owns payment truth and the server ledger owns balance/transactions.
- * These tests pin the client's ability to *prove* a returned success against a
- * same-tab baseline captured from a fresh read, and its refusal to over-claim
- * when the ledger shows no attributable delta.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - ledger-delta checkout attribution
- */
 import type {
   BillingBalanceResponse,
   BillingTransaction,

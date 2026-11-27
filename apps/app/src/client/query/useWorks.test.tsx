@@ -1,14 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Work commands show through `useWorks` as a projection over the server
- * snapshot: unsettled commands show at once, each failure stays on its own Work,
- * and no server read can hide a change the server has not yet shown. The commands
- * run on a real command driver over an in-memory journal and a scripted server.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Work command patch ownership
- * - Work deletion Undo window
- */
 import {
   CommandDriver,
   type TransportAnswer,

@@ -1,10 +1,3 @@
-/**
- * Fork history hydration resolves the cutoff owner and refuses incomplete lineage.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - missing fork cutoffs fail closed for reply eligibility (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
- */
-
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { TURN_GRAPH, turnGraph } from "../ports/turn-graph.js";

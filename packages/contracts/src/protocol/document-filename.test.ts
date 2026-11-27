@@ -1,8 +1,3 @@
-/** Document naming laws, including canonical round trips and explicit destination types.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Registered extensions and smallest-free filename allocation
- */
 import { describe, expect, it } from "vitest";
 import {
   filenameForBinary,

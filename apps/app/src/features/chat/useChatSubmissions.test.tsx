@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-/** Journal row ownership and Edit's safe transfer boundary.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - journal-driven submission recovery ownership
- */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";

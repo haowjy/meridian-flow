@@ -1,9 +1,3 @@
-/**
- * Project navigation behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - intent and native-history coordination
- */
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
 import { parseProjectAddress } from "./project-address";

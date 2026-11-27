@@ -1,12 +1,5 @@
-import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/**
- * Handoff brief orchestration releases ownership when settlement cannot start.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - failed brief settlement remains repairable (kb/wiki/agents/conversations.md)
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { registryTokenRateSource } from "../../../lib/gateway/registry.js";
 import { createDetachedWorkTracker } from "../../../shared/detached-work.js";

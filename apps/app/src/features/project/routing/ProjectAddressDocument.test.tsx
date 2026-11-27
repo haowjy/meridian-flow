@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-/** The document an address names, and alias admission under delayed navigation.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - alias-repair error ownership
- */
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { expect, it, vi } from "vitest";

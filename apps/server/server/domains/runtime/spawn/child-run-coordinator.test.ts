@@ -1,12 +1,3 @@
-/**
- * Spawn selection contracts: named roster targets (including primary mode),
- * the generic omitted/empty-agent subagent inheriting caller config, and the
- * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Spawn depth, inheritance, and publication protocol
- */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";

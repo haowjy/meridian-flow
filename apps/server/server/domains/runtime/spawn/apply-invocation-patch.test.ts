@@ -1,8 +1,3 @@
-/** Presence-sensitive patch merge semantics and retained reference resolution.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Presence-sensitive skill overlay replacement
- */
 import type {
   ResolvedAgentConfiguration,
   RetainedSkillReference,

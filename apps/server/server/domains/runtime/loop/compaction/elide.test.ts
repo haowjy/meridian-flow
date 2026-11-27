@@ -1,8 +1,3 @@
-/** Missing document-revision evidence fails closed at a compaction boundary.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Missing versus empty compaction evidence (kb/wiki/chat/compaction.md#re-show-only-the-text-that-fits)
- */
 import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
 import { createCoreToolRegistrations } from "../../tools/core-tools.js";

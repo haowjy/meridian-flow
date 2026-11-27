@@ -1,13 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The verb matrix is the contract law 5 rests on: every refusal has a named
- * reason, and no verb advertises what dispatch would refuse. These cases walk
- * the table states a writer actually reaches — header on and off, a merged
- * cell, the edges — and assert the reason, not just the refusal.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - table row and column movement semantics
- */
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { withoutBlockIds } from "@meridian/prosemirror-schema";
 import { Editor, type JSONContent } from "@tiptap/core";

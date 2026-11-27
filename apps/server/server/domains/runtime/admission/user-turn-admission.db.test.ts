@@ -1,10 +1,3 @@
-/**
- * PostgreSQL proof that admission and explicit retirement choose one serialized winner.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - claim-authoritative orphan recovery and archived-Work send admission (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
- */
-
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 

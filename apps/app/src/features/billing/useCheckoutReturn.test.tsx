@@ -1,15 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Return-reconciliation contract for `?checkout=success` / `?checkout=cancelled`.
- *
- * The page never shows a confirmed purchase from Stripe's redirect alone: it
- * confirms only after the authoritative ledger shows an attributable delta
- * against the same-tab baseline, and otherwise reports an honest outcome. A
- * portal handoff is distinguished from a checkout cancellation.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - checkout return handoff and polling lifecycle
- */
 import type {
   BillingBalanceResponse,
   BillingTransactionsResponse,

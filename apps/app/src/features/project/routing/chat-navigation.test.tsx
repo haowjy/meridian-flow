@@ -1,11 +1,4 @@
 // @vitest-environment jsdom
-/**
- * A sent chat takes main when main is a new chat's composer; sent from the side's composer it is held
- * beside main. The last chat is this tab's own, and a chat the server no longer has is let go.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - tab-local remembered chat navigation
- */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";

@@ -1,13 +1,3 @@
-/**
- * Allowing a permission request runs the approved Work command in a savepoint
- * inside the answer transaction. A domain refusal discards the command's writes
- * and after-commit effects, then commits the answer with an error tool result;
- * an infrastructure failure rolls back the whole answer.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - durable permission requests execute in a savepoint of the answer transaction (kb/wiki/agents/tools.md)
- */
-
 import { randomUUID } from "node:crypto";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";

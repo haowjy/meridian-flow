@@ -1,11 +1,3 @@
-/**
- * Tests context entry names and paths.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - normalEntryName is total and frozen: what it returns for these inputs is what the project
- *   tree's stored history replays to
- */
-
 import { describe, expect, it } from "vitest";
 import {
   normalEntryName,

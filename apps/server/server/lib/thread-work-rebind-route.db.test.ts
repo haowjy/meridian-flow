@@ -1,10 +1,3 @@
-/**
- * PostgreSQL coverage for the writer Work-rebind HTTP boundary.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - writer enqueue/rebind lock ordering, busy-thread refusal, and commit-time lifecycle recheck
- */
-
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
