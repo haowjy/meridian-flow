@@ -70,7 +70,10 @@ imports one of them fails the check.
 | `loop/compaction-revisions.ts` | `context` |
 | `loop/compaction-successor.ts` | `@meridian/agent-edit` |
 | `loop/context-builder.ts` | `notices` |
+| `loop/delivery/delivery-service.ts` | `notices` |
 | `loop/delivery/runtime-delivery.ts` | `notices` |
+| `loop/delivery/runtime-delivery.ts` | `projects` |
+| `loop/delivery/runtime-delivery.ts` | `@meridian/contracts/works` |
 | `loop/frontier-recording.ts` | `@meridian/agent-edit` |
 | `loop/inbox-context.ts` | `notices` |
 | `loop/orchestrator.ts` | `billing` |
@@ -83,9 +86,6 @@ imports one of them fails the check.
 | `loop/permissions/agent-chain.ts` | `projects` |
 | `loop/reference-context.ts` | `@meridian/agent-edit` |
 | `loop/run-state.ts` | `@meridian/contracts/works` |
-| `loop/runtime-delivery.ts` | `notices` |
-| `loop/runtime-delivery.ts` | `projects` |
-| `loop/runtime-delivery.ts` | `@meridian/contracts/works` |
 | `loop/skill-files.ts` | `file-policy` |
 | `loop/skill-files.ts` | `packages` |
 | `loop/thread-controls.ts` | `@meridian/contracts/works` |

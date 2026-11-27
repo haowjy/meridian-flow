@@ -24,8 +24,8 @@ import type {
   ThreadRepositories,
 } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
+import type { DeliveryProducer, DeliveryTransaction } from "../loop/delivery/runtime-delivery.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
 import { jsonContent } from "../tools/tool-content.js";
 import { askDeadline, askHardLimitSeconds } from "./ask-deadline.js";
 

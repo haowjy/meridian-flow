@@ -46,7 +46,7 @@ import type {
 } from "../../domains/projects/index.js";
 import type { PermissionGrantStore } from "../../domains/runtime/index.js";
 import { SKILLS_URI_ROOT, type SkillFilesDeps } from "../../domains/runtime/index.js";
-import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
+import type { ThreadControls } from "../../domains/runtime/loop/delivery/runtime-delivery.js";
 import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";

@@ -82,6 +82,12 @@ import {
   recordCompactionSummary,
 } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
+import {
+  type AdoptedBatch,
+  type DeliveryBoundary,
+  LostRunError,
+  type RuntimeDelivery,
+} from "./delivery/runtime-delivery.js";
 import { createDeltaJournal } from "./delta-journal.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
@@ -126,12 +132,6 @@ import {
   type PreparedLoop,
   type RunLoopInput,
 } from "./run-turn-port.js";
-import {
-  type AdoptedBatch,
-  type DeliveryBoundary,
-  LostRunError,
-  type RuntimeDelivery,
-} from "./runtime-delivery.js";
 import { settleSummaryResponses } from "./settle-summary-responses.js";
 import {
   collectToolCalls,

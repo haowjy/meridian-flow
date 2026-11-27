@@ -4,7 +4,7 @@ import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-p
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { DeliveryLeaseStore } from "../../loop/delivery/delivery-ports.js";
-import { createRuntimeDelivery } from "../../loop/delivery/runtime-delivery.js";
+import { createRuntimeDelivery } from "../../loop/delivery/delivery-service.js";
 import type { Lease } from "../../loop/ports.js";
 import { createDrizzleHandBacks } from "../drizzle-hand-backs.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";

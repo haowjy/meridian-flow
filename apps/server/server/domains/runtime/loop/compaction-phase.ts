@@ -17,12 +17,12 @@ import {
   prepareCompactionSuccessor,
 } from "./compaction-successor.js";
 import { turnContextMessages } from "./context-builder.js";
+import type { DeliveryBoundary, DeliveryBoundarySelection } from "./delivery/runtime-delivery.js";
 import type { InboxDrain } from "./inbox-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import type { PersistenceDeps } from "./persistence.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import type { RunLoopInput } from "./run-turn-port.js";
-import type { DeliveryBoundary, DeliveryBoundarySelection } from "./runtime-delivery.js";
 
 export async function executeCompaction({
   deps,

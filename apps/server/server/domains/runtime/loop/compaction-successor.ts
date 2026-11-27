@@ -34,6 +34,7 @@ import {
 } from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
+import type { DeliveryBoundary, DeliveryBoundarySelection } from "./delivery/runtime-delivery.js";
 import type { InboxDrain } from "./inbox-context.js";
 import { mediaUnitKey, mediaUnits } from "./media-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
@@ -46,7 +47,6 @@ import {
 } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { type RunLoopInput, UnsettledPlaceholderError } from "./run-turn-port.js";
-import type { DeliveryBoundary, DeliveryBoundarySelection } from "./runtime-delivery.js";
 import { type AssembledNextTurnContext, composeLivePromptBake } from "./turn-context-assembly.js";
 
 type Decision = Extract<CompactionDecision, { kind: "compact" }>;

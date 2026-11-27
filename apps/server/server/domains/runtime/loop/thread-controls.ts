@@ -6,9 +6,9 @@ import type {
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
 import { type AiWriteMode, effectiveAiWriteMode } from "@meridian/contracts/works";
+import type { ThreadControls } from "./delivery/runtime-delivery.js";
 import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import type { InboxMessage, MessageDraft } from "./ports.js";
-import type { ThreadControls } from "./runtime-delivery.js";
 import type { ThreadLock } from "./thread-lock.js";
 
 export class ThreadControlError extends Error {

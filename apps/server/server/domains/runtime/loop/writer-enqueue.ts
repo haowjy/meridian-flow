@@ -2,10 +2,10 @@ import type { AdmittedMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { BlockUpsertedRow, JsonValue } from "@meridian/contracts/threads";
 import { TurnStartConflictError } from "../../threads/index.js";
+import type { DeliveryProducer, DeliveryTransaction } from "./delivery/runtime-delivery.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { MessageDraft } from "./ports.js";
-import type { DeliveryProducer, DeliveryTransaction } from "./runtime-delivery.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
 export interface WriterEnqueueSettlement {

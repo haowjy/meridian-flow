@@ -11,9 +11,9 @@ import {
 import { finalizeOrphanedTurns } from "../orphaned-placeholder.js";
 import type { PersistenceDeps } from "../persistence.js";
 import type { Lease, RunClaim } from "../ports.js";
-import { LostRunError } from "../runtime-delivery.js";
 import type { ThreadLock } from "../thread-lock.js";
 import type { DeliveryLeaseStore, DeliveryStore } from "./delivery-ports.js";
+import { LostRunError } from "./runtime-delivery.js";
 
 export type Deliverer = { turn: Pick<Turn, "id"> };
 

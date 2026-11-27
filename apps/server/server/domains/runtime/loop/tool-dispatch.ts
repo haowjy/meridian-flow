@@ -27,6 +27,7 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import type { RuntimeDelivery } from "./delivery/runtime-delivery.js";
 import { createDeltaJournal } from "./delta-journal.js";
 import {
   type CreditedBlocks,
@@ -38,7 +39,6 @@ import {
 } from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import type { Lease, RunClaim } from "./ports.js";
-import type { RuntimeDelivery } from "./runtime-delivery.js";
 import { toJsonValue } from "./streaming.js";
 
 export interface ToolDispatchDeps extends FrontierRecordingDeps {

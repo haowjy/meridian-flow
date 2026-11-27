@@ -3,10 +3,10 @@ import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { LiveEventWriter, ThreadRepositories } from "../../threads/index.js";
+import type { RuntimeDelivery } from "../loop/delivery/runtime-delivery.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import type { InboxReader, RunClaim } from "../loop/ports.js";
-import type { RuntimeDelivery } from "../loop/runtime-delivery.js";
 import type { ToolRegistry } from "../tools/types.js";
 import type { ReportPublisher } from "./report-publisher.js";
 
