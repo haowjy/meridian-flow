@@ -284,16 +284,19 @@ export function createDrizzleTreeListStore(deps: {
 
   return {
     open: async ({ list, accountId }) => {
-      const listId = await listIdOf(db as DrizzleDb, list);
-      if (listId === null) return null;
-      const [owner] = await (db as DrizzleDb).execute<{ id: string }>(
+      const [row] = await (db as DrizzleDb).execute<{
+        listId: string;
+        owner: string;
+        live: boolean;
+      }>(
         list.kind === "project"
-          ? sql`SELECT id::text FROM projects
-              WHERE id = ${list.projectId}::uuid AND user_id = ${accountId}::uuid AND deleted_at IS NULL`
-          : sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid AND id = ${accountId}::uuid`,
+          ? sql`SELECT tree_list_id::text AS "listId", user_id::text AS owner,
+              deleted_at IS NULL AS live FROM projects WHERE id = ${list.projectId}::uuid`
+          : sql`SELECT tree_list_id::text AS "listId", id::text AS owner, true AS live
+              FROM users WHERE id = ${list.userId}::uuid`,
       );
-      if (!owner) return null;
-      return { listId };
+      if (!row) return "unknown";
+      return row.owner === accountId && row.live ? { listId: row.listId } : "denied";
     },
 
     readSince: async ({ listId, version }) => {

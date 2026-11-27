@@ -2,8 +2,6 @@ import { WS_CLOSE } from "@meridian/contracts/protocol";
 
 import type { SocketClose } from "./socket-ports";
 
-export const DEFAULT_WS_PING_TIMEOUT_MS = 45_000;
-
 export const DEFAULT_WS_REPLAY_DEADLINE_MS = 20_000;
 
 export const DEFAULT_WS_ASK_ANSWER_DEADLINE_MS = 20_000;

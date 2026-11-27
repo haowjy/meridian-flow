@@ -18,6 +18,10 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   const seams = [
     vi.spyOn(account, "useAccountId").mockReturnValue("writer"),
     vi.spyOn(account, "useAccountEpochSignal").mockReturnValue(epoch.signal),
+    vi.spyOn(account, "useProjectStandings").mockReturnValue({
+      watch: () => () => undefined,
+      standing: () => ({ kind: "waiting" }),
+    } as unknown as ReturnType<typeof account.useProjectStandings>),
     vi.spyOn(trees, "useProjectTrees").mockReturnValue({
       ready: false,
       isComplete: false,

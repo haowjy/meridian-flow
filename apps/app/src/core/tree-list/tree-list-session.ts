@@ -80,7 +80,8 @@ export class TreeListSession {
   constructor(
     readonly accountId: string,
     readonly list: TreeListRef,
-    private readonly copiesOpen: () => boolean,
+    private readonly signedIn: () => boolean,
+    private readonly accountChanged: () => void,
   ) {
     const doc = freshDoc();
     this.current = { doc, version: 0, status: "waiting" };
@@ -91,7 +92,7 @@ export class TreeListSession {
   }
 
   private async load(name: string): Promise<void> {
-    if (typeof indexedDB !== "undefined" && this.copiesOpen()) {
+    if (typeof indexedDB !== "undefined" && this.signedIn()) {
       try {
         const store = await LocalCopyStore.open(indexedDB, name);
         if (this.isClosed) {
@@ -184,10 +185,12 @@ export class TreeListSession {
   private onJoined = (extra: Uint8Array | undefined): "rejoin" | undefined => {
     const named = decodeLoroJoinExtra(extra).list ?? null;
     if (named === null || named === this.listId) return undefined;
-    const fresh = this.listId === null && this.current.doc.oplogFrontiers().length === 0;
+    // A copy never joined holds only what this browser wrote to this list before its first Join,
+    // such as a file made while the project's create was still on its way: it is this list's.
+    const unjoined = this.listId === null;
     this.listId = named;
     void this.store?.putMeta(LIST_META, named).catch(noop);
-    if (fresh) return undefined;
+    if (unjoined) return undefined;
     const doc = freshDoc();
     this.watch(doc);
     this.store?.compact(new Map([[LIST, doc.export({ mode: "snapshot" })]])).catch(noop);
@@ -201,6 +204,8 @@ export class TreeListSession {
     const transport = createLoroRoomTransport({
       room: { kind: "tree", list: this.list },
       peer: this.current.doc.peerIdStr,
+      account: this.accountId,
+      onAccountChanged: this.accountChanged,
       copy: {
         version: () => new Map([[LIST, docVersion(this.current.doc)]]),
         exportSince: (since) => {

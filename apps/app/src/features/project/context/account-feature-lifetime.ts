@@ -3,11 +3,9 @@ import type { AccountId } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
+import { countSignOut, signedInSince, watchSignOuts } from "@/core/account-sign-outs";
 import { DocumentSessionRegistry } from "@/core/editor/document-session-registry-implementation";
-import {
-  clearAccountCopies,
-  clearCopiesOfOtherAccounts,
-} from "@/core/editor/local-document-copies";
+import { clearAccountCopies, endOtherAccounts } from "@/core/editor/local-document-copies";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
@@ -27,7 +25,6 @@ export class SignOutIncomplete extends Error {
 
 export const SIGN_OUT_FAILURE = "sign-out";
 const UNSENT_EDITS_WAIT_MS = 8_000;
-const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
 
 export class AccountFeatureLifetime {
   private readonly closing = new AbortController();
@@ -44,19 +41,32 @@ export class AccountFeatureLifetime {
   readonly opener;
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
-  private signOutChannel: BroadcastChannel | null = null;
+  private readonly signedIn: () => boolean;
+  private stopWatchingSignOuts: (() => void) | null = null;
   private signingOut = false;
+  private signOutRunning = false;
+  private endingHere = false;
 
   constructor(
     readonly accountId: string,
+    private readonly externalId: string,
     connectivityHints?: ConnectivityHintsPort,
   ) {
+    this.signedIn = signedInSince(accountId);
+    const accountChanged = () => this.accountChanged();
     this.registry = new DocumentSessionRegistry(
       accountId as AccountId,
       this.epochSignal,
-      (options) => createLoroRoomTransport({ ...options, connectivityHints }),
+      (options) =>
+        createLoroRoomTransport({
+          ...options,
+          account: accountId,
+          onAccountChanged: accountChanged,
+          connectivityHints,
+        }),
+      this.signedIn,
     );
-    this.treeLists = new TreeListRegistry(accountId);
+    this.treeLists = new TreeListRegistry(accountId, this.signedIn, accountChanged);
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner();
@@ -73,9 +83,7 @@ export class AccountFeatureLifetime {
     dropRetiredTabSession(accountId);
     dismissFailure(SIGN_OUT_FAILURE);
     if (typeof window !== "undefined")
-      void clearCopiesOfOtherAccounts(accountId as AccountId).catch((error: unknown) =>
-        reportError(error),
-      );
+      void endOtherAccounts(accountId as AccountId).catch((error: unknown) => reportError(error));
     this.opener = new ProjectDocumentLiveOpener({
       standings: this.standings,
       registry: this.registry,
@@ -84,35 +92,36 @@ export class AccountFeatureLifetime {
     this.featureLease = this.removal.createLifetimeLease();
   }
 
-  private async signedOutElsewhere(): Promise<void> {
-    // The signing-out tab delivers the stored copies; opening them here would race its deletion.
-    if (!this.epochSignal.aborted)
-      await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
-    await this.finishClose();
-    window.location.assign("/logout");
+  private accountChanged(): void {
+    countSignOut(this.accountId);
+    void this.signedOutElsewhere();
   }
 
-  // Opened here, not in the constructor: React may build a lifetime it never mounts, and that
-  // one, hearing this tab's own sign-out, would navigate away before the copies are deleted.
+  private async signedOutElsewhere(): Promise<void> {
+    // This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
+    if (this.endingHere || this.signOutRunning || this.epochSignal.aborted) return;
+    this.endingHere = true;
+    // Stored copies wait for the signing-out tab, or for their document's next open: opening them
+    // here would race a sign-out's deletion.
+    await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
+    await this.finishClose();
+    window.location.assign(this.endSessionHref());
+  }
+
   resumeFeatureLease(): void {
     if (this.epochSignal.aborted) return;
     this.featureLease.resume();
-    if (this.signOutChannel || typeof BroadcastChannel === "undefined") return;
-    this.signOutChannel = new BroadcastChannel(SIGN_OUT_CHANNEL);
-    this.signOutChannel.onmessage = ({ data }) => {
-      if ((data as { accountId?: string } | null)?.accountId === this.accountId)
-        void this.signedOutElsewhere();
-    };
+    this.stopWatchingSignOuts ??= watchSignOuts(
+      this.signedIn,
+      () => void this.signedOutElsewhere(),
+    );
+    if (!this.signedIn()) void this.signedOutElsewhere();
   }
 
   suspendFeatureLease(): void {
     this.featureLease.suspend();
-    this.closeSignOutChannel();
-  }
-
-  private closeSignOutChannel(): void {
-    this.signOutChannel?.close();
-    this.signOutChannel = null;
+    this.stopWatchingSignOuts?.();
+    this.stopWatchingSignOuts = null;
   }
 
   beginClose(): void {
@@ -124,27 +133,43 @@ export class AccountFeatureLifetime {
     this.featureLease.suspend();
   }
 
-  async clearForSignOut(): Promise<void> {
+  private endSessionHref(): string {
+    return `/end-session?${new URLSearchParams({ account: this.externalId })}`;
+  }
+
+  async clearForSignOut(): Promise<string> {
+    this.signOutRunning = true;
+    try {
+      return await this.signOut();
+    } finally {
+      this.signOutRunning = false;
+      // Refused, but another tab's sign-out moved the count meanwhile: end as that one asked.
+      if (!this.signedIn()) void this.signedOutElsewhere();
+    }
+  }
+
+  private async signOut(): Promise<string> {
     if (!this.signingOut) {
       // Closed by anything but this sign-out, the wait no longer knows what was delivered.
       if (this.epochSignal.aborted) throw new SignOutIncomplete("unsent");
       const settled = await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
       if (!settled || this.epochSignal.aborted) throw new SignOutIncomplete("unsent");
       this.signingOut = true;
-      this.signOutChannel?.postMessage({ accountId: this.accountId });
     }
     // No await before this abort: the wait answered from one synchronous pass, and a keystroke
     // landing in between would be deleted unsent.
     await this.finishClose();
     if (!(await clearAccountCopies(this.accountId as AccountId)))
       throw new SignOutIncomplete("copies");
+    return this.endSessionHref();
   }
 
   async finishClose(): Promise<void> {
     this.beginClose();
     this.featureLease.disposeIfSuspended();
     await this.registry.close();
-    this.closeSignOutChannel();
+    this.stopWatchingSignOuts?.();
+    this.stopWatchingSignOuts = null;
   }
 }
 

@@ -233,7 +233,7 @@ HTTP snapshot cursors stay in `liveState.resumeAfterSeq`.
 
 One handshake watchdog (default 10 s, `handshakeTimeoutMs` is injectable) starts at socket creation and ends only on
 `connected`, close or teardown; opening or receiving other frames does not extend it. The 45-second ping deadline
-starts on open and resets on every inbound frame. Expiry of either retires the socket before requesting native close
+(`SOCKET_PING_TIMEOUT_MS` in `@meridian/contracts`, shared with the room sockets) starts on open and resets on every inbound frame. Expiry of either retires the socket before requesting native close
 and uses the same reconnect backoff as a network close, without waiting for a close acknowledgement. A socket still
 CLOSING when a new connection starts is retired the same way, so its close is reported exactly once and never closes
 the new generation.

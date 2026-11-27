@@ -1,3 +1,4 @@
+import { LORO_PING, SOCKET_PING_INTERVAL_MS } from "@meridian/contracts/protocol";
 import { defineWebSocketHandler } from "nitro";
 import { runWithEventCorrelation } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
@@ -22,10 +23,16 @@ type LoroRouteContext =
 
 type LoroRoutePeer = {
   context?: LoroRouteContext;
-  send(data: Uint8Array): void;
+  send(data: Uint8Array | string): void;
   close(code?: number, reason?: string): void;
   _loro?: LoroGatewayConnection;
+  _ping?: ReturnType<typeof setInterval>;
 };
+
+function stopPinging(peer: LoroRoutePeer): void {
+  clearInterval(peer._ping);
+  delete peer._ping;
+}
 
 let gateway: LoroGateway | null = null;
 
@@ -88,6 +95,7 @@ export default defineWebSocketHandler({
         send: (data) => wsPeer.send(data),
         close: (code, reason) => wsPeer.close(code, reason),
       });
+      wsPeer._ping = setInterval(() => wsPeer.send(LORO_PING), SOCKET_PING_INTERVAL_MS);
     });
   },
   message(peer, message) {
@@ -96,11 +104,13 @@ export default defineWebSocketHandler({
   },
   close(peer) {
     const wsPeer = peer as unknown as LoroRoutePeer;
+    stopPinging(wsPeer);
     traced(wsPeer, (context) => context.gateway.close(wsPeer._loro));
     delete wsPeer._loro;
   },
   error(peer) {
     const wsPeer = peer as unknown as LoroRoutePeer;
+    stopPinging(wsPeer);
     traced(wsPeer, (context) => context.gateway.close(wsPeer._loro));
     delete wsPeer._loro;
   },

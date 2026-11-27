@@ -28,8 +28,8 @@ import {
   useOptionalPresentedDocuments,
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
+import { removalAnswer } from "../context/removal-answer";
 import { useDocumentStanding } from "../context/use-document-standing";
-import { useRemovalAnswer } from "../context/use-removal-answer";
 import { ProjectView } from "../ProjectView";
 import { useDraftTreeVersion } from "../tree-version";
 import { useScopeDraftOwner, useWorkScopeState } from "../use-work-scope";
@@ -403,7 +403,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
         : undefined;
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
-  const removalNow = useRemovalAnswer(projectId, removedDocumentId);
+  const removalNow = removedDocumentId ? removalAnswer(standing) : undefined;
   const inDraftFile =
     documentIssue === "unavailable" && addressKind === "plain" && documentDestination
       ? draftOnlyAt(documentDestination, boundDocumentId, listedDrafts)

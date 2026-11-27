@@ -46,12 +46,12 @@ import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
 import { revealPlaced, subscribePlacedReveal } from "../../context/tree-reveal";
 import { useScopeScratchSource } from "../../context/use-scratch-trees";
-import { useWorkSourceWritable } from "../../context/use-work-source-writable";
 import { useItemLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
 import { useOptionalMainItem, useShownDraft } from "../../views";
+import { useWorkState } from "../../work/work-state";
 import { AgentsSource } from "./AgentsSource";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import { ChatsBody } from "./ChatsBody";
@@ -255,7 +255,7 @@ export function SourcesBody({
   activeWorkId: string | null;
 }) {
   const scratchWorkId = useScopeScratchSource(projectId)?.owner.workId ?? null;
-  const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
+  const scratchWritable = useWorkState(projectId, scratchWorkId).kind !== "ended";
   const listed =
     mainScheme !== "scratch" || (scratchWorkId !== null && activeWorkId === scratchWorkId);
   const activeScheme = listed ? mainScheme : null;

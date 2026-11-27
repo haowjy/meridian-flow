@@ -8,6 +8,7 @@ import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
+import { useWorkState } from "../work/work-state";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
   buildMenuTree,
@@ -19,7 +20,6 @@ import {
   trailAlong,
 } from "./menu-tree";
 import { type ScratchSource, useScratchTrees } from "./use-scratch-trees";
-import { useWorkSourceWritable } from "./use-work-source-writable";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
@@ -71,7 +71,7 @@ export function useProjectMenuSource({
   });
   const { primary, earlier } = useScratchTrees(projectId, scratch);
   const open = version.ended !== "deleted";
-  const scratchWritable = useWorkSourceWritable(projectId, scratch?.owner.workId) && open;
+  const scratchWritable = useWorkState(projectId, scratch?.owner.workId).kind !== "ended" && open;
   const scratchArea = useMemo<MenuArea | null>(
     () =>
       scratch
@@ -113,10 +113,8 @@ export function useProjectMenuSource({
     version,
   });
   const hiddenWritable =
-    useWorkSourceWritable(
-      projectId,
-      documentScheme === "scratch" ? documentOwner?.workId : undefined,
-    ) && open;
+    useWorkState(projectId, documentScheme === "scratch" ? documentOwner?.workId : undefined)
+      .kind !== "ended" && open;
 
   const areas = useMemo(() => {
     const list: MenuArea[] = EDITOR_CONTEXT_SCHEMES.map((scheme) => ({

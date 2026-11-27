@@ -27,15 +27,17 @@ export type CommittedTreeUpdate = {
   update: Uint8Array;
 };
 
+export type TreeListOpening = { listId: string } | "unknown" | "denied";
+
 /** What `admit` stored; null when the list already held every item. */
 export type AdmitResult = { committed: CommittedTreeUpdate | null };
 
 export interface TreeListStore {
   /**
-   * The id of the list, or null when the list is not the account's: the project (or
-   * account) decides, never a document.
+   * The id of the list, `unknown` when its project (or account) has no row yet, or `denied` when
+   * the row is not the account's: the project (or account) decides, never a document.
    */
-  open(input: { list: TreeList; accountId: string }): Promise<{ listId: string } | null>;
+  open(input: { list: TreeList; accountId: string }): Promise<TreeListOpening>;
   /**
    * The stored list past `version` (an encoded Loro version vector; empty for none) as one
    * update, and the stored list's version. Read without the list's lock: every commit stores the

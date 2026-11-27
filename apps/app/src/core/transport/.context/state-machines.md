@@ -14,7 +14,7 @@ stateDiagram-v2
   [*] --> connecting: created (attempt 1)
   connecting --> connected: JoinResponseOk, after sending what the server's version lacks
   connecting --> disconnected: the socket closes
-  connected --> disconnected: the socket closes, a rejoin, or a suspect-offline hint
+  connected --> disconnected: the socket closes, a rejoin, a suspect-offline hint, or 45 s without a frame
   disconnected --> connecting: the retry timer, or a retry-now hint
   connecting --> reset: JoinError document-deleted or a schema code
   connected --> reset: RoomError document-deleted
@@ -25,7 +25,7 @@ stateDiagram-v2
   signed_out --> connected: JoinResponseOk, once the writer has signed in again
   signed_out --> unauthorized: close 4403
   state "signed-out" as signed_out
-  connecting --> terminal: JoinError bad-auth
+  connecting --> terminal: JoinError bad-auth or account-changed
   connected --> terminal: any other RoomError (history-cutoff)
   reset --> [*]
   unauthorized --> [*]
@@ -34,7 +34,8 @@ stateDiagram-v2
 
 - **`unauthorized` means access ended**, nothing else: a `permission-denied` Join error or a
   4403. A `bad-auth` Join error is a Join this build formed wrong, which a retry would send again,
-  so it ends the room `terminal`.
+  so it ends the room `terminal`. So does `account-changed`: the browser's cookie is another
+  account's, and the transport tells its owner (`onAccountChanged`), which ends the lifetime.
 - **`reset`, `unauthorized` and `terminal` end the room** (`ended()`): it never connects again, a
   retry-now hint does nothing, and `whenSentAcknowledged` waiters resolve. The transport never
   comes back; its owner replaces it. A document session's registry does it with

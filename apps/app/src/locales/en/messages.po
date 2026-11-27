@@ -1970,6 +1970,7 @@ msgid "Couldn't load your connections."
 msgstr "Couldn't load your connections."
 
 #: src/features/account/AccountMenu.tsx
+#: src/routes/logout.tsx
 msgid "Couldn't log out"
 msgstr "Couldn't log out"
 
@@ -3423,6 +3424,7 @@ msgid "Log out"
 msgstr "Log out"
 
 #: src/features/account/AccountMenu.tsx
+#: src/routes/logout.tsx
 msgid "Logging out…"
 msgstr "Logging out…"
 
@@ -4815,6 +4817,7 @@ msgstr "Results"
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
+#: src/routes/logout.tsx
 msgid "Retry"
 msgstr "Retry"
 
