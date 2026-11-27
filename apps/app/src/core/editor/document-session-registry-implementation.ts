@@ -133,10 +133,9 @@ export class DocumentSessionRegistry {
         [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : [])),
       );
       for (const session of seen)
-        if (!open.has(session) && !session.replaced && session.hasUnacknowledgedEdits())
-          return false;
+        if (!open.has(session) && !session.replaced && session.hasUnsavedEdits()) return false;
       const pending = [...open].filter(
-        (session) => session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits(),
+        (session) => session.hasUnsavedEdits() && session.canDeliverUnsentEdits(),
       );
       if (pending.length === 0) {
         if (storedCopies && waited) {
@@ -718,7 +717,7 @@ export class DocumentSessionRegistry {
   }
 
   private releaseUnheld(roomKey: string, state: RoomState, session: DocumentSession): void {
-    if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
+    if (this.mustKeepForUnsentEdits(session)) this.holdUntilSaved(roomKey, state, session);
     else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
       this.keepForUndo(roomKey, state, session);
     else this.retireLiveSession(roomKey, state);
@@ -741,7 +740,7 @@ export class DocumentSessionRegistry {
     if (oldestState) this.retireLiveSession(oldest, oldestState);
   }
 
-  private holdUntilAcknowledged(roomKey: string, state: RoomState, session: DocumentSession): void {
+  private holdUntilSaved(roomKey: string, state: RoomState, session: DocumentSession): void {
     let capTimer: ReturnType<typeof setTimeout> | undefined;
     const stopClock = () => {
       clearTimeout(capTimer);
@@ -760,7 +759,7 @@ export class DocumentSessionRegistry {
   }
 
   private mustKeepForUnsentEdits(session: DocumentSession): boolean {
-    return session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
+    return session.hasUnsavedEdits() && session.canDeliverUnsentEdits();
   }
 
   private retireLiveSession(roomKey: string, state: RoomState): void {

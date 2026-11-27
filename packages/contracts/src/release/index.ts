@@ -6,9 +6,9 @@ export const UNNAMED_RELEASES: readonly string[] = ["dev", "0.0.0"];
 
 export const PROTOCOL_HEADER = "x-meridian-protocol";
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
-export const MIN_PROTOCOL_VERSION = 7;
+export const MIN_PROTOCOL_VERSION = 8;
 
 export const serverProtocolSchema = z.object({
   current: z.number().int().nonnegative(),

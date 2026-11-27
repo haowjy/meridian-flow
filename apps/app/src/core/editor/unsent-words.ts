@@ -14,7 +14,7 @@ import {
   withVector,
 } from "@meridian/document-model";
 import type { LoroDoc } from "loro-crdt";
-import { type LoadedCopy, SERVER_META } from "./local-copy-store";
+import { type LoadedCopy, SAVED_META } from "./local-copy-store";
 import { documentShape } from "./room-content";
 
 type JsonOp = { content?: { type?: string; text?: unknown } };
@@ -50,7 +50,7 @@ export function storedOpsBeyondMark(loaded: LoadedCopy): boolean {
     reportError(error);
     return true;
   }
-  const mark = loaded.meta.get(SERVER_META);
+  const mark = loaded.meta.get(SAVED_META);
   return !versionCovers(mark instanceof Uint8Array ? decodeRoomVersion(mark) : new Map(), stored);
 }
 
@@ -59,7 +59,7 @@ export function storedWordsBeyond(loaded: LoadedCopy, server?: RoomVersion): boo
   try {
     if (loaded.snapshots.size > 0) docs.importBatch(loaded.snapshots);
     for (const batch of loaded.updates) docs.importBatch(decodeEnvelope(batch));
-    const mark = loaded.meta.get(SERVER_META);
+    const mark = loaded.meta.get(SAVED_META);
     return wordsBeyond(
       docs,
       server ?? (mark instanceof Uint8Array ? decodeRoomVersion(mark) : new Map()),

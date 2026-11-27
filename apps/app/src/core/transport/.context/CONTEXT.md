@@ -8,11 +8,12 @@ the same name with the ephemeral-store CRDT tag.
 The Join exchange, which the server's handler speaks too (local-first design §4):
 
 1. The client sends `JoinRequest` with its room version (`encodeRoomVersion`, one version
-   vector per doc key) and `encodeLoroJoinAuth({schema, peer, account})`. `account` is the
-   account the tab's lifetime belongs to; the socket authenticates with the browser's cookie,
-   which may have changed account since.
-2. The server answers `JoinResponseOk` with the permission and its own room version, then
-   sends what the copy lacks as one `DocUpdate` (fragmented when large).
+   vector per doc key) and `encodeLoroJoinAuth({schema, peer, account, saved: true})`. `account`
+   is the account the tab's lifetime belongs to; the socket authenticates with the browser's
+   cookie, which may have changed account since. `saved` asks for saved versions (below).
+2. The server answers `JoinResponseOk` with the permission and its own room version, then, to a
+   socket that asked, a saved frame stating every doc's saved version, then what the copy lacks
+   as one `DocUpdate`. Both are fragmented when large.
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
@@ -35,12 +36,36 @@ Every client `DocUpdate` is acknowledged by one `Ack` naming its batch id; serve
 `DocUpdate`s are not. The transport keeps, per unacknowledged batch, the room version the
 batch ends at (read from the update metadata), and merges it into the server version on an
 `Ack` whose status is `Ok`. A refused batch (`PermissionDenied`, sent when the connection lacks
-write access) stays unacknowledged until the socket drops: the stored server mark decides what
-sign-out waits for, so a refusal recorded as delivered would lose the batch. `sendLacking` sends
+write access) stays unacknowledged until the socket drops, so it is never counted as received. `sendLacking` sends
 what the copy holds beyond the server version and the batches in flight; the Join uses it, and so
 does a session holding another tab's typing that tab never sent. A dropped socket forgets unacknowledged batches: the next Join sends what the version the
 server answers with lacks, so a batch the server imported before its `Ack` was lost is not sent
 again.
+
+## Received and saved
+
+The transport keeps two versions per connection. `serverVersion()` is what the server has
+received: the Join's version, each batch it sent, and each acknowledged batch. The server imports
+a batch into memory and acks it, and saves the room 2 to 10 s later
+(`apps/server/server/domains/collab/.context/websocket-concurrency.md`), so a server killed in
+between loses an acked batch. `savedVersion()` is what it has saved: emptied at each
+`JoinResponseOk`, then merged with each saved frame, a `DocUpdate` tagged `LORO_SAVED_CRDT` whose
+one update is an encoded room version. The first, sent straight after the answer, names every doc
+the room's rows hold; later ones name what each save moved. Nothing is inferred from absence: a
+doc no frame names has nothing saved on this connection, so a missing or unreadable frame fails
+closed (sign-out waits, a held session stays held), never open. Between the answer and that first
+frame, a few milliseconds on the same socket, the connection reports nothing saved; the waits
+wake on the frame's `subscribeSaved`. A saved frame merges into `serverVersion()` too.
+`subscribeSaved` fires on each saved frame and each Join. The
+typing UI and a press read received; everything that may delete or let go of a copy reads saved
+(`DocumentSession.hasUnsavedEdits`).
+
+A saved frame can be fragmented like a batch (one save may write thousands of block docs), so
+the fragment reassembly dispatches the whole message by its CRDT tag, as an unfragmented
+`DocUpdate` is: a saved frame handed to `copy.importRemote` would be imported as a document
+batch. A server older than saved frames sends none, so against it nothing counts as saved: sign-out
+answers "Couldn't log out" until the server is updated. Protocol 8 forces old tabs to reload; it
+can't force an old server on a new tab.
 
 ## Acknowledgement
 
@@ -62,7 +87,7 @@ The transport covers only a room that has one. The rest of the rule is above it:
 `DocumentSession.whenSentAcknowledged` waits while its copy is still loading and its transport is
 not attached yet, and the registry's `whenSentAcknowledged` names the press's rooms (the forks of
 its drafts, of its documents when it names them, and their Live rooms) and opens and retains the
-ones whose copy here holds ops beyond its server mark (`storedOpsBeyondMark`) but that the tab
+ones whose copy here holds ops beyond its saved mark (`storedOpsBeyondMark`) but that the tab
 has no session for, which is how a reload or another tab's typing is covered. Not covered: in a
 press of a whole draft or Work, the Live room of a document only the draft holds, which no fork names.
 

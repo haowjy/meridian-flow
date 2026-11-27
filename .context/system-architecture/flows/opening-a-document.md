@@ -38,6 +38,6 @@ sequenceDiagram
 8. **Load.** The handler subscribes the socket to the room and asks `DocumentRooms.sync` on [collab](../server-documents.md#collab) for what the tab's version lacks.
 9. **Read.** A room not yet loaded is built from its `document_snapshots` rows in [postgres](../system.md#postgres).
 10. **Sync.** `JoinResponseOk` and the missing updates go to the tab, and the editor shows the live text.
-11. **Edit.** The writer's keystrokes go up the same socket as Loro batches. Each is imported into the room and acknowledged at once; the room saves its rows within seconds.
+11. **Edit.** The writer's keystrokes go up the same socket as Loro batches. Each is imported into the room and acknowledged at once; the room saves its rows within seconds and then tells the socket what it saved (a saved frame), which is what the browser's copy records as safe.
 
 State machines on this path: [editor core](../../../apps/app/src/core/editor/.context/state-machines.md), [editor](../../../apps/app/src/features/editor/.context/state-machines.md), [lib](../../../apps/server/server/lib/.context/state-machines.md).

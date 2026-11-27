@@ -64,5 +64,9 @@ stateDiagram-v2
 - **A tree room's answer names its list** (`JoinResponseOk.extra.list`): a client whose stored
   copy is of another list (a reset database, a recreated account list) drops it and joins again
   with no version.
+- **A document socket that asked hears saves.** A Join whose auth says `saved: true` gets, straight
+  after `JoinResponseOk`, a saved frame (`LORO_SAVED_CRDT`) stating every doc's saved version, and
+  one after each save that moved one; saves heard while joining are sent after the held batches. The `Ack` means imported, not saved
+  ([websocket concurrency](../../domains/collab/.context/websocket-concurrency.md)).
 - **Frames over the protocol's cap come in fragments** (`docUpdateFrames`, `createFrameReader` in
   `@meridian/contracts/protocol`), joined back into one batch before it is handled.

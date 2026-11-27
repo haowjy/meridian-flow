@@ -1,4 +1,4 @@
-import { JoinErrorCode, RoomErrorCode } from "loro-protocol";
+import { CrdtType, JoinErrorCode, RoomErrorCode } from "loro-protocol";
 import { z } from "zod";
 import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId, DraftId } from "../ids.js";
@@ -54,10 +54,16 @@ export function liveRoomOf(room: DocumentRoom): DocumentRoom {
 export const SERVER_PEER_LIMIT = 1n << 48n;
 export const PEER_ID_LIMIT = 1n << 64n;
 
+export const ROOM_SAVE_MAX_WAIT_MS = 10_000;
+
+/** loro-protocol has no message for "saved": a saved frame borrows the tag of a CRDT Flow never uses. */
+export const LORO_SAVED_CRDT = CrdtType.Flock;
+
 export interface LoroJoinAuth {
   schema: string;
   peer: string;
   account: string;
+  saved?: true;
 }
 
 const joinAuthSchema = z.object({
@@ -68,6 +74,7 @@ const joinAuthSchema = z.object({
     .regex(/^\d{1,20}$/)
     .refine((peer) => BigInt(peer) >= SERVER_PEER_LIMIT && BigInt(peer) < PEER_ID_LIMIT),
   account: z.string().min(1),
+  saved: z.literal(true).optional(),
 });
 
 export function encodeLoroJoinAuth(auth: LoroJoinAuth): Uint8Array {
@@ -83,8 +90,8 @@ export function decodeLoroJoinAuth(bytes: Uint8Array): LoroJoinAuth | null {
   }
   const parsed = joinAuthSchema.safeParse(value);
   if (!parsed.success) return null;
-  const { schema, peer, account } = parsed.data;
-  return { schema, peer, account };
+  const { schema, peer, account, saved } = parsed.data;
+  return { schema, peer, account, ...(saved ? { saved } : {}) };
 }
 
 export const LORO_JOIN_ERROR = {

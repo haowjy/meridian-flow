@@ -1,5 +1,10 @@
 import type { EventCorrelation, EventRecord } from "@meridian/contracts/observability";
-import { LORO_JOIN_ERROR, loroRoomErrorOf, parseLoroRoomName } from "@meridian/contracts/protocol";
+import {
+  LORO_JOIN_ERROR,
+  LORO_SAVED_CRDT,
+  loroRoomErrorOf,
+  parseLoroRoomName,
+} from "@meridian/contracts/protocol";
 import { CrdtType, MessageType, type ProtocolMessage } from "loro-protocol";
 
 import type { LoroWireTap } from "@/core/transport/wire-tap";
@@ -34,7 +39,12 @@ function summarize(message: ProtocolMessage): {
   payload: Record<string, unknown>;
 } {
   const messageClass = MESSAGE_CLASS[message.type] ?? "unknown";
-  const channel = message.crdt === CrdtType.LoroEphemeralStore ? "presence" : "doc";
+  const channel =
+    message.crdt === CrdtType.LoroEphemeralStore
+      ? "presence"
+      : message.crdt === LORO_SAVED_CRDT
+        ? "saved"
+        : "doc";
   switch (message.type) {
     case MessageType.JoinResponseOk:
       return { messageClass, payload: { channel, permission: message.permission } };

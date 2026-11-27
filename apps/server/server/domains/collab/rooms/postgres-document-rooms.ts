@@ -1,5 +1,10 @@
 import type { DocumentId, DraftId } from "@meridian/contracts";
-import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
+import {
+  type DocumentRoom,
+  liveRoomOf,
+  loroRoomName,
+  ROOM_SAVE_MAX_WAIT_MS,
+} from "@meridian/contracts/protocol";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
@@ -12,6 +17,7 @@ import {
 import {
   changedBlocks,
   type DocKey,
+  type DocVersion,
   decodeEnvelope,
   decodeRoomVersion,
   docCovers,
@@ -27,8 +33,15 @@ import {
   RoomDocs,
   type RoomVersion,
   type ShapeSchema,
+  STRUCTURE_KEY,
 } from "@meridian/document-model";
-import type { DocumentRooms, RoomBatch, RoomOrigin } from "@meridian/document-model/rooms";
+import {
+  advanceSaved,
+  type DocumentRooms,
+  type RoomBatch,
+  type RoomOrigin,
+  savedAtLoad,
+} from "@meridian/document-model/rooms";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { LoroDoc, PeerID } from "loro-crdt";
 import { processDetachedWork } from "../../../shared/detached-work.js";
@@ -62,7 +75,7 @@ export interface RoomBounds {
 
 export const DEFAULT_ROOM_BOUNDS: RoomBounds = {
   debounceMs: 2_000,
-  maxDebounceMs: 10_000,
+  maxDebounceMs: ROOM_SAVE_MAX_WAIT_MS,
   idleMs: 5 * 60_000,
   maxRooms: 200,
   maxBytes: 1024 * 1024 * 1024,
@@ -94,6 +107,9 @@ interface Loaded {
   readonly name: string;
   readonly docs: RoomDocs;
   dirty: Set<DocKey>;
+  // Moved only after the save's commit, to versions taken at its export.
+  saved: Map<DocKey, DocVersion>;
+  inheritsStructure: boolean;
   firstDirtyAt: number;
   saveTimer: ReturnType<typeof setTimeout> | null;
   settleSave: (() => void) | null;
@@ -180,6 +196,7 @@ export function createPostgresDocumentRooms(input: {
   const rooms = new Map<string, Loaded>();
   const loading = new Map<string, Promise<Loaded>>();
   const listeners = new Map<string, Set<(batch: RoomBatch) => void>>();
+  const savedListeners = new Map<string, Set<(saved: Uint8Array) => void>>();
   let closed = false;
 
   const lockRoom = (tx: DrizzleDb, room: DocumentRoom) => lockDocumentMutation(tx, room.documentId);
@@ -250,18 +267,24 @@ export function createPostgresDocumentRooms(input: {
       if (existing?.unloading) await Promise.allSettled([existing.unloading]);
       const again = rooms.get(name);
       if (again && !again.unloading) return again;
-      const live = room.kind === "fork" ? (await load(liveRoomOf(room))).docs : null;
+      const live = room.kind === "fork" ? await load(liveRoomOf(room)) : null;
       const rows = await runOutsideDrizzleTransaction(() => readRows(db, name));
       const docs = RoomDocs.load(
         shape,
         freshServerPeerId(),
         new Map(rows.map((row) => [row.docKey, row.snapshot])),
-        live,
+        live?.docs ?? null,
       );
       const loaded: Loaded = {
         room,
         name,
         docs,
+        saved: savedAtLoad(
+          docs,
+          rows.map((row) => row.docKey),
+          live?.saved ?? null,
+        ),
+        inheritsStructure: live !== null && !rows.some((row) => row.docKey === STRUCTURE_KEY),
         dirty: new Set(docs.forward().changed),
         firstDirtyAt: 0,
         saveTimer: null,
@@ -320,6 +343,26 @@ export function createPostgresDocumentRooms(input: {
   function emitTo(room: DocumentRoom, batch: Uint8Array, origin: RoomOrigin) {
     for (const listener of listeners.get(loroRoomName(room)) ?? [])
       listener({ room, batch, origin });
+  }
+
+  function noteSaved(loaded: Loaded, stored: RoomVersion) {
+    if (stored.has(STRUCTURE_KEY)) loaded.inheritsStructure = false;
+    advance(loaded, stored);
+  }
+
+  function advance(loaded: Loaded, stored: RoomVersion) {
+    const moved = advanceSaved(loaded.saved, stored);
+    emitSaved(loaded.name, moved);
+    const structure = moved.get(STRUCTURE_KEY);
+    if (structure && loaded.room.kind === "live")
+      for (const fork of forksOf(loaded.room.documentId))
+        if (fork.inheritsStructure) advance(fork, new Map([[STRUCTURE_KEY, structure]]));
+  }
+
+  function emitSaved(name: string, saved: RoomVersion) {
+    if (saved.size === 0) return;
+    const encoded = encodeRoomVersion(saved);
+    for (const listener of savedListeners.get(name) ?? []) listener(encoded);
   }
 
   function imported(
@@ -451,7 +494,7 @@ export function createPostgresDocumentRooms(input: {
       return doc ? [{ roomKey: loroRoomName(room), docKey, doc }] : [];
     });
     if (rows.length === 0) return NOTHING_WRITTEN;
-    const bytes = await writeSnapshots(tx, rows);
+    const { bytes, stored } = await writeSnapshots(tx, rows);
     if (room.kind === "fork" && (await markFork(tx, room, docs)))
       await input.onForkPendingChanged?.(room.draftId);
     await tx
@@ -462,7 +505,6 @@ export function createPostgresDocumentRooms(input: {
       })
       .where(eq(documents.id, room.documentId));
     if (room.kind === "live") runAfterDrizzleCommit(() => input.onLiveSaved?.(room.documentId));
-    const stored: RoomVersion = new Map(rows.map((row) => [row.docKey, docVersion(row.doc)]));
     return { bytes, docs: rows.length, stored };
   }
 
@@ -490,6 +532,7 @@ export function createPostgresDocumentRooms(input: {
     const started = performance.now();
     let keys = new Set<DocKey>();
     let merged = false;
+    let held: RoomVersion = new Map();
     let written: Written = NOTHING_WRITTEN;
     try {
       await runOutsideDrizzleTransaction(() =>
@@ -500,6 +543,7 @@ export function createPostgresDocumentRooms(input: {
           const merge = await mergeStored(tx, loaded.name, loaded.docs);
           if (merge) {
             merged = true;
+            held = merge.held;
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
             const result = { changed: merge.changed, pending: false, restore: [] };
@@ -519,6 +563,8 @@ export function createPostgresDocumentRooms(input: {
       throw cause;
     }
     if (written.docs === 0 && !merged) return;
+    noteSaved(loaded, held);
+    noteSaved(loaded, written.stored);
     loaded.snapshotBytes = Math.max(loaded.snapshotBytes, written.bytes);
     emitEvent(eventSink, {
       level: "info",
@@ -774,6 +820,7 @@ export function createPostgresDocumentRooms(input: {
       return {
         version: encodeRoomVersion(loaded.docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
+        saved: encodeRoomVersion(loaded.saved),
       };
     },
 
@@ -799,10 +846,13 @@ export function createPostgresDocumentRooms(input: {
         }
         const land = () => {
           const loaded = rooms.get(loroRoomName(room));
-          if (loaded && !loaded.unloading)
-            return void importInto(loaded, batch, origin, written.stored);
+          if (loaded && !loaded.unloading) {
+            importInto(loaded, batch, origin, written.stored);
+            return noteSaved(loaded, written.stored);
+          }
           emitTo(room, batch, origin);
           if (restore) emitTo(room, restore, "server:restore");
+          emitSaved(loroRoomName(room), written.stored);
         };
         runAfterDrizzleCommit(land);
       }),
@@ -822,8 +872,12 @@ export function createPostgresDocumentRooms(input: {
         }
         const land = () => {
           const loaded = rooms.get(name);
-          if (!loaded || loaded.unloading) return emitTo(room, snapshots, "server:seed");
+          if (!loaded || loaded.unloading) {
+            emitTo(room, snapshots, "server:seed");
+            return emitSaved(name, written.stored);
+          }
           importInto(loaded, snapshots, "server:seed", written.stored);
+          noteSaved(loaded, written.stored);
         };
         runAfterDrizzleCommit(land);
       }),
@@ -841,6 +895,20 @@ export function createPostgresDocumentRooms(input: {
         if (set.size === 0) listeners.delete(name);
         const loaded = rooms.get(name);
         if (loaded) touch(loaded);
+      };
+    },
+
+    subscribeSaved(room, listener) {
+      const name = loroRoomName(room);
+      let set = savedListeners.get(name);
+      if (!set) {
+        set = new Set();
+        savedListeners.set(name, set);
+      }
+      set.add(listener);
+      return () => {
+        set.delete(listener);
+        if (set.size === 0) savedListeners.delete(name);
       };
     },
 

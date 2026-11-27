@@ -13,6 +13,8 @@ export interface RoomBatch {
 export interface RoomSync {
   version: Uint8Array;
   update: Uint8Array | null;
+  // Every doc's saved version, encoded: a doc it doesn't name has nothing saved.
+  saved: Uint8Array;
 }
 
 export interface DocumentRooms<Tx> {
@@ -38,6 +40,8 @@ export interface DocumentRooms<Tx> {
   seed(tx: Tx, room: DocumentRoom, snapshots: Uint8Array): Promise<void>;
 
   subscribe(room: DocumentRoom, listener: (batch: RoomBatch) => void): () => void;
+
+  subscribeSaved(room: DocumentRoom, listener: (saved: Uint8Array) => void): () => void;
 
   flush(room: DocumentRoom): Promise<void>;
 
