@@ -9,10 +9,13 @@ files move while it streams. Mechanism, routes and preview:
 - Documents stream in tree order (project sibling order, `compareCatalogSiblings`
   from `@meridian/project-tree`, applied in
   `../context/tree/export-inventory.ts`). `buildExportLayout` does not sort: the
-  first sibling to claim a name keeps it. Every file's own name is claimed before
-  any clash is numbered, so a numbered twin never displaces a file really named
-  `x (2).md`. Numbering is `numberedName` in `@meridian/contracts/protocol`, the
-  one rule for a unique name: the number goes before the last extension.
+  first sibling to claim a name keeps it. It finds every entry before naming
+  any, then names each folder's children the same way, folders and files
+  together: every entry claims its own name first, and only the clashes left
+  over are numbered, with `numberedName` from `@meridian/contracts/protocol`
+  (before the last extension for a file). A numbered twin never displaces an
+  entry really named `x (2)`. Names are written in NFC and compared ignoring case
+  and normalisation, as macOS and Windows unpack them.
 - The snapshot adapter takes a short repeatable-read snapshot, never a transaction
   spanning a download. It reads canonical addresses through Context's public
   index (`loadDocumentAddresses`), not its private adapters.

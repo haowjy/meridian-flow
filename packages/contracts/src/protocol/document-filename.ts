@@ -110,7 +110,7 @@ export function renderFilename(name: string, extension: string): string {
 
 export function splitExtension(filename: string): { name: string; extension: string } {
   const dot = filename.lastIndexOf(".");
-  return dot > 0 && !/\s/.test(filename.slice(dot + 1))
+  return dot > 0 && dot < filename.length - 1 && !/\s/.test(filename.slice(dot + 1))
     ? { name: filename.slice(0, dot), extension: filename.slice(dot + 1) }
     : { name: filename, extension: "" };
 }
