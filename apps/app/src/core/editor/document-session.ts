@@ -47,7 +47,7 @@ import { wordsBeyond } from "./unsent-words";
 export type { SchemaFence } from "./schema-fence";
 
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
-const TAB_QUIET_MS = 2_000;
+const TAB_QUIET_MS = 4_000;
 const COMPACT_EVERY = 200;
 
 export type DocumentSessionStatus =

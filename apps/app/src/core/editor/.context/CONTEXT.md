@@ -44,18 +44,18 @@ saved covers it; and the private `hasUnacknowledgedEdits` against `serverVersion
 received), which only says whether another tab's typing still needs sending. Detached, both read
 the stored mark. The session recounts on each saved frame, so a sign-out waiting on another tab's
 typing wakes when the server saves it. Another tab's typing that tab never delivers (it closed offline) is
-sent from here once the tabs have been quiet for `TAB_QUIET_MS` (2 s, restarted by each batch):
+sent from here once the tabs have been quiet for `TAB_QUIET_MS` (4 s, restarted by each batch):
 a connected session asks its transport to send what the server still lacks (`sendLacking`). The
-writing tab normally delivers first and the server's relay covers `pending` here, so nothing is
-sent; with a third tab, or a relay slower than 2 s, each extra tab may resend the undelivered part
+writing tab normally delivers first and the server's relay covers `unsaved` here, so nothing is
+sent; with a third tab, or a relay slower than 4 s, each extra tab may resend the undelivered part
 once per quiet period, which the server takes as a no-op. A session off its socket (kept for Undo,
 or detached) never sees the relay: at quiet it reads the saved mark the writing tabs keep in the
 copy, and only what that leaves calls the session's `onUndeliveredTabWrites`, on which the
 registry gives it its socket back and holds it until saved (`deliverTabWrites`). Reconnecting on `unsaved` alone
-would rejoin on every keystroke typed in another tab. Because the mark is saved, not received,
-the writing tab's mark lags its typing by the 2 s save debounce, so a detached session often finds
-the typing unsaved at quiet and Joins once per burst; it sends nothing and lets go at the saved
-frame.
+would rejoin on every keystroke typed in another tab. The mark is saved, not received, so it lags
+the writing tab's typing by the server's 2 s save debounce: `TAB_QUIET_MS` sits above that so a
+detached session finds the typing saved at quiet. At 2 s a detached session Joined once per typing
+burst (22 Joins in a two-tab typing minute, against none at 4 s).
 
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
