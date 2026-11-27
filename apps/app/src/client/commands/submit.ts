@@ -38,12 +38,12 @@ export async function submitCommand(
 export async function settleCommand(
   driver: CommandDriver | null,
   input: SubmitInput,
-): Promise<boolean> {
+): Promise<CommandRecord | null> {
   if (!driver) throw new Error("Commands are not available yet");
   const record = await submitCommand(driver, input);
   if (!record) throw new DeviceRefusedError();
   const settled = await driver.whenSettled(record.id);
-  if (settled?.state !== "never") return settled?.state === "done";
+  if (settled?.state !== "never") return settled?.state === "done" ? settled : null;
   void driver.dismiss(record.id);
   throw new Error(`${input.kind} ended never`);
 }

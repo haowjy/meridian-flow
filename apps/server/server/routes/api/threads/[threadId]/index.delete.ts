@@ -1,6 +1,6 @@
 import type { CommandId, ProjectId } from "@meridian/contracts";
 import { defineEventHandler, getRouterParam, readBody, setResponseStatus } from "nitro/h3";
-import { deleteOwnedThreadToTrash, requireThreadOwner } from "../../../../domains/threads/index.js";
+import { requireThreadOwner, setOwnedThreadTrashState } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { runRouteCommand, splitCommandBody } from "../../../../lib/command-route.js";
 
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
       body,
     },
     async () => {
-      await deleteOwnedThreadToTrash(
+      await setOwnedThreadTrashState(
         {
           repos: app.threadRepos,
           projects: app.projectRepo,
@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
         },
         thread.id,
         user.userId,
+        "deleted",
       );
       return { status: "done" };
     },

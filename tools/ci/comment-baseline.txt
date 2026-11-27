@@ -48,7 +48,7 @@ apps/app/src/client/copilot/ThreadRunController.ts	Pair provider effect setup wi
 apps/app/src/client/draft-commands/draft-notices.ts	A page moving to another host is let go and taken up in one commit: decide after it.
 apps/app/src/client/project-shell/context-removal-coordinator.ts	The writer is deleting or Discarding these documents: main, if it shows one of them, goes at once to the document it showed before, else to Recently opened. Call before the removal. `landed` hears where main went, or null when it did not move; nothing when main did not show them. Returns the document main is leaving, if it shows one of them.
 apps/app/src/client/project-shell/main-tabs.ts	A tab stored before a node's handle became its document id carries `resourceHandle`: dropped.
-apps/app/src/client/query/delete-project-chat.ts	Reset, not invalidate: a kept "deleted" error would read as proof the chat is gone when it next mounts, and drop its unsent words.
+apps/app/src/client/query/chat-commands.ts	Reset, not invalidate: a kept "deleted" error would read as proof the chat is gone when it next mounts, and drop its unsent words.
 apps/app/src/client/query/draft-commands.ts	Points a chat's lineage at another draft of its Work. It goes in the Work's draft lane too, so a draft made just before (`+ New draft`) exists when the server points the chat at it.
 apps/app/src/client/query/press-commands.ts	A press or Undo holds the lane of each draft it presses, so it goes after every earlier press on any of them: a Work's press after a Discard of one of its drafts' chapters, not beside it.
 apps/app/src/client/query/project-commands.ts	A function-valued `enabled` that turns true does not make TanStack fetch: the reads this project's create held back start now.

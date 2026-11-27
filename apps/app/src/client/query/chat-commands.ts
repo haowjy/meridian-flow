@@ -204,7 +204,7 @@ export function pinChat(
   projectId: string,
   threadId: string,
   isFavorite: boolean,
-): Promise<boolean> {
+): Promise<CommandRecord | null> {
   return settleCommand(driver, {
     kind: CHAT_FAVORITE_KIND,
     lanes: [chatLane(threadId)],
@@ -217,7 +217,7 @@ export function trashChat(
   kind: typeof CHAT_DELETE_KIND | typeof CHAT_RESTORE_KIND,
   projectId: string,
   threadId: string,
-): Promise<boolean> {
+): Promise<CommandRecord | null> {
   return settleCommand(driver, {
     kind,
     lanes: [chatLane(threadId)],

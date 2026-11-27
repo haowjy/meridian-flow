@@ -1,9 +1,7 @@
 import type { CommandId, ProjectId } from "@meridian/contracts";
-import { defineEventHandler, getRouterParam, readBody, setResponseStatus } from "nitro/h3";
-import {
-  requireThreadOwner,
-  restoreOwnedThreadFromTrash,
-} from "../../../../domains/threads/index.js";
+import { serializeTransport } from "@meridian/contracts/protocol";
+import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
+import { requireThreadOwner, setOwnedThreadTrashState } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { runRouteCommand, splitCommandBody } from "../../../../lib/command-route.js";
 
@@ -17,7 +15,11 @@ export default defineEventHandler(async (event) => {
     user.userId,
     { includeDeleted: true },
   );
-  await runRouteCommand<{ status: "done" }>(
+  const result = await runRouteCommand<{
+    status: "done";
+    changed: boolean;
+    keptWith: { workId: string; name: string } | null;
+  }>(
     app.commands,
     {
       commandId: commandId as CommandId,
@@ -28,7 +30,7 @@ export default defineEventHandler(async (event) => {
       body,
     },
     async () => {
-      await restoreOwnedThreadFromTrash(
+      const { changed, keptWith } = await setOwnedThreadTrashState(
         {
           repos: app.threadRepos,
           projects: app.projectRepo,
@@ -39,11 +41,13 @@ export default defineEventHandler(async (event) => {
         },
         thread.id,
         user.userId,
+        "visible",
       );
-      return { status: "done" };
+      return { status: "done", changed, keptWith: keptWith ?? null };
     },
     () => undefined,
   );
+  if (result.changed) await app.workContextNotices.materializeIdle(thread.id);
   app.projectWakeHub.publish({ type: "project-chats-hint", projectId: thread.projectId });
-  setResponseStatus(event, 204);
+  return serializeTransport(result);
 });

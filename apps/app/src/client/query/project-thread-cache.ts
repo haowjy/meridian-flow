@@ -6,13 +6,6 @@ import { defaultThreadTitle } from "@/lib/thread-title";
 import { patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 
-export function readProjectThreadList(
-  client: QueryClient,
-  projectId: string,
-): ThreadListItem[] | null {
-  return client.getQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId)) ?? null;
-}
-
 function chatLists(client: QueryClient) {
   return client
     .getQueryCache()

@@ -268,6 +268,8 @@ chat with a reply running asks first: the server stops the run in the delete and
 restart it. The delete and Undo's restore are command-driver kinds on the chat's lane
 (`chat_delete`, `chat_restore` in `client/query/chat-commands.ts`), so an Undo made before the
 delete reached the server is sent after it, and both survive a reload; the notice itself does not.
+An Undo of a chat whose Work was deleted meanwhile is kept with that Work: the row stays struck
+through and says the chat comes back when the Work is restored.
 A settled restore resets the chat's snapshot query rather than invalidating it: a cached
 "deleted" error would read as proof the chat is gone when it next mounts. Nothing lists
 trashed chats; after a reload a deleted chat is reachable only by its address.

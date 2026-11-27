@@ -746,7 +746,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toEqual([]);
       expect(await shown()).toEqual([]);
-      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      const { setOwnedThreadTrashState } = await import("../threads/thread-access.js");
       const threadTrashDeps = {
         repos: threadRepos,
         projects: {
@@ -756,9 +756,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         workContextNotices: {
           async threadChanged() {},
-          async materializeIdle() {
-            return "delivered" as const;
-          },
         },
         workAuthorityResolver: authorities,
         works,
@@ -766,8 +763,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       for (const threadId of [THREAD_ID, childThreadId, separatelyDeletedThreadId]) {
         await expect(
-          restoreOwnedThreadFromTrash(threadTrashDeps, threadId, USER_ID as never),
-        ).resolves.toMatchObject({ id: threadId, deletedAt: expect.any(String) });
+          setOwnedThreadTrashState(threadTrashDeps, threadId, USER_ID as never, "visible"),
+        ).resolves.toMatchObject({
+          thread: { id: threadId, deletedAt: expect.any(String) },
+          keptWith: { workId: work.id },
+        });
       }
       await expect(
         db
@@ -879,9 +879,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await threadRepos.threadWorks.rebindPrimary(THREAD_ID as never, liveWork.id);
       await works.softDelete(deletedWork.id);
 
-      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      const { setOwnedThreadTrashState } = await import("../threads/thread-access.js");
       await expect(
-        restoreOwnedThreadFromTrash(
+        setOwnedThreadTrashState(
           {
             repos: threadRepos,
             projects: {
@@ -891,9 +891,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             workContextNotices: {
               async threadChanged() {},
-              async materializeIdle() {
-                return "delivered" as const;
-              },
             },
             workAuthorityResolver: authorities,
             works,
@@ -901,8 +898,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           childThreadId as never,
           USER_ID as never,
+          "visible",
         ),
-      ).resolves.toMatchObject({ id: childThreadId, deletedAt: expect.any(String) });
+      ).resolves.toMatchObject({
+        thread: { id: childThreadId, deletedAt: expect.any(String) },
+        keptWith: { workId: deletedWork.id },
+      });
       await expect(
         threadRepos.threadWorks.findPrimary(childThreadId as never),
       ).resolves.toMatchObject({ workId: deletedWork.id });

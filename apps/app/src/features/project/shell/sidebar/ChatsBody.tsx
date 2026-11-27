@@ -413,7 +413,7 @@ function DeletedRow({
   takeFocus: () => boolean;
   onUndo: () => void;
 }) {
-  const { title } = notice;
+  const { title, keptWith } = notice;
   const failed = notice.status === "failed";
   return (
     <div data-chat-delete-notice={notice.threadId}>
@@ -421,15 +421,23 @@ function DeletedRow({
         gone
         title={title}
         notice={
-          <RowWord
-            focus={{ take: takeFocus }}
-            word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
-            tone={failed ? "warning" : "action"}
-            label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
-            sentence={failed ? t`Couldn't restore` : t`Deleted just now`}
-            pending={notice.status === "restoring"}
-            onAction={onUndo}
-          />
+          keptWith ? (
+            <RowWord
+              tone="note"
+              word={<Trans>With {keptWith}</Trans>}
+              sentence={t`Comes back when ${keptWith} is restored`}
+            />
+          ) : (
+            <RowWord
+              focus={{ take: takeFocus }}
+              word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
+              tone={failed ? "warning" : "action"}
+              label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
+              sentence={failed ? t`Couldn't restore` : t`Deleted just now`}
+              pending={notice.status === "restoring"}
+              onAction={onUndo}
+            />
+          )
         }
       />
     </div>

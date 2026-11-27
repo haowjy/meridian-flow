@@ -16,7 +16,8 @@ export type ChatDeleteNotice = {
   id: number;
   threadId: string;
   title: string;
-  status: "ready" | "restoring" | "failed";
+  status: "ready" | "restoring" | "failed" | "kept";
+  keptWith?: string;
   place: ChatPlace | null;
 };
 
@@ -33,6 +34,8 @@ type Ports = {
 };
 
 type Taken = { main: boolean; current: boolean };
+
+type RestoreResult = { keptWith: { workId: string; name: string } | null };
 
 type Held = {
   notice: ChatDeleteNotice;
@@ -103,13 +106,14 @@ export class ChatDeletes {
 
   async undo(): Promise<boolean> {
     const held = this.held;
-    if (!held || held.notice.status === "restoring") return false;
+    if (!held || held.notice.status === "restoring" || held.notice.status === "kept") return false;
     this.update(held, "restoring");
     const { threadId, title } = held.notice;
     await held.moved;
     restoreOwnDeletedChatWords(this.ports.accountId, threadId);
     if (!held.ended) this.putBack(threadId, held.taken);
-    if (await this.restored(threadId)) {
+    const restored = await this.restored(threadId);
+    if (restored === true) {
       if (this.held === held) this.held = null;
       this.publish();
       announce(t`${title} restored`);
@@ -118,6 +122,12 @@ export class ChatDeletes {
     if (held.ended) return false;
     this.takeAway(threadId);
     held.moved = this.moveWords(threadId, title);
+    if (restored) {
+      held.notice = { ...held.notice, status: "kept", keptWith: restored.keptWith };
+      this.publish();
+      announce(t`${title} comes back when ${restored.keptWith} is restored`);
+      return false;
+    }
     this.update(held, "failed");
     announceError(t`Couldn't restore ${title}`);
     return false;
@@ -156,18 +166,21 @@ export class ChatDeletes {
     ).catch(reportError);
   }
 
-  private async restored(threadId: string): Promise<boolean> {
+  private async restored(threadId: string): Promise<boolean | { keptWith: string }> {
     const { client, projectId } = this.ports;
     const read = Promise.all([
       whenRead(client, { queryKey: projectQueryKeys.threads(projectId), exact: true }),
       whenRead(client, { queryKey: projectQueryKeys.chatFeed(projectId) }),
     ]);
+    let settled: Awaited<ReturnType<typeof trashChat>>;
     try {
-      if (!(await trashChat(this.ports.driver(), CHAT_RESTORE_KIND, projectId, threadId)))
-        return false;
+      settled = await trashChat(this.ports.driver(), CHAT_RESTORE_KIND, projectId, threadId);
     } catch {
       return false;
     }
+    if (!settled) return false;
+    const keptWith = (settled.outcome?.result as RestoreResult | undefined)?.keptWith;
+    if (keptWith) return { keptWith: keptWith.name };
     await read;
     return true;
   }
