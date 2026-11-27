@@ -1,4 +1,5 @@
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { restartsTransaction } from "../../../shared/tree-owners.js";
 import { NodeIdRefusedError } from "../adapters/tree-list-rows.js";
@@ -16,14 +17,13 @@ import type {
   GrepFile,
 } from "../ports/context-port.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
-import { toCanonical } from "./uri.js";
 
 export function toGrepFile(
   scheme: ContextScheme,
   authority: CanonicalContextAuthority,
   { path, ...file }: AdapterGrepFile,
 ): GrepFile {
-  return { uri: toCanonical(scheme, path, authority), ...file };
+  return { uri: canonicalContextUri(scheme, path, authority), ...file };
 }
 
 export function toFileRef(
@@ -33,7 +33,7 @@ export function toFileRef(
   readonly: boolean,
 ): FileRef {
   const base = {
-    uri: toCanonical(scheme, ref.path, authority),
+    uri: canonicalContextUri(scheme, ref.path, authority),
     documentId: ref.documentId,
     sizeBytes: ref.sizeBytes,
     updatedAt: ref.updatedAt,
@@ -61,7 +61,7 @@ export function toFileEntry(
   readonly: boolean,
 ): FileEntry {
   const { path, ...metadata } = entry;
-  return { ...metadata, uri: toCanonical(scheme, path, authority), readonly };
+  return { ...metadata, uri: canonicalContextUri(scheme, path, authority), readonly };
 }
 
 export async function callAdapter<T>(

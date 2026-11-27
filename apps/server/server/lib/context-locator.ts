@@ -6,7 +6,7 @@ import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.
 import {
   type ContextError,
   type ProjectContextFsScheme,
-  parseUnifiedContextUri,
+  parseUnifiedContextUriResult,
   type UnifiedContextPortFactory,
   type WorkScopedContextFsScheme,
 } from "../domains/context/index.js";
@@ -109,7 +109,7 @@ export async function resolveLocatorUri(
   projectId: string,
   uri: string,
 ): Promise<Result<ResolvedContextLocator | ChatLocator, LocatorRefusal>> {
-  const parsed = parseUnifiedContextUri(uri);
+  const parsed = parseUnifiedContextUriResult(uri);
   if (!parsed.ok) return Err({ reason: "invalid_uri", error: parsed.error });
   const { scheme, path, authority } = parsed.value;
   if (authority.kind === "work") {
