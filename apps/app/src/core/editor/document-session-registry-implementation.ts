@@ -2,7 +2,6 @@ import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { deferred } from "@/core/cross-context-locks";
-import { createLoroRoomTransport } from "@/core/transport/loro-room-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
   DocumentSession,
@@ -40,8 +39,7 @@ const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry {
-  private accountRuntimeState: "open" | "closing" | "closed" = "open";
-  private accountCloseAttempt: Promise<void> | null = null;
+  private closeAttempt: Promise<void> | null = null;
   private readonly copies: LocalDocumentCopies;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     () => new Error("Live session teardown is unfinished"),
@@ -67,15 +65,14 @@ export class DocumentSessionRegistry {
 
   constructor(
     private readonly accountId: AccountId,
-    private readonly transportFactory: DocumentSessionTransportFactory = createLoroRoomTransport,
-    private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
-    copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
+    private readonly accountClosing: AbortSignal,
+    private readonly transportFactory: DocumentSessionTransportFactory,
   ) {
-    this.copies = copies;
+    this.copies = new LocalDocumentCopies(accountId);
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
-    this.requireAccountRuntimeOpen();
+    this.requireAccountOpen();
     if (draftId !== undefined) this.admit(projectId, documentId);
     const room: DocumentRoom =
       draftId === undefined ? { kind: "live", documentId } : { kind: "fork", draftId, documentId };
@@ -101,6 +98,7 @@ export class DocumentSessionRegistry {
   }
 
   async clearLocalCopy(documentId: DocumentId): Promise<void> {
+    this.requireAccountOpen();
     const keys = this.roomsOf(documentId);
     let retainedChanged = false;
     for (const key of keys) {
@@ -148,6 +146,7 @@ export class DocumentSessionRegistry {
   }
 
   get(lease: DocumentSessionLease): DocumentSession {
+    this.requireAccountOpen();
     const state = this.requireLease(lease);
     return this.getOrCreateLiveSession(lease, state, true);
   }
@@ -160,6 +159,7 @@ export class DocumentSessionRegistry {
     projectId: ProjectId,
     { drafts, documents }: PressRooms,
   ): Promise<void> {
+    this.requireAccountOpen();
     const copies = await this.copies.currentCopies();
     const forks = new Map<string, DocumentRoom>();
     for (const room of [
@@ -208,6 +208,7 @@ export class DocumentSessionRegistry {
   }
 
   async restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean> {
+    this.requireAccountOpen();
     const state = this.requireLease(lease);
     const session = state.session;
     if (!session) return false;
@@ -231,6 +232,7 @@ export class DocumentSessionRegistry {
     leases: Iterable<DocumentSessionLease>,
     options: { detachedDocumentIds?: Iterable<DocumentId> } = {},
   ): void {
+    this.requireAccountOpen();
     const detached = new Set<string>(options.detachedDocumentIds);
     const retained = new Map<string, RetainedLiveDocument>();
     for (const lease of leases) {
@@ -246,6 +248,7 @@ export class DocumentSessionRegistry {
   }
 
   setHosted(ownerId: string, hosted: boolean): void {
+    this.requireAccountOpen();
     const retained = this.retainedByOwner.get(ownerId);
     if (!retained) return;
     for (const owner of retained.values()) owner.detached = !hosted;
@@ -266,28 +269,18 @@ export class DocumentSessionRegistry {
     return () => this.retainedObservers.delete(observer);
   }
 
-  beginCloseAccountRuntime(): void {
-    if (this.accountRuntimeState === "open") this.accountRuntimeState = "closing";
-  }
-
-  closeAccountRuntime(): Promise<void> {
-    this.beginCloseAccountRuntime();
-    if (this.accountRuntimeState === "closed") return Promise.resolve();
-    if (this.accountCloseAttempt) return this.accountCloseAttempt;
-    const attempt = this.invalidateAll().then(() => {
-      this.accountRuntimeState = "closed";
+  close(): Promise<void> {
+    if (!this.accountClosing.aborted) throw new Error("Abort the account signal before closing");
+    if (this.closeAttempt) return this.closeAttempt;
+    const attempt = this.retireAll();
+    this.closeAttempt = attempt;
+    attempt.catch(() => {
+      if (this.closeAttempt === attempt) this.closeAttempt = null;
     });
-    this.accountCloseAttempt = attempt;
-    void attempt
-      .finally(() => {
-        if (this.accountCloseAttempt === attempt) this.accountCloseAttempt = null;
-      })
-      .catch(() => undefined);
     return attempt;
   }
 
-  invalidateAll(): Promise<void> {
-    this.beginCloseAccountRuntime();
+  private retireAll(): Promise<void> {
     this.clearRetainedLiveDocuments();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
@@ -527,10 +520,9 @@ export class DocumentSessionRegistry {
     for (const observer of [...(this.replacementObservers.get(roomKey) ?? [])]) observer(session);
   }
 
-  private requireAccountRuntimeOpen(): void {
-    if (this.accountRuntimeState !== "open") {
-      throw new Error("Account document session runtime is closing");
-    }
+  // `release` stays unguarded: a view unmounting during the close still lets go of its hold.
+  private requireAccountOpen(): void {
+    if (this.accountClosing.aborted) throw new Error("Account is closing");
   }
 
   private attachSessionTransport(session: DocumentSession): void {
@@ -656,7 +648,7 @@ export class DocumentSessionRegistry {
       const state = this.rooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
       this.releaseUnheld(roomKey, state, state.session);
-    }, this.teardownGraceMs);
+    }, SESSION_TEARDOWN_GRACE_MS);
     this.pendingTeardownTimers.set(roomKey, timer);
   }
 

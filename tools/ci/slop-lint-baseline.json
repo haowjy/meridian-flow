@@ -49,11 +49,6 @@
       },
       {
         "path": "apps/app/src/core/editor/document-session-registry-implementation.ts",
-        "line": "void attempt",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/core/editor/document-session-registry-implementation.ts",
         "line": "void this.teardownOwner",
         "count": 1
       },
@@ -145,11 +140,6 @@
       {
         "path": "apps/app/src/features/project/chat/usePassageDoors.ts",
         "line": "void landing.catch(() => {});",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/account-feature-lifetime.ts",
-        "line": "void attempt",
         "count": 1
       },
       {

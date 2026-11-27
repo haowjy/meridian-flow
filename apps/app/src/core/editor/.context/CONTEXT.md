@@ -468,7 +468,7 @@ keyboard, pointer, drop, or recovery answer.
 - A held session ends when the server acknowledges its edits, when the predicate turns
   false, when the document is removed or access revoked
   (the room closes, `settleDrainedRoom`), when the account closes
-  (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
+  (the registry's `close`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
   without an acknowledgement. That cap is for a room that answers but never accepts; the
   clock runs only while the connection is up and restarts on each drop, so offline time
   never counts and a writer who types on a train gets delivery on reconnect, however
@@ -524,7 +524,7 @@ holds them by definition. Either way the registry replaces the room
   position across it, because the store is keyed by room (`use-reading-position.ts`).
 - A fork session reads through its Live session's docs, so replacing a Live room rebuilds every
   fork session over it on the fork's same copy (its own words are intact), and the old Live
-  session retires only after the old forks have: the same forks-first order as `invalidateAll` and
+  session retires only after the old forks have: the same forks-first order as the registry's `close` and
   `clearLocalCopy`. The rebuilt forks reach their editors through `observeReplacement` too.
 - A read-admitted connection sends no `DocUpdate`. Nothing is stored about a drop: the copies are
   working storage only, and a drop that is told twice shows the one pill under its key.

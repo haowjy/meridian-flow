@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -26,9 +27,7 @@ const SignOutContext = createContext<(() => Promise<void>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
-const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
-  null,
-);
+const LiveDocumentRegistryAccountContext = createContext<LiveDocumentSessionRegistry | null>(null);
 
 export function AccountFeatureComposition({
   accountId,
@@ -40,17 +39,10 @@ export function AccountFeatureComposition({
   const connectivityHints = useConnectivityHints();
   const desired = useRef({ accountId });
   desired.current = { accountId };
-  const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
-    () =>
-      new AccountFeatureLifetime(
-        accountId,
-        (error) => invalidationHandler.current(error),
-        connectivityHints,
-      ),
+    () => new AccountFeatureLifetime(accountId, connectivityHints),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
-  invalidationHandler.current = setTeardownError;
   const transition = useRef<Promise<void> | null>(null);
 
   if (teardownError) throw teardownError;
@@ -65,13 +57,7 @@ export function AccountFeatureComposition({
       .finishClose()
       .then(() => {
         const next = desired.current;
-        setLifetime(
-          new AccountFeatureLifetime(
-            next.accountId,
-            (error) => invalidationHandler.current(error),
-            connectivityHints,
-          ),
-        );
+        setLifetime(new AccountFeatureLifetime(next.accountId, connectivityHints));
       })
       .catch((error: unknown) => setTeardownError(error))
       .finally(() => {
@@ -104,7 +90,7 @@ function AccountFeatureProviders({
   }, [lifetime]);
   const signOut = useCallback(() => lifetime.clearForSignOut(), [lifetime]);
   return (
-    <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
+    <AccountEpochContext.Provider value={lifetime.epochSignal}>
       <AccountIdContext.Provider value={lifetime.accountId}>
         <SignOutContext.Provider value={signOut}>
           <TreeListsAccountContext.Provider value={lifetime.treeLists}>
@@ -156,15 +142,13 @@ export function useOptionalContextRemovalCoordinator(): ContextRemovalCoordinato
   return useContext(ContextRemovalAccountContext);
 }
 
-export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["registry"] {
+export function useLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry {
   const registry = useContext(LiveDocumentRegistryAccountContext);
   if (!registry) throw new Error("AccountFeatureComposition is required");
   return registry;
 }
 
-export function useOptionalLiveDocumentSessionRegistry():
-  | AccountFeatureLifetime["registry"]
-  | null {
+export function useOptionalLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry | null {
   return useContext(LiveDocumentRegistryAccountContext);
 }
 
