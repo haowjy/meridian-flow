@@ -1,12 +1,4 @@
 export { CodeBlockChips } from "./CodeBlockChips";
-export {
-  type FenceRebase,
-  fenceRebaseAfter,
-  fenceSourceTransaction,
-  minimalTextPatch,
-  type TextPatch,
-  useFenceDraft,
-} from "./fence-draft";
 export { ObjectControls } from "./ObjectControls";
 export { ObjectFieldPopover, type ObjectFieldPopoverProps } from "./ObjectFieldPopover";
 export { ObjectLightbox, type ObjectLightboxProps } from "./ObjectLightbox";
