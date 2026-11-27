@@ -136,8 +136,8 @@ stateDiagram-v2
   steps (`accountFor` and `accountHeaders`, then `answeredFor`). An `<a download>` or `<img src>`
   can't carry a header, and another origin's URL (signed storage, a pasted web address) is never
   named, since the header would cost it a CORS preflight. What a component built for the lifetime
-  sends names that lifetime: the command driver's transport and the thread socket take
-  `requests` from the account context (`useRequestAccount`), and the socket's URL carries
+  sends names that lifetime: the command driver's transport, the failure log and the thread
+  socket take `requests` from the account context (`useRequestAccount`), and the socket's URL carries
   `?account=`. Anything else names the mounted lifetime: mounting (`resumeFeatureLease`) makes it
   the one `apiFetch` names (`sendRequestsAs`), and it stays named until another lifetime mounts,
   so a request sent while one account closes and the next has not mounted is refused rather than
