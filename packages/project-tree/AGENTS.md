@@ -7,6 +7,9 @@ it may write, whether a node id is in use) comes in as plain inputs.
 
 - A record is one act by one actor. The list never deletes, and nothing here edits a record:
   a record's state is its last settlement in the `settle` array, never a field on it.
+  An actor is built only by `userActor`, `agentActor` or `SYSTEM_ACTOR` and read only by
+  `readActor` (`record.ts`). Its spelling is stored and replay reads it (a user's rename ends
+  a node's provisional state), so it is frozen like the records.
 - Replay is a pure function of the records. It never changes what Loro merged; the fifteen rules
   in [.context/CONTEXT.md](.context/CONTEXT.md) are the only place the product decides
   anything, each beside the CRDT default it replaces. A sixteenth rule goes there, in `replay.ts`,

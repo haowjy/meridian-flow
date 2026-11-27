@@ -1,6 +1,6 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { type CreateInput, LIVE, sourceRoot } from "@meridian/project-tree";
+import { type CreateInput, LIVE, SYSTEM_ACTOR, sourceRoot } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
@@ -70,7 +70,7 @@ export function createDrizzleContextImportReveal(deps: {
             const source = sourceOf.get(area) as string;
             place(kids, parentId ?? sourceRoot(source), source);
           }
-          return writer.createAll(LIVE, "system", inputs).map((record) => record.node);
+          return writer.createAll(LIVE, SYSTEM_ACTOR, inputs).map((record) => record.node);
         },
       });
 

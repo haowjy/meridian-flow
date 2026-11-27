@@ -5,6 +5,7 @@ import {
   replayView,
   sourceRoot,
   TreeWriter,
+  userActor,
 } from "@meridian/project-tree";
 import { DEBUG_FEATURE_ALLOWED } from "../debug-gate";
 import type { TreeListHandle, TreeListRegistry } from "./tree-list-registry";
@@ -71,7 +72,7 @@ export function installTreeListDebugHook(
     read,
     append(kind, id, sourceId, name) {
       const { doc } = handleOf(kind, id).session.getSnapshot();
-      return new TreeWriter(doc).create(LIVE, `user:${accountId}`, {
+      return new TreeWriter(doc).create(LIVE, userActor(accountId), {
         kind: "document",
         name,
         parent: sourceRoot(sourceId),
@@ -81,7 +82,7 @@ export function installTreeListDebugHook(
     appendForged(kind, id) {
       const { doc } = handleOf(kind, id).session.getSnapshot();
       const node = crypto.randomUUID();
-      new TreeWriter(doc).purge(`user:${accountId}`, { id: crypto.randomUUID(), node }, [node]);
+      new TreeWriter(doc).purge(userActor(accountId), { id: crypto.randomUUID(), node }, [node]);
     },
     close() {
       for (const handle of handles.values()) handle.release();

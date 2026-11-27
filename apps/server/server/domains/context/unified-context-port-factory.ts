@@ -132,7 +132,7 @@ function contextFsAdapter(
       db: assembly.db,
       sourceId: () => deps.store.contextSourceId(),
     }),
-    actor: `user:${assembly.owner.userId}`,
+    userId: assembly.owner.userId,
     ...(assembly.arrivals ? { arrivals: assembly.arrivals } : {}),
     placement: placementFor(assembly, deps.scheme),
     documentSync: assembly.documentSync,

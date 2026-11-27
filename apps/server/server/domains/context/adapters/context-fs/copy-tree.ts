@@ -1,6 +1,6 @@
 import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { type ContextSiblingPosition, renderFilename } from "@meridian/contracts/protocol";
-import { LIVE } from "@meridian/project-tree";
+import { LIVE, userActor } from "@meridian/project-tree";
 import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
@@ -28,7 +28,7 @@ export interface CopyTreeDeps {
   documentCreation: Pick<DocumentCreationAggregate, "createDocumentsAtomically">;
   documentSync: Pick<CollabDomain, "installSeeds" | "refreshDocumentProjection">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
-  actor: string;
+  userId: string;
   holderUri(path: string): string;
   folderUri(path: string): string;
 }
@@ -98,7 +98,7 @@ export async function insertPlannedTrees(
     if (!tree.ok) return tree;
     try {
       const inserted = await deps.writes.insertTree(
-        { view: viewOfDraft(draftId), actor: deps.actor },
+        { view: viewOfDraft(draftId), actor: userActor(deps.userId) },
         {
           trees: [{ dir: plan.dir, ...(parent ? { parent } : {}), roots: tree.value.roots }],
           ...(position ? { position: position } : {}),
@@ -111,7 +111,7 @@ export async function insertPlannedTrees(
             ? [{ documentId: documentId as DocumentId, content: content.content }]
             : [],
         ),
-        { type: "user", actorUserId: deps.actor.slice("user:".length) as UserId },
+        { type: "user", actorUserId: deps.userId as UserId },
       );
       return Ok({
         kind: "copied",
@@ -148,7 +148,7 @@ export async function insertPlannedTrees(
     created = await deps.documentCreation.createDocumentsAtomically({
       persistIdentities: async () => {
         const inserted = await deps.writes.insertTree(
-          { view: LIVE, actor: deps.actor },
+          { view: LIVE, actor: userActor(deps.userId) },
           {
             trees,
             ...(position ? { position } : {}),

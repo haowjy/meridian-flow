@@ -16,6 +16,7 @@ import {
   LIVE,
   lastSettlements,
   listRecords,
+  SYSTEM_ACTOR,
   settlementsOf,
 } from "@meridian/project-tree";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
@@ -287,7 +288,7 @@ export function createDrizzleDocumentTrash(deps: {
           make: ([{ writer }]) => {
             // The records admitted since the first submission may have put a node inside:
             // the purge names exactly what this one found, and the replay rescues the rest.
-            writer.purge("system", taken.entry, taken.nodes);
+            writer.purge(SYSTEM_ACTOR, taken.entry, taken.nodes);
           },
         });
         return releaseDocumentContent(deps.db, deps.collab, taken.documentIds);

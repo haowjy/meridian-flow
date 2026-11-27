@@ -17,6 +17,7 @@ import {
   pendingRecords,
   recordsOfItem,
   type TreeRecord,
+  userActor,
 } from "@meridian/project-tree";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
@@ -78,7 +79,7 @@ export function createApplyTreeOperations(input: {
     const landed = new Set<string>();
     if (lists.length === 0) return landed;
     const documents = new Set<DocumentId>();
-    const actor = `user:${click.userId}`;
+    const actor = userActor(click.userId);
 
     const { result: perList } = await input.treeLists.submit({
       lists,

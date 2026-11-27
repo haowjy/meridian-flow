@@ -1,3 +1,4 @@
+import { userActor } from "@meridian/project-tree";
 import { type KeyboardEvent, useMemo, useRef } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { followFocusFrom } from "@/components/app/RowWord";
@@ -39,7 +40,7 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
         pressing.current = true;
         const from = document.activeElement;
         const follow = from ? followFocusFrom(from) : null;
-        void undoLatest(session, source, version.view, `user:${accountId}`, closed)
+        void undoLatest(session, source, version.view, userActor(accountId), closed)
           .then((outcome) => {
             const [node] = outcome.kind === "undone" ? outcome.nodes : [];
             if (node && follow) follow(() => entryRowOf(node));

@@ -50,3 +50,19 @@ Replay skips any rename that sets a filetype that is not tracked text
 (`type-not-editable` in `packages/project-tree/src/replay.ts`), so the tree keeps
 `backup.zip`, offers Undo, and says nothing. Either the rename keeps the name and drops
 the type change, or the writer is told the type stays.
+
+## One vocabulary for who made a change
+
+The model hears who changed something in two vocabularies: tree commands
+(`tree/tree-commands.ts`) say "the user", "agent" or "unattributed" from the
+record's actor kind, and document reads (`packages/agent-edit/src/tool/loro-observation.ts`)
+say "the user", the other turn's agent label, or "another agent". Pick one after the
+agent-edit rewrite (#1894) settles; the wording is prompt text the DB tests pin.
+
+## A copy's author when an agent asks for it
+
+ContextFS authors every copy as its owner (`userActor` of its `userId`), including one an agent
+asks for through `lib/model-tools/tree-copy-across.ts`. So an agent's copy is a user's record
+and may skip the provisional-name state a node an agent makes otherwise keeps. Passing the
+requesting actor through `port.copy` would fix it; it changes what replay shows, so it is its
+own PR.
