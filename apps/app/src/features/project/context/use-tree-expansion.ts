@@ -13,8 +13,6 @@ function entryIsExpanded(entries: TreeExpansion["entries"], entryId: string): bo
   return entries[entryId] ?? false;
 }
 
-// One owner per stored key: a tree can show on several surfaces at once (a chat's Scratch in the
-// sidebar and in its Files menu), and every one of them must show and change the same state.
 const states = new Map<string, TreeExpansion>();
 const listeners = new Map<string, Set<() => void>>();
 

@@ -101,8 +101,6 @@ export function putBackValues(
     return { changes: answerRemovals(docs, before, { typed: text.inserted }), values: back };
   const read = options.view ?? new StructureView(docs);
   const puts = planOf(docs, read, values);
-  // A removal record put back goes in as it was first, so the removals written below read the
-  // blocks under it.
   for (const { name, key, value, at } of puts) {
     if (at === undefined || value !== undefined)
       inMap(structure, name, (map) => {
@@ -111,8 +109,6 @@ export function putBackValues(
       });
     keysOf(back, name).set(key, { before: values.get(name)?.get(key)?.left, left: undefined });
   }
-  // A removal counts the text under it as the run leaves it, a block the run puts back under it
-  // included.
   const removals = puts.filter(({ at }) => at !== undefined);
   if (removals.length > 0) {
     const wrote = puts.some(({ value, at }) => at === undefined || value !== undefined);
@@ -254,7 +250,6 @@ export function takeBack(
   const inserted = new Set<DocKey>();
   for (const edit of edits) {
     for (const [key, span] of edit.texts) {
-      // A draft's span of a doc it reads through Live: the text stays Live's.
       const doc = docs.doc(key);
       if (!doc) continue;
       const inverse = textInverse(docs, doc, span);

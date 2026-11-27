@@ -190,7 +190,6 @@ function DirRow({
       : undefined,
   });
   const isOpen = env.isExpanded(dir.entryId);
-  // An open folder's bottom borders its first child, so "after" it is the next sibling's top edge.
   const drop = useTreeDropTarget(
     { scheme: env.scheme, treeRootId: env.tree.root.entryId, folder },
     {
@@ -362,7 +361,6 @@ function CreateRow({
   const env = useTreeEnv();
   const creation = env.creation;
   if (!creation) throw new Error("Create row requires creation capability");
-  // What opened the field (New file, New folder) takes focus back when it is cancelled.
   const [opener] = useState(() => document.activeElement);
   const form = useCreateEntryForm({
     projectId: env.projectId,

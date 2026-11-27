@@ -241,7 +241,6 @@ export function createDrizzlePress(
             })
           : discardBlocks(copy, selection, { by });
       const committed = await commitCopy(room, pressed);
-      // An Apply writes Live and may leave the fork no write: its pending flag is read here.
       await markFork(tx(), room, copy);
       if (pressed.pressed.length)
         await tx()
@@ -385,7 +384,6 @@ export function createDrizzlePress(
             const tree = new Set<string>();
             const trashed: string[] = [];
             for (const { part, restore, nodes, texts } of plan) {
-              // The text half first: an Apply's created documents land with their text.
               const selection: ChangeSelection = part.change ? [part.change] : "all";
               if (restore)
                 for (const documentId of await takeBack(envelope, restore.parts, null))
@@ -493,7 +491,6 @@ export function createDrizzlePress(
       .from(applyCommandTrees)
       .where(eq(applyCommandTrees.commandId, pressId));
     const texts = await tx().select().from(pressChanges).where(eq(pressChanges.commandId, pressId));
-    // Newest first: the press went in draft id order.
     const draftIds = [
       ...new Set([
         ...trees.map((one) => one.draftId as DraftId),

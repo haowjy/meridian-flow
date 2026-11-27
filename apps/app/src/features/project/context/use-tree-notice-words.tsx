@@ -43,7 +43,6 @@ export function treePlace(tree: TreeView, isExpanded: (folder: string) => boolea
 
 export const NOWHERE: NoticePlace = { holds: () => false, parent: () => null, open: () => false };
 
-/** A word the writer's own delete or restore just made takes the focus, once per step. */
 const focused = new WeakSet<TreeStep>();
 
 export const entryRowOf = (node: string) =>

@@ -384,7 +384,6 @@ export function createConversationSummarizer(
           baseline: null,
           tokenizer: model.tokenizer,
         });
-        // keep: The running-summary reserve is in provider tokens, not characters
         const runningReserve =
           estimateModelJsonTokens("Prior context (running summary):", model.tokenizer) +
           outputReserveTokens(model);

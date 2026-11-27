@@ -32,7 +32,6 @@ export function useInlineEdit({
   const [failure, setFailure] = useState<string | null>(initialError ?? null);
   const [pending, setPending] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // keep: The blur that follows Enter or Escape must not commit or cancel a second time
   const closed = useRef(false);
 
   useEffect(() => {

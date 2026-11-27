@@ -62,7 +62,6 @@ export function removeRange(transaction: Transaction, from: number, to: number):
       addBlockRemoval(removals, node, pos, parent, index);
     return !node.isLeaf;
   });
-  // Last first, so each removal leaves the earlier positions alone.
   for (const removal of removals.sort((a, b) => removalStart(b) - removalStart(a))) {
     if (removal.kind === "text") transaction.delete(removal.from, removal.to);
     else removeBlocks(transaction, removal);

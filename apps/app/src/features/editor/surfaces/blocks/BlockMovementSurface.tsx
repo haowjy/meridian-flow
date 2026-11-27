@@ -127,8 +127,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       id: "grip",
       claim: ({ element }) => {
         if (!element.closest("[data-block-handle]")) return false;
-        // A right-click with the pointer already down is not a menu request,
-        // and the drag under it still owns the gesture.
         if (gesture.inFlight()) return false;
         const pos = targetPosRef.current;
         if (pos === null) return false;
@@ -227,14 +225,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   );
 }
 
-/**
- * The handle's top-left in the pointer's own space, which is where Radix hangs
- * a menu from.
- *
- * Read off the element rather than passed down from the placement, because the
- * two are in different coordinate spaces on purpose: the handle is drawn in the
- * manuscript pane's, and the pane is what carries it through a scroll.
- */
 function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
   const box = handle.getBoundingClientRect();
   return { x: box.left, y: box.top };

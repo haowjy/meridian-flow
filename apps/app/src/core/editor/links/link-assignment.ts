@@ -102,21 +102,6 @@ export function indexedFolderAt<T extends LinkAssignmentFolder>(
   return index.folders.find((folder) => folder.folderId === folderId) ?? null;
 }
 
-/**
- * A pasted slice with every ref-less link and picture assigned (the client's
- * pass 3), each under its own grammar: a link mark's href against the holder
- * (`assignWrittenHref`), an `image`/`figure` source from the manuscript root
- * (`assignWrittenSource`). A link or picture that already carries a ref came
- * from a same-project rich paste or a producer that knew its document, and
- * keeps it; so does an `asset:` upload, which a same-project paste restores
- * (`link-clipboard.ts`). Each distinct written address is assigned once per
- * paste per grammar, so one address pasted twice shares an assignment.
- *
- * A node walk rather than `walkLinkOccurrences`: a pasted slice can hold bare
- * inline text at its top level, which the block walk does not visit, and an
- * assignment is a function of the mark or picture alone, so runs need not be
- * found.
- */
 export function assignPastedSlice(slice: Slice, scope: LinkAssignmentScope): Slice {
   const { holderUri, index } = scope;
   const assignments = new Map<string, AssignedLink>();

@@ -80,7 +80,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   const treeInverse = createTurnTreeInverse({
     db: input.db,
     treeLists: input.treeLists,
-    // The receipts' own adapter; its text stack is this service's, read once it exists.
     history: () => treeHistory,
   });
   const treePlanOf = (query: TurnInverseQuery) =>
@@ -205,7 +204,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     } finally {
       for (const docs of held) docs.free();
     }
-    // Delivery reads the documents through their coordinators: only once the attempt completed.
     const deliver = async () => {
       for (const delivery of deliveries) await delivery();
     };
@@ -313,7 +311,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
             throw new TreeOwnersMoved();
-          // The owners moved since the locks were chosen: past their order, so the caller runs again.
           const owners = { workIds: now.owners.works, lineageRootIds: now.owners.lineages };
           if (!within(effect, owners)) throw new TreeOwnersMoved([], owners);
           const done = await treeInverse.run(now, {
@@ -322,7 +319,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           });
           treeReversed = done.reversed;
         };
-        // A node a reply made is taken back once the text written into it is.
         await runText();
         await runTree();
         for (const entry of documents) await settleDocument(entry, kind, query, deliveries);

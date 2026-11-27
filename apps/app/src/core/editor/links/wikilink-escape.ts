@@ -42,7 +42,6 @@ function tokenize(effects: Effects, ok: State, nok: State): State {
     effects.exit(TOKEN);
     return ok(code);
   };
-  // `\[` then `[`, or `\[` then `\[`: Meridian's own Markdown writes `\[\[`.
   const second: State = (code) => {
     if (code === BACKSLASH) {
       effects.consume(code);

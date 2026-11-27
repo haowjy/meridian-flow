@@ -38,7 +38,6 @@ export const BlockIdExtension = Extension.create({
     return [
       new Plugin({
         key: new PluginKey("meridianBlockIds"),
-        // Edits the transaction in flight (see `fixBlockIds`); it never refuses one.
         filterTransaction: (transaction, state) => {
           fixBlockIds(transaction, state);
           return true;

@@ -82,7 +82,6 @@ export type OrchestratorEvent =
       type: "tool.output_delta";
       toolCallId: string;
       stream: "stdout" | "stderr";
-      // keep: Output deltas are incremental chunks; consumers append them in event order
       text: string;
     }
   | {

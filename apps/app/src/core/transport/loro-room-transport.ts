@@ -148,11 +148,6 @@ export function createLoroRoomTransport({
   let attempt = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const unacked = new Map<string, RoomVersion>();
-  /**
-   * `whenSentAcknowledged` callers, each with the batches it waits on: those unacked when it last
-   * saw the room connected, or null until it is again (a dropped socket's batches go in the next
-   * Join's batch, which is sent before the room reads as connected).
-   */
   const sentWaiters = new Set<{ ids: Set<string> | null; resolve: () => void }>();
   const settleSentWaiters = () => {
     for (const waiter of sentWaiters) {
@@ -318,7 +313,6 @@ export function createLoroRoomTransport({
         if (reset) return end(resetState(reset));
         if (message.appCode === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode)
           return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
-        // A Join this build could not form: retrying sends the same one.
         if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
           return end({ kind: "terminal", reason: message.appCode });
         socket?.close(1000, "rejoin");
@@ -361,8 +355,6 @@ export function createLoroRoomTransport({
         if (known === LORO_ROOM_ERROR.DOCUMENT_DELETED)
           return end(resetState(WS_CLOSE.DOCUMENT_DELETED.reason));
         if (message.code === RoomErrorCode.RejoinSuggested) {
-          // An access change shows read-only at once; the rejoin's admission decides. Any other
-          // rejoin (a server error) resends what was not acked.
           if (known === LORO_ROOM_ERROR.ACCESS_CHANGED) {
             const why = message.message.split(":")[1] as ClosedOwnerWhy | undefined;
             emitAccess("read", why ?? null);
@@ -380,7 +372,6 @@ export function createLoroRoomTransport({
     clearTimeout(retryTimer);
     retryTimer = undefined;
     attempt += 1;
-    // Signed out lasts until a Join is answered, so a retry doesn't flash the sign-in prompt away.
     if (state.kind !== "signed-out") emitStatus({ kind: "connecting", attempt });
     const ws = new WebSocket(buildSameOriginWsUrl(LORO_WS_PATH));
     ws.binaryType = "arraybuffer";
@@ -419,8 +410,6 @@ export function createLoroRoomTransport({
         connectivityHints?.reportDisconnected(source);
         return;
       }
-      // Signed out lasts until a Join is answered: a retry that never reached the server (the
-      // network dropped too) says nothing about the sign-in.
       emitStatus(
         event.code === WS_CLOSE.AUTH_FAILED.code || state.kind === "signed-out"
           ? { kind: "signed-out" }

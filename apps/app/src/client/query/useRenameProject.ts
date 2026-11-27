@@ -72,7 +72,6 @@ export function useRenameProject(project: Project): (title: string) => Promise<v
       try {
         await mutateAsync({ title, revision });
       } catch (error) {
-        // A newer rename owns the title now; this refusal has nothing to reopen.
         if (revision === record.current.revision) throw error;
       }
     },

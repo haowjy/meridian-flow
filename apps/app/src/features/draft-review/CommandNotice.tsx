@@ -243,8 +243,6 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
             word={<Trans>Undo</Trans>}
             sentence={t`Applied`}
             onAction={notice.undo}
-            // The pressed ✓ or Apply all left with its row: the first row the Apply took has
-            // the focus, as a delete's Undo does.
             focus={{ take: () => takeOnce(notice.id) }}
           />
         );

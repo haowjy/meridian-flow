@@ -52,10 +52,6 @@ const FOCUS_RECLAIM_MS = 2000;
 
 const departures = new Set<(keys: ReadonlySet<string>) => void>();
 
-/**
- * Rows a delete or restore takes out of their list leave every list's selection, so a row that
- * comes back (restored, or deleted into Trash) never arrives selected.
- */
 export function leaveSelections(refs: readonly EntryRef[]) {
   const keys = new Set(refs.map(entryKey));
   for (const leave of departures) leave(keys);
@@ -76,12 +72,6 @@ export function useEntrySelection(): EntrySelection {
   const painting = useRef(false);
   const settling = useRef(false);
 
-  /**
-   * Marks where each run of selected rows that touch on screen starts and ends,
-   * so a run draws as one block. Rows sit at different depths under separate
-   * wrappers, and a section header can sit between two rows, so touching is
-   * read from geometry, once per commit, not per row.
-   */
   const paintRuns = useCallback(() => {
     if (painting.current) return;
     painting.current = true;

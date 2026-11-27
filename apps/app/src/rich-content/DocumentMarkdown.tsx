@@ -150,7 +150,6 @@ function siblingsOf(node: PMNode): PMNode[] {
   return siblings;
 }
 
-// keep: A block run's first offset keeps source-map paths pointing at the right block
 function renderBlocks(
   blocks: readonly PMNode[],
   breaks: boolean,

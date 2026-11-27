@@ -12,10 +12,6 @@ import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { cn } from "@/lib/utils";
 import { TabTitleField } from "./TabTitleField";
 
-/**
- * The latest rename committed per title, across every slot that edits it (a
- * Work's tab and heading are two slots over one name).
- */
 const latestRename = new Map<string, number>();
 let renames = 0;
 
@@ -47,8 +43,6 @@ export function TitleEditSlot({
     triggerRef: RefObject<HTMLButtonElement | null>;
   }) => ReactNode;
 }) {
-  // `unchanged` stays the title the edit started from, so committing the
-  // refused text again (Enter or blur on the reopened field) retries it.
   const [editing, setEditing] = useState<{
     initial: string;
     unchanged: string;
@@ -96,7 +90,6 @@ export function TitleEditSlot({
               if (latestRename.get(titleKey) !== commit) return;
               const sentence = closed?.(cause) ?? null;
               setRefusal(sentence === null ? { line: failure(cause) } : { closed: sentence });
-              // An edit the writer already reopened keeps its draft.
               setEditing(
                 (current) =>
                   current ?? { initial: next, unchanged, focus: focusIsIdle(triggerRef) },

@@ -52,7 +52,6 @@ export type VisibleDocument = {
   id: DocumentId;
   contextSourceId: ContextSourceId;
   folderId: FolderId | null;
-  /** The filename as the view shows it, extension included: never render it with an extension. */
   name: string;
   segment: string;
   extension: string;

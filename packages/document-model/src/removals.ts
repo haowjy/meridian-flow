@@ -32,16 +32,6 @@ export function restore(docs: RoomDocs, ids: Iterable<BlockId>): DocChange[] {
   return change ? [change] : [];
 }
 
-/**
- * Rule 1 of "Removed blocks" (design §1): restore each removed block whose record did not count
- * an op, by any peer, that this copy holds in a text doc under it, of the removals the ops since
- * `before` brought (an import's, `before` taken just ahead of it) and of the removed blocks on the
- * path of each doc in `typed` (text an Undo put in), for that doc. A block in `moved` (one an
- * Undo moved or brought back) brings back every removed block on its path, as a move into a
- * removed container does anywhere. `RoomDocs.importBatch` and `forward` run it on every import, before anything
- * reads the copy, and an Undo over its own write (`putBackValues`). A draft's fork answers only
- * the removals in its own overrides. Returns the changes to publish.
- */
 export function answerRemovals(
   docs: RoomDocs,
   before: Frontiers,
@@ -99,12 +89,6 @@ export function removedOnPath(docs: RoomDocs, id: BlockId): BlockId[] {
   return out;
 }
 
-/**
- * The blocks whose `order` the ops since `before` set and left as a removal record, with the
- * record: in the map this copy writes (a draft's `d.order`). Read from the ops, not from a diff of
- * states: a removal can arrive with the very record the block held already (a peer's Undo put it
- * back in its container, then the peer removed it again), and only its op says it came.
- */
 function removedSince(docs: RoomDocs, before: Frontiers): [BlockId, Removal][] {
   const { structure } = docs;
   if (structure.cmpFrontiers(before, structure.frontiers()) === 0) return [];

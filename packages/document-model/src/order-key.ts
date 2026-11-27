@@ -1,10 +1,3 @@
-/**
- * Fractional order keys (design §1, "Order is content"). A key is base-62, compared as a string,
- * with ties broken by block id. A generated key ends in two random characters and `V`, so two
- * peers inserting at one position never tie, and no key ends in `0`, which is what leaves room
- * below every key. Nothing rebalances: a key is written only for a block whose relative order
- * changed.
- */
 const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 export type Random = () => number;
@@ -29,12 +22,6 @@ export function compareOrder(keyA: string, idA: string, keyB: string, idB: strin
   return keyA < keyB ? -1 : keyA > keyB ? 1 : idA < idB ? -1 : idA > idB ? 1 : 0;
 }
 
-/**
- * Keys for `list`, in order, given each id's current key among these siblings (absent for a block
- * new to this parent). The longest run already in order keeps its keys; only the rest get new ones.
- * A `pinned` block keeps its key whatever the run (a removed block the editor still shows, design
- * §1's caret rule: a new key would bring it back), so the blocks around it take new keys instead.
- */
 export function orderKeys(
   list: readonly string[],
   current: ReadonlyMap<string, string | undefined>,

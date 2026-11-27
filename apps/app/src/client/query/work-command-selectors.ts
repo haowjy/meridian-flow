@@ -63,9 +63,7 @@ export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWind
     const windows: WorkDeleteWindow[] = [];
     for (const { workId, commandId, openedAt } of entries) {
       const remove = records.find((record) => record.id === commandId);
-      // A refused delete is the Work's failure, not an Undo.
       if (remove?.state === "never") continue;
-      // An Undo on its way shows as the Work restoring in its tab.
       if (
         records.some(
           (record) =>
@@ -76,7 +74,6 @@ export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWind
         )
       )
         continue;
-      // Restored elsewhere: the Work is back, so there is nothing to undo.
       if (
         remove?.state !== "sending" &&
         server &&

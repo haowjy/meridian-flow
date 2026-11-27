@@ -28,7 +28,6 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
     doc = now;
     settles = length;
     const own = droppedRecords(now).filter(({ record }) => record.actor === actor);
-    // A copy just read (or a replacement) holds what earlier tabs already said.
     if (fresh) {
       seen = new Set(own.map(({ record }) => record.id));
       return;

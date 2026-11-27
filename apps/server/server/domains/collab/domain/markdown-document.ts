@@ -238,12 +238,6 @@ export function createMarkdownDocumentEngine<Tx>(
     return Ok(undefined);
   }
 
-  /**
-   * Make `change` on a copy of the Live room under the document's lock, and commit what it
-   * changed as one batch in the caller's transaction (its own outside one): its snapshot rows are
-   * written there, so the write survives a crash right after, and the room imports the batch
-   * once it commits.
-   */
   async function changeDocument(
     input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
     change: DocumentChange,

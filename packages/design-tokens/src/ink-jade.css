@@ -16,7 +16,6 @@
   --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
-  /* keep: page-edge stays opaque because translucent strokes darken where outlined shapes overlap */
   --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
   /* keep: Keyboard focus must hold 3:1 against every surface in a current row */
   --color-focus: oklch(0.52 0.1 165);

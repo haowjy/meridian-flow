@@ -101,12 +101,10 @@ export async function listThreads(init?: {
   return response.threads;
 }
 
-/** Create-or-get a fork under the client-minted `request.id`; a retry lands on the same thread. */
 export function forkThread(sourceThreadId: string, request: ForkThreadRequest): Promise<Thread> {
   return postJson(apiThreadForkPath(sourceThreadId), request, { schema: threadSchema });
 }
 
-/** Create-or-get a handoff under the client-minted `request.id`; its brief runs in the background. */
 export function handoffThread(
   sourceThreadId: string,
   request: HandoffThreadRequest,
@@ -114,11 +112,6 @@ export function handoffThread(
   return postJson(apiThreadHandoffPath(sourceThreadId), request, { schema: threadSchema });
 }
 
-/**
- * Write a new brief for a handoff destination whose latest one ended without
- * one. `request.id` is the new seed's client-minted id: a repeat returns the
- * same seed (201 new, 200 existing). 409 while anything holds the destination.
- */
 export function retryHandoffBrief(
   threadId: string,
   request: HandoffBriefRetryRequest,
@@ -126,7 +119,6 @@ export function retryHandoffBrief(
   return postJson(apiThreadHandoffBriefPath(threadId), request, { schema: turnSchema });
 }
 
-/** Retry a latest failed reply: the server answers the same messages under `request.id`. */
 export function retryReply(
   threadId: string,
   failedTurnId: string,

@@ -46,8 +46,6 @@ export function LeftSidebar({
     file: ContextFile,
     options?: { focus?: true },
   ) => {
-    // The tree is navigation: a pick opens in main. Identity, not the path: a kept file under
-    // a rename is still this row's document.
     void openDocument({
       documentId: file.documentId,
       known: { scheme, file, workId: editorWorkId },

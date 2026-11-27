@@ -1,30 +1,3 @@
-/**
- * Typing an opener writes its closer; typing the closer walks back out of it.
- *
- * Three gestures, one mechanism, all of it reading
- * [`auto-pairs.ts`](auto-pairs.ts):
- *
- * - **open** — `[` inserts `[]` and leaves the caret between them, in one
- *   transaction, so one undo takes the whole gesture back;
- * - **step over** — the closer the writer types where this plugin already
- *   wrote one moves the caret past it instead of doubling it;
- * - **unpair** — Backspace between the two halves takes both.
- *
- * **The step is only ever over a closer this plugin wrote.** That is what the
- * plugin state holds: the positions of the closers it inserted, mapped forward
- * through every transaction and dropped the moment their position is deleted.
- * A writer's own `]` is their own text and typing `]` in front of it writes a
- * second one, which is what they asked for. Everything in this file fails
- * toward plain insertion — remote collab edits replace the whole document and
- * take the whole table with them (see `anchors.ts` for why positions cannot
- * survive that), and a keystroke that lands as itself is a far smaller cost
- * than a keystroke that disappears.
- *
- * Positions are held only across transactions that map them, never read back
- * from a stale state: every step and every unpair re-reads the character in
- * the document before trusting the entry that pointed at it.
- */
-
 import { Extension } from "@tiptap/core";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import {
@@ -54,18 +27,11 @@ export const autoPairPluginKey = new PluginKey<AutoPairState>(AUTO_PAIR_NAME);
 
 const NOTHING_OPEN: AutoPairState = { closers: [] };
 
-/**
- * A writer who opens far more pairs than they close is writing, not nesting.
- * The oldest entries are the ones they have typed past, so the table forgets
- * them rather than growing for the length of a session.
- */
 const MAX_TRACKED_CLOSERS = 32;
 
 function characterAfter($pos: ResolvedPos): string | null {
   const node = $pos.nodeAfter;
   if (!node) return null;
-  // An atom (an inline image) is something the caret sits in front of, not
-  // empty room: `""` fails every "may close here" test, which is the answer.
   return node.isText ? (node.text?.[0] ?? "") : "";
 }
 
@@ -79,13 +45,6 @@ function autoPairState(state: EditorState): AutoPairState {
   return autoPairPluginKey.getState(state) ?? NOTHING_OPEN;
 }
 
-/**
- * The closer this plugin wrote at `pos`, confirmed against the document.
- *
- * The confirmation is the whole safety of the feature: a mapped position that
- * no longer points at the character it was written for is stale state, and
- * stale state must never consume a keystroke.
- */
 function autoClosedAt(state: EditorState, pos: number): AutoClosedPair | null {
   const entry = autoPairState(state).closers.find((candidate) => candidate.pos === pos);
   if (!entry) return null;
@@ -118,8 +77,6 @@ function insertionCaret(state: EditorState, from: number, to: number): number | 
 
   const caret = TextSelection.near(state.doc.resolve(from), 1);
   if (!caret.empty) return null;
-  // Wider than the block it lands in and the replacement would join blocks —
-  // a document shape this cannot reproduce by inserting at one caret.
   return from >= caret.$from.before() && to <= caret.$from.after() ? caret.from : null;
 }
 
@@ -156,8 +113,6 @@ function unpairTransaction(state: EditorState): Transaction | null {
   if (!entry) return null;
 
   const from = $from.pos - entry.spec.open.length;
-  // `start()` keeps the read inside the caret's own block: an opener is only
-  // an opener when it is in the same text the closer is in.
   if (from < $from.start() || state.doc.textBetween(from, $from.pos) !== entry.spec.open) {
     return null;
   }
@@ -172,11 +127,6 @@ export const AutoPairExtension = Extension.create({
 
   addKeyboardShortcuts() {
     return {
-      /**
-       * Refusing when there is no pair to take leaves the rest of the
-       * Backspace chain — the autoformat's `undoInputRule`, the list and
-       * fence bindings, the base keymap — exactly as it was.
-       */
       Backspace: () => {
         const tr = unpairTransaction(this.editor.state);
         if (!tr) return false;
@@ -201,20 +151,12 @@ export const AutoPairExtension = Extension.create({
 
             for (const entry of value.closers) {
               if (entry.pos === consumed) continue;
-              // Association to the right is what makes nesting work: text
-              // inserted at an outer closer's position belongs before it, so
-              // `[` inside `[]` leaves the outer `]` on the outside.
               const mapped = tr.mapping.mapResult(entry.pos, 1);
-              // Deleted covers the case this feature exists to survive: a
-              // remote peer's edit replaces the document wholesale and every
-              // tracked position goes with it, leaving plain insertion.
               if (mapped.deleted) continue;
               closers.push({ pos: mapped.pos, spec: entry.spec });
             }
 
             if (event && "opened" in event) closers.push(event.opened);
-            // The overwhelmingly common state is "no pair open", and keeping
-            // its identity keeps this plugin off every transaction's cost.
             if (closers.length === 0 && value.closers.length === 0) return value;
 
             return { closers: closers.slice(-MAX_TRACKED_CLOSERS) };

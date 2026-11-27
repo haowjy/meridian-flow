@@ -144,7 +144,6 @@ export type CopyContextEntrySource = {
 
 export type CopyContextEntriesRequest = {
   operationId: string;
-  // keep: Copy roots are ordered; copies land in that order
   sources: CopyContextEntrySource[];
   destinationScheme: ProjectContextTreeScheme;
   destinationFolderPath: string;
@@ -413,7 +412,6 @@ export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 export type { ThreadSnapshotAncestor, ThreadSnapshotResponse } from "./thread-snapshot.js";
 
 export type TranscriptPageResponse = {
-  // keep: Transcript page entries are chronological even on newest-first pages
   entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
   owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
   segment: {

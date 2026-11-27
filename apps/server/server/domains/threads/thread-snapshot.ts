@@ -143,7 +143,6 @@ export async function buildThreadSnapshot(
         status,
         activity,
         runState,
-        // keep: Active-run snapshots resume from the projection cursor and replay only the unmaterialized delta window
         resumeAfterSeq,
       },
       actionRequired: snapshotActionRequired(thread.activeLeafTurnId, graph, handedBack),

@@ -15,7 +15,6 @@ export type ChatSurfaceProps = {
   availableWorks: readonly Work[];
   place: "main" | "side";
   presentation: "desktop" | "phone";
-  /** When false the surface is hidden (the side closed, or main on the index) WITHOUT unmounting. */
   visible: boolean;
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
   header?: ReactNode;
@@ -38,8 +37,6 @@ export function ChatSurface({
     <PanePlaceContext.Provider value={place}>
       <div
         aria-hidden={!visible}
-        // Hidden but still mounted for persistence: `inert` keeps the live-but-invisible
-        // composer and messages out of the tab order and pointer flow.
         inert={!visible}
         className={cn(
           "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",

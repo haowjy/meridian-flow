@@ -13,7 +13,6 @@ export type ReleasePhase = "current" | "update-available" | "must-reload";
 
 const OWN_RELEASE = __MERIDIAN_RELEASE__;
 const IDLE_MS = 3_000;
-/** A hidden tab is not being typed in; this only lets the editors' local saves land first. */
 const HIDDEN_IDLE_MS = 1_500;
 const CHECK_MS = 1_000;
 
@@ -56,10 +55,6 @@ function requireReloadAtOnce(): void {
   maybeReload();
 }
 
-/**
- * Whether the tab may still reload itself: once per release it would reload into, so a stale bundle
- * served again after the reload cannot loop. The writer's own press is not guarded.
- */
 function guardKey(): string {
   return `meridian:release-reload:${OWN_RELEASE}:${serverRelease ?? "unknown"}`;
 }

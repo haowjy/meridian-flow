@@ -125,7 +125,6 @@ export const CompactionFailureOutcomeCodec = z.object({
 
 export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
 
-// keep: Classify every failure reason; the generic constraint must fail compilation for an unclassified member
 type AssertClassified<_Reason extends TypedFailureReason> = true;
 type _FailureReasonsAreClassified = [
   AssertClassified<z.infer<typeof HandoffFailureReasonCodec>>,

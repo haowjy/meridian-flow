@@ -66,7 +66,6 @@ export function serializeNested(
 
   return blocks.map((block, index) => {
     const own = facts[index];
-    // Markers are decided in document order, before any later block asks for them.
     own.steps.forEach((step, k) => {
       if (step.type === "list") delimiterFor(index, k);
     });

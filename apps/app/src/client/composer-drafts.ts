@@ -173,11 +173,6 @@ export class ComposerSessionDraft {
     return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
   }
 
-  /**
-   * Takes back what a deleted chat's move put in (its Undo): the box returns to what it held
-   * before, and the chat's note goes. The caller has checked with `holds` that the box still holds
-   * exactly what the move left.
-   */
   withdraw(threadId: string, before: ComposerDraftSnapshot | null): void {
     this.commit(before, {
       received: this.received,
@@ -192,10 +187,6 @@ export class ComposerSessionDraft {
 
   hasReceivedHandBack = (requestId: string) => this.received.has(handBackReceipt(requestId));
 
-  /**
-   * Keep a hand-back request with the draft before it is sent, so no press is lost to a reload.
-   * False when the write failed: the caller must not send.
-   */
   recordHandBack(command: PendingHandBack): boolean {
     const held = this.handBacksPending.some((known) => known.requestId === command.requestId);
     return this.commit(this.current, {
@@ -303,8 +294,6 @@ export class ComposerSessionDraft {
 
   holds(snapshot: ComposerDraftSnapshot | null): boolean {
     if (!snapshot) return false;
-    // Selection movement is not editing. Normalize both sides so storage parsing
-    // and object property order cannot change a structured document's identity.
     return (
       this.current?.revision === snapshot.revision &&
       JSON.stringify(parseRestorableComposerDraft(this.current)?.doc) ===
@@ -375,7 +364,6 @@ export class ComposerSessionDraft {
     this.current = change.snapshot;
     this.dirty = true;
     if (this.timer !== null) clearTimeout(this.timer);
-    // An empty draft (Send or explicit deletion) must never resurrect on reload.
     if (!change.text) this.flush();
     else this.timer = setTimeout(this.flush, 250);
   };

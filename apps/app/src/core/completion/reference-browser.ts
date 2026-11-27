@@ -514,7 +514,6 @@ function namespaceSourceOf(
     sameScheme.find(({ source }) => source.authority.kind === kind)?.source.id;
   if (named.kind === "lineage") return byKind("lineage");
   if (named.kind === "chat") return byKind("chat");
-  // A No Work chat's bare Scratch is its lineage's; the project's other schemes are its own.
   if (parsed.scheme === "scratch") return byKind("lineage") ?? byKind("work");
   return sameScheme[0]?.source.id;
 }

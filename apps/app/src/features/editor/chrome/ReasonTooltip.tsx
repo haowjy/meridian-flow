@@ -16,10 +16,6 @@ export function ReasonTooltip({ name, reason, side = "right", children }: Reason
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      {/* Never a hit target (the shared tooltip's label default; never make it
-          hoverable): it hangs over the manuscript, and a click there means the
-          caret goes where the writer clicked (the same reason menus are
-          non-modal), not that a bubble swallowed it. */}
       <TooltipContent side={side} className="max-w-56">
         <ReasonLines name={name} reason={reason} />
       </TooltipContent>

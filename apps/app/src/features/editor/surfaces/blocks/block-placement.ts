@@ -32,9 +32,6 @@ export function useBlockChromePlacement(
       const target = targetPos === null || !overlay ? null : blockAt(editor.state.doc, targetPos);
       const next: BlockChromePlacement = {
         handle: target && overlay ? blockHandlePosition(editor.view, overlay, target) : null,
-        // No line on the two seams the block already sits between. Dropping
-        // there moves nothing, and a jade line promising a landing is the
-        // silent rejection law 5 forbids — said in paint rather than in a click.
         line:
           seamIndex === null || !overlay || restingSeam(editor, seamIndex)
             ? null
@@ -43,9 +40,6 @@ export function useBlockChromePlacement(
       setPlacement((previous) => (samePlacement(previous, next) ? previous : next));
     };
 
-    // The pointer's own moves are measured at once: the drop line belongs
-    // under the pointer on the frame the writer moved it, not the one after.
-    // Everything else is a frame late, which is what the shared watcher coalesces to.
     measure();
     return watchManuscriptLayout(editor, [], measure);
   }, [editor, targetPos, seamIndex]);

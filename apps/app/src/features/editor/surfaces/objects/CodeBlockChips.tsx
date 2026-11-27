@@ -58,14 +58,8 @@ export function CodeBlockChips({
       data-state={visible && !suppressed ? "open" : "closed"}
       data-placement={placement.placement}
       contentEditable={false}
-      // Right-clicks on chrome route through the claim ladder like right-clicks
-      // on the block itself, rather than falling through to the browser. The
-      // mark carries the kernel's id, so two editors on one page never claim
-      // each other's overlays.
       {...editorChromeAttributes(chrome)}
       style={placement.style}
-      // A press on the cluster must not move the caret out of the block the
-      // cluster belongs to.
       onMouseDown={(event) => event.preventDefault()}
     >
       <EditorMenu

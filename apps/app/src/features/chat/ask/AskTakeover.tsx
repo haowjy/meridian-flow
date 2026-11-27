@@ -142,7 +142,6 @@ function ClosedTakeover({ ask }: { ask: ThreadAsk }) {
       <TakeoverTitle id={titleId}>
         {ask.kind === "question"
           ? ask.payload.questions.map((item, index) => (
-              // keep: Questions are fixed for the ask's life and answers are positional, so order is identity and key={index} is correct.
               <span key={index} className="block">
                 {item.question}
               </span>

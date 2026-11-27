@@ -96,7 +96,6 @@ export async function createArchitectureServer(configFile) {
       };
     }
     if (!files.has(repoPath)) return missing;
-    // keep: a symlink must not lead out of the repo or to a file that isn't served
     let real;
     try {
       real = fs.realpathSync(path.join(root, repoPath));

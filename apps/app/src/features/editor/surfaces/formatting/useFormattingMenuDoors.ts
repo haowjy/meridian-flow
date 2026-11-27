@@ -35,9 +35,6 @@ export function useFormattingMenuDoors(
   open: (point: FormattingMenuPoint) => void,
 ): void {
   const chrome = useEditorChrome(editor);
-  // The claim and the keymap register once and live as long as the editor;
-  // reading the current handler through a ref keeps a re-render from churning
-  // the kernel's registries.
   const openRef = useRef(open);
   openRef.current = open;
 

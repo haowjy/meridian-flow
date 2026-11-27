@@ -18,16 +18,12 @@ export type PassageDoors = {
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoors {
   const coordinator = useRef(new LatestNavigationCoordinator());
 
-  // A landing belongs to the scope it began in. Changing project or work retires it
-  // exactly as a newer door would.
   useEffect(() => {
     const scoped = coordinator.current;
     return () => scoped.dispose();
   }, [projectId, activeWorkId]);
 
   const retire = useCallback(() => {
-    // The previous door's answer stops being true the moment another intent begins,
-    // and that includes its notice.
     coordinator.current.dispose();
     dismissPassageNotice();
   }, []);
@@ -40,8 +36,6 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         signal,
         openDocument: () => open(signal),
       });
-      // Report only while this door is still the writer's latest: a stale
-      // verdict about somewhere they have already left is worse than silence.
       if (signal.aborted) return;
       if (result.kind === "stale") reportPassageChanged(documentId);
     });

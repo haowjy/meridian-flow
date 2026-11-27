@@ -100,14 +100,12 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         })
         .from(treeEditReceipts)
         .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
-        // Folders have no document metadata, but their receipt still carries a tree line.
         .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
         .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
         .where(
           and(
             eq(treeEditReceipts.threadId, threadId),
             eq(treeEditReceipts.turnId, turnId),
-            // What the reply wrote: a Redo repeats it, and an Undo is the card's, not the reply's.
             eq(treeEditReceipts.kind, "write"),
             receiptDraftExists,
           ),

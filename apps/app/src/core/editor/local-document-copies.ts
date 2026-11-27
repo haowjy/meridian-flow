@@ -141,15 +141,10 @@ export class LocalDocumentCopies {
     return `meridian:local-copy:v2:${name}`;
   }
 
-  /** The incarnation of the room's copy that sessions open now. Synchronous: a session is made where it is needed. */
   current(key: string): number {
     return Number(this.pointers.getItem(`${POINTER_PREFIX}${key}`) ?? 0);
   }
 
-  /**
-   * Moves the room to the incarnation after `from`, unless some tab already did. Two tabs that
-   * advance from n both end on n + 1 and are peers there. Resolves to the current incarnation.
-   */
   async advance(key: string, from: number): Promise<number> {
     const move = () => {
       if (this.current(key) <= from)
@@ -162,10 +157,6 @@ export class LocalDocumentCopies {
       : move();
   }
 
-  /**
-   * The room's older incarnations that no tab holds, each locked until `finish`: a session that
-   * opens the current incarnation reads what they held against its first handshake before they go.
-   */
   async openOlder(key: string, current: number): Promise<UnheldCopy[]> {
     const older = (await this.names()).filter((name) => {
       const parsed = parseName(name);

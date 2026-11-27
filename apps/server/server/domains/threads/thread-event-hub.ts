@@ -237,7 +237,6 @@ export function createThreadEventHub(
     const projector = createOrchestratorEventProjector();
     const replayed: SequencedEventInternal[] = [];
     const afterJournalSeq = journalSeqForEventSeq(afterEventSeq);
-    // keep: A client cursor can split a multi-frame journal row; replay from the last reset before it
     const cursor = await deps.journalReader.lastSeqBefore(
       threadId,
       afterJournalSeq,
@@ -291,7 +290,6 @@ export function createThreadEventHub(
         return;
       }
       for await (const entry of readThrough(threadId, state.journalCursor, head)) {
-        // keep: A hole below the retained floor is retention loss; above it is a rolled-back allocation
         if (
           entry.seq !== state.journalCursor + 1n &&
           state.journalCursor + 1n < (await retainedTransportFloor(threadId, head))

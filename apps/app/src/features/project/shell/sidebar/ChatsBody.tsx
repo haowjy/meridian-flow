@@ -133,11 +133,6 @@ export function ChatsBody({
       nested={nested}
     />
   );
-  // After Undo, Pin or Unpin, focus goes to the chat's row in its list, or to Find when no list
-  // here shows it. The row mounts only once the lists have loaded (a restored pin past the first
-  // page loads later), and a pinned or unpinned row only once it has moved, so focus waits for
-  // that render rather than land on the row about to unmount. Focus the writer puts elsewhere
-  // meanwhile ends the wait.
   const [focusRow, setFocusRow] = useState<{ id: string; pinned?: boolean } | null>(null);
   useEffect(() => {
     if (!focusRow) return;
@@ -416,7 +411,6 @@ function DeletedRow({
   onUndo,
 }: {
   notice: ChatDeleteNotice;
-  /** True once per notice: the delete just made it. */
   takeFocus: () => boolean;
   onUndo: () => void;
 }) {
@@ -477,7 +471,6 @@ const ChatRow = memo(function ChatRow({
         onMoved(chat.id, !value);
       } else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
     });
-  // The server stops a running reply in the delete, and Undo can't restart it: that delete asks.
   const onDelete = () =>
     replying ? setAsking(true) : deletes.delete(chat.id, title, placeOf(chat.id));
   return (

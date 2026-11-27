@@ -141,13 +141,6 @@ const workCommands = {
 
 export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = workCommands;
 
-/**
- * What a Work command waits behind. Every one waits for its Work's earlier commands; the
- * lifecycle moves (archive, unarchive, delete, restore) also take their project's turn, so they
- * run one at a time per project. While the project's own create has not succeeded
- * (`records` hold one), the command also waits on its lane: the server has no such project, and a
- * refused create keeps the lane closed until it is retried or discarded.
- */
 export const workLanes = (
   operation: WorkOperation,
   projectId: string,
@@ -216,8 +209,6 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
 }
 
 export function workDomain(client: QueryClient): CommandDomain {
-  // A record settled before the tab opened is in every read the tab starts; only the route's
-  // threads and Works, read on the server first, may predate it.
   const opened = Date.now();
   const settled = (record: CommandRecord, operation: WorkOperation) => {
     const { projectId } = record.body as WorkCommandBody;

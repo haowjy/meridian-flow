@@ -54,10 +54,6 @@ export function LinkMenu({
   const followable =
     canFollowLink(menu.target, surface.navigator) &&
     (resolution?.state !== "gone" || Boolean(goneLinkDocumentId(resolution, { ref: menu.ref })));
-  // A refusal is remembered for as long as this menu is open: the row greys
-  // where the writer pressed it, in the same words the clipboard block below
-  // uses. The next open asks the browser again, because capability can come
-  // back — a permission granted, a tab that has focus this time.
   const [clipboard, setClipboard] = useState<ClipboardAvailability>(() => clipboardAccess().write);
 
   return (
@@ -99,10 +95,6 @@ export function LinkMenu({
       <EditorMenuItem
         blockedReason={clipboard === "available" ? null : t`Clipboard unavailable`}
         onSelect={(event) => {
-          // The menu is the only thing on screen that can carry the answer, so
-          // it stays open until the write settles and closes only on a copy
-          // that happened. Closing on the press would report success by
-          // disappearing, which is law 5's silent rejection with a smile.
           event.preventDefault();
           const range = linkMenuRange(menu);
           const internal = menu.target && menu.target.kind !== "external";
@@ -123,8 +115,6 @@ export function LinkMenu({
       </EditorMenuItem>
       <EditorMenuItem
         onSelect={() => {
-          // Selecting the link first is what makes the form's own resolution
-          // land on it: one draft path serves Ctrl+K, the toolbar, and here.
           editor.commands.setTextSelection(linkMenuRange(menu));
           openLinkForm(editor);
         }}

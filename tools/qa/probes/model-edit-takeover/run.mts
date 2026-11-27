@@ -46,7 +46,6 @@ const cases: ModelEditCase[] = [
       await waitForAssistantTurn(h, thread);
       await first.release("response.beforeStore");
       await sleep(1500);
-      // Its session connection is gone, so a clean shutdown is not possible: stop it as a crash.
       await first.kill();
       const [{ uses }] = await h.raw<{ uses: number }[]>`
         select count(*)::int as uses from turn_blocks b join turns t on t.id=b.turn_id

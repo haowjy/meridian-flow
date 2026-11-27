@@ -222,7 +222,6 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         };
       }
       const stagedBytes = state.byteLength + Buffer.byteLength(JSON.stringify(ahead), "utf8");
-      // keep: Allow an oversized seed to form a batch alone; otherwise the import cannot advance
       if (batch.length && bytes + stagedBytes > BUILD_BYTES) break;
       batch.push(node);
       seeds.push({ documentId: node.id as DocumentId, state });

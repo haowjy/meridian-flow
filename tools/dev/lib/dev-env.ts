@@ -72,7 +72,6 @@ function rewriteDatabaseName(url: string, dbName: string): string {
   return rewritten.toString();
 }
 
-// keep: a worktree's database follows its directory, so switching branch inside it keeps its data
 function databaseSlug(checkoutRealpath: string): string {
   const name =
     path
@@ -92,7 +91,6 @@ function liveLinkedWorktrees(repoRoot: string): string[] {
     .map((worktree) => realpathSync(worktree));
 }
 
-// keep: two worktrees whose directories share a name would share one database; refuse instead of letting either write to the other's
 function resolveOwnDatabaseSlug(repoRoot: string): string {
   const checkout = realpathSync(repoRoot);
   const slug = databaseSlug(checkout);
@@ -135,7 +133,6 @@ export function fillDevEnv(repoRoot: string, env: NodeJS.ProcessEnv): void {
     if (env[key] === undefined) env[key] = value;
   }
   for (const [key, value] of Object.entries(main)) {
-    // keep: a key present in .env.local wins even when empty, so `KEY=` turns off a main-.env setting
     if (env[key] === undefined && !(key in local)) env[key] = value;
   }
 

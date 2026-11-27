@@ -118,7 +118,6 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
     address(href) {
       return writtenSourceTarget(href);
     },
-    // An empty source keys as the empty address a picture shown without one was shown at.
     correspondenceKey(href) {
       if (href === "") return "";
       const target = writtenSourceTarget(href);
@@ -155,9 +154,6 @@ function assignKind(input: {
       spelled: grammar.spell(scope, occurrence.attrs),
     }),
   );
-  // Occurrences without an identity (contextual, external) never enter correspondence,
-  // except a literal empty picture: it occupies its place among the empty sources an
-  // upload shown as `![alt]()` also matches, so that upload cannot take its slot.
   const corresponding = old.filter(
     ({ identity, occurrence }) =>
       (identity !== null && grammar.acceptsRef(identity)) || occurrence.attrs.href === "",
@@ -185,8 +181,6 @@ function assignKind(input: {
     showingKey: (ref, address) => correspondenceKeyForRef(ref, address, grammar.kind),
     isLive: (ref, address) => liveForGrammar(grammar, scope, { ref, href: address }),
   });
-  // Old occurrences no address names: contextual ones, and an upload this reader is
-  // shown no address for. Each continues only as written exactly as it spelled.
   const continuedByPass1 = new Set(
     matches.flatMap((match) => (match.pass === 1 ? [corresponding[match.occurrence]] : [])),
   );
@@ -213,7 +207,6 @@ function assignKind(input: {
       return (unaddressed[twin] as SpelledOld).occurrence.attrs;
     }
     if (match.pass === 2) {
-      // The match came from a showing, so a latest showing always exists.
       const shownAddress = latestShownAddress(shown, match.ref);
       return shownAttrs(grammar, scope, match.ref, shownAddress, {
         title: occurrence.attrs.title,

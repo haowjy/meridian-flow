@@ -14,16 +14,6 @@ import { isEditorObject, isOpaqueObject, isSourceBlock, objectBody } from "./obj
 
 export type ObjectAt = { node: PMNode; pos: number };
 
-/**
- * Is a live caret in the node's text, as opposed to standing on the node? This
- * decides whether a diagram shows its source or its picture, for the node view
- * and for the landing walk alike.
- *
- * Two things are deliberately not "inside": a `NodeSelection` (how a writer
- * picks a diagram up, not how they edit its text), and an unfocused editor,
- * whose selection is only where the caret WOULD be. A drag blurs the editor, so
- * a diagram drawn as a picture stays one for the drop.
- */
 export function caretInsideNodeAt(state: EditorState, focused: boolean, pos: number): boolean {
   const node = state.doc.nodeAt(pos);
   if (!node || !focused || state.selection instanceof NodeSelection) return false;
@@ -78,19 +68,11 @@ export function objectBeside(
       continue;
     }
     const siblingIndex = $pos.index(depth - 1) + direction;
-    // No sibling at this depth: the edge belongs to the level above, so keep
-    // climbing (the last paragraph of a list item shares its edge with the list).
     if (siblingIndex < 0 || siblingIndex >= parent.childCount) continue;
 
     const sibling = parent.child(siblingIndex);
     let pos = $pos.start(depth - 1);
     for (let index = 0; index < siblingIndex; index += 1) pos += parent.child(index).nodeSize;
-    // The immediate neighbour is what "beside" means. A paragraph next door
-    // ends the walk rather than hiding an object two blocks away behind it —
-    // but a CONTAINER next door (the next cell, the next row) is entered
-    // through its edge block, and when that block is an object the walk is
-    // standing beside the object (b: a cell whose entry block is a rendered
-    // diagram is entered by selecting the diagram, never its hidden source).
     return entryObject(sibling, pos, direction);
   }
 
@@ -187,9 +169,6 @@ export function caretBesideObjectTransaction(
   if (direction === 1 ? selection.from < edge : selection.to > edge) return null;
 
   const walkedInto = objectAround(selection.$head, pos);
-  // A registration the schema refuses a node selection on keeps the plain
-  // landing: no row is unselectable today, and an arrow that moves nowhere
-  // traps the writer, which is the worse of the two failures ().
   const onto = walkedInto ? selectObjectTransaction(state, walkedInto.pos) : null;
   if (onto) return onto;
 
@@ -209,10 +188,6 @@ export function caretHomeFromObjectTransaction(
   const forwardText = writerText(state, $after, 1, bound.end);
   if (forwardText) return state.tr.setSelection(forwardText).scrollIntoView();
 
-  // A scene break can also be the LAST thing in the document, and then there
-  // is no text ahead at all. The gap past it is still forward, still a caret,
-  // and still somewhere typing works, so it is a home rather than a reason to
-  // walk back over the object the writer just left.
   const forwardGap = gapPastFollowingNodes(state, $after);
   if (forwardGap) return state.tr.setSelection(forwardGap).scrollIntoView();
 
@@ -250,8 +225,6 @@ export function typeBesideObjectTransaction(state: EditorState, pos: number): Tr
 
   const $after = state.doc.resolve(pos + node.nodeSize);
   const forward = Selection.findFrom($after, 1, true);
-  // The same wall Esc's walk respects: the nearest text after an object that
-  // ends its cell is the neighbouring cell's, and the letter must not go there.
   const bound = isolatingBoundAround($after);
   const visible =
     forward && forward.from <= bound.end && !opaqueObjectAround(forward.$head) ? forward : null;

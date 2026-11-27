@@ -80,15 +80,11 @@ export function AgentPickerPanel({
   // "Hand off to" button confirms. Decided at pointer-down: Android focuses the row on tap,
   // which points it before the click.
   const tapPicks = useRef(true);
-  // The pointer re-points only once it rests on a row, so a diagonal move toward the models
-  // doesn't swap the Agent they belong to on the way.
   const pointTimer = useRef<number | undefined>(undefined);
   const isPhone = usePhoneShell();
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
-  // A started chat runs its Agent as bound until it compacts, so its own row is the binding's,
-  // whatever the catalog's newest save now says (another model, renamed, not primary, clashing).
   const bound = useThreadAgent(mode.kind === "chat" ? mode.threadId : null);
   const currentSlug =
     mode.kind === "chat" ? (bound.data?.selection.slug ?? current.slug) : current.slug;

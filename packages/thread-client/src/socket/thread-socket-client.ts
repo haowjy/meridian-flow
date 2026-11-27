@@ -217,7 +217,6 @@ export class ThreadSocketClient implements ThreadTransport {
         this.subscriptions.connected();
         for (const [projectId, listeners] of this.catalogSubscriptions) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
-          // keep: Hints sent while the socket was down are lost; reconnect asks listeners to recheck chat tabs
           if (this.hasConnected)
             for (const listener of listeners)
               listener({ type: "project-chats-hint", projectId, recheckTabs: true });

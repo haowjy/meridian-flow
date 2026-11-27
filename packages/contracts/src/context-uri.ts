@@ -345,7 +345,6 @@ function parseAuthorityPrefix(
   }
   const token = (qualifiers[0] ?? "").slice(OWNER_SIGIL.length);
   if (token === "") {
-    // keep: Retired @/ empty-owner spelling must stay distinct from the bare @ listing token
     if (segments.length === 0 && rawPath.replace(/^\/+/, "").startsWith("@/")) {
       return invalidContextUri(rawUri, retiredEmptyOwner(scheme));
     }

@@ -81,7 +81,6 @@ function serviceEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...launchEnv };
   applyDevEnvToProcess(repoRoot, env);
   env.MERIDIAN_API_ORIGIN = loopbackOrigin(ports.server);
-  // keep: the app and the marketing site link to each other; a page opened over the tailnet needs links that work from that device
   const pageOrigin = (port: number) =>
     tailnetHost ? tailnetUrl(tailnetHost, port) : browserUrl(port);
   env.MERIDIAN_APP_ORIGIN = pageOrigin(ports.app);

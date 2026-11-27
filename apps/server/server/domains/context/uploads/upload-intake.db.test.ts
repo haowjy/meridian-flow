@@ -130,8 +130,6 @@ if (!RUN) {
           bytes: content,
         });
 
-        // Settle both calls before `finally` deletes the user: a rejected
-        // Promise.all would leave the other transaction running into the delete.
         const settled = await Promise.allSettled([
           uploadBytes(service(firstDb), objectStore, request()),
           uploadBytes(service(waiterDb), objectStore, request()),

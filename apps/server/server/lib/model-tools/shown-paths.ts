@@ -58,7 +58,6 @@ export type Reached = {
   delta?: ShownDelta;
   node?: { id: string; kind: "folder" | "document" | "file"; entries: number };
   kept?: string;
-  // keep: a gone node is never looked up again by path, which could reach another node that holds the name now
   gone?: Gone;
 };
 

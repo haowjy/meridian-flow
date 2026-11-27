@@ -49,14 +49,6 @@ export function EditorSurfaceFrame({
       ) : null}
       <div
         ref={scrollRef}
-        // flex-col so the editor can take the editorColumnFill chain and fill
-        // the scroll area.
-        // cursor-text: the whole scroll area is caret territory when an editor
-        // is attached — the cursor must promise what the press delivers.
-        // relative: this pane is the coordinate space every piece of measured
-        // chrome is placed in, and the box that clips it
-        // (`chrome/manuscript-overlay.ts`), which needs the pane to be the
-        // containing block of everything portalled into it.
         className={cn(
           "relative flex min-h-0 flex-1 flex-col overflow-y-auto",
           textCursor && "cursor-text",

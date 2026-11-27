@@ -45,9 +45,6 @@ export const FORMATTING_MARK_IDS: readonly FormattingMarkId[] = [
 ];
 
 export function formattingMenuModel(editor: Editor): FormattingMenuModel {
-  // The menu only opens on a writable document (see `formatting-triggers`),
-  // but a document can turn read-only while it is open — a schema fence, a
-  // lost lease — and every item must say so rather than silently no-op.
   const readOnly: FormattingBlockedReason | null = editor.isEditable ? null : "document-read-only";
 
   const turnInto = blockTypeStates(editor);

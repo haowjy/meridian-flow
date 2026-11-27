@@ -36,7 +36,6 @@ type TreeFileBase = {
   parentId: string;
   documentId: string;
   name: string;
-  /** The stored extension, which `name`'s suffix cannot tell from part of the name (`Vol. 2`). */
   extension: string;
   aliases?: readonly string[];
   suffix?: string;

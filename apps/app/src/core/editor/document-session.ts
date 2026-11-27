@@ -138,10 +138,6 @@ export class DocumentSession {
   private transportInitialSyncComplete = false;
   private contentHeld = false;
   private transportAcknowledged = false;
-  /**
-   * Whether the copy holds ops the server lacks; null until read. Kept as an edge, not recomputed
-   * per keystroke: comparing the room's versions costs a pass over every block's doc.
-   */
   private unsent: boolean | null = null;
   private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private status: DocumentSessionStatus = "detached";
@@ -153,7 +149,6 @@ export class DocumentSession {
   private readonly server = new Map<DocKey, DocVersion>();
   private holdsUndeliverable = false;
   private inert = false;
-  /** Inside a peer's batch: its writes are the import's, which forwards drafts itself. */
   private importing = false;
   private readonly unregisterDraft: () => void;
   private boundEditors = 0;
@@ -313,8 +308,6 @@ export class DocumentSession {
         void store.close();
         return;
       }
-      // Through the binding like a peer's batch: past the bind horizon an editor may show the
-      // copy already.
       if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
       for (const batch of loaded.updates) this.importRemote(batch, false);
       this.forwardFromLive();
@@ -336,10 +329,6 @@ export class DocumentSession {
     }
   }
 
-  /**
-   * A fork's copy is brought up to the Live copy it reads through: after its own load, whose
-   * stored copy can trail the Live copy this tab holds. Every later Live batch forwards it.
-   */
   private forwardFromLive(): void {
     if (!this.docs.live || this.docs.isFreed) return;
     const forwarded = this.docs.forward();

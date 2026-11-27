@@ -66,7 +66,6 @@ export function useOpenContextRoute(): OpenContextRoute | null {
   return useContext(ProjectNavigationContext)?.open ?? null;
 }
 
-/** Capture before an asynchronous create; completion must not steal a later destination. */
 export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
 }

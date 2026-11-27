@@ -48,21 +48,6 @@ export const editorColumnChrome =
  */
 export const editorColumnFill = "flex min-h-full flex-1 flex-col";
 
-/**
- * Scroll past end: the manuscript keeps scrolling until the last block sits in
- * the upper half of the pane, so a writer never has to type against the bottom
- * edge of the screen, as Notion does.
- *
- * Half a viewport, which parks the last line just above the pane's midline at
- * desktop geometry. Viewport-relative rather than a fixed height so the reserve
- * stays proportional from a laptop to a large display.
- *
- * It belongs to the ProseMirror node itself rather than a wrapper: the reserve
- * is click territory, and a press inside the editable element is ProseMirror's
- * to answer with the caret at the end of the document. Chrome that measures the
- * manuscript reads block boxes, never this one, because the prose node keeps
- * answering `posAtCoords` far below the last line.
- */
 export const editorProseScrollPastEnd = "pb-[50vh]";
 
 /**

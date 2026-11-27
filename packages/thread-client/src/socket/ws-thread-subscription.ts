@@ -160,7 +160,6 @@ export class WsThreadSubscriptionRegistry {
       this.failRequest(threadId, subscription, requestId, error);
       return;
     }
-    // keep: Void a lease that survived failed auth so its frames never stream into held without end
     this.voidLease(subscription);
     this.transport.send({
       type: "unsubscribe",
@@ -309,7 +308,6 @@ export class WsThreadSubscriptionRegistry {
     this.deliver(subscription, frame);
   }
 
-  // keep: Deliver merged catch-up and held frames in seq order before onLiveState
   private settle(subscription: ThreadSubscription, after: string, catchup: SequencedEvent[]): void {
     subscription.lease = "active";
     subscription.position = selectNewestSeq(subscription.position, after);

@@ -165,12 +165,6 @@ export async function runDelete(
     shown = showDeleteNotice(context.notice, projectId, taken, leaving, covered.flat()[0] ?? "");
 }
 
-/**
- * The delete's notice, with an Undo that takes back the sidebar's own Undo step for it: whichever
- * runs first, the other has nothing left (a press ends the notice). It also ends when its steps
- * rest (an Apply or a create shows what they took again): it can't hide its Undo for now as the
- * rows do, and the rows and Ctrl+Z keep it.
- */
 function showDeleteNotice(
   { notices }: NonNullable<EntryContext["notice"]>,
   projectId: string,

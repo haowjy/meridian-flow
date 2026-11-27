@@ -15,10 +15,6 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { TreeList } from "../../context/ports/tree-list-store.js";
 
-/**
- * Ranked access levels. `comment` is reserved between `read` and `edit` for
- * sharing (§3.1); compare with `atLeast`, never by testing one value.
- */
 export type FileAccessLevel = "none" | "read" | "edit";
 
 const LEVEL_RANK: Readonly<Record<FileAccessLevel, number>> = { none: 0, read: 1, edit: 3 };
@@ -58,10 +54,6 @@ export interface DraftOwnerRef {
 export interface Principal {
   accountId: UserId;
   agent?: {
-    /**
-     * The project the agent's thread runs in: where its draft is and what its links read in.
-     * Never the file's project (`FileFacts.owner`), which for a home document is none.
-     */
     projectId: ProjectId;
     chain: AgentChain;
     draftOwner: DraftOwnerRef;
@@ -131,11 +123,6 @@ export interface FileFacts {
   ownerRootThreadId?: ThreadId | null;
   ownerChatThreadId?: ThreadId | null;
   deleted: boolean;
-  /**
-   * `deleted` is the document's own delete or its folder's, and `draftOwner`'s draft has an
-   * active Work draft of it, which outlived that delete: a draft destination in that
-   * draft stays open. Never set from the draft's pending effect.
-   */
   survivingDraft?: boolean;
   scheme: ContextUriScheme;
   contentScheme: ContextUriScheme;
@@ -174,10 +161,6 @@ export interface FileGrant<N extends FileNeed = FileNeed> {
     : N extends "command"
       ? { read: true; command: true }
       : { read: true };
-  /**
-   * What `confirmEdit` re-checks. Typed `FileNeed`, not `N`, so a wider grant
-   * still satisfies `FileGrant<"read">`; the brand alone carries `N`.
-   */
   readonly need: FileNeed;
   readonly principal: Principal;
   readonly facts: FileFacts;

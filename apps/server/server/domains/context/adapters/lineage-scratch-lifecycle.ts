@@ -163,8 +163,6 @@ export function createDrizzleLineageScratchLifecycle(
             restored.map((source) => source.id),
           ),
         );
-      // The registry filters deleted ancestors and only settles once.
-      // Reconciliation already holds the namespaces in this transaction.
       await arrivals.settle(content.map((document) => document.id as DocumentId));
     }
   }

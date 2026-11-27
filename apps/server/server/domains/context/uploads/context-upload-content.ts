@@ -17,11 +17,6 @@ type BoundUpload = BoundWrite | null;
 export function createContextUploadContentPort(
   contextPorts: UnifiedContextPortFactory,
 ): UploadContentPort<BoundUpload> {
-  /**
-   * A source upload goes through the port the route resolved for the host's scope. A chat upload
-   * goes through the chat's own port, written at the chat-relative `uploads://name`: a New-chat
-   * upload has no handle yet, and the write must not depend on one.
-   */
   function portFor(
     reservation: Pick<UploadReservation, "projectId" | "owner">,
     actorUserId: string,

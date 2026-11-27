@@ -63,7 +63,6 @@ export function readTailnetHost(): string {
   return host;
 }
 
-// keep: a route to anything but this stack's own address is someone else's and is never replaced
 export function assertTailnetPortsFree(host: string, ports: readonly number[]): void {
   const config = serveConfig();
   for (const port of ports) {
@@ -75,7 +74,6 @@ export function assertTailnetPortsFree(host: string, ports: readonly number[]): 
   }
 }
 
-// keep: every port is checked before any is published
 export function publishOnTailnet(host: string, ports: readonly number[]): void {
   assertTailnetPortsFree(host, ports);
   for (const port of ports) tailscale(["serve", "--bg", `--https=${port}`, loopbackOrigin(port)]);

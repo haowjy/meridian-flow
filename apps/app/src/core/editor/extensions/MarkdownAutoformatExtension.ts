@@ -24,8 +24,6 @@ function fenceAttributes(match: RegExpMatchArray) {
 
 export const MarkdownAutoformatExtension = Extension.create({
   name: "markdownAutoformat",
-  // Above the code block extension, whose narrower fence rules yield to these,
-  // and above every node extension's Backspace binding.
   priority: 200,
 
   addInputRules() {

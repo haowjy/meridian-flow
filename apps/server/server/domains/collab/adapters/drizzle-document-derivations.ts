@@ -97,7 +97,6 @@ export async function certifyDocumentDerivation(
     .where(eq(documents.id, cut.documentId))
     .limit(1);
   if (content?.seq !== w.contentSeq) return false;
-  // A document no live row places derives at version 0; a replay that moves one waits here.
   const [location] = await tx
     .select({ version: treeNodes.locationVersion })
     .from(treeNodes)
@@ -169,8 +168,6 @@ export async function certifyDocumentDerivation(
     await tx
       .delete(documentBlocks)
       .where(and(eq(documentBlocks.roomId, roomId), inArray(documentBlocks.blockId, ids)));
-  // A content hash does not cover how the text was extracted, so rows from an older extractor
-  // certify nothing: every block is rewritten once.
   const current = room?.extractorVersion === w.extractorVersion;
   const written = outputs.blocks.filter(
     (block) => !(current && stored.get(block.id)?.equals(block.contentHash)),
@@ -202,7 +199,6 @@ export async function certifyDocumentDerivation(
   return true;
 }
 
-/** Registry recovery the derive step drives; the collab domain never imports the registry. */
 export type AheadRegistrationRecovery = {
   registerUnregistered(
     scope: { documentId: DocumentId } | undefined,

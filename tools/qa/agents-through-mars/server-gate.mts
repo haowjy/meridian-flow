@@ -9,7 +9,6 @@ import { loopbackOrigin } from "../../dev/lib/dev-ports.ts";
 import { requireRunningStack } from "../../dev/lib/dev-stack.ts";
 
 const root = resolveCurrentRepoRoot();
-/** stdout and stderr together: `thread send` reports its tool results on stderr. */
 const mf = (...args: string[]) => {
   const run = spawnSync("./mf", args, { cwd: root, encoding: "utf8" });
   const output = `${run.stdout}${run.stderr}`;

@@ -82,7 +82,6 @@ export class PaintHold extends Component<FrameProps, Hold> {
       clearTimeout(this.timer);
       this.setState({ paint: null });
     } else if (!paint && this.lastPainted && !this.raf) {
-      // keep: Wait for the next frame before capturing a synchronous layout dispatch; reuse the painted frame
       this.raf = requestAnimationFrame(() => {
         this.raf = 0;
         this.capture(true);

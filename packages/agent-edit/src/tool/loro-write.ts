@@ -500,9 +500,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         };
         let planDoc = planned.doc;
         let { assigner, resolved } = await resolveOn(planDoc);
-        // A find names text, not blocks: when the view doesn't hold it (the writer typed or
-        // restored it since), or what it matched there is gone from the room, it matches the room
-        // as it is now.
         if (
           planDoc !== copy &&
           "find" in command &&
@@ -529,11 +526,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         }
         if (resolved.edits.length === 0) {
           const unchanged = formatUnchangedSuccess();
-          // The view already holds this content, but the room doesn't: someone changed these
-          // blocks since the read (a turn Undo that took the chat's own words out, say). On the
-          // model's view the write is a no-op, as an offline peer's would be, and writing on the
-          // room would undo edits the model never saw, so nothing lands; the answer shows the
-          // text as it stands, and the next write plans on it.
           if (planDoc !== copy) {
             const now = await resolveOn(copy);
             if (now.resolved.ok && now.resolved.edits.length > 0)
@@ -643,7 +635,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   }): Promise<InternalWriteResult> {
     const { command, session, context, read, copy, planDoc, actor, address, plan } = edit;
     const docId = address.documentId;
-    // The writer removed what the model named since its read: its words would bring it back.
     if (planDoc !== copy && "edits" in plan && missingTarget(plan.edits, copy))
       return withCurrentText(
         returnedWriteResult("block_gone"),
@@ -692,10 +683,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     if (exported.size === 0)
       return withEvidence(edit.links, read, copy, docId, context, formatUnchangedSuccess());
     let batch = encodeEnvelope(exported);
-    // The echo, the delta and the frontier show the write merged into the room as this call read
-    // it, the writer's surviving words included. A removal of text the model never read comes
-    // back in the room's copy (design §1, "Removed blocks", rule 1): the saved batch carries that
-    // restore, and the receipt does not call the block deleted.
     if (planDoc !== copy && copy.docs.importBatch(decodeEnvelope(batch)).restore.length)
       batch = encodeEnvelope(copy.docs.exportSince(since));
     copy.forget();

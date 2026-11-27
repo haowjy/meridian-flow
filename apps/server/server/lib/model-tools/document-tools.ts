@@ -566,7 +566,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
     const target = creates ? await threadContainerTarget(context.resolution, parsed.path) : null;
 
-    // A copy reads its source before it creates anything, so a bad source leaves no file.
     let copied: CopiedSource | undefined;
     if (parsed.command === "copy") {
       const source = await resolveCopySource(deps, parsed.command, parsed.from, ctx);
@@ -695,8 +694,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       let address = existing ?? (await resolveCreated(false));
       if (isToolError(address)) return address;
 
-      // The effect can run again: `copied` stays what the source read gave, and each attempt
-      // remaps its own copy of it to the document that attempt made.
       const placedAt = (address: ResolvedDocumentAddress) => {
         if (engine.command !== "copy" || !copied) return copied;
         return {
@@ -786,7 +783,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       };
     };
     const result = await settle(effect);
-    // The projection catches up once the edit is durable, whoever stored it.
     if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
       await deps.documentSync.refreshDocumentProjection({
         documentId: refresh,
@@ -799,15 +795,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
 
 class TransientEditFailure extends Error {}
 
-/**
- * Runs a call's effect as the command the executor keyed it by, which stores its result with
- * its outcome. An error result is the command's refusal: whatever the effect changed rolls
- * back with it. A returned edit is a done command: nothing changed, and its row says why.
- *
- * A server failure (an apply or a commit that failed, or an effect that threw) is the server's
- * to get past: the effect runs once more under the same command id, and only a second failure
- * is the model's answer, worded as an edit that did not land and asking for no retry.
- */
 function effectSettler(
   deps: ToolWiringDeps,
   ctx: ToolHandlerContext,

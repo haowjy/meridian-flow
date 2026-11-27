@@ -34,20 +34,6 @@ export function duplicateObject(editor: Editor, pos: number): boolean {
   return true;
 }
 
-/**
- * Write one of the object's own attributes — its alt text, a figure's caption or
- * label (§5.6). Which fields an object has is its registration's answer
- * (`surfaceFields`), so this takes any of them and the surface never branches on
- * the node type.
- *
- * **What the writer typed is what is stored.** The popover has no draft, so this
- * runs per keystroke against a controlled input that renders the document back:
- * a trim here took the space off the end of "Lanterns " before the next letter
- * could follow it, and the space bar did nothing at all. The only normalization
- * left is emptiness — a nullable field holding nothing but whitespace is a field
- * nobody wrote, and the wire format needs the absent case to be absent
- * (`caption` is a plain string in the schema, `alt` and `label` are nullable).
- */
 export function setObjectField(
   editor: Editor,
   pos: number,

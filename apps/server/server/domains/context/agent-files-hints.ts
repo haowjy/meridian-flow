@@ -57,7 +57,6 @@ export function createAgentFilesHints(deps: {
 
   const hints = createKeyedCoalescer<string>({
     debounceMs: SETTLE_MS,
-    // Lossy: a missed hint leaves a verdict stale until the next read.
     run: (documentId) => deps.backgroundTasks.track(wake(documentId), "agent-files-hint"),
     onError: (documentId, cause) => {
       if (deps.eventSink)

@@ -46,7 +46,6 @@ export function browserRecord<T>(
           return undefined;
         return parse(value.payload);
       }),
-    // Undefined deletes the record; null remains a valid explicit domain value.
     write: (payload: T | undefined): boolean =>
       attempt(() => {
         const target = storage();

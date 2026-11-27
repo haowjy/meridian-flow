@@ -1,9 +1,3 @@
-/**
- * Planning a row drop. Sources are identities; where each one sits is read from the trees the
- * list shows at the moment of asking, so a row another list dragged, or a peer renamed or
- * moved, is judged as it is now. Pure and synchronous: hovering plans on every `dragover`.
- */
-
 import type {
   ContextOwner,
   ContextSiblingPosition,
@@ -88,10 +82,6 @@ export function within(area: MoveArea, parentId: string, folderId: string): bool
   return false;
 }
 
-/**
- * Drops each item that sits inside another item's folder: a folder carries its contents, so
- * nothing a drag, Move… or Delete acts on is acted on twice.
- */
 export function outermost<T extends { ref: EntryRef }>(
   view: PlacementView,
   items: readonly T[],
@@ -132,11 +122,6 @@ export function moveRefusal(
 
 export type PlacedSource = PlacedEntry & { view: CopyContextEntryView };
 
-/**
- * A drop, resolved: what the carried rows and the target are now, before any
- * action decides what to do with them. Move and Copy both plan from it, so
- * neither resolves identities again.
- */
 export type ResolvedDrop = {
   sources: readonly PlacedSource[];
   into: string;
@@ -145,7 +130,6 @@ export type ResolvedDrop = {
   position?: ContextSiblingPosition;
   asks: boolean;
   insideItself: boolean;
-  /** Carried rows no shown tree places now (gone). Nothing acts on a selection that has lost rows. */
   unavailable: readonly EntryRef[];
   scheme: ProjectContextTreeScheme;
   canMove: boolean;
@@ -190,7 +174,6 @@ export function resolveDrop(
 export function planMove(resolved: ResolvedDrop | null): MovePlan {
   if (!resolved) return NONE;
   const { sources, into, area, destinationName, position } = resolved;
-  // A selection holding a row without Move, or one that lost a row, moves nowhere rather than silently leaving rows behind.
   if (!resolved.canMove || resolved.unavailable.length > 0 || resolved.crossesLists) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(sources, resolved, position);
@@ -223,11 +206,6 @@ export type CopyPlan =
 
 export type ReadyCopy = Extract<CopyPlan, { kind: "ready" }>;
 
-/**
- * What a resolved drop would do as a Copy. Every carried row is copied, the one already in the
- * target's parent included, and an edge drop may anchor on a
- * carried row, which stays where it is. A selection that lost a row copies nothing.
- */
 export function planCopy(resolved: ResolvedDrop | null): CopyPlan {
   if (!resolved || resolved.unavailable.length > 0 || resolved.sources.length === 0)
     return NONE_COPY;
@@ -259,12 +237,6 @@ const NONE_COPY: CopyPlan = { kind: "none" };
 
 const moveRowOf = (source: PlacedEntry): MoveRow => ({ entry: source.ref, from: source.parentId });
 
-/**
- * An edge drop: the carried rows land together, in screen order, beside the anchor in `into`.
- * Neighbours come from the parent's complete sibling sequence, not the rows a search leaves on
- * screen. Nothing happens when the anchor is itself carried or when every row would end where
- * it already is.
- */
 function planPositioned(
   sources: readonly PlacedSource[],
   { into, area, destinationName }: ResolvedDrop,

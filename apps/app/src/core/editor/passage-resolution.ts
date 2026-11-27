@@ -17,8 +17,6 @@ export function resolvePassage(
     const inside = findTerm(doc, term, block);
     if (inside.length > 0) return { kind: "block", ranges: inside };
   }
-  // Outline's resilience without its "first duplicate wins": one occurrence is
-  // an answer, several are a coin flip about the writer's own prose.
   const everywhere = findTerm(doc, term, { from: 0, to: doc.content.size });
   if (everywhere.length === 1) return { kind: "refound", ranges: everywhere };
   return block ? { kind: "block", ranges: [block] } : { kind: "stale" };

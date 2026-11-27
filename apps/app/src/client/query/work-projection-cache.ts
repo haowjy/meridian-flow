@@ -12,9 +12,6 @@ export function convergeWorkProjection(client: QueryClient, change: WorkProjecti
   void client.invalidateQueries({ queryKey: projectQueryKeys.threads(change.projectId) });
   void invalidateProjectChatFeed(client, change.projectId);
   if (change.kind !== "entity") return;
-  // Deleting a Work deletes its chats, and restoring it brings them back. A chat learns
-  // either only from its snapshot: an open one leaves on the refetched "deleted", and a
-  // restored one must not reopen onto the "deleted" answer still cached for it.
   if (change.operation === "delete")
     void client.invalidateQueries({ queryKey: threadQueryKeys.all, predicate: isThreadSnapshot });
   if (change.operation === "restore")

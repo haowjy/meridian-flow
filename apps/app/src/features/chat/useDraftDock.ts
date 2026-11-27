@@ -34,7 +34,6 @@ export function useDraftDock({
   const listed = useOwnerDrafts(projectId, draftId).files ?? [];
   const { setWorkId } = useWorkScope(projectId);
 
-  // A peer's Apply or Discard reaches this chat only as a change in what its draft holds.
   const queryClient = useQueryClient();
   const waiting = listed.map((file) => file.item.itemKey).join();
   const seenWaiting = useRef(waiting);

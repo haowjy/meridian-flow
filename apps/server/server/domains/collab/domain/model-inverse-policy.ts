@@ -59,10 +59,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "nothing_to_undo",
             message: `You have no edits to undo in ${document.uri}. Nothing was changed.`,
           };
-    /**
-     * One step per original edit, in the order the command takes them: an undo's each its own
-     * action; a revert's the command's.
-     */
     const stepAction = (kind: "undo" | "revert") =>
       kind === "undo" && steps.length ? randomUUID() : actionId;
     const apply = (entry: Entry, selection: StoredInversePart[], kind: "undo" | "revert") => {
@@ -126,8 +122,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       plans: [inversePlan],
       sequence: steps.map((step) => ({ plan: inversePlan, step })),
     });
-    // The answer is what the commit took: it plans again under the locks, and a write since the
-    // capture can leave a step less, or nothing, to take.
     const planned = steps.reduce((n, step) => n + step.parts.length, 0);
     const took = stepEntries.filter((_, i) => (committed.taken[i] ?? 0) > 0);
     const parts = committed.taken.reduce((n, taken) => n + taken, 0);

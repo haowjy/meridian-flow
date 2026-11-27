@@ -37,7 +37,6 @@ export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
   return cursor ? { block: id, cursor, after: offset > 0 && unit !== undefined } : null;
 }
 
-/** The selection's ends as cursors in their blocks' text docs, taken while editor and docs agree. */
 export function selectionCursors(docs: RoomDocs, state: EditorState): SelectionCursors {
   const { selection } = state;
   return { anchor: cursorAt(docs, selection.$anchor), head: cursorAt(docs, selection.$head) };

@@ -6,11 +6,6 @@ export type HoverProbe = {
   x: number;
   y: number;
   element: Element;
-  /**
-   * That element is this editor's own chrome. Travelling onto a revealed
-   * control is not a step off the target it belongs to, and the hit test
-   * under it would answer for whatever the control covers.
-   */
   onChrome: boolean;
 };
 
@@ -81,10 +76,6 @@ export function createHoverAnchors(
       return;
     }
 
-    // On a revealed control: keep whoever it belongs to, and cancel any grace
-    // the trip off the target started. Re-entering rather than merely not
-    // leaving is the load-bearing half — a grace left running fires on a
-    // pointer already resting on the control and fades it out from under them.
     if (probe.onChrome) {
       if (owner !== null) intent.enter(owner);
       return;
@@ -125,8 +116,6 @@ export function createHoverAnchors(
     values.clear();
     for (const [lane, value] of hits) values.set(lane, value);
     intent.enter(found);
-    // The intent says nothing when the owner has not changed, and a lane still
-    // has to hear that the pointer moved to another cell of the same table.
     if (sameOwner) deliver();
   }
 

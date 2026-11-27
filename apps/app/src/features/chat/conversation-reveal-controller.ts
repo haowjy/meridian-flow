@@ -79,7 +79,6 @@ function createConversationRevealController(): ConversationRevealController {
   };
 
   const settle = (id: number, stage: Stage, outcome: "landed" | "unavailable"): void => {
-    // keep: Ignore reports whose id/stage no longer match pending; a child landing in the same commit its parent reports would otherwise reopen a finished request.
     if (pending?.id !== id || pending.stage !== stage) return;
     const deeper = outcome === "landed" ? deeperStage(stage, pending.target.kind) : null;
     setPending(deeper === null ? null : { ...pending, stage: deeper });

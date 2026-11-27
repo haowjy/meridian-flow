@@ -65,7 +65,6 @@ export function MainModeSwitch({
       onChange={(next) => {
         const press = ++latestPress.current;
         setPressed(next);
-        // Main's move holds the thread for a few frames: it starts after the switch has painted.
         requestAnimationFrame(() =>
           setTimeout(() => {
             withoutOpen(() => go(next))

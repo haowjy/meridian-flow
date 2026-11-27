@@ -28,19 +28,12 @@ export interface StaticCatalogDocument extends CatalogDocument {
 
 export interface StaticDocumentCatalog {
   projectId: string;
-  /** Read at every call, so replacing an entry moves, deletes or creates a document. */
   documents: readonly StaticCatalogDocument[];
-  /** Read at every call, so replacing an entry moves or removes a folder. */
   folders?: readonly CatalogFolder[];
   settlements?: ReadonlyMap<string, string>;
 }
 
 export interface StaticDocumentLinksOptions {
-  /**
-   * Answer every lookup as loaded. Only for compositions whose doors never
-   * prepare through this port (the server's in-memory scopes); tests keep the
-   * default, so a door that forgot to prepare a key sees a real snapshot miss.
-   */
   preloaded?: boolean;
 }
 

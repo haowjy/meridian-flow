@@ -65,12 +65,6 @@ export interface WriteOptions {
   pieces?: readonly (readonly [BlockId, BlockId])[];
 }
 
-/**
- * Writes structure values the way every writer must (design §1): Live's copy writes Live's maps;
- * a draft's fork writes only its `d.*` overrides, and deletes an override whose value equals Live's
- * instead of writing it, so a matching override never hides Live's later edits of the key.
- * Comparisons read the `StructureView` taken before the write.
- */
 export class StructureWriter {
   constructor(
     readonly docs: RoomDocs,
@@ -92,13 +86,6 @@ export class StructureWriter {
       inMap(structure, overrideMap(name), (map) => map.set(key, value as never));
   }
 
-  /**
-   * Remove a block, and with it what is under it: `order` becomes a record of the key it had (`at`)
-   * and what this copy read of every text doc under it, so a write the removal did not read can
-   * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
-   * they remove. An Undo gives `at`, the key it puts back, and `saw`, what its edit's copy showed
-   * (`putBackValues`): typing since, by anyone, brings the block back.
-   */
   remove(
     id: BlockId,
     at = this.view.order(id) as string,
@@ -119,13 +106,6 @@ export class StructureWriter {
     if (this.docs.draft && a !== b) this.set("pieces", pieceKey(a, b), true);
   }
 
-  /**
-   * Every key of a new or changed block but its order. A parent the read moved to the document to
-   * break a cycle is left as stored when the write leaves the block where it read (same parent,
-   * `moved` false), so writing back an unchanged read writes nothing (and in a draft makes no
-   * override the writer never made). A block the write moves among its siblings gets its parent
-   * written, or the move would be lost once the cycle is mended.
-   */
   block(
     id: BlockId,
     parent: BlockId | null,

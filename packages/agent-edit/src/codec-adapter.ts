@@ -20,16 +20,8 @@ export interface AgentEditCodec {
 
   serializeBlock(block: PMNode, hash: string): string;
 
-  /**
-   * Bodies of blocks shown to the model under `hashes[i]`, recording the links each
-   * showed in the shown-link ledger. Compose the line with `toHashline`.
-   */
   serializeBlocks(blocks: readonly PMNode[], hashes: readonly string[]): string[];
 
-  /**
-   * The blocks at `picked` of a whole document, each as it sits there (its containers' prefixes
-   * and its gap), recording the links they showed. `hashes` are the whole document's.
-   */
   serializeSelection(
     document: readonly PMNode[],
     hashes: readonly string[],

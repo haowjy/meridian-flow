@@ -183,8 +183,7 @@ export function createLoroGateway(services: LoroGatewayServices) {
     let target: FileTarget =
       room.kind === "fork"
         ? { kind: "draft", documentId, draftId: room.draftId }
-        : // A document in Trash takes text until its node is purged, so the room reads through Trash.
-          { kind: "restore", documentId };
+        : { kind: "restore", documentId };
     let found = await findAccess(userId, target);
     if (!found && room.kind === "live")
       for (const draftId of await services.documents.draftsHolding(documentId)) {

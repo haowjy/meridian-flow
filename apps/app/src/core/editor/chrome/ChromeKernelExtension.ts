@@ -112,15 +112,6 @@ export const ChromeKernelExtension = Extension.create({
           window.addEventListener("mouseup", endSweep);
           window.addEventListener("blur", endSweep);
 
-          // ONE pointer source for every approach in this editor, and one
-          // reading of the page under it. Each lane used to keep its own
-          // listener and its own answer to "what is under the pointer"; three
-          // answers is how a chip cluster claimed one object while a grip
-          // claimed another block on the same screen.
-          //
-          // The reading is what a lane cannot do for itself: chrome portalled
-          // out of the prose covers the manuscript, so the hit test under a
-          // revealed control would answer for whatever it happens to sit on.
           const stopReading = controller.hoverAnchors.observe((x, y) => {
             const element = document.elementFromPoint(x, y);
             if (!(element instanceof Element)) return null;
@@ -172,23 +163,6 @@ export const ChromeKernelExtension = Extension.create({
           };
           document.addEventListener("contextmenu", routeMenu, true);
 
-          // Escape reaches the chain through ProseMirror while the writer is in
-          // the prose, and through Radix while they are inside a Radix surface.
-          // Everything else — a hand-rolled portal, a margin handle holding a
-          // drag, any layer at all once focus has moved to the chat composer —
-          // has nothing listening for it, and "nobody is ever trapped" would
-          // quietly stop being true. This is that backstop, and it runs the
-          // same chain the prose route runs, so a step is a step wherever the
-          // key was pressed: the gesture rung is reached from a drag's own
-          // handle, and a layer that dismisses itself is still left alone.
-          // The same gap for every other key a layer owns. A dialog's content
-          // is portalled out of the editor and holds focus while it is open, so
-          // ProseMirror's `handleKeyDown` never sees the writer's Ctrl+Enter —
-          // and a surface that answered it with a listener of its own would be
-          // invisible to the kernel's bindings, its scope ladder, and the
-          // collision the validator is there to catch. Only contributions that
-          // declared `route: "chrome"` run here; the target guard leaves the
-          // prose's own keys to ProseMirror, which is the path they belong to.
           const layerKeys = (event: KeyboardEvent) => {
             if (event.defaultPrevented || chrome.layers.length === 0) return;
             if (event.target instanceof Node && view.dom.contains(event.target)) return;
@@ -221,8 +195,6 @@ export const ChromeKernelExtension = Extension.create({
           };
           document.addEventListener("keydown", backstopEscape, true);
 
-          // Capture on the document, so neither the Tab ladder nor TipTap's
-          // own list and table keys hear it; the default is left alone.
           const leaveOnTab = (event: KeyboardEvent) => {
             if (!leaveArmed || event.key === "Shift") return;
             leaveArmed = false;
@@ -368,8 +340,6 @@ function performEscStep(
     }
 
     case "at-home":
-      // Home is not "handled". Leaving the key alone is what lets a browser
-      // dialog, an IME composition, or a native affordance still see it.
       return chrome.retreatTopLayer();
   }
 }

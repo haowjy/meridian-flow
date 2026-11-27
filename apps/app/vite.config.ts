@@ -24,7 +24,6 @@ export default defineConfig(({ command, mode, isPreview }) => {
       process.env[key] = value;
     }
   }
-  // keep: whatever starts the dev server names the API server (`pnpm dev` does). Builds, tests and `vite preview` proxy nothing, so they run without one
   const apiDevOrigin = readOptionalEnvString(process.env.MERIDIAN_API_ORIGIN);
   if (command === "serve" && !isPreview && !process.env.VITEST && !apiDevOrigin) {
     throw new Error(

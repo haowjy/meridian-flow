@@ -387,7 +387,6 @@ async function readPlacedNodes(
           ])
         ).map((folder) => [folder.id, folder]),
       );
-      // A deleted Work's files read until its purge removes them, like its Scratch's source.
       const live = (row: SourceFacts) => !row.source.deletedAt && !row.sourceProject?.deletedAt;
       const classify = (row: SourceFacts, parentId: string | null) =>
         classifySourceIdentity({

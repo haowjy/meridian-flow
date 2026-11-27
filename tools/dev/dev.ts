@@ -156,13 +156,11 @@ async function start(wanted: Wanted): Promise<DevStackState> {
 }
 
 async function main(): Promise<void> {
-  // keep: stopping reads only the stack's record, so a bad DEV_PORT_BASE in `.env.local` can't keep a stack from being stopped
   if (has("--stop")) {
     console.log((await stopStack(repoRoot)) ? "stopped" : "not running");
     return;
   }
   const running = runningStack(repoRoot);
-  // keep: a flag asks for more and never takes away. Typed against a running stack, a plain `pnpm dev` reports it as it is; a flag the stack lacks starts it again with that added. Only `pnpm dev --stop` removes anything
   const wanted: Wanted = {
     clientBuild:
       has("--production-client") || running?.clientBuild === "production"
@@ -187,7 +185,6 @@ async function main(): Promise<void> {
         if (created) console.log(`note: created database "${database}"`);
       }
       if (running) {
-        // keep: what can fail is tried before the stop, so an add that can't happen leaves the running stack up
         if (wanted.www && !running.www) await waitForFreePorts([running.ports.www], 0);
         if (wanted.tailscale) {
           assertTailnetPortsFree(

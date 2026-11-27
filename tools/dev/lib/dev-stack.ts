@@ -7,7 +7,6 @@ import { unpublishFromTailnet } from "./dev-tailscale";
 
 export type ClientBuild = "development" | "production";
 
-// keep: a pid alone can be reused by an unrelated process; the `ps` start time beside it is what makes it the same process
 export interface ProcessRef {
   pid: number;
   start: string;
@@ -114,7 +113,6 @@ export function retireStack(
       );
     }
   }
-  // Only this stack's record: a start that overlapped the stop has written its own.
   if (readStackState(checkout)?.pid === stack.pid) {
     fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
   }
@@ -230,7 +228,6 @@ export async function terminateTree(refs: readonly ProcessRef[], graceMs: number
   signalProcesses(refs, "SIGKILL");
 }
 
-// keep: the record names the services as well as the supervisor, so a stack whose supervisor was killed can still be stopped
 export async function stopStack(checkout: string): Promise<boolean> {
   const state = readStackState(checkout);
   if (!state) return false;
@@ -245,12 +242,10 @@ export async function stopStack(checkout: string): Promise<boolean> {
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
-  // A supervisor that stopped cleanly has retired its own record; one still here belongs to a supervisor that was killed or could not reach Tailscale.
   if (readStackState(checkout)?.pid === state.pid) retireStack(checkout, state);
   return stack.size > 0;
 }
 
-// keep: two `pnpm dev` runs that both pass the port check would each start a supervisor and overwrite each other's record
 export function acquireStartLock(checkout: string): () => void {
   const file = path.join(checkout, START_LOCK_FILE);
   fs.mkdirSync(path.dirname(file), { recursive: true });

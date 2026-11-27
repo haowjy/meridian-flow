@@ -552,7 +552,6 @@ export async function createProductionAppPorts(input: {
         ),
       });
   });
-  // Throws here when the bundle lost the runner's worker or .wasm, so a broken build fails at boot.
   const scriptRunner = createQuickJsRunner();
   const mcpStore = createDrizzleConnectionStore({ db });
   const mcpConnections = createMcpConnections({

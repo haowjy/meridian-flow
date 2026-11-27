@@ -68,10 +68,6 @@ export interface NodeRule {
 
 export type StyleExpand = "before" | "after" | "both" | "none";
 
-/**
- * The schema facts the shape reads, built from a ProseMirror schema by the binding
- * (`shapeSchemaOf` in `@meridian/loro-prosemirror`), so this package has no ProseMirror at runtime.
- */
 export interface ShapeSchema {
   node(name: string): NodeRule | undefined;
   root: string;

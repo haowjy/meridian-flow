@@ -3,14 +3,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { EDITOR_DIAGRAM_PROVIDERS } from "../diagrams/diagram-providers";
 import { pictureCapped } from "./picture-cap";
 
-export type ObjectEngageIntent =
-  | "surface"
-  | "caret-inside"
-  /**
-   * Nothing to engage. Enter is still consumed — a selected object never
-   * lets the key reach the base keymap, which would split the block around it.
-   */
-  | "none";
+export type ObjectEngageIntent = "surface" | "caret-inside" | "none";
 
 export type ObjectBody = "text" | "block-drag" | "inline-drag";
 

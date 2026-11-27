@@ -11,11 +11,6 @@
   pointer-events: none;
 }
 
-/* Clickable only once it is legible. `step-end` holds the hit target off for
-   the whole fade, so a reveal that lands under a resting pointer cannot eat the
-   click the writer aimed at the prose it is fading in over. Leaving is the
-   other way round — the base rule has no `pointer-events` transition, so a
-   closing surface stops taking clicks on the frame it starts to fade. */
 .meridian-table-chrome[data-state="open"] {
   opacity: 1;
   pointer-events: auto;

@@ -4,7 +4,6 @@ export type PreparedCode =
   | { ok: true; code: string }
   | { ok: false; error: { name: string; message: string; line?: number } };
 
-// keep: Replace code fences with blank lines to preserve source line numbers
 const FENCE = /^\s*```[A-Za-z]*[ \t]*\n([\s\S]*?)\n?```\s*$/;
 
 const OPEN = "async function f(){";

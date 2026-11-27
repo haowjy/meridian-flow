@@ -25,7 +25,6 @@ export function createContextMediaResolver(deps: {
   objects: ObjectStorePort;
   eventSink: EventSink;
 }): MediaResolverPort {
-  // keep: only a missing object means the file is gone; any other store failure fails the turn rather than saving a decision to leave the file out
   function missingOrFault(error: { code: string; message?: string }): null {
     if (error.code === "not_found") return null;
     throw new MediaResolutionError(`Media storage failed: ${error.code}`);

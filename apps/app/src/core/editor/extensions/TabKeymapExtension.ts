@@ -53,13 +53,6 @@ const TAB = "\t";
 
 const OUTDENT = /^(\t| {1,4})/;
 
-/**
- * Runs the verb and keeps the key whatever the verb decided.
- *
- * The refusals are the reason this extension exists, so they are not passed
- * down the ladder: below this sit TipTap's own Tab bindings, which refuse the
- * same cases, and below those is the browser.
- */
 function consuming(
   verb: (editor: Editor, ...args: Parameters<KeymapBinding>) => void,
 ): (editor: Editor) => KeymapBinding {
@@ -77,13 +70,6 @@ const walking = (verb: (editor: Editor) => void): ((editor: Editor) => KeymapBin
   };
 };
 
-/**
- * Tab in a cell walks to the next one, and grows the table rather than
- * stopping at the last cell — prosemirror-tables has no row to walk into, and
- * a writer filling a table in expects one. `goToNextCell` and `addRowAfter`
- * both resolve against the nearest cell, so the innermost table owns the walk
- * and Tab at a nested table's last cell grows the INNER table.
- */
 const nextCell = walking((editor) => {
   if (editor.commands.goToNextCell()) return;
   if (editor.can().addRowAfter()) editor.chain().addRowAfter().goToNextCell().run();
@@ -93,14 +79,6 @@ const previousCell = walking((editor) => {
   editor.commands.goToPreviousCell();
 });
 
-/**
- * Is the caret standing in something INSIDE the cell that owns indentation —
- * a list item Tab should sink (Shift-Tab lift), or a fence it should indent?
- *
- * Measured against the innermost cell, so only structure inside that cell
- * yields the walk: a table sitting in a list item still walks its own cells,
- * because the list item is outside the grid, not within it.
- */
 function cellInteriorOwnsIndent(state: EditorState): boolean {
   const $from = state.selection.$from;
   let cellDepth = 0;
@@ -135,15 +113,6 @@ const indentFence = (direction: 1 | -1) =>
     if (transaction) dispatch?.(transaction);
   });
 
-/**
- * One tab where the caret stands.
- *
- * Refuses anything that is not a caret or a range in inline content — a
- * selected object, a gap cursor, a whole-table cell selection — because
- * inserting text there replaces what is selected, and a key that means
- * "indent" must never be what deletes a picture. The caller consumes the key
- * either way.
- */
 function insertTab(state: EditorState, dispatch: Parameters<KeymapBinding>[1]): void {
   const { selection } = state;
   if (!(selection instanceof TextSelection) || !selection.$from.parent.inlineContent) return;
@@ -168,7 +137,6 @@ function fenceIndentTransaction(state: EditorState, direction: 1 | -1): Transact
   const text = $from.parent.textContent;
   const transaction = state.tr;
 
-  // Back to front: an edit on an earlier line moves every position after it.
   for (const lineStart of touchedLineStarts(text, $from.pos - start, $to.pos - start).reverse()) {
     const at = start + lineStart;
     if (direction === 1) {
@@ -186,7 +154,6 @@ function touchedLineStarts(text: string, from: number, to: number): number[] {
   const starts: number[] = [];
 
   for (let start = from === 0 ? 0 : text.lastIndexOf("\n", from - 1) + 1; start <= to; ) {
-    // A range that ends exactly at a line's start never reached that line.
     if (start === to && start !== from) break;
     starts.push(start);
     const lineBreak = text.indexOf("\n", start);

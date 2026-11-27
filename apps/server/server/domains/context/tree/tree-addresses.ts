@@ -27,7 +27,6 @@ export type DocumentCoordinates = {
   userId: string;
   scheme: ContextUriScheme;
   workId: string | null;
-  /** Lock coordinate: a Work-scoped source locks by its persisted Work row, No Work included. */
   lockWorkId: string | null;
   rootThreadId?: string | null;
   chatThreadId?: string | null;
@@ -157,7 +156,6 @@ export async function loadDocumentAddresses(
   });
 }
 
-/** A stored image's `file_type` is its filetype (`png`, `jpg`, `svg`), not the word `image`. */
 function isImageFiletype(fileType: string): boolean {
   const disposition = classifyFiletype(fileType);
   return disposition.kind === "binary" && disposition.fileType === "image";

@@ -1,11 +1,3 @@
-/**
- * Copying planned rows. A Copy stays a server route (the server seeds each copy's text from its
- * source): the browser makes the copies' ids and the command's id, and the copies arrive through
- * the list like anyone's records. Each open document sends the room version its tab holds, so the
- * server never copies less than this tab saw: it waits for typing still on its way, and while it
- * has not arrived the same Copy is sent again under the same id. An error is a typed answer to the
- * request, so it is the caller's to show.
- */
 import type { Settlement } from "@meridian/contracts/commands";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type {
@@ -41,11 +33,6 @@ function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
   };
 }
 
-/**
- * The server answers `source_behind` (a 503) after a short wait; typing this tab holds reaches
- * it, so the Copy is sent again, slower each time, for as long as it takes. Temporary: Copy moves
- * onto the command driver, which owns this wait.
- */
 const RESEND_FIRST_MS = 500;
 const RESEND_LAST_MS = 5_000;
 

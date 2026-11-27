@@ -125,11 +125,6 @@ function changedAttrs(
   return changed;
 }
 
-/**
- * The node at `path` in the codec's round trip of the top-level block, read where it sits: a
- * further paragraph of an item read alone would start an item. A block that opens two lists at
- * once parses after the empty paragraph that carries the outer item, so its block is the last.
- */
 function shownNode(walk: Walk, path: readonly number[]): Block | null {
   if (!walk.shown && walk.shownBy) {
     const { body, open } = walk.shownBy.place();
@@ -152,7 +147,6 @@ function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly 
   const text = lowerText(before, after, walk.windows?.get(path.join("/")), walk.editors?.(path));
   if (text.splices.length + text.formats.length > 0)
     walk.ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
-  // An atom the model kept is one the room may have changed: only the model's attributes go.
   for (const { unit, modelUnit, ordinal } of text.kept) {
     const was = before.nodeAt(unit);
     const now = after.nodeAt(modelUnit);
@@ -168,11 +162,6 @@ interface LoweredText {
   kept: Array<{ unit: number; modelUnit: number; ordinal: number }>;
 }
 
-/**
- * The units of a textblock as a string: its text, and one character per inline atom type,
- * the same on both sides. Atoms compare by type; a changed attribute is a change to the atom.
- * A character no text holds stands for each type, so no text can pass for an atom.
- */
 function unitStrings(before: Block, after: Block) {
   const text = before.textContent + after.textContent;
   const codes = new Map<string, string>();
@@ -300,7 +289,6 @@ function textOps(
     }
     if (hunk === last) break;
     splices.push({ from: hunk.from, to: hunk.to, content: newText(after, hunk, carried) });
-    // Atoms in a hunk are not kept, but they still count in the textblock's order.
     for (let unit = hunk.from; unit < hunk.to; unit += 1) if (marksA[unit] === null) ordinal += 1;
     base = hunk.to;
     model = hunk.end;
@@ -327,12 +315,6 @@ function newText(after: Block, { at, end }: Hunk, carried: ReadonlyArray<readonl
   return Fragment.fromArray(nodes);
 }
 
-/**
- * An inline atom is a child of the textblock, not a character of a run of text, and a run
- * cannot be cut without moving its tail to a run of its own, which sends a peer's typing in the
- * tail elsewhere. So an insert that puts an atom inside a run slides over equal text to the
- * nearest run edge; the model's own find insert, and any change that replaces text, cut the run.
- */
 function slideAtomInserts(
   hunks: Hunk[],
   a: string,
@@ -369,15 +351,6 @@ function slideAtomInserts(
 const isSpace = (unit: string | undefined) => unit !== undefined && /\s/.test(unit);
 const deletes = (hunk: Hunk) => hunk.from < hunk.to;
 
-/**
- * A change that deletes words takes one of the spaces around them and keeps the other: the one
- * whose editor also typed the kept word beyond it, else (and with no editors) the one after. The
- * word diff would keep either equal space, and a kept space the writer typed beside words the
- * model deleted is one Undo takes out, gluing the model's words (`before wecan go`). Changes that
- * delete text and that only whitespace separates are one change, so no lone space is left between
- * them; an insertion stays apart, and no space is taken up to its point, so the writer's typing
- * there stays beside the letters it was typed beside. `window` bounds the change.
- */
 function keepOneSpace(
   a: string,
   b: string,
@@ -416,14 +389,6 @@ function keepOneSpace(
   });
 }
 
-/**
- * The marks Markdown cannot write (a comment) that each of the model's units carries. The model
- * never saw them, so they follow the word diff `changes`: a unit it kept keeps its own, and a
- * changed run's new words take those of the old words they stand for, paired in order
- * (`one, two` → `three—four` puts `one`'s on `three` and `two`'s on `four`; words it only
- * deleted take theirs with them). A space between new words has a mark only where the words on
- * both sides have it and the old space it stands for had it too.
- */
 function carriedMarks(
   a: string,
   b: string,
@@ -516,14 +481,6 @@ function wordHunks(a: string, b: string): Hunk[] {
   return hunks;
 }
 
-/**
- * A changed run that only gained characters (the old run is a subsequence of the new one) keeps
- * the old characters' items and writes just the insertions, so the writer's typing inside an AI
- * word survives an Apply or a pull. Any other change, a deletion or a letter swap, writes the run
- * whole: a replaced word's letters would otherwise belong to two authors and Undo would restore
- * fragments. Inline atoms never match: two images share a placeholder, not their attributes. A
- * run past the diff bound stays whole.
- */
 function retainShared(
   a: string,
   b: string,
@@ -595,12 +552,10 @@ function unitWindows(
   const placed = new Map<string, [TextWindow[], TextWindow[]]>();
   for (const [index, old] of olds.entries()) {
     const next = news[index];
-    // An empty window at a textblock's end belongs to it: an insert goes after its match.
     const at = a.findIndex(
       (candidate) => old.from >= candidate.start && old.to <= candidate.start + candidate.length,
     );
     if (at < 0 || a[at].key !== b[at].key) return null;
-    // The model's window sits in the same textblock: the find changed text, not structure.
     if (next.from < b[at].start || next.to > b[at].start + b[at].length) return null;
     const entry = placed.get(a[at].key) ?? [[], []];
     entry[0].push(unitWindow(a[at], old));

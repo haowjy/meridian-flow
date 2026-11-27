@@ -86,8 +86,6 @@ export function SessionEditor(props: SessionEditorProps) {
     props.identity.detached || props.surfaceOptions.localContentReady
   );
 
-  // Not on every save-status change: the first edit after a pause flips it, and a render of the
-  // whole editor view then lands inside that keystroke.
   useEffect(
     () =>
       props.session.subscribe((next) =>
@@ -95,8 +93,6 @@ export function SessionEditor(props: SessionEditorProps) {
       ),
     [props.session],
   );
-  // The first paint waits for the local copy and, with none, the server's; a room that never
-  // answers still binds after FIRST_PAINT_WAIT_MS, failed or not.
   useEffect(() => {
     let active = true;
     const bind = () => {
@@ -179,7 +175,6 @@ function ActiveSessionEditorView({
   const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
   effectiveEditableRef.current = effectiveEditable;
 
-  // Links belong to their holder, never to the route's or a chat's Work.
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const holder = useProjectTrees(projectId ?? "").find(documentId);
   const holderOwner = holder?.source.owner;
@@ -203,8 +198,6 @@ function ActiveSessionEditorView({
   // editor, so a menu already open when the fence lands would still insert.
   const slashCommandCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable) return null;
-    // The place the pick was made, not the caret when the file comes back: the
-    // chooser outlives both the writer's own caret and every peer's writes.
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
@@ -217,8 +210,6 @@ function ActiveSessionEditorView({
       null,
     [linkableDocuments, documentId],
   );
-  // A draft-only holder takes its address from the review row. An ordinary review can outlive
-  // that row, so its live catalog address remains the fallback and continues to follow renames.
   const holderUri = reviewHolderUri ?? indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
@@ -272,8 +263,6 @@ function ActiveSessionEditorView({
       }),
     [linkableDocuments],
   );
-  // Read at paste time. An index still loading converts nothing, rather than
-  // turning every link dashed.
   const wikilinkPasteCatalog = useCallback(
     () =>
       identity.schemaType === "document" && linkableDocuments.complete
@@ -282,9 +271,6 @@ function ActiveSessionEditorView({
     [holderUri, identity.schemaType, linkAhead, linkableDocuments.complete, pasteTargets],
   );
 
-  // Surface config: applied to the running editor, never a reason to rebuild it.
-  // Only the prose node's own attributes live here; a lane that answers a press
-  // does it in its own extension, where the state it reads already is.
   const leaveHintId = useId();
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
@@ -317,10 +303,6 @@ function ActiveSessionEditorView({
   }, [editor]);
 
   const afterPaintRelease = useAfterPaintRelease();
-  // The paint cover that stands in while this document's surface changes parks focus on its
-  // status line. The caret was the writer's, so it goes back to the editor when the cover lifts.
-  // The cover can lift after the editor is gone (the work outlives the effect), so the deferred
-  // work checks `isDestroyed`.
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;

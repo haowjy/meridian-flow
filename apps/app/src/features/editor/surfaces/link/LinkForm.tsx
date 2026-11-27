@@ -55,8 +55,6 @@ export function LinkForm({
   surface: LinkSurface;
   form: LinkFormRequest;
 }) {
-  // Resolved once, at open: focus moves into the form, and the commit must
-  // rewrite the range the writer was looking at, not wherever focus went.
   const [draft] = useState(() => resolveLinkDraft(editor));
   // The commit reads the range from here, never from render state: an open
   // form outlives the positions it was opened with.
@@ -68,8 +66,6 @@ export function LinkForm({
       if (!transaction.docChanged) return;
       const moved = mapLinkDraft(editor.state, draftRef.current, transaction.mapping);
       draftRef.current = moved ?? draftRef.current;
-      // The words this form was opened for are gone. Committing would write
-      // the writer's link into whatever a peer put in their place.
       if (!moved) close();
     };
     editor.on("transaction", followDocument);
@@ -197,8 +193,6 @@ function LinkFields({
         if (linkInputStepsAsideFromReferences(value)) return null;
         return { query: value, text: value, triggerRange: { from: 0, to: value.length } };
       },
-      // Below the whole form, not at the caret: the field sits above Save, and
-      // a menu hanging from the caret covered it and swallowed its click.
       anchorRect: () => formRef.current?.getBoundingClientRect() ?? null,
     });
     transport.sync();
@@ -226,8 +220,6 @@ function LinkFields({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const address = choosing ? query.trim() : href;
-    // Search words are not destinations. A web URL, a Context URI, or a
-    // relative path the writer typed goes through the core normalizer.
     if (choosing && !(linkInputStepsAsideFromReferences(address) || /[./]/.test(address))) {
       setInvalid(true);
       return;

@@ -272,20 +272,10 @@ function targetSelection(state: EditorState, target: TableMenuTarget): Selection
 
   const $anchor = resolveHeldCell(state, target.anchor);
   const $head = resolveHeldCell(state, target.head);
-  // A rectangle is two cells of ONE table. The binding replaces the node behind a
-  // cell that really moved, so a pair that both resolve has not crossed into
-  // another table — this is what says so rather than assuming it.
   if (!$anchor || !$head || $anchor.start(-1) !== $head.start(-1)) return null;
   return CellSelection.create(state.doc, $anchor.pos, $head.pos);
 }
 
-/**
- * The state a menu reads its verbs from: its own target, materialized. Null
- * once the target is gone, which is a menu with nothing left to offer.
- *
- * Applied rather than dispatched: what a verb WOULD do is a question, and
- * asking it must not move the writer's own selection.
- */
 export function tableTargetState(editor: Editor, target: TableMenuTarget): EditorState | null {
   if (editor.isDestroyed) return null;
   const { state } = editor;

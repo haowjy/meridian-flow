@@ -12,12 +12,7 @@ export function ChooseHomeChip({ onClick }: { onClick: () => void }) {
     <Tooltip hoverable>
       <TooltipTrigger asChild>
         <Chip asChild tone="jade" className={`focus-ring ${appear}`}>
-          <button
-            type="button"
-            // The label hides in a narrow pane (the side); the button keeps its name.
-            aria-label={t`File this document`}
-            onClick={onClick}
-          >
+          <button type="button" aria-label={t`File this document`} onClick={onClick}>
             <FolderDown aria-hidden className="size-3" />
             <span className="@max-md:hidden">
               <Trans>File it</Trans>

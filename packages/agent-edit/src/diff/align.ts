@@ -26,8 +26,6 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   const moves: Array<[number, number]> = [];
   let pb = 0;
   let ps = 0;
-  // A removed run and an added run between two units are not each other: a removal, then an addition
-  // after it, so a side that removed the same blocks and added others keeps its additions.
   const between = (b1: number, s1: number) => {
     if (pb < b1)
       hunks.push({
@@ -71,11 +69,6 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   return { hunks, baseToSide, moves, pos: posMap(B.toks.length, hunks) };
 }
 
-// 1,000 tokens preserves ordinary split/join units while capping Myers' quadratic search.
-// Disjoint 1,000-word paragraphs measured 18–29 ms; 1,500 reached 128 ms (KF30 probe).
-// An oversized unit is diffed by token key alone, exact up to MAX_OVERSIZED_EDITS edit operations
-// (a replaced word is two, so about 500 replaced words) and one replacement past
-// that: the cost follows the edits, not the size or how unlike they are.
 const ANCHOR_GAP_TOKENS = 1000;
 const MAX_OVERSIZED_EDITS = 1000;
 
@@ -83,11 +76,6 @@ type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: Hunk[] };
 const units: UnitMemo = { next: new WeakMap() };
 const sideBoundary = {};
 
-/**
- * The ordered base nodes, a boundary, then the ordered draft nodes identify one unit. A weak trie
- * retains small multi-paragraph runs without retaining old documents; the boundary distinguishes
- * [a] → [b, c] from [a, b] → [c]. Cached offsets belong to the unit, not its place in the document.
- */
 function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   let memo = units;
   const step = (node: object) => {
@@ -152,12 +140,6 @@ function keyHunks(B: Side, S: Side, out: Hunk[]): void {
   }
 }
 
-/**
- * An unmatched interval may include a paragraph's changed tail and whole removed/added blocks.
- * Keep complete blocks independent of partial edge blocks; pair complete replacements in order and
- * detach excess blocks. Refinement can expose a partial edge by retaining a leading block token,
- * so normalization runs after refinement. Splits/joins with no complete block stay whole.
- */
 function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
   const blockAt = (side: Side, pos: number) =>
     pos === side.toks.length ? side.blocks.length : side.blockOf[pos];
@@ -167,8 +149,6 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
     const first = block + (interior ? 1 : 0);
     const end = blockAt(side, to);
     if (first < end) return [side.starts[first], side.starts[end]];
-    // With no complete block, a partial tail belongs before the complete run on the other side;
-    // a partial block starting at its boundary belongs after it (the next aligned word's prefix).
     return interior ? [to, to] : [from, from];
   };
   const out: Hunk[] = [];
@@ -197,8 +177,6 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
     ]) {
       if (to > b || send > s) {
         const prev = out.length > start ? out.at(-1) : undefined;
-        // One pure insertion at a position (or contiguous deletion) remains one edit. In particular,
-        // an added block plus a split's new paragraph start must not become competing insertions.
         if (prev && ((prev.from === prev.to && b === to) || (!prev.ins.length && s === send))) {
           prev.to = to;
           prev.sto = send;
@@ -212,12 +190,6 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
   return out;
 }
 
-/**
- * Token diff of one gap. Content (words, punctuation, inline and whole-block atoms) is aligned first;
- * a paragraph start then pairs with the start of the side paragraph its first aligned word landed in.
- * Every paragraph start has the same token, so aligning them as ordinary tokens lets a diff pair
- * unrelated paragraphs, or read a split as "this word left the paragraph".
- */
 function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   const bt = B.toks;
   const st = S.toks;
@@ -232,14 +204,10 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   };
   const bc = content(bt, b0, b1);
   const sc = content(st, s0, s1);
-  // Blocks with the same id are the same block: their starts pair, and no word match may cross them.
   const idPairs = blockIdPairs(bt, b0, b1, st, s0, s1);
   const crossesPair = (b: number, s: number) =>
     idPairs.some(([pb, ps]) => (b < pb && s > ps) || (b > pb && s < ps));
-  // Words first (they rarely repeat nearby), then punctuation between matched words, so a full stop
-  // can't anchor a word to the wrong sentence.
   const strong = (t: Tok) => t.kind !== "text" || t.word;
-  // Words align by text alone, so a word that only gained a mark stays paired with itself.
   const diffIdx = (
     xs: number[],
     ys: number[],
@@ -342,11 +310,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   }
 }
 
-/**
- * The block starts of the two ranges that carry the same id, in order (a later one that would cross
- * an earlier is left out). Both ranges are one unit, so an id repeats at most by mistake: the first
- * block with it pairs.
- */
 function blockIdPairs(bt: Tok[], b0: number, b1: number, st: Tok[], s0: number, s1: number) {
   const idAt = (t: Tok) => (t.kind === "block" ? (t.node.attrs.id as string | null) : null);
   const side = new Map<string, number>();
@@ -366,12 +329,6 @@ function blockIdPairs(bt: Tok[], b0: number, b1: number, st: Tok[], s0: number, 
   return pairs;
 }
 
-/**
- * A pure insertion or deletion next to equal tokens can sit at several equivalent places. Pick one
- * by rule so both sides' diffs agree: whole blocks at block boundaries when possible, else the
- * first place that starts a sentence (so a sentence added after a full stop is not ". Text" before
- * it, and two sentences that end alike do not share their full stop), else leftmost.
- */
 function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
   const boundary = (p: number) => p === bt.length || isBlockTok(bt[p]);
   const coreAt = (k: number) => {

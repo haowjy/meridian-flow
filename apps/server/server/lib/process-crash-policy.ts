@@ -22,7 +22,6 @@ function logProcessFault(
     name: event === "unhandledRejection" ? "unhandled_rejection" : "uncaught_exception",
     payload: {
       pid: process.pid,
-      // keep: read raw env here, never `env.ts`: createEnv() throws on bad config and would swallow the crash diagnostic
       nodeEnv: process.env.NODE_ENV,
       ...unknownToEventPayload(reason),
       ...context,

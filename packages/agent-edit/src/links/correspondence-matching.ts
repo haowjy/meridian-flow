@@ -40,8 +40,6 @@ function documentOrder(
     let count = 1;
     for (let cursor = 0; cursor < count; cursor++) {
       const active = queue[cursor];
-      // A synthetic dummy row represents unassigned optional columns. It allows
-      // alternating paths to exchange free columns without leaving a required one free.
       const choices = active === dummy ? optional : tight[active];
       for (const nextColumn of choices) {
         if (nextColumn === previous || (owner[nextColumn] < 0 && !required[previous])) {
@@ -74,7 +72,6 @@ function documentOrder(
 
   for (let row = 0; row < matching.length; row++) {
     for (const column of tight[row]) {
-      // Real columns are sorted by old occurrence, before equivalent unmatched dummies.
       if (column >= oldColumns || column === matching[row]) break;
       if (owner[column] >= 0 && owner[column] < row) continue;
       if (force(row, column)) break;
@@ -89,14 +86,11 @@ function assignment(
 ) {
   const n = rows.length;
   const complete = rows.every((row) => candidates[row].occurrences.length === columns.length);
-  // On a complete graph any maximum-strong matching extends to maximum cardinality.
-  // Else keep one dummy per written row: strong precedence can sacrifice compatible pairs.
   const m = complete ? Math.max(columns.length, n) : columns.length + n;
   const cost = new Float64Array(n * m * WIDTH);
   const localColumn = new Map(columns.map((column, i) => [column, i]));
   for (let row = 0; row < n; row++) {
     for (let column = 0; column < columns.length; column++) {
-      // One ineligible edge loses even to all dummies in the first tuple component.
       cost[(row * m + column) * WIDTH] = n + 1;
     }
     const candidate = candidates[rows[row]];
@@ -109,9 +103,6 @@ function assignment(
   const u = new Float64Array((n + 1) * WIDTH);
   const v = new Float64Array((m + 1) * WIDTH);
   if (m === n) {
-    // Square assignments cover every column. Subtracting each column minimum is
-    // dual-feasible here and avoids repeatedly rediscovering column-constant ranks.
-    // Rectangular assignments leave columns free, so their potentials must start at zero.
     for (let column = 0; column < m; column++) {
       let minimum = column * WIDTH;
       for (let row = 1; row < n; row++) {
@@ -206,8 +197,6 @@ function assignment(
       if (zero) choices.push(column);
     }
     choices.sort((a, b) => a - b);
-    // Square complete components can own every dummy, giving nonzero dummy potentials.
-    // Test their actual reduced costs, just like real columns.
     for (let column = columns.length; column < m; column++) {
       let zero = true;
       for (let k = 0; k < WIDTH; k++) {
@@ -247,7 +236,6 @@ export function matchOccurrences(candidates: readonly CandidateRow[], oldCount: 
         }
       }
     }
-    // All six ranks are additive, but their displacement scores use the original global indices.
     rows.sort((a, b) => a - b);
     const result = assignment(
       rows,

@@ -2,7 +2,6 @@ import { type AccountSettings, API_ACCOUNT_SETTINGS_PATH } from "@meridian/contr
 import { getJson, patchJson } from "./http-client";
 
 let generation = 0;
-/** Order browser reads against command settlements; SSR seeds start a new lifetime. */
 export function nextAccountSettingsGeneration(): number {
   return typeof window === "undefined" ? 0 : ++generation;
 }

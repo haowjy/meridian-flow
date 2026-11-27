@@ -86,8 +86,6 @@ export function CommandDriverProvider({
     if (!driver || !domain) return;
     watchDelivery(() => driver.delivering);
     const opened = driver.open();
-    // A project route loaded before the journal could be read took an unsent project for a missing
-    // one: load it again once a read succeeds.
     let stopWaiting = () => {};
     opened.catch(() => {
       stopWaiting = driver.subscribe(() => {

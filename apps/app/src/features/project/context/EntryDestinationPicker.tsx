@@ -71,7 +71,6 @@ function OpenPicker({
   const selection = useOptionalEntrySelection();
   const registry = useOptionalLiveDocumentSessionRegistry();
   const [error, setError] = useState<string | null>(null);
-  // Placed rows take focus where they land, not the row the picker opened from.
   const placedRows = useRef(false);
   const scheme = from?.scheme;
   const owner = from?.owner;
@@ -199,7 +198,6 @@ function OpenPicker({
     runMove({ actions, projectId }, plan, selection);
     placedRows.current = true;
     onOpenChange(false);
-    // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
     if (several) selection?.focus();
   }
 
@@ -279,7 +277,6 @@ function OpenPicker({
 
   return (
     <DrillInMenu
-      // The trees may resolve the initial destination after this open picker mounts.
       key={openAt.map((node) => node.id).join("/")}
       tree={tree}
       hereIds={openAt.map((node) => node.id)}

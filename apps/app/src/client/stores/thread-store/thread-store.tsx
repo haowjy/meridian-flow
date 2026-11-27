@@ -162,7 +162,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         const observe = (threadId: string, observation: SyncObservation) => {
           switch (observation.kind) {
             case "turn":
-              // The sync asks for its own read at a turn's end.
               turnChanged(threadId, observation.turnId, observation.status, { snapshot: false });
               break;
             case "read":
@@ -254,7 +253,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             const before = readCell(threadId)?.turns.find((turn) => turn.id === turnId);
             if (!before) return;
             update(threadId, (synced) => sync.patchTurnStatus(synced, turnId, status, patch));
-            // Unadmitted writer rows carry local knowledge, never a server lifecycle event.
             if (before.role === "user" && isOptimisticTurnId(turnId)) return;
             turnChanged(threadId, turnId, status, { snapshot: true });
           },

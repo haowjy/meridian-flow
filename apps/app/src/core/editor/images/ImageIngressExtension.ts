@@ -51,8 +51,6 @@ function settlePendingImages(editor: Editor): void {
   const { imports, range } = state.landing;
   sendIngressMessage(editor, { landing: null });
   const at = resolveAnchorIn(editor.state, { ...range, relative: null });
-  // Started together, so every import anchors the range at the one moment it is
-  // true: the instant the paste landed.
   if (at) for (const pending of imports) startImageImport(editor, pending, at);
 }
 export const ImageIngressExtension = Extension.create({
@@ -74,15 +72,6 @@ export const ImageIngressExtension = Extension.create({
     );
   },
 
-  /**
-   * The editor is going, so everything it was carrying goes with it.
-   *
-   * A picture lands through the editor that sent it: with no editor it would
-   * finish, write nothing, and leave a project asset no document mentions. The
-   * presence plugin releases this client's owner signal on the same teardown
-   * (`upload-presence.ts`), so peers stop being told a dead tab is still
-   * uploading.
-   */
   onDestroy() {
     for (const entry of ingressState(this.editor).pending.values()) {
       if (entry.kind === "upload") uploads.discard(entry.id);
@@ -166,7 +155,6 @@ export const ImageIngressExtension = Extension.create({
           ),
           clipboardTextSerializer: markdownClipboardSerializer,
           transformPasted: (slice, view) => {
-            // A drag moves pictures the editor already holds, as stored.
             if (view.dragging) {
               pasted = null;
               return slice;

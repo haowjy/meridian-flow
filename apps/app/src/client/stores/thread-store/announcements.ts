@@ -1,8 +1,3 @@
-/**
- * Client-only module singleton for screen-reader live regions. Announcements are
- * not SSR-rendered (see {@link AnnouncementRegion} in `__root.tsx`), so this
- * does not need per-request isolation like {@link thread-store}.
- */
 import { useCallback } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";

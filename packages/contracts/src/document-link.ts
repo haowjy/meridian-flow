@@ -70,7 +70,6 @@ export function resolveStoredLink(
     return resolveFolder(catalog.folderAt(address.uri));
   }
   const ref = parseLinkRef(link.ref);
-  // keep: A malformed ref must resolve gone; never fall back to its address or let another document capture it
   if (!ref) return { kind: "gone" };
   if (ref.kind === "doc") return resolveDocument(catalog.document(ref.documentId));
   if (ref.kind === "folder") return resolveFolder(catalog.folder(ref.folderId));

@@ -211,7 +211,6 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       } finally {
         docs.free();
       }
-      // A loaded room imports a seed only after commit; this one was empty, so reload it.
       await rooms.unload(live(documentId));
     },
     live: (documentId) => read(live(documentId)),

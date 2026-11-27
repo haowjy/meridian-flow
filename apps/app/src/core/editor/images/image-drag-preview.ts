@@ -62,13 +62,6 @@ export function imageDragPreviewPlugin(): Plugin {
   });
 }
 
-/**
- * The picture a dragstart is carrying, or null for anything else being dragged.
- *
- * Both ways up, because the drag source is either the picture's body (or the
- * `<img>` inside it) or the node view element one level ABOVE the body, and
- * neither is reachable from the other by `closest` alone.
- */
 function draggedPicture(target: Node): HTMLImageElement | null {
   if (!(target instanceof HTMLElement)) return null;
   const above = target.firstElementChild;

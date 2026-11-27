@@ -130,7 +130,6 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
       };
     }
     return results;
-    // `version` is the replay's input: the copy changing is what rebuilds a view
   }, [
     schemes,
     account,

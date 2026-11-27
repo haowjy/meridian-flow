@@ -29,7 +29,6 @@ export function ensureDevInfraUp(repoRoot: string): void {
   });
 }
 
-// keep: everything here is safe to repeat. A running container is left alone, an existing database is kept, and the baseline is installed only into a database that has none. A different installed baseline stops with the command that replaces it, because that one erases data
 export async function prepareDevDatabases(
   repoRoot: string,
 ): Promise<{ database: string; created: boolean }[]> {

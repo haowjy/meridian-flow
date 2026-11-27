@@ -137,16 +137,6 @@ export function mapLinkDraft(
   return { ...draft, ...at };
 }
 
-/**
- * The same link after a document change, or null when the writer's link is
- * gone. What keeps a surface aimed at one link from acting on another.
- *
- * Coordinates outlive the thing that was at them. A peer deletes the link and
- * the words after it slide back into those numbers; a peer edits the href and
- * the same range now means a different destination. Both read as "still there"
- * to a position alone, so the mark decides: same attributes, same destination,
- * and anything else means this surface has nothing left to act on.
- */
 export function relocateLink(
   state: EditorState,
   link: { anchor: LinkAnchor; identity: Mark },
@@ -155,8 +145,6 @@ export function relocateLink(
   const at = resolveLinkAnchor(state, link.anchor, mapping);
   if (!at) return null;
 
-  // One character in, and re-read whole: a writer typing inside a link grows
-  // it, and the surface should follow the mark rather than the old edges.
   const current = linkAt(state, at.from + 1);
   return current?.identity.eq(link.identity) ? current : null;
 }

@@ -24,16 +24,6 @@ export class FileEditRefusedError extends Error {
   }
 }
 
-/**
- * Runs `operation` with these grants bound. Returns the refusal a seam threw,
- * even when the write path caught the error and turned it into an outcome. `alsoLock` names
- * more owners the seam locks with the grants': those of a source the write changes outside
- * the grants' targets.
- *
- * A document's owner can move between the facts the grants were minted from and the seam's
- * locks. The seam then throws `TreeOwnersMoved` naming the owners the locks missed, and the
- * operation runs again from its transaction's start with them locked (`untilOwnersHold`).
- */
 export function runWithEditGrants<T>(
   access: Pick<FileAccess, "authorize" | "confirmEdit">,
   grants: readonly FileGrant<"edit" | "command">[],

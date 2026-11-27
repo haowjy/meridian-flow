@@ -31,12 +31,6 @@ interface Loaded {
   dirty: Set<DocKey>;
 }
 
-/**
- * The in-process adapter of `DocumentRooms` with its rows in memory: for tests, and for 1b, 1c and
- * 1d to build against before the Postgres adapter exists. It keeps the contract's orderings
- * (Live's subscribers before forks, a commit's import after its transaction) but saves only on
- * `flush` and `unload`: there is no debounce timer and no bound on loaded rooms.
- */
 export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRooms {
   const stored = new Map<string, Map<DocKey, SnapshotRow>>();
   const loadedRooms = new Map<string, Loaded>();
@@ -64,8 +58,6 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       listener({ room: loaded.room, batch, origin });
   };
 
-  // As the Postgres adapter: what an import changed is saved and sent, and a restore the room's
-  // copy wrote on it (design §1, rule 1) goes out after the batch as the room's own.
   const landed = (loaded: Loaded, { changed, restore }: Imported) => {
     for (const key of changed) loaded.dirty.add(key);
     if (restore.length) relay(loaded, encodeChanges(restore), "server:restore");

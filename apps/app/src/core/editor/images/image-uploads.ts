@@ -113,11 +113,6 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   }
   const at = resolveNodeHold(editor.state, target);
   const node = at && editor.state.doc.nodeAt(at.from);
-  // Read back rather than trusted: the hold answers where its node is, and the
-  // registration answers whether that node is still something a picture can go
-  // into (a figure counts, and so does the inline picture). Nothing is opened
-  // for a slot that went away while the chooser was up — no entry, no request,
-  // and no asset the project has no use for.
   if (!at || !node || objectSurfaceKind(node) !== "image") return;
   const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
   const id = openUpload(editor, {
@@ -125,8 +120,6 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
     alt: existing || imageAltFromFilename(file.name),
     landing: "replace",
   });
-  // Bookkeeping rather than an edit, so it stays out of the writer's undo stack:
-  // what they will undo is the picture, and that is the landing's business.
   writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: id }, { history: false });
   sendUpload(editor, host, id, file);
 }
@@ -324,8 +317,5 @@ function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
   // open Undo step (`editor-history.ts`), so the replacement below cannot merge with whatever the writer typed a moment
   // before their bytes arrived.
   writeSlot(editor, at.from, { [UPLOAD_TOKEN_ATTR]: null }, { history: false, closes: id });
-  // The whole of the writer's edit, in one step they can take back: the same
-  // node, the new picture, and nothing else touched. The position still holds
-  // because an attribute write moves nothing.
   writeSlot(editor, at.from, picture, { history: true });
 }

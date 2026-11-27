@@ -106,8 +106,6 @@ export function resolveNodeHold(state: EditorState, hold: NodeHold): AnchorRange
       : null;
   }
   const at = resolveAnchorIn(state, hold);
-  // Both seams on one point is a node that went away, which is all the answer
-  // there is without a shared document behind the hold.
   if (!at || at.from >= at.to) return null;
   const $pos = state.doc.resolve(at.from);
   const node = $pos.nodeAfter;
@@ -128,8 +126,6 @@ export function holdBlock(state: EditorState, pos: number): NodeHold | null {
 
 export function resolveBlockHold(state: EditorState, hold: NodeHold): AnchorRange | null {
   const at = resolveNodeHold(state, hold);
-  // A peer who wrapped the block in something else left it somewhere no block
-  // surface can act on.
   return at && state.doc.resolve(at.from).depth === 0 ? at : null;
 }
 

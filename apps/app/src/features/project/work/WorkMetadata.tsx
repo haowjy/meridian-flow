@@ -67,7 +67,6 @@ export function useWorkMetadataController(
     end("retried");
     setEditing(false);
     focusDisplay();
-    // The command is the driver's: the announcement waits for what it settles to.
     saveWork({ goal }).then(
       () => announce(t`Goal saved`),
       (cause: unknown) => {

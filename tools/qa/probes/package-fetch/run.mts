@@ -49,7 +49,6 @@ function header(name: string, size: number, type: "0" | "5"): Buffer {
 const root = `pack-${sha}/`;
 const parts: Buffer[] = [header(root, 0, "5")];
 for (let index = 0; index < FILES; index += 1) {
-  // Random bytes, so gzip can't shrink the download below the expanded size.
   const body = randomBytes(FILE_BYTES);
   parts.push(header(`${root}skills/s${index}.md`, body.length, "0"), body);
   parts.push(Buffer.alloc((512 - (body.length % 512)) % 512));

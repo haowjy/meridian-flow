@@ -3,7 +3,6 @@ import { BlockList, isIP } from "node:net";
 import { Agent, buildConnector } from "undici";
 import { OUTBOUND_CONNECT_OPTIONS } from "./outbound-http1";
 
-// keep: allow only global unicast, with IPv6 confined to 2000::/3 minus the blocks that embed or route to non-public space; a list of refusals would miss whatever nobody listed
 const IPV4_SPECIAL = new BlockList();
 const ipv4Special = (network: string, prefix: number) =>
   IPV4_SPECIAL.addSubnet(network, prefix, "ipv4");

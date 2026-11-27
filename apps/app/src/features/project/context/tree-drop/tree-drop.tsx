@@ -160,11 +160,6 @@ type DropProps = Pick<
 
 const NO_PROPS: DropProps = {};
 
-/**
- * Targets nest (a row inside its group): the innermost one with a route for the
- * payload claims each event, even when its answer is "nothing", so an outer
- * target never takes over (or counts down) a drag its rows chose to ignore.
- */
 const claimed = new WeakSet<Event>();
 
 export type RowEdges = {
@@ -192,19 +187,6 @@ function targetAt(target: TreeDropTarget, edges: RowEdges | undefined, event: Dr
   };
 }
 
-/**
- * Drop handlers for one row or region. A file row passes its folder as the
- * target, so hovering anywhere in an open folder lights that folder; with
- * `edges`, the row's top and bottom bands are sibling positions instead, and
- * each event resolves to exactly one target. An edge claims its event even
- * when its answer is "nothing", so the folder region under it never takes
- * over. An element holds at most one target at a time and always gives that
- * one back (moving from one edge to the other releases the first and its
- * spring at once, without waiting for `dragleave`), whatever its verdict is
- * by then. `reveal` shows what the row's own target holds (a collapsed folder
- * opens) after hovering it accepted for 600 ms; what the drop places, its route
- * shows (`revealPlaced`). Edges don't spring.
- */
 export function useTreeDropTarget(
   target: TreeDropTarget,
   options: { reveal?: () => void; edges?: RowEdges } = {},
@@ -271,7 +253,6 @@ export function useTreeDropTarget(
         event.dataTransfer.dropEffect = "none";
         return;
       }
-      // Only an accepted target cancels the default; a refused one keeps the no-drop cursor.
       event.preventDefault();
       event.dataTransfer.dropEffect = kind === "files" ? "copy" : "move";
     },

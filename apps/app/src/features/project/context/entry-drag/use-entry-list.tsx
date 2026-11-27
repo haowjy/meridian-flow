@@ -115,8 +115,6 @@ export function useEntryList({
       if (planned.kind !== "ready") return null;
       return { kind: "accept", label: moveLabel(planned) };
     };
-    // `dragover` repeats many times a second over one target; its answer changes
-    // only with the drag, the target or what the list shows.
     let last: { key: string; inputs: readonly unknown[]; verdict: EntriesVerdict | null } | null =
       null;
     return {

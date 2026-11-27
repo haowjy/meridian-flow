@@ -94,7 +94,6 @@ export interface ModelsSnapshot {
   providers: Readonly<Record<string, Readonly<Record<string, SnapshotModel>>>>;
 }
 
-// keep: money stays decimal: nano-dollars as bigint, printed with at least two places
 function toNano(usd: number): bigint {
   return BigInt(Math.round(usd * 1e9));
 }

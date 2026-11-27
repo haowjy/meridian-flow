@@ -83,15 +83,7 @@ export function EditorPopover({
   const measure = useRef<() => DOMRect | null>(() => null);
   measure.current = anchorRect ?? (() => (at ? new DOMRect(at.x, at.y, 0, 0) : null));
 
-  // The last place this anchor was, kept for as long as the surface is open.
-  // floating-ui asks for a rect synchronously and has no way to hear "not just
-  // now", so a single frame where the anchor cannot be measured — a remote
-  // write rebuilding the manuscript between two paints — answers with where it
-  // last was rather than with a corner. Never measured at all is the different
-  // answer: there is nowhere to put this, so it does not open.
   const placed = useRef<DOMRect | null>(null);
-  // Measuring forces layout, so a closed surface never measures: a page
-  // full of closed popovers otherwise reflows on every render.
   const here = open ? measure.current() : null;
   if (!open) placed.current = null;
   else if (here) placed.current = here;

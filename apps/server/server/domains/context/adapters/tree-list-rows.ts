@@ -208,12 +208,6 @@ export async function claimNodeIds(
   }
 }
 
-/**
- * Claims the node ids a client's creates name, each on its own: an id that is not a uuid, or that
- * a document, a list or another list's node already has, is a failed claim. No row is made for
- * it and the rest of the update stands: the node shows in its writer's own tree and opens
- * nothing, and nobody else's document is touched. Returns the node ids that failed.
- */
 export async function claimNodeIdsEach(
   tx: DrizzleDb,
   listId: string,
@@ -331,7 +325,6 @@ async function writeLive(
       locationVersion: (before?.version ?? 0n) + (bumpedIds.has(row.id) ? 1n : 0n),
       trashRecord,
       trashedBy: trashed(row.id)?.by ?? null,
-      // When the server admitted that delete: kept while the same delete is in force.
       trashedAt:
         trashRecord === null
           ? null
@@ -468,12 +461,6 @@ async function dropForeignSources(
     for (const [id, row] of rows) if (!kept.has(row.sourceId)) rows.delete(id);
 }
 
-/**
- * Keeps `documents.in_no_view_since` true to the rows: null while a view shows the document (a
- * node row in live or in a Work's tree), the time it left the last view otherwise. Retention
- * purges a document that has been in no view for the window (a Discard offers Undo, so its text
- * waits).
- */
 async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void> {
   for (const batch of chunks([...new Set(ids)])) {
     const list = sql.join(
@@ -576,8 +563,6 @@ export async function syncRows(
         ),
     ),
   );
-  // A live change to a document a draft has pending text in changes the Work's list (a move's place),
-  // and a trash or restore its count, though the Work has no row there.
   const holding = await draftsWithText(tx, kept, [...liveIds].filter(isUuid));
   const changedDrafts: string[] = [...holding];
   liveChangedUnder.push(...holding.filter((draftId) => !liveChangedUnder.includes(draftId)));

@@ -136,8 +136,6 @@ function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
   ObjectPhysicsExtension,
-  // Not lanes: the editor's own Tab and the cell's own Enter. Both need the
-  // kernel's registry to reach a scope, so they mount exactly where it does.
   TabKeymapExtension,
   TableEnterKeymapExtension,
   BlockDragExtension,
@@ -358,8 +356,6 @@ export function createStandaloneEditorExtensions({
       : []),
     ...(wikilinkPaste ? [WikilinkPasteExtension.configure(wikilinkPaste)] : []),
     MarkdownAutoformatExtension,
-    // Below the autoformat, which owns the delimiters this deliberately does
-    // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
     AutoPairExtension,
     PassageHighlightExtension,
     ReviewChangesExtension,

@@ -124,7 +124,6 @@ export class PresentedDocuments {
       (lists) => [lists, lists.get(projectId)] as const,
     );
     for (const [lists] of stale) lists.delete(projectId);
-    // A change to a kept host's descriptor leaves `documents` as it was: keep its array.
     for (const [lists, prior] of stale) {
       const next =
         lists === this.presentedLists ? this.documents(projectId) : this.shown(projectId);

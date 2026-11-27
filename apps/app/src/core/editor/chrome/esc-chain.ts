@@ -2,16 +2,6 @@ import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 
 export type GesturePhase = "idle" | "drag" | "sweep";
 
-/**
- * What the kernel knows about one open transient surface, and the identity
- * every other seam names it by.
- *
- * `openLayer` mints one per open layer and hands it back; `chrome.layers`
- * holds those same objects, so a token is compared by identity rather than by
- * its id. That is what lets a layer's keys say which layer they belong to: the
- * merge asks whether this exact surface is still open, and a token missing
- * from the list is a surface already out of the walk home.
- */
 export type ChromeLayer = {
   readonly id: string;
   readonly ownerId: string;
@@ -28,7 +18,6 @@ export type EscStep =
   | { kind: "close-layer"; layerId: string }
   | { kind: "select-object"; pos: number }
   | { kind: "caret-after-block"; pos: number }
-  /** Already home. The kernel must let the key through untouched. */
   | { kind: "at-home" };
 
 export function escStep(situation: EscSituation): EscStep {
@@ -44,8 +33,6 @@ export function escStep(situation: EscSituation): EscStep {
     return { kind: "caret-after-block", pos };
   }
 
-  // Prose inside an object (a table cell) is one step further from home than
-  // prose in the document: leaving the sentence comes before leaving the table.
   if (objectPos !== null) return { kind: "select-object", pos: objectPos };
 
   return { kind: "at-home" };

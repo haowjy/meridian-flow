@@ -73,8 +73,6 @@ function folderChange(
 ): FolderChange {
   if (records.some((record) => record.type === "create")) return { kind: "new" };
   if (records.at(-1)?.type === "delete") return { kind: "deleted" };
-  // The name and place the Work's tree shows against live's. An Undo carries what its author's
-  // copy showed, and sets nothing itself, so after one the trees say what changed.
   const node = records[0]?.node;
   const shown = node === undefined ? undefined : work.nodes.get(node);
   const before = node === undefined ? undefined : live.nodes.get(node);
@@ -89,7 +87,6 @@ function folderChange(
     before.name !== shown.name
       ? before.name
       : null;
-  // Where the Work sends it, which is not where it stands when the move cannot land.
   const into =
     move?.type === "move"
       ? move.parent

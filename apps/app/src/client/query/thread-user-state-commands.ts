@@ -95,12 +95,6 @@ export function projectThreadUserState(
   };
 }
 
-/**
- * The chats pinned as the writer last set them: the server's pinned feed (which drops an unpinned
- * row itself), plus chats pinned since that feed was fetched, so a pin shows before the refetch
- * and doesn't drop out between the server's answer and the refetch. A record no newer than the
- * feed is the feed's to judge: it may be a pin removed in another tab.
- */
 export function usePinnedChatIds(
   projectId: string,
   confirmed: readonly string[],

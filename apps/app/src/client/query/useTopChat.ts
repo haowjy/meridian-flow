@@ -24,7 +24,6 @@ export function useTopChat(
   thread: ChatThread | null | undefined,
 ): TopChat | null {
   const { threads } = useProjectThreads(projectId ?? "", { enabled: Boolean(projectId && thread) });
-  // A thread made in this tab carries no ref until the list names it; the list's row is the newer.
   const listed = thread ? threads?.find((candidate) => candidate.id === thread.id) : undefined;
   return topChatOf(listed ?? thread, threads);
 }

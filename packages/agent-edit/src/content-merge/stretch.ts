@@ -62,7 +62,6 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
       cut[s] = 1;
     } else if (blockKey(base[i]) !== blockKey(side[j])) kind[s] = TEXT;
   }
-  // A gap between two blocks of one change is inside that change.
   for (let g = 1; g < base.length; g++)
     if (kind[2 * g - 1] && kind[2 * g + 1] && item(2 * g - 1) === item(2 * g + 1)) {
       interior[2 * g] = 1;

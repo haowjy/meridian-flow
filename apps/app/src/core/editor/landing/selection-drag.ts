@@ -201,7 +201,6 @@ function liftSelection(
   window.addEventListener("keydown", onKey, { capture: true, signal: ac.signal });
   window.addEventListener("keyup", onKey, { capture: true, signal: ac.signal });
 
-  // At the press, not the pointer: a fast first move may already be off the selection.
   send("dragstart", view.dom, null, press);
   const endChrome = chrome.beginDrag(() => finish(false));
   doc.documentElement.classList.add(ROOT_CLASS);

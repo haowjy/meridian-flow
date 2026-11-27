@@ -79,7 +79,6 @@ export function matchFileSuggestions(
 ): FileSuggestion[] {
   const trimmed = query.trim();
   const pathQuery = trimmed.toLocaleLowerCase();
-  // A name holds what the writer typed as it is stored (`1/2` as `1∕2`); a path keeps its `/`.
   const nameQuery = trimmed ? normalEntryName("folder", trimmed).toLocaleLowerCase() : "";
   return entries
     .map((entry, order) => ({ entry, order, rank: matchRank(entry, nameQuery, pathQuery) }))
@@ -99,7 +98,6 @@ function matchRank(entry: FileSuggestion, nameQuery: string, pathQuery: string):
     name.startsWith(nameQuery, index) || name.startsWith(pathQuery, index);
   if (at(0)) return 0;
   if (nameBoundaryIndexes(name).some(at)) return 1;
-  // Not the scheme: "man" would otherwise match every Manuscript file.
   return entry.path.toLocaleLowerCase().includes(pathQuery) ? 2 : null;
 }
 

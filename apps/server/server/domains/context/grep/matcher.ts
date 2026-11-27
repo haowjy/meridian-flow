@@ -31,11 +31,6 @@ const PASSAGE_CAP = 3;
 export interface GrepMatcher {
   count(text: string, all: boolean, signal: AbortSignal): Promise<number>;
   passages(texts: readonly string[], limit: number, signal: AbortSignal): Promise<Passage[]>;
-  /**
-   * Cheap whole-text prefilter: false only if no line can match. Present when a
-   * case-insensitive pattern requires a literal. It only skips documents; every
-   * hit is confirmed by the worker.
-   */
   test?(text: string): boolean;
 }
 

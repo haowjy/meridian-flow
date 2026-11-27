@@ -9,12 +9,6 @@ import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { applyThreadRenameFence, captureThreadRenameFence } from "./thread-rename-command";
 
-/**
- * The project thread list read is fenced against in-flight thread renames: a
- * response captured before a rename revises the title is re-projected instead
- * of restoring the pre-rename row. Exposed so non-observer reads (tests,
- * imperative refetches) share the same fence.
- */
 export function projectThreadsQueryOptions(client: QueryClient, projectId: string) {
   return {
     queryKey: projectQueryKeys.threads(projectId),

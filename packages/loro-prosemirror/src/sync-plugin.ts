@@ -165,8 +165,6 @@ export function loroSyncPlugin(options: LoroSyncOptions): Plugin<LoroSyncState> 
           let kept = was;
           if (changed.has(STRUCTURE_KEY)) {
             comments = visibleComments(docs);
-            // A peer's removal on the head's path is kept; a local write (an Undo, a command)
-            // keeps nothing new, and what it brought back is no longer kept.
             const path = head === null ? [] : removedOnPath(docs, head);
             const now = remote ? path : path.filter((id) => was.has(id));
             if (now.length !== was.size || now.some((id) => !was.has(id)))

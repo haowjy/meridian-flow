@@ -65,7 +65,6 @@ function composeName(firstName: string | null, lastName: string | null): string 
 }
 
 export async function validateAuthConfiguration(): Promise<void> {
-  // keep: raw process.env on purpose (see `@meridian/contracts/dev-auth`), and it throws when the dev bypass is set outside a local dev process
   if (resolveDevAuthUser(process.env)) return;
   await ensureAuthConfig();
 }

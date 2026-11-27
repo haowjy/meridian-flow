@@ -23,7 +23,6 @@ export async function uploadResponse<T>(request: Promise<Response>): Promise<T> 
       typeof payload === "object" && payload && "message" in payload ? payload.message : null;
     if (message === "invalid_filename")
       throw new UploadRefusedError(t`Couldn't upload`, { cause: message });
-    // The browser checks the size before it asks, so this is the server holding the line.
     if (message === "too_large") throw new UploadRefusedError(fileTooLargeMessage());
     throw (
       meridianApiErrorFromPayload(payload, value.status) ??

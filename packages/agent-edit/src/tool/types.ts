@@ -58,12 +58,6 @@ export interface WriteContext {
   uploadsChat?: string;
   includeNodes?: boolean;
   copiedNodes?: readonly Block[];
-  /**
-   * A host's whole-document write, bound outside its transaction (§6.2): the
-   * `create` command's content as nodes whose refs are assigned and whose
-   * ahead refs are registered. Nothing is parsed or assigned again; an
-   * overwrite aligns them against the document as it is when applied.
-   */
   boundNodes?: readonly Block[];
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   frontiers?: FrontierLookups;

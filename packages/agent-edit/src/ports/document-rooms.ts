@@ -56,11 +56,6 @@ export interface AgentEditRooms {
 }
 
 export interface AgentEditRoomsHost<Tx> {
-  /**
-   * The room a read of `documentId` goes to for this call's chat: the draft's fork room for a
-   * Draft chat, whether or not the draft has written there, and the Live room for a Live chat or a
-   * document only the draft holds. Never "does the fork exist".
-   */
   roomFor(documentId: string): Promise<DocumentRoom>;
   transaction(): Tx;
   origin: RoomOrigin;

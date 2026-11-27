@@ -136,9 +136,6 @@ export function ObjectControls({ editor }: { editor: Editor }) {
       claim: ({ element, event }) => {
         const found = objectSurfaceAt(editor.view, element);
         if (!found || found.kind === "code") return false;
-        // Held from the press, not read from hover: a right-click arrives
-        // before hover intent settles, and the menu must act on what was
-        // pointed at.
         contextAt.current = { x: event.clientX, y: event.clientY };
         holdContextMenu(found.pos);
         const selected = selectObjectTransaction(editor.state, found.pos);
@@ -148,9 +145,6 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     });
   }, [chrome, editor, holdContextMenu]);
 
-  // The ladder's floor for a caret in a plain fence. The fence's position comes
-  // from the kernel's own resolver, and the hold is what the menu then carries,
-  // so a peer typing above it does not point the verbs at another block.
   useEffect(() => {
     if (!chrome) return;
     return chrome.registerContextClaim({
@@ -165,9 +159,6 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     });
   }, [chrome, editor, holdFenceMenu]);
 
-  // Resolved every render, so each surface keeps acting on the object it was
-  // opened on as the document moves under it. Null while a node view is being
-  // rebuilt: the surface stays open on its hold and paints again next frame.
   const lightboxTarget = objectSurfaceForHold(editor.view, lightbox);
   const contextTarget = objectSurfaceForHold(editor.view, contextMenu);
   const fenceTarget = objectSurfaceForHold(editor.view, fenceMenu);

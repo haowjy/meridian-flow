@@ -72,9 +72,6 @@ export function pointerSpan(points: readonly ViewerPoint[]): PointerSpan | null 
 
   if (points.length < 2) return { centroid, spread: 0 };
 
-  // Mean distance from the centroid rather than the first-to-second distance:
-  // a third finger landing mid-pinch then shifts the scale smoothly instead of
-  // redefining which two fingers count.
   let total = 0;
   for (const point of points) {
     total += Math.hypot(point.x - centroid.x, point.y - centroid.y);

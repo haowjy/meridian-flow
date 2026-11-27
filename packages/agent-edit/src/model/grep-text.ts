@@ -24,16 +24,6 @@ export function grepBlockText(destinationFree: string, node: PMNode, verbatim: b
   return verbatim ? node.textContent : markdownPlainText(destinationFree);
 }
 
-/**
- * Where a range of a block's destination-free markdown sits in the block's real body.
- *
- * The two differ only inside link and image occurrences, so each occurrence's two spans
- * (the markup package's own source spans, never a re-read of the link grammar) are
- * compared: what both share at the front and at the back lines up, and what sits between
- * (the destination, which the destination-free form spells empty) maps to the body's
- * whole destination. A range that starts or ends inside it widens to cover it. Null when
- * the two parses disagree on how many occurrences there are.
- */
 export function bodyRange(
   markup: MarkupCodec,
   destinationFree: string,

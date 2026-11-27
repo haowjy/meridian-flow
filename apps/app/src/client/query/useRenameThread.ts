@@ -28,7 +28,6 @@ export function useRenameThread(
   const confirmedRef = useRef(onConfirmed);
   confirmedRef.current = onConfirmed;
 
-  // Account replacement drops the whole record and its optimistic projection.
   useEffect(() => {
     if (!accountSignal) return;
     const onAbort = () => discardThreadRename(client, projectId, threadId);
@@ -67,8 +66,6 @@ export function useRenameThread(
     },
   });
 
-  // Rejects only for a definitive refusal of this intent, after the title has
-  // been reverted; an unknown outcome keeps the title and reconciles quietly.
   return useCallback(
     async (title: string) => {
       const trimmed = title.trim();

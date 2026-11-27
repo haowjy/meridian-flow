@@ -1,6 +1,5 @@
 import type { Editor } from "@tiptap/core";
 
-/** A box in the overlay's coordinates. Never mix one with a viewport rect. */
 export type OverlayBox = { left: number; top: number; right: number; bottom: number };
 
 /**

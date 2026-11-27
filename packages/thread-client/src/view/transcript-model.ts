@@ -333,7 +333,6 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
     if (!row) continue;
-    // keep: A reply never spans a fork point or two owners
     if (index > 0 && ownerOf(rows[index - 1]) !== ownerOf(row)) finish();
     switch (row.kind) {
       case "compaction":

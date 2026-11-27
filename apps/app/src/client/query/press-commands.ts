@@ -24,10 +24,6 @@ export type PressUndoBody = { projectId: string; pressCommandId: string };
 
 export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
 
-/**
- * A press or Undo holds the lane of each draft it presses, so it goes after every earlier press
- * on any of them: a Work's press after a Discard of one of its drafts' chapters, not beside it.
- */
 const PRESS_LANE = "press:";
 
 export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[] {
@@ -59,8 +55,6 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
     const { projectId } = record.body as PressBody | PressUndoBody;
     const since = record.settledAt ?? Date.now();
     const before = since <= opened;
-    // The journal's press holds its rows until every draft list on screen has it
-    // (`DraftCommandOwner.followPresses`); a list read before it opened already does.
     const read = whenRead(client, { queryKey: projectQueryKeys.draftsOf(projectId) }, before);
     void Promise.all([
       before
@@ -116,7 +110,6 @@ export function submitPress(driver: CommandDriver, body: PressBody) {
   });
 }
 
-/** `drafts`: the press's own, so the Undo goes after it. */
 export function submitPressUndo(
   driver: CommandDriver,
   drafts: readonly string[],

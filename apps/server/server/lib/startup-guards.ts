@@ -103,7 +103,6 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   }
 
   if (isProduction) {
-    // keep: the local store's tokens authorize writes, so a known secret lets anyone forge one
     if (config.OBJECT_STORE_PROVIDER === "local")
       requireRealSecret(
         errors,

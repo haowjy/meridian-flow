@@ -93,8 +93,6 @@ export function useMainTabCommands({
       if (key === mainKey) show(next);
     },
     closeAll: async ({ keepMain }: { keepMain: boolean }) => {
-      // Main leaves first: while it still shows an item, that item's arrival puts its tab back
-      // (`useMainArrival`). An Untitled page leaves later than a filed one.
       if (!keepMain) await showEmpty();
       closeAllMainTabs(accountId, projectId, kind);
     },
@@ -405,7 +403,6 @@ function DocumentTabChip({
         onClick={(event) => {
           const focused = event.currentTarget === window.document.activeElement;
           onSelect();
-          // Each document's page has its own band: the focus follows to this tab in the new one.
           if (focused) holdFocus(() => selectedTabFor(key));
         }}
         className="focus-ring absolute inset-0"
@@ -536,12 +533,6 @@ function TabCloseButton({
   );
 }
 
-/**
- * While the writer closes tabs with the pointer, the tabs keep the width they had, so the next
- * close lands under the pointer (Chrome's rule); they resize once the pointer leaves the strip.
- * One value per window, outside the strip: each document has its own band, so closing main's tab
- * draws a new strip.
- */
 let heldTabWidth: number | null = null;
 const heldTabWidthListeners = new Set<() => void>();
 
@@ -554,8 +545,6 @@ function setHeldTabWidth(width: number | null) {
 function holdTabWidth(chip: HTMLElement | null) {
   if (!chip) return;
   const first = heldTabWidth === null;
-  // An inactive tab's width: at the minimum the open tab is wider (it keeps room for its close),
-  // and holding that would widen every tab under the pointer.
   const inactive = chip
     .closest("[data-main-tab-strip]")
     ?.querySelector('[role=tab][aria-selected="false"]')?.parentElement;
@@ -645,7 +634,6 @@ function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
   event.preventDefault();
   const next = stops[Math.max(0, Math.min(stops.length - 1, to))];
   next?.focus({ preventScroll: true });
-  // The chip, not its overlay button, carries the scroll margin that clears the edge fade.
   next?.parentElement?.scrollIntoView({ inline: "nearest", block: "nearest" });
 }
 
@@ -676,8 +664,6 @@ function TabChipFrame({
       {...tabProps}
       data-active-tab={active || undefined}
       className={cn(
-        // No h-full: items-stretch sizes the chip so the active tab's top margin subtracts from
-        // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
         "group scroll-mx-6 gap-1.5",
         tabChipClass(active),
         active && surface === "review" && "[--tab-chip-surface:var(--color-review)]",

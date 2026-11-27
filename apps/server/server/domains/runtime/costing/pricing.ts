@@ -99,7 +99,6 @@ function formatUsdFromMicros(usdMicros: bigint): string {
 }
 
 export function meteredMillicreditsFromRaw(rawUsdMicros: bigint): bigint {
-  // keep: USD micros convert to millicredits as ceil(raw * 115 / 1000), with a 1.15 margin
   return rawUsdMicros === 0n
     ? 0n
     : (rawUsdMicros * COST_MULTIPLIER_NUMERATOR + COST_MULTIPLIER_DENOMINATOR - 1n) /

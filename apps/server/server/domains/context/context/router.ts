@@ -445,8 +445,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!r.ok) return r;
       const { adapter, scheme, authority, canonical } = r.value;
 
-      // The adapter gets the path as written: it tries the exact stored name before the
-      // codec's, so a file kept as `binary.md` is found beside a document `binary`.
       const result = await callAdapter(canonical, () => adapter.stat(resolved.value.path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });

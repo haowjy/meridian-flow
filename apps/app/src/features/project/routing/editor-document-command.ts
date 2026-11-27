@@ -60,7 +60,6 @@ export function createEditorDocumentCommand({
       }
       const preparedTab = options?.document ? tabAtLocator(options.document, target) : undefined;
       const itemKey = options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined);
-      // The same document on the same draft keeps its review unless the open names one.
       const keepsReview =
         options?.review === undefined &&
         sameDocument &&
@@ -110,7 +109,6 @@ export function createEditorDocumentCommand({
         }
       }
       const replace = options?.replace ?? false;
-      // The push records the page it was opened from, so closing goes Back there (`main-review`).
       const state =
         opensReview && !replace && current.addressDocumentId
           ? reviewOpenedFromMark(current.addressDocumentId)
@@ -148,7 +146,6 @@ export function prepareEditorDestination(
   const destination: ProjectDestination = target.path
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };
-  // Only a Scratch document puts an owner in the address; the scope never is one.
   const scratchOwner =
     target.scheme === "scratch" && (target.workId || target.rootThreadId)
       ? scratchOwnerKey({ workId: target.workId ?? "", rootThreadId: target.rootThreadId })

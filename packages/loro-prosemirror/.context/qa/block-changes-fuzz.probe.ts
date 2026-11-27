@@ -323,7 +323,6 @@ export function runScript(seed, { verbose = false } = {}) {
     try {
       const r = run(cmd);
       commit(d.live, r.live);
-      // A room forwards its forks on every Live commit, before the fork's own batch lands.
       d.forward();
       commit(d, r.fork);
       d.forward();
@@ -1257,7 +1256,6 @@ export function runScript(seed, { verbose = false } = {}) {
         if (g.chance(0.5)) writerEdit();
       }
     }
-    // After the seeded steps, so a seed's script up to here is what it was before these cases.
     halves();
     neighbours();
     syncLive();

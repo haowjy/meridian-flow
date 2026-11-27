@@ -33,8 +33,6 @@ function refusal(blockedReason: string | null | undefined, { className, onSelect
   return {
     "aria-disabled": true,
     className: cn(REFUSED_ROW, className),
-    // The menu stays open on a refused select: the writer came for the reason,
-    // and closing would take it away on the frame they asked for it.
     onSelect: (event: Event) => event.preventDefault(),
   };
 }

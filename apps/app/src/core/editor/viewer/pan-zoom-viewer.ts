@@ -60,7 +60,6 @@ export type PanZoomViewer = {
   readonly pan: ViewerPoint;
   readonly fitted: boolean;
   sizes(): ViewerSizes;
-  /** `at` is host-relative; omitted means the host's center. */
   zoomBy(factor: number, at?: ViewerPoint): void;
   zoomTo(scale: number, at?: ViewerPoint): void;
   panBy(delta: ViewerPoint): void;
@@ -128,8 +127,6 @@ export function createPanZoomViewer({
   };
 
   const commit = (next: ViewerTransform, { keepsFit = false } = {}) => {
-    // Inert after teardown: a React effect or a settled promise calling in late
-    // must not write to an element the caller has already moved on from.
     if (destroyed) return;
     if (
       next.scale === transform.scale &&
@@ -168,10 +165,7 @@ export function createPanZoomViewer({
   };
 
   const onPointerDown = (event: PointerEvent) => {
-    // Mouse right/middle belong to the context menu and the browser.
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    // Owning the gesture means owning the selection it would otherwise start:
-    // drag pans (§5.2), so a native text drag inside a label must not begin.
     event.preventDefault();
     host.setPointerCapture(event.pointerId);
     pointers.set(event.pointerId, hostPoint(event));
@@ -203,8 +197,6 @@ export function createPanZoomViewer({
   const endPointer = (event: PointerEvent) => {
     if (!pointers.delete(event.pointerId)) return;
     releaseCapture(event.pointerId);
-    // Re-baseline: lifting one finger of a pinch must continue the drag from
-    // where the remaining finger is, not jump by the centroid's shift.
     span = pointerSpan([...pointers.values()]);
     if (pointers.size === 0) delete host.dataset.panning;
   };
@@ -249,9 +241,6 @@ export function createPanZoomViewer({
   host.addEventListener("contextmenu", onContextMenu);
   host.addEventListener("lostpointercapture", onLostCapture);
 
-  // A view the writer has moved keeps its transform: a window resize, a source
-  // pane opening, or a re-render is not a request to lose your place. Only an
-  // untouched view follows the new shape.
   const resize = () => {
     if (!destroyed && fitted) fit();
   };

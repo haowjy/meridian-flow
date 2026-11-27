@@ -35,7 +35,6 @@ export class ConnectivityHints {
     const offline = () => {
       this.cancelPending();
       for (const subscriber of this.subscribers) {
-        // A new network recovery must not be suppressed by a pre-outage wake.
         subscriber.lastRetry = -Infinity;
         subscriber.listener("suspect-offline");
       }

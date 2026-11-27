@@ -34,7 +34,6 @@ export function DocumentPropertyValue({
     return (
       <ul className="flex flex-wrap gap-1">
         {value.map((item, index) => (
-          // The same word can appear twice in a list, so the position keeps the keys apart.
           <li key={`${index}:${String(item)}`} className="flex">
             <Chip kind="label" className="font-normal text-foreground">
               {typeof item === "boolean" ? <Flag value={item} /> : String(item)}
@@ -46,6 +45,5 @@ export function DocumentPropertyValue({
   }
   if (typeof value === "boolean") return <Flag value={value} />;
   if (typeof value === "object") return source === null ? null : <YamlBlock text={source} />;
-  // Numbers and dates are shown as written: a year is not "2,025".
   return <span className="whitespace-pre-wrap break-words">{String(value)}</span>;
 }

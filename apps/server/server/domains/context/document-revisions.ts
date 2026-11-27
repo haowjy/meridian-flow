@@ -32,10 +32,7 @@ export function createDocumentRevisions(deps: {
     const primary = await deps.threadWorks.findPrimary(threadId);
     const work = primary ? await deps.works.findById(primary.workId) : null;
     const revisions = new Map<string, string | null>();
-    // Archive restricts writes, not the revision reads used by summaries and compaction.
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
-    // Each document's decision says where this thread's writes to it land, so the revision read is
-    // of that version: the policy decides, not the chat's mode.
     const decisions = valid
       ? await deps.fileAccess.listAccess(
           {

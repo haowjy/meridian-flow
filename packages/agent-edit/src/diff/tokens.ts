@@ -1,12 +1,3 @@
-/**
- * The token model every diff caller shares: a document's top-level blocks flattened to block starts,
- * words with the whitespace before them, punctuation, inline atoms and whole non-text blocks.
- *
- * A text token's key is its marks and text. Its leading whitespace stays outside the key because it
- * depends on what precedes the token (a split turns " word" into "word"); alignment ignores it and
- * the hunk layer reports a difference only where the same two tokens are neighbours on both sides.
- */
-
 import { blankDocument, newBlockId } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
@@ -94,9 +85,6 @@ export function tokenizeBlock(node: PMNode): Tok[] {
       key: `B${node.type.name}${stableJson(node.attrs)}${marksKey(node.marks)}`,
       node,
     });
-    // Whitespace that ends one run leads the next run's first token, so "said **no**" tokenizes like
-    // "said no" with a mark on "no". Carry always has one set of marks: a run that starts with its
-    // own whitespace flushes the carry as a token of its own first.
     let carry = "";
     let carryMarks: readonly Mark[] = [];
     const flushCarry = () => {
@@ -144,8 +132,6 @@ export function tokenizeBlock(node: PMNode): Tok[] {
   return out;
 }
 
-/** Independent cuts can carry equal blocks with different identities. Reuse their immutable
- * tokens within this operation without replacing input arrays or crossing schemas. */
 export function shareBlockTokens(sides: readonly (readonly PMNode[])[]): void {
   const canonical = new Map<string, PMNode>();
   for (const blocks of sides)
@@ -260,10 +246,6 @@ function joinText(nodes: PMNode[]): PMNode[] {
 // The library reads `timeout || 1` (0 becomes a one-second deadline) and treats a negative timeout as
 // "never", so -1 is the only value that turns the deadline off.
 const NO_DEADLINE = { checkLines: false, timeout: -1 };
-// Past these sizes (both sides together, after trimming what they share at the ends) a diff is one delete
-// and one insert: coarser, never wrong. Similar inputs this large diff in milliseconds; the bound exists for
-// dissimilar ones (a full rewrite), whose worst case grows quadratically: about 60 ms at 4,000 keys and
-// 170 ms at 20,000 characters, where 16,000 keys took 0.6 s and a 50k-word rewrite stalled Discard past 30 s.
 const MAX_DIFF_KEYS = 4_000;
 const MAX_DIFF_CHARS = 20_000;
 
@@ -374,7 +356,6 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
   if (!x.length || !y.length) return 0;
   const denom = inPlace ? Math.min(x.length, y.length) : Math.max(x.length, y.length);
   const bound = sharedBound(a, b);
-  // Disjoint word sets cannot have an in-order match, even when no floor was requested.
   if (bound === 0 || (floor > 0 && bound / denom < floor)) return 0;
   let common = 0;
   for (const [op, n] of diffKeys(x, y)) if (op === DIFF_EQUAL) common += n;
@@ -392,12 +373,6 @@ const PART_KIND = {
   [DIFF_INSERT]: "added",
 } as const;
 
-/**
- * Diff at word granularity over the review's own segments. The AI write lowering, the room writer,
- * Review changes and an edit's excerpt all read it, so one edit has one set of changed words
- * wherever it shows; the write then refines a changed run that only gained characters by character
- * (`retainShared`).
- */
 export function wordDiff(a: string, b: string): WordPart[] {
   const wa = splitWords(a);
   const wb = splitWords(b);

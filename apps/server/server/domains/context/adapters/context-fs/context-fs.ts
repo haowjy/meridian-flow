@@ -478,8 +478,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const { folders, documents } = await this.store.listTree(await this.readTreeView());
     const folderPaths = new Map<string | null, string | null>([[null, ""]]);
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
-    // Null for a folder whose chain to the root is incomplete (a deleted ancestor): its
-    // documents are not candidates, rather than listed at the source root.
     const folderPath = (id: string | null): string | null => {
       const known = folderPaths.get(id);
       if (known !== undefined) return known;

@@ -13,7 +13,6 @@ function fact<T extends z.ZodType>(value: T) {
 }
 
 const price = z.strictObject({
-  // keep: USD per million tokens
   input: z.number().nonnegative(),
   output: z.number().nonnegative(),
   cache_read: z.number().nonnegative().optional(),

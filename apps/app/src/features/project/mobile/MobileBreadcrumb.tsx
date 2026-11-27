@@ -81,8 +81,6 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
             <li key={item.key} className="flex min-w-9 shrink-[3] items-center">
               {separator}
               {item.segment.onSelect ? (
-                // -my-3 keeps the 44px target without growing the 20px trail row
-                // past the top bar's two-line band.
                 <button
                   type="button"
                   onClick={item.segment.onSelect}

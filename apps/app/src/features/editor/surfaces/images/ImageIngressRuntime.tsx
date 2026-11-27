@@ -48,12 +48,6 @@ function pictureUploadPort(projectId: string, scheme: "user" | "manuscript"): Im
   };
 }
 
-/**
- * The bytes behind an address the clipboard carried.
- *
- * Only a `data:` image reaches this: a web picture pastes as a remote picture and is never
- * fetched. A failure leaves the link the paste landed, which is why nothing here throws.
- */
 const fetchImageBytes: ImageBytesPort = async ({ url, filename, signal }) => {
   try {
     const response = await fetch(url, { signal });

@@ -52,8 +52,6 @@ export function RecentDocumentsLanding({
   const discardNotice = discarded ? <DraftNoticeLine notice={discarded} className="px-0" /> : null;
 
   const documents = recent.documents ?? [];
-  // A cached empty list with a refetch in flight is not yet known to be empty.
-  // Showing "Nothing opened yet" here is the lie B1 was about.
   const settling = recent.status === "empty" && recent.isFetching;
   const loading = recent.status === "loading" || settling;
 

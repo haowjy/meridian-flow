@@ -45,9 +45,6 @@ export function ContextDocumentHost({
   const bindingKeys = useRef(new WeakMap<object, string>());
   const paint = useHostDocumentPaint();
   const shownDraftId = paint?.draft?.draftId ?? null;
-  // A document the draft created has no fork: its text is plain in its own Live room,
-  // which the page binds. Every other draft page binds the draft's fork room, changed or not. Until
-  // the draft's list says which, the page waits rather than open the wrong room.
   const draftRows = useOwnerDraftRows(projectId, shownDraftId);
   const draftRow = draftRows.rows.find((row) => row.documentId === document.documentId);
   const roomKnown = shownDraftId === null || draftRows.status !== "loading";
@@ -60,8 +57,6 @@ export function ContextDocumentHost({
           queryKey: projectQueryKeys.drafts(projectId, pinnedOwner),
         })
     : null;
-  // `readOnly` is the Work's scope (an archived or deleted Work's Scratch); the presentation decides
-  // whether this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
@@ -162,13 +157,6 @@ export function ContextDocumentHost({
   );
 }
 
-/**
- * A room's scope follows its owner: an archived or deleted Work's Scratch is read-only. The
- * front editor already follows its room; when the server names a scope that `readOnly` doesn't
- * show, this tab's Works catalog is behind (another tab archived the Work), and the notice, its
- * way back and `readOnly` all come from it. Asked on activation and on each named
- * scope; this tab's own commands never ask, because the room's next scope confirms them.
- */
 function RoomScopeCatalogCheck({
   projectId,
   session,

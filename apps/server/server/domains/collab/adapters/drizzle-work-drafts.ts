@@ -185,7 +185,6 @@ export function createDrizzleWorkDrafts(
         return root?.draftId ?? null;
       };
       if (!chat.workId) return named();
-      // Under the Work's row, as `remove` takes it: a draft deleted after this read is not named.
       const workId = chat.workId as WorkId;
       const chosen = await withWork(workId, async () => {
         await tx().execute(sql`

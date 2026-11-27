@@ -128,7 +128,6 @@ export const NestingExtension = Extension.create({
           path: pasted("path"),
           kind: pasted("kind"),
           marker: pasted("marker"),
-          // The first number belongs to the list, so a block made by Enter does not copy it.
           start: { ...pasted("start", Number), keepOnSplit: false },
           loose: stored,
         },
@@ -205,19 +204,15 @@ export const NestingExtension = Extension.create({
       nestingDrawPlugin(),
       new Plugin({
         key: new PluginKey("meridianNestingKeys"),
-        // Through the kernel, like Tab: an open menu's Enter outranks a list's.
         view: () => {
           const release = getEditorChrome(editor)?.registerKeymap({
             id: "nesting",
             scope: "document",
-            // Prose, in the document or a cell; a fence or an object keeps its own keys.
             appliesTo: (context) => context.owner === "document" || context.owner === "table-cell",
             bindings: {
-              // A link the keyboard focused follows on Enter (`LinkSurfaceExtension`).
               Enter: (state, dispatch, view) =>
                 (!view || view.dom.ownerDocument.activeElement === view.dom) &&
                 enterInNesting(state, dispatch),
-              // Right after `- ` or `1. `, Backspace gives the characters back instead.
               Backspace: (state, dispatch) =>
                 !editor.can().undoInputRule() && backspaceInNesting(state, dispatch),
               "Mod-Enter": toggleTaskAtCaret,

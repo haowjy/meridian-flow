@@ -7,7 +7,6 @@ export function referenceDropOptions({
   catalog,
   labels,
 }: {
-  /** Read at drag time, so a catalog that loads later is picked up. */
   catalog: () => Pick<AtReferenceCatalog, "resolveReference" | "referenceNode"> | null;
   labels: { accept: string; unavailable: string; code: string };
 }): ReferenceDropOptions {

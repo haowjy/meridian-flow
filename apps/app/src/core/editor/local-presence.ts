@@ -30,7 +30,6 @@ export function createLocalPresence(self: string): LocalPresence {
   let suspensions = 0;
   let desired: PeerState | null = null;
   const handlers = new Set<() => void>();
-  // Peers' changes only: a publisher reads peers, and its own writes would only echo.
   store.subscribe((event) => {
     if (event.by === "local") return;
     for (const handler of [...handlers]) handler();
@@ -76,13 +75,6 @@ export function createLocalPresence(self: string): LocalPresence {
   };
 }
 
-/**
- * One session can be edited from two views at once (main and the side both showing it). Both
- * write the same `cursor` field, so the caret, and only the caret, is arbitrated: this view's
- * `cursor` writes pass while `publishing()` is true and are dropped otherwise. A view that goes to
- * the back calls `retire()` once, which clears the caret only if this view is still the session's
- * current caret publisher, so a back view never clears the front one's.
- */
 export function gateCaretPresence(
   presence: LocalPresenceFields,
   publishing: () => boolean,

@@ -107,7 +107,6 @@ function projectRow(accountId: string, entry: NewChatSubmission, actions: Thread
   return row;
 }
 
-/** The durable write is the commit point. Projection faults cannot return the words to Send. */
 export function recordAndProjectSubmission(
   accountId: string,
   entry: NewChatSubmission,
@@ -277,8 +276,6 @@ export class ChatSubmissionOwner {
           },
           { signal: requestSignal },
         ).then((response) => {
-          // The list rows carry the pending mode (`effectiveAiWriteMode`); a queued or cancelled
-          // switch changes it, and the toolbar reads it before the snapshot lands.
           void invalidateWriteModeReads(queryClient, projectId);
           return response;
         });

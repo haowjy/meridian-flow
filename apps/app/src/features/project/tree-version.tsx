@@ -142,8 +142,6 @@ export function TreeVersionProvider({
   // finds nothing to change.
   const queryClient = useQueryClient();
   const ownerKey = known ? draftId || (newChat ? NO_OWNER : "") : "";
-  // A move between one picked Work's drafts leaves the toggle as the move set it: a pick puts it
-  // on Draft, `Delete draft` on Live.
   const pickedId = picked?.id ?? null;
   const owner = useRef({ key: ownerKey, work: pickedId });
   useLayoutEffect(() => {
@@ -165,8 +163,6 @@ export function TreeVersionProvider({
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
   const versions = useMemo(() => (draftVersion ? [draftVersion] : []), [draftVersion]);
   const tree = useDraftsTreeChanges(projectId, versions).get(listedDraft ?? "") ?? null;
-  // Documents and folders come from the draft-list read, which has already subtracted every
-  // journal hold, so all surfaces count the same rows.
   const commands = useDraftCommandOwner();
   const count = () => (rows?.length ?? 0) + (drafts.folderIds?.length ?? 0);
   const changeCount = useSyncExternalStore(commands.subscribe, count, count);

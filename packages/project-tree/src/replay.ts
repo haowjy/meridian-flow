@@ -963,7 +963,6 @@ export function suffixesInArrival(
     else plain.add(kid.name);
   }
   if (twins.length === 0) return out;
-  // keep: Sort id hexes; the longest shared prefix can only be with an adjacent id
   const hexes = children.map((kid) => idHex(kid.id)).sort();
   const index = new Map(hexes.map((hex, at) => [hex, at]));
   for (const twin of twins) {

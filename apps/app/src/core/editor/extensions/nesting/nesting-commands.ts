@@ -39,8 +39,6 @@ export function selectedSequence(selection: Transaction["selection"]): Sequence 
     positions.push(at);
     at += child.nodeSize;
   });
-  // A gap cursor stands between blocks and covers the one after it; at the container's end
-  // there is none, so it covers the one before (a document ending in a table).
   const from = Math.min($from.index(depth), blocks.length - 1);
   const last = selection instanceof NodeSelection ? from + 1 : $to.indexAfter(depth);
   return {
@@ -127,7 +125,6 @@ export function setTaskList(tr: Transaction): boolean {
 
 export function unsetList(tr: Transaction): boolean {
   let changed = false;
-  // Each pass lifts the selected items one level, so the depth bounds the loop.
   for (let guard = 64; guard > 0 && outdent(tr); guard--) changed = true;
   return changed;
 }

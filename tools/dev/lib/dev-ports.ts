@@ -48,7 +48,6 @@ function pinWorktreePortBase(checkout: string): number {
   return base;
 }
 
-// keep: a checkout's ports have one source, DEV_PORT_BASE in its `.env.local`. A worktree without one is given a block here, written to that file, so no reader ever sees a guess; the main checkout defaults to 20000 and is never written to
 export function resolveDevPorts(checkoutPath: string): DevPorts {
   const checkout = fs.realpathSync(checkoutPath);
   const base =

@@ -23,11 +23,6 @@ export function reportPassageChanged(documentId: string): void {
   expiry = setTimeout(() => dismissPassageNotice(token), NOTICE_LIFETIME_MS);
 }
 
-/**
- * Clear the notice. With a token, only the notice that token belongs to — an
- * expiry that has already been queued must not silence the navigation that
- * superseded it.
- */
 export function dismissPassageNotice(token?: number): void {
   const { notice } = usePassageNoticeStore.getState();
   if (!notice || (token !== undefined && notice.token !== token)) return;

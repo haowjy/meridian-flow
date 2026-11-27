@@ -102,8 +102,6 @@ function useDescriptions(projectId: string): Descriptions {
     () => new Map(),
   );
   const asked = useRef(new Set<string>());
-  // "Cannot open" holds only while the document stays as it was then: a trashed document that
-  // is restored opens again.
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
   const stateOf = (documentId: string): NodeState => {
@@ -130,8 +128,6 @@ function useDescriptions(projectId: string): Descriptions {
       return next;
     });
   }, []);
-  // A mounted document's descriptor is its host's; once it unmounts (closed, removed) it is
-  // described afresh rather than from an answer that may predate its removal.
   useEffect(() => {
     const mounted = new Set(shown.map((tab) => tab.documentId));
     const stale = [...asked.current].filter((key) => mounted.has(key.split("|")[0] ?? ""));
@@ -160,7 +156,6 @@ function useDescriptions(projectId: string): Descriptions {
       for (const [key] of changed) next.delete(key);
       return next;
     });
-    // Runs when a list changes; `stateOf` reads the replay.
   }, [projectList.snapshot?.version, accountList.snapshot?.version]);
   const request = useCallback(
     (documents: readonly Describing[]) => {
@@ -228,7 +223,6 @@ export function SideViewProvider({
   const describingKey = describing ? describeKey(describing) : null;
   useEffect(() => {
     if (describing) descriptions.request([describing]);
-    // `describing` is read through its key.
   }, [describingKey, descriptions.request]);
 
   const [kept, setKept] = useState<SettledSide | null>(null);
@@ -249,7 +243,6 @@ export function SideViewProvider({
       pending: resolution.kind === "pending",
       failed,
     }),
-    // `failed.retry` changes identity each render; the key covers what it retries.
     [sideKey],
   );
 

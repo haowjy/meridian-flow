@@ -48,10 +48,6 @@ async function lockChat(db: Database, projectId: string, chatId: string | null):
   );
 }
 
-/**
- * An upload's address is derived from its chat's current handle, never frozen: a chat that has no
- * row yet has no handle, so its uploads read as the chat-relative `uploads://name` until it does.
- */
 function uploadUri(chatRef: string | null, path: string): string {
   return canonicalContextUri(
     "uploads",
@@ -184,8 +180,6 @@ export function createDrizzleUploadIntakeRepository(
               ? { sourceId: null, chatRef: null }
               : null;
         if (!placement) return { kind: "owner_unavailable" };
-        // A source upload's id is the client's: the link to the file stands before the file does.
-        // An id a document already holds would make that link name someone else's file.
         const documentId = requester.kind === "source" ? input.intakeId : crypto.randomUUID();
         if (
           requester.kind === "source" &&

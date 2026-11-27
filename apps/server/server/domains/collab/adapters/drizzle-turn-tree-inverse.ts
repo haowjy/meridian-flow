@@ -292,7 +292,6 @@ export function createTurnTreeInverse(deps: {
               stayed: fate !== "taken",
             };
           });
-          // The answers about sources the locks missed were guesses: nothing of this commits.
           judge.assertLocked();
           return taken;
         },

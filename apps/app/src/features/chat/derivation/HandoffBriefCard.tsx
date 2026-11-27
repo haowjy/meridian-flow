@@ -114,7 +114,6 @@ export function HandoffBriefCard({
           </div>
           {seed ? (
             <p className="flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground">
-              {/* One message, so a translation can put the source's name first. */}
               <Trans>
                 <span className="shrink-0">Handed off from </span>
                 <SourceChatLink

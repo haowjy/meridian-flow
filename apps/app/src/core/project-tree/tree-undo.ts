@@ -165,14 +165,6 @@ const fits = (step: UndoStep, source: string | null, view: View) =>
   (step.kind === "press" || step.draft === view.draft) &&
   (source === null || step.sources.length === 0 || step.sources.includes(source));
 
-/**
- * Takes back the latest step of `source` (null: any) made in `view`, by opposite records, or an
- * Apply or Discard by its Undo on the server. A tree step that can't be taken back any more is dropped and the press
- * goes on to the one before it, as it does past an Apply or Discard whose Undo is out. A step whose records wait for closed owners keeps its place, and a
- * press passes over it while they are closed (`waitsForClosed`). A record whose change was since
- * applied is in force live, so its opposite record is written live. The caller runs one press
- * at a time: while an Apply's or Discard's Undo is asked, steps only join the top of the stack.
- */
 export async function undoLatest(
   session: TreeListSession,
   source: string | null,
@@ -297,9 +289,6 @@ function takeBack(
   closed: ClosedOwners,
 ): "undone" | string[] {
   const writer = writerOf(session, view);
-  // One walk: each record is judged against the list the one before it left, and the records that
-  // land go into the list as one update. A record into a source the tab reads as closed is not
-  // written; admission drops one into a source closed since, when the update reaches the server.
   const walked = takeBackAll(
     writer,
     actor,

@@ -125,9 +125,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
   const setGesture = (phase: GesturePhase) => {
     if (gesture === phase) return;
     gesture = phase;
-    // Approach chrome goes away for the whole gesture, not just where the
-    // pointer is now: a drag that started under a hovered object leaves it
-    // behind immediately.
     if (phase !== "idle") for (const intent of hoverIntents) intent.cancel();
     notify();
   };
@@ -158,16 +155,8 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
     },
 
     openLayer({ id, ownerId = id, parentId = null, close, dismissal = "kernel" }) {
-      //: one transient surface. A surface summoned at the top level
-      // REPLACES whatever was there — the slash menu and the link form both
-      // staying live left two inputs competing for the same keystrokes. A
-      // layer opened inside another (a submenu, a dialog's source pane) is
-      // not a rival; it is part of the surface that is already open, which is
-      // exactly what `parentId` distinguishes.
       if (parentId === null) replaceOpenTransients();
 
-      // One id, one open layer: a surface that re-registers without releasing
-      // would leave a ghost step in the walk home.
       const key = layerRecords.has(id) ? `${id}#${layerSequence}` : id;
       layerSequence += 1;
       const layer: ChromeLayer = { id: key, ownerId };
@@ -194,8 +183,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
     closeTopLayer() {
       const topmost = topRecord();
       if (!topmost) return false;
-      // Marked before the call, so a close that never releases costs one
-      // Escape rather than every Escape after it.
       topmost.closing = true;
       reorderLayers();
       topmost.close();
@@ -209,9 +196,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
         : layerRetreats.at(-1);
       if (!retreat) return false;
       if (retreat.backtrack()) return true;
-      // With a real layer, its existing close path owns Radix animation and
-      // focus return. Before React registers that layer, the semantic lease is
-      // the only owner available and closes the suggestion directly.
       if (topmost) return false;
       retreat.dismiss();
       return true;
@@ -258,9 +242,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
     },
 
     beginDrag(onCancel) {
-      // A second drag while one is running means the first is over, whatever
-      // its owner still thinks: two owners cannot both hold the pointer. Tell
-      // the older one so it stops drawing a drop line nobody is aiming.
       abandonActiveDrag();
 
       const token = Symbol("drag");
@@ -268,9 +249,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
       setGesture("drag");
 
       return () => {
-        // A late end from a drag that was already replaced is not this
-        // gesture's to release. Without the token it would unsuppress the
-        // drag the writer is actually running.
         if (activeDrag?.token !== token) return;
         activeDrag = null;
         setGesture("idle");
@@ -287,8 +265,6 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
       const cached = depths.get(record.layer.id);
       if (cached !== undefined) return cached;
       const parent = record.parentId ? layerRecords.get(record.parentId) : undefined;
-      // Guard the cycle a mis-registered parent could make, and treat a parent
-      // that already closed as no parent at all.
       depths.set(record.layer.id, 0);
       const depth = parent && !parent.closing ? depthOf(parent) + 1 : 0;
       depths.set(record.layer.id, depth);

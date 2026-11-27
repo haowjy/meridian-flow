@@ -25,8 +25,6 @@ export function useEntryRow(
         event.stopPropagation();
         startEntryDrag(event, selection ? selection.dragged(entry) : [entry], source);
       },
-      // A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling, before
-      // the row's own click (or a link's navigation) sees it.
       onClickCapture: (event: MouseEvent) => {
         if (!selection?.click(entry, event)) return;
         event.preventDefault();

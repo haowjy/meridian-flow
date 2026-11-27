@@ -38,8 +38,6 @@ export function buildOptimisticUserTurn(input: {
     ...baseTurnFields(),
     createdAt: timestamp,
     completedAt: null,
-    // A picture's stored block carries the file's type and size, which only the server knows; the
-    // reference chip before it is what the writer sees until the server's turn replaces this row.
     blocks: input.blocks.filter(isNotImage).map((block, sequence) => {
       const { blockType, content } = userMessageTurnBlock(block);
       return {

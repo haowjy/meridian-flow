@@ -95,12 +95,6 @@ export function patchStyles(
   if (delta.length > 0) text.applyDelta(delta);
 }
 
-/**
- * The style changes that make `unit` read as `want`: set what is stored differently, then clear
- * every key that would show and is not wanted, including one the normalizer hid until now (stored
- * `{code, strong}` written as plain clears both, or it would read `strong`). A key that stays
- * hidden (a comment whose body this reader cannot see) is left alone.
- */
 function stylePatch(
   unit: TextUnit,
   want: Readonly<Record<string, unknown>>,

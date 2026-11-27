@@ -64,7 +64,6 @@ type ListRowProps = {
   revealActions?: boolean;
   below?: ReactNode;
   describedBy?: string;
-  /** Spread first: the row's own handler, state and classes win. */
   controlProps?: ControlProps;
   frameProps?: FrameProps;
   /** Must return the control itself (a Tooltip trigger `asChild`), never a wrapping element. */
@@ -109,7 +108,6 @@ export function ListRow({
   const disabled = disabledProp || gone;
   const shared = {
     ...controlProps,
-    // The list's keyboard stop, and what the frame watches to draw the ring.
     "data-list-item": true,
     "aria-current": current || undefined,
     "aria-describedby": describedBy,

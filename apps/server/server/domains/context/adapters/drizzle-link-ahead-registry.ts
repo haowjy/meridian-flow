@@ -197,8 +197,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       root_thread_id: address.rootThreadId ?? null,
       chat_thread_id: address.chatThreadId ?? null,
     }));
-    // Every unsettled ref in an arrival's source may now reach it: a link's path is read through
-    // the tree's walk (`Kael/Note` reaches a Note in a twin folder), not compared as text.
     const pending = await currentDrizzleDb(this.db).execute<{
       ahead_id: string;
       path: string;
@@ -289,7 +287,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         });
       }
     }
-    // Advance by attempted keys, not registrations: a ref that keeps failing never pins the page.
     const last = pending.at(-1)?.aheadId;
     return { registered, next: pending.length === page.limit && last ? last : null };
   }

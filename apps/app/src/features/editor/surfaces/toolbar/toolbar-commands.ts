@@ -234,7 +234,6 @@ function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   if (level) return editor.chain().focus().toggleHeadingLevel({ level }).run();
 
   switch (id) {
-    // Body text from any text block, a fence included: a level change touches paragraphs only.
     case "paragraph":
       return editor.chain().focus().setParagraph().run();
     case "bulletList":
@@ -254,8 +253,6 @@ function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSele
   let anchor = selection.$anchorCell.pos;
   let head = selection.$headCell.pos;
 
-  // Every conversion moves the positions after it; the walk follows the
-  // document through the transaction events.
   const followDocument = ({ transaction }: { transaction: Transaction }) => {
     if (!transaction.docChanged) return;
     for (const cell of cells) {
@@ -279,7 +276,6 @@ function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSele
         return true;
       });
       if (!selected) continue;
-      // Already what the sweep converges on: applying the toggle would undo it.
       if (!undoes && activeBlockTypeId(editor) === id) continue;
       if (applyBlockType(editor, id)) applied = true;
     }
@@ -388,10 +384,6 @@ export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null 
   const refused = refusals.filter((reason) => reason !== null);
   if (refused.length === 0) return null;
 
-  // ANY protected target refuses the whole conversion: a selection spanning a
-  // mermaid fence and a paragraph is the ordinary Ctrl+A, and converting it
-  // would drop the fence's language along with the fence. The reason may name
-  // one kind only when every block in the span refuses as that kind.
   const uniform =
     refused.length === refusals.length && refused.every((reason) => reason === refused[0]);
   return uniform ? refused[0] : "mixed-selection";
@@ -406,12 +398,7 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
   const noProse = noProseToMark(editor);
   if (noProse) return noProse;
 
-  // A mark that is already there can always come off (), whatever the
-  // schema thinks about adding it.
   if (isMarkActive(editor, mark)) return null;
-  // `can().setMark` is the command's own answer — schema allowance and mark
-  // exclusions both. The only exclusion in this schema is the inline code
-  // mark, which excludes every other mark from the text it covers.
   return editor.can().setMark(mark) ? null : "inline-code";
 }
 

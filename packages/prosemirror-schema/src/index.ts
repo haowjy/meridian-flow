@@ -48,7 +48,6 @@ const basicNodeDefaults = {
 const linkRefAttr = { default: null };
 
 const basicNodeOverrides = {
-  // keep: Headings stay paragraph nodes so retyping edits attrs in place and concurrent typing and anchors survive
   paragraph: {
     ...specOnly(basicNodes.paragraph),
     attrs: { align: layoutAlignAttr, level: paragraphLevelAttr, ...blockAttrs },

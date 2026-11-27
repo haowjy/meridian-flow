@@ -203,11 +203,6 @@ export interface SourceTree {
       position?: ContextSiblingPosition;
     },
   ): Promise<Result<InsertedTrees, AdapterFault>>;
-  /**
-   * One tree command on this source's list: `make` runs under the list's lock on a copy of the list as
-   * it stands, makes whatever records it decides on and returns its answer. A refused answer
-   * stores nothing: what `make` wrote before it refused is dropped with the copy, as a throw does.
-   */
   run<T>(
     target: TreeWriteTarget,
     make: (scope: TreeScope) => { result: T; refused?: boolean },
@@ -222,11 +217,6 @@ export function createSourceTree(deps: {
 }): SourceTree {
   const list = async () => treeListOfSource(deps.db, await deps.sourceId());
 
-  /**
-   * One write on these lists whose answer is a `Result`: an `Err` aborts it, so nothing the
-   * maker did to the copies is stored and they reload (a refusal after folders were made must
-   * not leave them behind).
-   */
   async function write<T>(
     lists: readonly TreeList[],
     make: (copies: readonly ListWriter[]) => Result<T, AdapterFault>,
@@ -332,8 +322,6 @@ export function createSourceTree(deps: {
         const ids: string[] = [];
         for (const group of groups) {
           const projection = writer.view(target.view);
-          // Ranks are minted once per level: a create's own replay per node would cost a
-          // replay of the whole list each.
           const at = indexAt(projection, group.parent, input.position);
           const siblings = childrenOf(projection, group.parent);
           const rootRanks = generateNKeysBetween(

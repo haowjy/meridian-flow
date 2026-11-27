@@ -135,13 +135,7 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
   );
-  // Work mutations leave no document lineage; their receipts ride the turn's
-  // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
-  // Gated on settlement like document lineage: a receipt is a record of a
-  // finished turn, and mid-stream it would offer Undo on a turn still writing.
   const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
-  // A failed read is not an empty turn: the writer's Undo for the documents this reply wrote is
-  // somewhere unread. It shows beside any Work receipts, which say nothing about those documents.
   const readFailed = liveLineage.isError && view.wroteDocuments && editedDocuments.length === 0;
   return (
     <>
@@ -288,9 +282,6 @@ const FoldRun = memo(function FoldRun({ run }: { run: ViewRun }) {
   );
 });
 
-// A turn with only empty blocks partitions to nothing, so a blockless item
-// never reaches render. Returning a stable key instead of throwing keeps a
-// stray empty item from tripping the project route error boundary.
 function itemRenderKey(item: ViewItem): string {
   if (item.kind !== "process") return `${item.kind}:${blockRenderKey(item.block)}`;
   const firstBlock = item.runs[0]?.blocks[0];

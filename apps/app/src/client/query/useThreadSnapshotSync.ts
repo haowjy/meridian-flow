@@ -20,12 +20,6 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   actionRequired: DeserializedThreadSnapshot["actionRequired"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
-  /**
-   * The thread's history is in the transcript store (or its load failed). Not
-   * merely fetched: a render can see the accepted snapshot a commit before its
-   * turns reach the store, and a reader that took that for "history is empty"
-   * would give up on a turn that is about to arrive.
-   */
   settled: boolean;
   isError: boolean;
   isFetching: boolean;
@@ -54,7 +48,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     return {
       sync,
       state: ports.state,
-      /** Bumped by cleanup: a request queued under an earlier mount must not run after it. */
       epoch: 0,
       bind(next: (kind: "fresh" | "any") => void) {
         request = next;
@@ -69,15 +62,11 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
         if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
           throw new Error("Thread snapshot identity mismatch");
         }
-        // The sync applies the read; React Query publishes only what it applied.
         if (binding.sync.receive(snapshot) === "stale") {
           throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
         }
       },
     }),
-    // Mounting never reads by itself: the sync asks for a read when it needs one. A cached
-    // snapshot joins the stream and its replay brings it up to date (for example a background
-    // child's report waking the parent), so a warm switch downloads nothing.
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: false,
     enabled: !isPendingCreation && !accountSignal.aborted,
@@ -122,10 +111,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   );
   useLayoutEffect(() => {
     if (isPendingCreation) return;
-    // A read the cache already holds never runs the queryFn, so it is offered here on every
-    // mount. The sync decides: it joins only if it is newer than every frame the cell holds,
-    // and asks for a read otherwise. An invalidated snapshot is never offered: something marked it
-    // out of date while this chat was unmounted, and mounting no longer reads on its own.
     const cached = latest.current;
     const held =
       cached &&

@@ -350,7 +350,6 @@ export function createDrizzleTreeListStore(deps: {
             earlier: readRecords(all.slice(0, mark.ops)),
           };
         });
-        // Settlements gain nothing in the records: the version is what says a copy changed.
         const changes = gained.filter(
           ({ held: each, before }) => !unchanged(each.copy.doc, before),
         );
@@ -359,8 +358,6 @@ export function createDrizzleTreeListStore(deps: {
         for (const { held: each } of changes) each.copy.pending = owner;
         const done = new Map<Held, CommittedTreeUpdate>();
         for (const { held: each, before, added, earlier } of changes) {
-          // A node's id is claimed by its first create: a copy of a create (Apply's live copy of
-          // a drafted one, a restored Discard's) names a node the list holds already.
           const known = new Set(earlier.filter(isCreate).map((record) => record.node));
           const claimed = added.filter(isCreate).filter((record) => {
             const first = !known.has(record.node);

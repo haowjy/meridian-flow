@@ -141,13 +141,6 @@ function showRule(
   return { parents, shown };
 }
 
-/**
- * One read of a structure doc (design §1): the effective value of every key (a fork's override
- * over Live's base), parents with cycles broken, and which blocks show (`showRule`). Built once
- * per read, so a reader pays one pass over the maps rather than a WASM call per key; a write must
- * not use it after it changes the doc. `kept` names removed blocks to read as set at their
- * record's key though they are removed: the editor's caret rule (design §1).
- */
 export class StructureView {
   readonly draft: boolean;
   private readonly base: Record<StructureMap, MapValues>;

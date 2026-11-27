@@ -54,8 +54,6 @@ function QueuedControlRow({
           type="button"
           variant="quiet"
           size="meta"
-          // The row has its withdraw button from its first frame so it never changes height. While
-          // the post is in flight the server may hold the switch and hasn't said, so the button waits.
           disabled={control.awaitingServer}
           aria-label={controlWithdrawLabel(control.control)}
           onClick={() => onWithdraw(control)}
