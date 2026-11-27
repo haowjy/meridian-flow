@@ -44,6 +44,7 @@ export class AccountFeatureLifetime {
   private readonly signedIn: () => boolean;
   private stopWatchingSignOuts: (() => void) | null = null;
   private signingOut = false;
+  private signOutRunning = false;
   private endingHere = false;
 
   constructor(
@@ -97,7 +98,8 @@ export class AccountFeatureLifetime {
   }
 
   private async signedOutElsewhere(): Promise<void> {
-    if (this.endingHere || this.epochSignal.aborted) return;
+    // This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
+    if (this.endingHere || this.signOutRunning || this.epochSignal.aborted) return;
     this.endingHere = true;
     // Stored copies wait for the signing-out tab, or for their document's next open: opening them
     // here would race a sign-out's deletion.
@@ -136,6 +138,15 @@ export class AccountFeatureLifetime {
   }
 
   async clearForSignOut(): Promise<string> {
+    this.signOutRunning = true;
+    try {
+      return await this.signOut();
+    } finally {
+      this.signOutRunning = false;
+    }
+  }
+
+  private async signOut(): Promise<string> {
     if (!this.signingOut) {
       // Closed by anything but this sign-out, the wait no longer knows what was delivered.
       if (this.epochSignal.aborted) throw new SignOutIncomplete("unsent");

@@ -14,7 +14,7 @@ stateDiagram-v2
   [*] --> connecting: created (attempt 1)
   connecting --> connected: JoinResponseOk, after sending what the server's version lacks
   connecting --> disconnected: the socket closes
-  connected --> disconnected: the socket closes, a rejoin, or a suspect-offline hint
+  connected --> disconnected: the socket closes, a rejoin, a suspect-offline hint, or 45 s without a frame
   disconnected --> connecting: the retry timer, or a retry-now hint
   connecting --> reset: JoinError document-deleted or a schema code
   connected --> reset: RoomError document-deleted

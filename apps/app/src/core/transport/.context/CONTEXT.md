@@ -113,5 +113,16 @@ App `onGap` consumers refetch snapshots, and a gap burst coalesces into one resy
 ## Shared connectivity hints
 
 Retry hints restart aggressive backoff, so repeated wakes against a down server cost at
-most one attempt per cooldown. A `suspect-offline` hint closes the room socket through the
-normal close path; `retry-now` connects at once when no socket is open.
+most one attempt per cooldown. A `suspect-offline` hint drops the room socket (closed at once,
+not waiting for the browser's close event); `retry-now` connects at once when no socket is open.
+
+## Liveness
+
+A room socket that stops carrying frames without closing (a half-open connection: a dropped NAT
+mapping, a sleep, a server that vanished without a reset) would stay `connected` for minutes, and
+the batches it sent but never had acknowledged are resent only by a new Join. So the server sends
+a text frame `LORO_PING` every `LORO_PING_INTERVAL_MS` (30 s) on each room socket, outside the Loro
+protocol, and the transport drops a socket that has carried no frame for `LORO_PING_TIMEOUT_MS`
+(45 s) and joins again on the usual backoff. That is the thread socket's rule (its ping every
+30 s, 45 s without one), and it bounds how long typing, a press or a sign-out's wait can be stuck
+on a dead socket. `./mf` ignores the text frames.

@@ -57,8 +57,8 @@ stateDiagram-v2
   commands and the removal lease, then joins the registry's one close attempt: a second close
   while one is in flight waits on the same retirement, and a failed one is tried again by the
   next call.
-- **One owner signs an account out of this browser: `clearForSignOut`.** Every path that ends
-  the account's session here runs it, so every one deletes the account's copies after delivering
+- **One owner signs an account out of this browser: `clearForSignOut`.** Every sign-out started
+  in this browser (the menu, `/logout`) runs it, so every one deletes the account's copies after delivering
   what they hold, or refuses ("Couldn't log out", Retry) and deletes nothing. The menu runs it in
   the tab's mounted lifetime, which holds the open sessions and their typing. `/logout`, typed or
   opened in a new tab, runs it in a lifetime it builds for the session's account
@@ -67,11 +67,15 @@ stateDiagram-v2
   any other failure to learn the account is a refusal, since without it nothing can be delivered
   or deleted. A lifetime that ends because its account's count
   moved (the owner ran in another tab) does not delete: it waits on its open sessions, closes,
-  releases its holds so the owner's deletion can take them, and goes to `/end-session`. A copy
+  releases its holds so the owner's deletion can take them, and goes to `/end-session`. A tab
+  whose own sign-out is running when the count moves lets that sign-out finish instead
+  (`signOutRunning`): both deliver and delete the same copies, and ending the lifetime under it
+  would only make it answer "Couldn't log out" before the tab leaves. A copy
   left by a tab closed before the sign-out is a stored copy: the owner's wait reads it, delivers
   what it holds and deletes it with the rest. Words typed in another tab after the owner's wait
-  answered, before that tab hears the count, are deleted unsent; the window is the time the count
-  takes to reach it. A lifetime ended by another account signing in is the account-switch rule
+  answered, before that tab hears the count, are deleted unsent, and so are words that tab can't
+  deliver within its own 8 s wait: the window is the time the count takes to reach the tab, plus
+  that wait. A lifetime ended by another account signing in is the account-switch rule
   (below), not a sign-out.
 - **Closing does not by itself delete local copies.** A copy goes on a fact that is final (the
   node's purge, its Work or chat purged, the account removed from the project:
@@ -138,8 +142,9 @@ stateDiagram-v2
   the owner's deletion then takes them; an account switch, which deletes another
   account's copies unread (below). A lapsed sign-in never reaches `clearAll`: its copies stay.
 - **Words in a room the server won't take writes from are dropped** at sign-out, open or stored:
-  they aren't waited for and their copy is deleted. Read access shows one "Couldn't save" (likely
-  hidden by the `/logout` navigation that follows); a room unauthorized, deleted or ended drops
+  they aren't waited for and their copy is deleted. Read access shows one "Couldn't save" from the
+  menu (likely hidden by the navigation to `/end-session` that follows), and nothing on `/logout`'s
+  page, which has no pills; a room unauthorized, deleted or ended drops
   them with no notice. Whether words typed offline into a chapter deleted or made read-only
   meanwhile should be kept is the owner's call.
 - **Another account's copies are deleted unread.** `endOtherAccounts`, at each account

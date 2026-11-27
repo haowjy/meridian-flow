@@ -42,7 +42,8 @@ export class LoroSocket {
     private readonly ws: WebSocket,
     private readonly account: string,
   ) {
-    ws.on("message", (data: Buffer) => {
+    ws.on("message", (data: Buffer, isBinary: boolean) => {
+      if (!isBinary) return;
       let message: ProtocolMessage | null;
       try {
         message = this.read(new Uint8Array(data));

@@ -345,6 +345,7 @@ apps/app/src/core/indexeddb-database.ts	`run` inside one transaction over `store
 apps/app/src/core/project-tree/tree-bounces.ts	The session may have closed, freeing its doc, before its local copy finished loading.
 apps/app/src/core/stale-yjs-copies.ts	Deletes this browser's Yjs copies. A tab of an old build still holding one delays its delete until it closes.
 apps/app/src/core/transport/dev-transport.ts	WS path duplicated from @meridian/contracts/protocol to avoid pulling contracts into the vite.config.ts import chain — Node's native ESM loader can't resolve .ts sources in workspace packages during config bootstrap.
+apps/app/src/core/transport/loro-room-transport.ts	A half-open socket may not report its close for minutes: treat it as closed at once.
 apps/app/src/core/transport/loro-room-transport.ts	A refused batch stays outstanding: the next Join sends what the server lacks.
 apps/app/src/core/transport/loro-room-transport.ts	Before the import: the session reads the server's version to learn another tab's ops landed.
 apps/app/src/core/transport/loro-room-transport.ts	Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or signed out) is waited for until it joins and its Join's batch (what the server lacks, the typing done while away included) is acknowledged; it resolves when the room ends.
@@ -352,6 +353,7 @@ apps/app/src/core/transport/loro-room-transport.ts	Room payload per fragment, un
 apps/app/src/core/transport/loro-room-transport.ts	The protocol carries appCode only on AppError; an AuthFailed refusal names it in message.
 apps/app/src/core/transport/loro-room-transport.ts	Until synced: the Join's version, and what the transport handed the copy (its version at the Join and each batch received since). Decided from what was handed, not `copy.version()`: the composition guard can hold a batch and import it later without the transport seeing it.
 apps/app/src/core/transport/wire-tap.ts	Late-bound observer seams for the thread WebSocket and the Loro room sockets. The transports call a tap inline, so a tap catches its own failures and never throws.
+apps/app/src/core/tree-list/tree-list-session.ts	A copy never joined holds only what this browser wrote to this list before its first Join, such as a file made while the project's create was still on its way: it is this list's.
 apps/app/src/core/tree-list/tree-list-session.ts	A render may still hold the old copy's snapshot: it is freed with the session.
 apps/app/src/core/tree-list/tree-list-session.ts	Counts changes to any copy as they land: `version` publishes a microtask later, and a record appended in this one must be in the next replay.
 apps/app/src/core/tree-list/tree-list-session.ts	The copy. A copy of another list is replaced by a new document: read it from the snapshot each time.
@@ -495,6 +497,7 @@ apps/app/src/features/project/context/RecentDocumentsLanding.tsx	A link can't be
 apps/app/src/features/project/context/account-feature-lifetime.ts	Closed by anything but this sign-out, the wait no longer knows what was delivered.
 apps/app/src/features/project/context/account-feature-lifetime.ts	No await before this abort: the wait answered from one synchronous pass, and a keystroke landing in between would be deleted unsent.
 apps/app/src/features/project/context/account-feature-lifetime.ts	Stored copies wait for the signing-out tab, or for their document's next open: opening them here would race a sign-out's deletion.
+apps/app/src/features/project/context/account-feature-lifetime.ts	This tab's own sign-out, running, delivers and deletes the same copies and leaves by itself.
 apps/app/src/features/project/context/context-entry-name.ts	A name that would read as another type (`data.json.md`) is kept whole, as the replay keeps it.
 apps/app/src/features/project/context/context-removal-coordinator.ts	The writer is deleting or Discarding these documents: main, if it shows one of them, goes at once to the document it showed before, else to Recently opened. Call before the removal. `landed` hears where main went, or null when it did not move; nothing when main did not show them. Returns the document main is leaving, if it shows one of them.
 apps/app/src/features/project/context/entry-drag/DropChoiceMenu.tsx	Radix DropdownMenu has no standalone anchor; this inert trigger holds the pointer's place.
@@ -963,6 +966,7 @@ packages/contracts/src/protocol/entry-segment.ts	A twin suffix always ends the s
 packages/contracts/src/protocol/filetype.ts	ClassifyFiletype is frozen; a changed kind or schemaType changes replay of stored tree records and needs a migration
 packages/contracts/src/protocol/http-types.ts	Binary read URLs are short-lived; clients must not persist them
 packages/contracts/src/protocol/http-types.ts	Figure signed URLs are short-lived; never persist them in a document
+packages/contracts/src/protocol/loro-ws.ts	Liveness for a room socket, outside the Loro protocol (a text frame): the server sends one every interval, and a client that hears nothing for the timeout replaces the socket, since a half-open connection never closes on its own and its unacknowledged batches are resent only by a new Join.
 packages/contracts/src/threads/asks.ts	PermissionWorkCommand is server-only and must never be serialized through threadAsk()
 packages/database/src/schema/agent-definition-revisions.ts	Order Saves by seq, not created_at; transaction-start timestamps can tie or invert
 packages/database/src/schema/agent-threads.ts	Bigserial seq orders allocation, not commit; per-thread lock serialization gives FIFO

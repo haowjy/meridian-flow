@@ -6,6 +6,7 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import { Button } from "@/components/ui/button";
 import {
   AccountFeatureLifetime,
+  SIGN_OUT_FAILURE,
   SignOutIncomplete,
 } from "@/features/project/context/account-feature-lifetime";
 
@@ -48,6 +49,7 @@ function signOutOfThisBrowser(setFailed: (failed: boolean) => void): () => Promi
       window.location.replace(await lifetime.clearForSignOut());
     } catch (error) {
       if (!(error instanceof SignOutIncomplete)) reportError(error);
+      console.warn(`[failure] ${SIGN_OUT_FAILURE}`, error);
       running = false;
       setFailed(true);
     }

@@ -90,7 +90,9 @@ Close, unsubscribe and a newer request invalidate pending acquisition; only the
 current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.
 
-The Loro room handler (`loro-ws-handler.ts`) asks file-policy for `edit`, then `read`, at a
+The room socket's route (`routes/ws/loro.ts`) sends each socket a `LORO_PING` text frame every
+30 s, so a client can tell a dead connection from a quiet one (`core/transport/.context/CONTEXT.md`,
+Liveness). The Loro room handler (`loro-ws-handler.ts`) asks file-policy for `edit`, then `read`, at a
 room's Join. A batch takes no grant of its own: it is imported as sent and acked. A refusal is a
 `JoinError` with the contract's app code, and an access change that reaches a key the room is
 registered under ends the room (`RoomError` `access-changed`), so the client joins again.

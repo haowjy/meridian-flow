@@ -3,6 +3,7 @@ import {
   decodeLoroJoinExtra,
   encodeLoroJoinAuth,
   LORO_JOIN_ERROR,
+  LORO_PING_TIMEOUT_MS,
   LORO_ROOM_ERROR,
   LORO_WS_PATH,
   type LoroRoom,
@@ -140,6 +141,7 @@ export function createLoroRoomTransport({
   let destroyed = false;
   let attempt = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let silence: ReturnType<typeof setTimeout> | undefined;
   const unacked = new Map<string, RoomVersion>();
   const sentWaiters = new Set<{ ids: Set<string> | null; resolve: () => void }>();
   const settleSentWaiters = () => {
@@ -372,6 +374,7 @@ export function createLoroRoomTransport({
     ws.onopen = () => {
       notifyLoroSocketOpen(roomId, attempt);
       if (socket !== ws) return;
+      heard(ws);
       transmit(ws, {
         type: MessageType.JoinRequest,
         crdt: CrdtType.Loro,
@@ -385,38 +388,56 @@ export function createLoroRoomTransport({
       });
     };
     ws.onmessage = (event) => {
-      if (socket !== ws || !(event.data instanceof ArrayBuffer)) return;
+      if (socket !== ws) return;
+      heard(ws);
+      if (!(event.data instanceof ArrayBuffer)) return;
       const message = decode(new Uint8Array(event.data));
       notifyLoroMessage("server_to_client", roomId, message, event.data.byteLength);
       onMessage(message);
     };
     ws.onclose = (event) => {
       notifyLoroSocketClose(roomId, attempt, event.code, event.wasClean);
-      if (socket !== ws) return;
-      socket = null;
-      joined = false;
-      unacked.clear();
-      fragments.clear();
-      if (destroyed || ended()) return;
-      if (event.code === WS_CLOSE.PERMISSION_DENIED.code) {
-        emitStatus({ kind: "unauthorized", reason: event.reason, code: event.code });
-        connectivityHints?.reportDisconnected(source);
-        return;
-      }
-      emitStatus(
-        event.code === WS_CLOSE.AUTH_FAILED.code || state.kind === "signed-out"
-          ? { kind: "signed-out" }
-          : { kind: "disconnected" },
-      );
-      connectivityHints?.reportDisconnected(source);
-      const delay =
-        event.reason === "rejoin" ? 0 : RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
-      retryTimer = setTimeout(connect, delay);
+      closed(ws, event.code, event.reason);
     };
+  };
+
+  const heard = (ws: WebSocket) => {
+    clearTimeout(silence);
+    silence = setTimeout(() => drop(ws, "ping_timeout"), LORO_PING_TIMEOUT_MS);
+  };
+
+  // A half-open socket may not report its close for minutes: treat it as closed at once.
+  const drop = (ws: WebSocket, reason: string) => {
+    ws.close(1000, reason);
+    closed(ws, 1000, reason);
+  };
+
+  const closed = (ws: WebSocket, code: number, reason: string) => {
+    if (socket !== ws) return;
+    clearTimeout(silence);
+    socket = null;
+    joined = false;
+    unacked.clear();
+    fragments.clear();
+    if (destroyed || ended()) return;
+    if (code === WS_CLOSE.PERMISSION_DENIED.code) {
+      emitStatus({ kind: "unauthorized", reason, code });
+      connectivityHints?.reportDisconnected(source);
+      return;
+    }
+    emitStatus(
+      code === WS_CLOSE.AUTH_FAILED.code || state.kind === "signed-out"
+        ? { kind: "signed-out" }
+        : { kind: "disconnected" },
+    );
+    connectivityHints?.reportDisconnected(source);
+    const delay = reason === "rejoin" ? 0 : RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
+    retryTimer = setTimeout(connect, delay);
   };
 
   const end = (next: RoomConnectionState) => {
     emitStatus(next);
+    clearTimeout(silence);
     const ws = socket;
     socket = null;
     joined = false;
@@ -426,7 +447,7 @@ export function createLoroRoomTransport({
   const source = {};
   const unsubscribeHints = connectivityHints?.subscribe(source, (hint) => {
     if (hint === "retry-now" && !socket && !destroyed) connect();
-    if (hint === "suspect-offline" && socket) socket.close(1000, "browser_offline");
+    if (hint === "suspect-offline" && socket) drop(socket, "browser_offline");
   });
   const unsubscribePresence = presence?.subscribeLocalUpdates((bytes) => {
     if (joined) sendBatch(CrdtType.LoroEphemeralStore, bytes);
@@ -468,6 +489,7 @@ export function createLoroRoomTransport({
       destroyed = true;
       settleSentWaiters();
       clearTimeout(retryTimer);
+      clearTimeout(silence);
       unsubscribeHints?.();
       unsubscribePresence?.();
       const ws = socket;

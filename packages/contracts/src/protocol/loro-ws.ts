@@ -5,6 +5,16 @@ import type { DocumentId, DraftId } from "../ids.js";
 
 export const LORO_WS_PATH = "/ws/loro";
 
+/**
+ * Liveness for a room socket, outside the Loro protocol (a text frame): the server sends one every
+ * interval, and a client that hears nothing for the timeout replaces the socket, since a
+ * half-open connection never closes on its own and its unacknowledged batches are resent only by
+ * a new Join.
+ */
+export const LORO_PING = "ping";
+export const LORO_PING_INTERVAL_MS = 30_000;
+export const LORO_PING_TIMEOUT_MS = 45_000;
+
 export type TreeListRef =
   | { kind: "project"; projectId: string }
   | { kind: "account"; userId: string };
