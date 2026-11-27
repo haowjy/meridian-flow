@@ -105,6 +105,10 @@ const LABEL: Record<ActorOf["kind"], string> = {
   other: "unattributed",
 };
 
+function labelOf(actor: Actor | undefined): string {
+  return actor === undefined ? LABEL.other : LABEL[readActor(actor).kind];
+}
+
 export type Places = {
   area: string;
   roots: ReadonlyMap<string, string>;
@@ -138,7 +142,7 @@ function actorOfRecord(cx: Context, id: string | undefined): Actor | undefined {
 
 function noteConcurrent(cx: Context, actor: Actor | undefined, line: string) {
   if (actor === undefined || actor === cx.scope.actor) return;
-  const label = LABEL[readActor(actor).kind];
+  const label = labelOf(actor);
   cx.concurrent.set(label, [...(cx.concurrent.get(label) ?? []), line]);
 }
 
@@ -349,7 +353,7 @@ function keptTrashed(cx: Context, projection: TreeProjection, trashed: readonly 
   return trashed
     .map(
       (folder) =>
-        `${nodeUri(cx, projection, folder)}, deleted by ${LABEL[readActor(deleterOf(cx, projection, folder) ?? "").kind]} after you last listed it`,
+        `${nodeUri(cx, projection, folder)}, deleted by ${labelOf(deleterOf(cx, projection, folder))} after you last listed it`,
     )
     .join("; ");
 }
@@ -658,7 +662,7 @@ function keptStanding(
     after.nodes.get(first)?.createdBy;
   return `${nodeUri(cx, after, holder)} with ${kept
     .map((id) => nodeUri(cx, after, after.nodes.get(id) as TreeNode))
-    .join(", ")}, added by ${LABEL[readActor(placer ?? "").kind]} after you last listed it`;
+    .join(", ")}, added by ${labelOf(placer)} after you last listed it`;
 }
 
 function pathMatches(
