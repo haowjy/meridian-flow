@@ -29,12 +29,7 @@ export interface LiveDocumentSessionRegistry {
   openRoomVersion(documentId: DocumentId): Uint8Array | null;
   whenSentAcknowledged(projectId: ProjectId, rooms: PressRooms): Promise<void>;
   restartUnavailableRoom(lease: DocumentSessionLease): Promise<boolean>;
-  retain(
-    ownerId: string,
-    leases: Iterable<DocumentSessionLease>,
-    options?: { detachedDocumentIds?: Iterable<DocumentId> },
-  ): void;
-  setHosted(ownerId: string, hosted: boolean): void;
+  retain(ownerId: string, leases: Iterable<DocumentSessionLease>): void;
   release(ownerId: string): void;
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,

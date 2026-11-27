@@ -53,6 +53,7 @@ have it:
 | Machine | State of | Page |
 |---|---|---|
 | Document session status | One open document's connection to the server | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
+| Session registry room | What the registry holds for one room of a document: no session, open, in its grace, held until saved, or kept for Undo | [core/editor](../../apps/app/src/core/editor/.context/state-machines.md) |
 | Room connection | One room's socket to `/ws/loro` (a document's Live or fork, or a tree list): connecting, connected, disconnected, or ended | [core/transport](../../apps/app/src/core/transport/.context/state-machines.md) |
 | Release | Whether this tab's code is current, deployed under, or must reload | [client/release](../../apps/app/src/client/release/.context/state-machines.md) |
 | Account lifetime | Whether the signed-in account's features, its document sessions among them, take new work: open, closing, closed | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |

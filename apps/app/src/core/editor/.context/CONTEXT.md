@@ -7,9 +7,11 @@ boundaries. The app schema must remain structurally aligned with
 ## Sessions and local copies
 
 `DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's
-document sessions: one per room, keyed by `sessionRoomKey` (the bare document id for a Live room,
+document sessions: one entry per document holding its Live room and a fork room per draft, at
+most one session per room (named by `sessionRoomKey`: the bare document id for a Live room,
 `fork:<draft>:<document>` for a draft's fork room), held by retain/release, closed after a grace
-once no host wants it and the server has saved its edits. A lease is only the account's right
+once no host wants it and the server has saved its edits. Each room's phase is drawn in
+[state-machines.md](state-machines.md) (Session registry room). A lease is only the account's right
 to hold one room's session (`{accountId, projectId, documentId, room}`): nothing orders or fences
 it, because the project's list says whether a document is there.
 
@@ -19,7 +21,7 @@ copy, it has its own socket, store, presence and `UndoHistory`, and it registers
 the binding (`registerDraft`) so every batch the Live session imports, and every local write it
 publishes (`forwardLocalWrite`), forwards the fork, whether or not an editor shows it. Admitting a
 fork admits its Live room; the Live room counts as retained while any fork session of it lives,
-and is torn down after them (`clearLocalCopy` and account close retire forks first). A draft
+and is torn down after them (`retireDocument`, which `clearLocalCopy` and account close call). A draft
 page opens its fork room whether or not the draft has changed the document: there is no path that
 binds Live and swaps at the first keystroke. A document the draft created has no fork: its page
 binds its own Live room.
@@ -479,10 +481,9 @@ keyboard, pointer, drop, or recovery answer.
   so the writer comes back to a fresh one. At most
   `KEPT_FOR_UNDO_CAP` (8) are kept, the least recently changed retired first; a history that
   empties ends its session, and a host that takes the session back reattaches it.
-- A retained session's socket is open when some owner wants it (a host is on screen, reported
-  through `setHosted` / `retain`'s `detachedDocumentIds`) or it has unsent edits it can still
-  deliver. One function, `DocumentSessionRegistry.reconcileRetainedSessions`, applies that on every
-  retain/release, and the session's own snapshots re-apply it when the edits are saved.
+- A retained session's socket is open: every owner that retains a room wants it shown or
+  delivered. One function, `DocumentSessionRegistry.reconcileRetainedSessions`, opens and
+  attaches every retained room on each retain/release and starts the grace of the rest.
   Nothing else attaches or detaches a retained live session. `DocumentSession.detachTransport`
   also cancels an attach still waiting for local persistence.
 - When the last host releases a live document, the registry retires its session after a

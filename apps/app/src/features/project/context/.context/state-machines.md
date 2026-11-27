@@ -48,7 +48,7 @@ stateDiagram-v2
 ```
 
 - **`closing` refuses new work and lets go of what is held.** The registry refuses `admit`, `get`,
-  `retain`, `setHosted`, `restartUnavailableRoom`, `whenSentAcknowledged` and `clearLocalCopy`
+  `retain`, `restartUnavailableRoom`, `whenSentAcknowledged` and `clearLocalCopy`
   once the signal is aborted, but `release` still runs, so a view unmounting during the close
   does not leak a hold. Its `close` throws unless the signal is aborted, so a closed registry can't
   take work again. An open the shutdown cuts off, even mid-bind, is teardown, not a failure (Live
