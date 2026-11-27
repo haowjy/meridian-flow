@@ -59,7 +59,7 @@ stateDiagram-v2
   `RoomDocs`, local persistence and undo history; edits made meanwhile wait in the document until
   the next `attachTransport` syncs them. The session registry detaches a session it is keeping
   when no view wants its socket open and it has no unsent edits
-  (`detachUnwantedTransport`). An attach that follows waits for the detach to finish closing.
+  (`detachUnwantedTransport`).
 - `destroyed` is the one stored state: once set, `recomputeStatus` returns without deriving.
 - The transport states are the [room connection](../../transport/.context/state-machines.md)'s.
 

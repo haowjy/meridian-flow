@@ -57,7 +57,7 @@ stateDiagram-v2
   grows only across connections that never joined.
 - **`connected` comes after the Join's batch is sent.** `whenSentAcknowledged` takes the batches
   it waits on only once the room reads as connected, so the batch carrying what was typed while
-  away is one of them ([CONTEXT.md](CONTEXT.md#acknowledgement-and-barriers)). Moving the status
+  away is one of them ([CONTEXT.md](CONTEXT.md#acknowledgement)). Moving the status
   earlier lets a press made offline reach the server before that typing.
 - **A close forgets the unacknowledged batches.** The next Join sends `exportSince` of the
   version the server answers with: whatever the server lacks, not the forgotten batches as they

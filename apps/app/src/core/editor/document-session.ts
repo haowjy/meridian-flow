@@ -128,7 +128,6 @@ export class DocumentSession {
   private tabs: BroadcastChannel | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
-  private detaching: Promise<void> | null = null;
   private readonly listeners = new Set<Listener>();
   private readonly contentListeners = new Set<() => void>();
   private readonly unsubscribers: (() => void)[] = [];
@@ -371,7 +370,7 @@ export class DocumentSession {
       throw new Error(`Transport already attached to room: ${this.roomKey}`);
     this.transportAttachmentPending = true;
     this.recomputeStatus();
-    void Promise.all([this.detaching, this.waitForLocalPersistenceTransportGate()]).then(() => {
+    void this.waitForLocalPersistenceTransportGate().then(() => {
       if (
         !this.destroyed &&
         !this.inert &&
@@ -465,12 +464,12 @@ export class DocumentSession {
     this.markContentInitialized();
   }
 
-  detachTransport(): Promise<void> {
+  detachTransport(): void {
     this.transportAttachmentPending = false;
     const previous = this.transportProvider;
     if (this.destroyed || !previous) {
       this.recomputeStatus();
-      return this.detaching ?? Promise.resolve();
+      return;
     }
     this.noteServer();
     for (const stop of this.unsubscribers.splice(0)) stop();
@@ -486,13 +485,12 @@ export class DocumentSession {
     this.serverHasLocalChanges = false;
     previous.destroy();
     this.emit();
-    return Promise.resolve();
   }
 
-  async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
+  restartTransport(transportFactory: DocumentSessionTransportFactory): void {
     if (this.destroyed)
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
-    await this.detachTransport();
+    this.detachTransport();
     this.attachTransport(transportFactory);
     this.startTabs();
   }
@@ -513,13 +511,6 @@ export class DocumentSession {
     await this.transportProvider?.whenSentAcknowledged();
   }
 
-  whenCurrentChangesAcknowledged(): Promise<void> {
-    const provider = this.transportProvider;
-    if (!provider) return Promise.reject(new Error("Document session has no transport"));
-    if (this.access === "read") return Promise.resolve();
-    return provider.whenCurrentChangesAcknowledged();
-  }
-
   undeliverableWords(): boolean {
     return this.holdsUndeliverable && this.computeUndeliverable();
   }
@@ -528,12 +519,12 @@ export class DocumentSession {
     return this.inert;
   }
 
-  makeInert(): Promise<void> {
+  makeInert(): void {
     this.inert = true;
     this.transportAttachmentPending = false;
     this.stopTabs();
     this.recomputeStatus();
-    return this.detachTransport();
+    this.detachTransport();
   }
 
   hasUnacknowledgedEdits(): boolean {
