@@ -21,6 +21,7 @@
     "@meridian/loro-prosemirror": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
+    "@noble/hashes": "2.4.0",
     "@sanity/diff-match-patch": "^3.2.1",
     "loro-crdt": "catalog:",
     "prosemirror-model": "^1.25.13",

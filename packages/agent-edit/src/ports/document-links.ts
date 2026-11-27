@@ -12,7 +12,6 @@ import type { PMNode } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
 import type { ShownLink } from "../links/correspondence.js";
 import type { WriteContext } from "../tool/types.js";
-import type { DocumentCut } from "./document-rooms.js";
 
 export interface LinkPrepareRequest {
   documentId: string;
@@ -37,5 +36,4 @@ export interface DocumentLinksPort {
   scopeFor(documentId: string, context: WriteContext | undefined): HolderLinkScope;
   /** Independent durable registration (§6). Throws if called inside a DB transaction. */
   registerAhead(mints: readonly AheadMint[]): Promise<void>;
-  revision(cut: DocumentCut, scope: HolderLinkScope): string;
 }

@@ -38,7 +38,7 @@ persistence, and coordination.
 
 ## Revision and removal
 
-`domain/document-revision.ts` (`cutRevision`) produces a revision from the room version, holder
+Agent-edit's `cutRevision` (`@meridian/agent-edit/integration`) is the one revision derivation, for the model's reads and writes and for collab's readers alike. It produces a revision from the room version, holder
 URI, and sorted stored-link/image identities: the version covers every text and structure change,
 the link spelling covers tree-only moves. Reads and applies compute the token synchronously in
 their prepared link scope; an unverified recovery returns `null`, never a later read's token.

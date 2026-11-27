@@ -121,7 +121,6 @@ export function createStaticDocumentLinks(
     async registerAhead(mints) {
       for (const mint of mints) minted.push(mint.ref);
     },
-    revision: (cut, scope) => cutRevision(cut.version, scope, catalog),
   };
 }
 
@@ -252,33 +251,4 @@ function catalogTree(
       return (parsed.ok && walk(sourceOf(parsed), parsed.value.path.split("/"))?.folder) || null;
     },
   };
-}
-
-/**
- * The cut's room version, holder and the whole catalog: coarser than the server's digest
- * (any catalog change counts), never finer, so a move always changes it.
- * FNV-1a, because this package also runs in the browser.
- */
-function cutRevision(state: Uint8Array, scope: HolderLinkScope, catalog: StaticDocumentCatalog) {
-  let hash = 0x811c9dc5;
-  const feed = (bytes: Uint8Array) => {
-    for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
-  };
-  feed(state);
-  feed(
-    new TextEncoder().encode(
-      JSON.stringify([
-        scope.holder.uri,
-        catalog.documents.map((entry) => [entry.documentId, entry.uri, entry.presence]),
-        catalog.folders?.map((entry) => [
-          entry.folderId,
-          entry.uri,
-          entry.readable,
-          entry.nameable,
-        ]),
-        [...(catalog.settlements ?? [])],
-      ]),
-    ),
-  );
-  return `static:${hash.toString(16)}`;
 }

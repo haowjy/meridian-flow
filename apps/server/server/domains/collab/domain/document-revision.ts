@@ -1,35 +1,14 @@
-import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
-import type {
-  AgentEditCodecFactory,
-  AgentEditModel,
-  DocHandle,
-  DocumentCut,
+import {
+  type AgentEditCodecFactory,
+  type AgentEditModel,
+  cutRevision,
+  type DocHandle,
 } from "@meridian/agent-edit/integration";
-import { spelledLinks, walkLinkOccurrences } from "@meridian/markup/links";
+import { spelledLinks } from "@meridian/markup/links";
 import type { HashlineRead } from "../contracts.js";
 import { grepBlocksOf } from "./grep-blocks.js";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
-
-export function cutRevision(cut: DocumentCut, scope: HolderLinkScope): string {
-  const triples = new Set<string>();
-  for (const { kind, attrs } of walkLinkOccurrences(cut.blocks)) {
-    const asset = kind !== "link" && attrs.href.startsWith("asset:");
-    if (attrs.ref === null && !asset) continue;
-    const spelled =
-      kind === "link"
-        ? scope.spellLink({ href: attrs.href, ref: attrs.ref })
-        : scope.spellSource({ src: attrs.href, ref: attrs.ref });
-    triples.add(JSON.stringify([attrs.ref, attrs.href, spelled.href]));
-  }
-  return `l1:${createHash("sha256")
-    .update(cut.version)
-    .update(Uint8Array.of(0))
-    .update(scope.holder.uri ?? "", "utf8")
-    .update(Uint8Array.of(0))
-    .update(JSON.stringify([...triples].sort()), "utf8")
-    .digest("base64url")}`;
-}
 
 export function viewRevision(revision: string, draft: string | null): string {
   return draft ? `${revision}:${draft}` : revision;
