@@ -18,18 +18,12 @@ export {
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 export { createAgentFilesHints } from "./agent-files-hints.js";
-export {
-  exportFilename,
-  joinPath,
-  renderFilename,
-  splitPath,
-} from "./context/paths.js";
+export { exportFilename, joinPath, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
   contextAreaOf,
-  parseContextUri,
-  parseUnifiedContextUri,
-  toCanonical,
+  parseContextUriResult,
+  parseUnifiedContextUriResult,
   UNIFIED_CONTEXT_SCHEMES,
 } from "./context/uri.js";
 export {

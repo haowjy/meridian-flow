@@ -15,14 +15,11 @@ import {
   type BillingUsagePolicy,
   createBillingDomain,
   createDrizzleCreditLedger,
-  createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-work-draft-pending.js";
-import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
   createCollabDomain,
-  createInMemoryCollabDomain,
   createLinkScopeObserver,
   type DocumentLinkScopes,
 } from "../domains/collab/index.js";
@@ -80,7 +77,6 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
-import { emptyOwnerLookup } from "../domains/context/owner-lookup.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
@@ -92,10 +88,8 @@ import type { ExportDocumentReader } from "../domains/export/ports/export-docume
 import type { ExportSnapshotStore } from "../domains/export/ports/export-snapshot.js";
 import {
   type AgentChain,
-  createAllowAllFileAccess,
   createDrizzleFileFacts,
   createFileAccess,
-  createLocalFileAccessChanges,
   createOwnerFileGrants,
   createPgFileAccessChanges,
   type FileAccess,
@@ -119,9 +113,8 @@ import {
   createTokenCipher,
   type McpConnections,
 } from "../domains/mcp/index.js";
-import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
+import { createDrizzleNoticePort, type NoticePort } from "../domains/notices/index.js";
 import {
-  createNoopEventSink,
   type EventQuery,
   type EventSink,
   emitEvent,
@@ -134,15 +127,12 @@ import {
   createCachedPackageFetcher,
   createDrizzleAgentRevisionStore,
   createGithubPackageFetcher,
-  createInMemoryAgentRevisionStore,
-  noLevelFiles,
   type PackageFetcher,
   readBuiltinPackages,
 } from "../domains/packages/index.js";
 import {
   type AccountSettingsRepository,
   createDrizzleAccountSettingsRepository,
-  createInMemoryAccountSettingsRepository,
 } from "../domains/preferences/index.js";
 import {
   createDrizzleProjectBootstrapRepository,
@@ -161,18 +151,13 @@ import {
 } from "../domains/projects/index.js";
 import {
   createDrizzleRecentDocumentsRepository,
-  createInMemoryRecentDocumentsRepository,
   type RecentDocumentsRepository,
 } from "../domains/recent-documents/index.js";
 import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import {
-  type AskService,
-  createAskService,
-  refusingPermissionExecutor,
-} from "../domains/runtime/asks/ask-service.js";
+import { type AskService, createAskService } from "../domains/runtime/asks/ask-service.js";
 import type { ModelTokenRateSource } from "../domains/runtime/costing/pricing.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
@@ -192,11 +177,6 @@ import {
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
-  createInMemoryInbox,
-  createInMemoryRunClaim,
-  createInMemoryRunStarter,
-  createInMemoryRuntimeDelivery,
-  createInMemoryThreadLock,
   createInspectionToolRegistrations,
   createLineageCancellation,
   createMcpToolRegistrations,
@@ -229,7 +209,6 @@ import {
   type UserTurnAdmission,
   type WorkContextNotices,
   type WorkContextReader,
-  writeModeSwitchNotice,
 } from "../domains/runtime/index.js";
 import {
   resolveThreadUserInvocableSkills,
@@ -239,13 +218,9 @@ import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-
 import { threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
-import {
-  createInMemoryModelRequestDebugStore,
-  createModelRequestDebugStore,
-} from "../domains/runtime/model-request-debug/index.js";
+import { createModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import {
-  createInMemoryObjectStore,
   createObjectRelease,
   type LocalObjectStoreAdapter,
   type ObjectRelease,
@@ -254,11 +229,9 @@ import {
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
-import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { readThreadActivity } from "../domains/threads/domain/thread-activity.js";
 import {
   createDrizzleTopPrimaryChatResolver,
-  createInMemoryEventJournalWriter,
   requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
@@ -274,13 +247,8 @@ import {
 } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
-import {
-  createDetachedWorkTracker,
-  type DetachedWorkTracker,
-  processDetachedWork,
-} from "../shared/detached-work.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
-import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
@@ -300,6 +268,7 @@ import { createChatMedia } from "./runtime-host/chat-media.js";
 import { createConnections } from "./runtime-host/connections.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
+import { resolveWorkMembership } from "./work-attachment.js";
 
 export type AppServices = {
   projectExport: ProjectExport;
@@ -325,9 +294,7 @@ export type AppServices = {
   projectWakeHub: ProjectWakeHub;
   documentLinks: DocumentLinkResolver;
   linkScopes: DocumentLinkScopes;
-  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
-  works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
@@ -415,7 +382,6 @@ export type ProductionAppPorts = {
   documentArrivals: DocumentArrivals;
   organizeWake: OrganizeWakeHub;
   projects: ProjectBootstrapRepository;
-  works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
@@ -805,7 +771,6 @@ export async function createProductionAppPorts(input: {
     exportSnapshot: createDrizzleExportSnapshotStore(db),
     linkScopes: documentLinks,
     projects,
-    works: workRepo,
     projectRepo,
     users,
     workRepo,
@@ -1183,16 +1148,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       subagentThreads: ports.threadRepos.threads,
       transaction: ports.threadRepos.transaction,
     },
-    resolveWorkMembership: async (input) => {
-      const { resolveWorkMembership } = await import("./work-attachment.js");
-      return resolveWorkMembership(
-        {
-          workRepo: ports.workRepo,
-          threadWorks: ports.threadRepos.threadWorks,
-        },
+    resolveWorkMembership: (input) =>
+      resolveWorkMembership(
+        { workRepo: ports.workRepo, threadWorks: ports.threadRepos.threadWorks },
         input,
-      );
-    },
+      ),
     eventWriter: threadEventHub,
     readActivity,
     agentRevisions: ports.agentRevisions,
@@ -1311,7 +1271,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     commands: createCommandStore(ports.db),
     treeLists: ports.treeLists,
     liveDocuments: createTreeReader(ports.db),
-    linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     openImports: (userId) => listOpenImports(ports.db, userId),
     importOrganizer,
@@ -1334,7 +1293,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentLinks: ports.documentLinks,
     linkScopes: ports.linkScopes,
     projects: ports.projects,
-    works: ports.works,
     projectRepo: ports.projectRepo,
     users: ports.users,
     workRepo: ports.workRepo,
@@ -1398,723 +1356,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
   };
 }
-
-export function createInMemoryAppServices(
-  options: { packageFetcher?: PackageFetcher } = {},
-): AppServices {
-  const backgroundTasks = createDetachedWorkTracker();
-  const transactionOwner = new InMemoryTransactionOwner();
-  const threadRepos = createInMemoryRepositories({
-    transactionOwner,
-    boundAgent: (id) => agentRevisions.boundAgent(id),
-  });
-  const agentRevisions = createInMemoryAgentRevisionStore({
-    transactionOwner,
-    threadExists: async (id) =>
-      Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
-  });
-  const accountSettings = createInMemoryAccountSettingsRepository();
-  const recentDocuments = createInMemoryRecentDocumentsRepository();
-  const modelRequestDebug = createInMemoryModelRequestDebugStore();
-  const notices = createInMemoryNoticePort();
-  const creditLedger = createInMemoryCreditLedger();
-  const billingDomain = createBillingDomain({
-    ledger: creditLedger,
-    stripeGateway: null,
-    getOrCreateStripeCustomer: async () => {
-      throw new Error("Stripe checkout is not configured");
-    },
-    env: {},
-  });
-  const inbox = createInMemoryInbox();
-  const runClaim = createInMemoryRunClaim();
-  const runStarter = createInMemoryRunStarter();
-  const journal = createInMemoryEventJournalWriter(transactionOwner);
-  const delivery = createInMemoryRuntimeDelivery({
-    backgroundTasks,
-    async recoverCommands() {},
-    workContext: {
-      async renderForThread() {
-        throw new Error("No Work context configured");
-      },
-    },
-    repos: threadRepos,
-    eventWriter: journal,
-    headSeq: (id) => journal.headSeq(id),
-    notices,
-    runClaim,
-    inbox,
-    threadLock: createInMemoryThreadLock(),
-    runStarter,
-    async publishFinalizedReports() {},
-    writeModeSwitch: {
-      async renderNotice(_threadId, mode) {
-        return writeModeSwitchNotice({ archivedAt: null, isNoWork: false }, mode, false);
-      },
-      async setWorkDefault() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-    },
-    schedulePostCommit: (task) => {
-      void task();
-    },
-  });
-  const asks = createAskService({
-    repos: threadRepos,
-    eventWriter: journal,
-    delivery,
-    permission: refusingPermissionExecutor,
-  });
-  const handoffBriefs: HandoffBriefs = {
-    async hold() {
-      return null;
-    },
-    launchAfterCommit() {},
-    async stop() {
-      return false;
-    },
-    async retry() {
-      throw new Error("in-memory handoff retry is not implemented");
-    },
-    beginShutdown() {},
-  };
-  const recovery = {
-    async scanWakes() {
-      return 0;
-    },
-    async repairOrphans() {
-      return 0;
-    },
-    async publishReports() {
-      return 0;
-    },
-    async purgeWorks() {
-      return 0;
-    },
-    async purgeDocuments() {
-      return 0;
-    },
-    async purgeDiscards() {
-      return 0;
-    },
-    expireAsks: () => asks.expireDue(),
-  };
-
-  const documentSync: CollabDomain = createInMemoryCollabDomain(async (owner) => {
-    if (owner.kind !== "lineage") return null;
-    const root = await threadRepos.threads.findByIdIncludingDeleted(owner.rootThreadId);
-    return root?.draftId ? { id: root.draftId, projectId: root.projectId } : null;
-  });
-  const unavailableWorkContext: WorkContextReader = {
-    async renderForThread() {
-      throw new Error("in-memory Work context is not configured");
-    },
-  };
-  const inMemoryThreadEventHub: ThreadEventHub = {
-    invalidateCommittedJournal() {},
-    recordFailure() {},
-    async appendEvents(threadId, events) {
-      let seq = 0n;
-      for (const event of events) seq = await this.appendEvent(threadId, event);
-      return seq;
-    },
-    async appendEvent() {
-      return 0n;
-    },
-    async catchup() {
-      return [];
-    },
-    async catchupAndSubscribe() {
-      return { catchup: [], unsubscribe: () => undefined };
-    },
-    async headSeq() {
-      return 0n;
-    },
-    async readModelProjectionWatermark() {
-      return 0n;
-    },
-    hasThreadState() {
-      return false;
-    },
-  };
-
-  const noContextSources: ContextSources = {
-    async inProject() {
-      return [];
-    },
-    async endedIn() {
-      return [];
-    },
-    async ofUser() {
-      return [];
-    },
-    async ownedBy() {
-      return [];
-    },
-  };
-  const workAuthorityResolver: ProjectWorkAuthorityResolver = {
-    async byId() {
-      return null;
-    },
-    async byHandle() {
-      return null;
-    },
-    async noWork() {
-      return null;
-    },
-    async listForProject() {
-      return [];
-    },
-    async lockById() {
-      return null;
-    },
-  };
-
-  const unsupported = (): never => {
-    throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
-  };
-  const linkAheadRegistry: LinkAheadRegistry = {
-    registerWithinTransaction: async () => {
-      throw new Error("Ahead registration requires Postgres");
-    },
-    register: async () => unsupported(),
-    registerInCommand: async () => unsupported(),
-    settleArrivals: async () => unsupported(),
-    registerUnregistered: async () => unsupported(),
-  };
-
-  const agentCatalog = createBoundAgentCatalog({
-    store: agentRevisions,
-    levelFiles: noLevelFiles,
-    builtins: [],
-    modelFor: (name) => name ?? "mock-model",
-    unavailableReasons: (definition, model) =>
-      agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
-    modelUnavailable: (model) => agentModelUnavailableReasons({ listModels: () => [] }, model),
-  });
-  return {
-    gateway: {
-      async *stream(request) {
-        const model = request.model ?? "in-memory";
-        yield { type: "start" as const, model, provider: "in-memory" };
-        yield {
-          type: "end" as const,
-          result: {
-            content: [],
-            toolCalls: [],
-            finishReason: "end_turn" as const,
-            usage: { inputTokens: 0, outputTokens: 0 },
-            model,
-            provider: "in-memory",
-          },
-        };
-      },
-      listModels: () => [],
-      getDefaultModel() {
-        return undefined;
-      },
-    },
-    threadRepos,
-    journalReader: {
-      async lastSeqBefore() {
-        return 0n;
-      },
-      async readAfter() {
-        return [];
-      },
-      async headSeq() {
-        return 0n;
-      },
-      async readModelProjectionWatermark() {
-        return 0n;
-      },
-    },
-    journalWriter: {
-      async appendEvents(threadId, events) {
-        let seq = 0n;
-        for (const event of events) seq = await this.appendEvent(threadId, event);
-        return seq;
-      },
-      async appendEvent() {
-        return 1n;
-      },
-    },
-    threadEventHub: inMemoryThreadEventHub,
-    threadRuntime: {
-      async requireOwnedThread() {
-        throw new Error("in-memory thread runtime is not implemented");
-      },
-      async liveState() {
-        throw new Error("in-memory thread runtime is not implemented");
-      },
-      async read() {
-        return { kind: "asleep" as const };
-      },
-      async readMany() {
-        return new Map();
-      },
-      async readRunningTurnId() {
-        return null;
-      },
-      async readRunState() {
-        throw new Error("in-memory thread runtime has no run state");
-      },
-    },
-    documentSync,
-    commands: {
-      async lookup() {
-        throw new Error("The command record requires durable persistence");
-      },
-      async resolve() {
-        throw new Error("The command record requires durable persistence");
-      },
-      async run() {
-        throw new Error("The command record requires durable persistence");
-      },
-    },
-    treeLists: {
-      async open() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      async readSince() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      async admit() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      async submit() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      async read() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      async lock() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      async resync() {
-        throw new Error("Tree lists are unavailable in memory");
-      },
-      onCommitted: () => () => {},
-      onListAdvanced: () => () => {},
-    },
-    liveDocuments: {
-      async findById() {
-        throw new Error("Live tree reads are unavailable in memory");
-      },
-    },
-    linkAheadRegistry,
-    contextPorts: createInMemoryContextPorts(),
-    openImports: async () => [],
-    importOrganizer: {
-      async runPass() {
-        return 0;
-      },
-    },
-    organizeWake: createOrganizeWakeHub(),
-    imports: () => {
-      throw new Error("Import requires durable persistence");
-    },
-    contextSources: noContextSources,
-    documentTrash: {
-      async retained() {
-        return new Set();
-      },
-      async list() {
-        return [];
-      },
-      async read() {
-        return null;
-      },
-      async wasPurged() {
-        return false;
-      },
-      async purge() {
-        return 0;
-      },
-    },
-    documentAddresses: {
-      async resolve() {
-        return { kind: "unavailable" };
-      },
-    },
-    projectContextAvailability: {
-      async placed() {
-        return { documents: new Map(), folders: new Map(), inconsistent: new Set() };
-      },
-      async held() {
-        return null;
-      },
-      serializeCreate: (_entryId, create) => create(),
-    },
-    projectWakeHub: createProjectWakeHub(),
-    documentLinks: createDocumentLinkResolver({
-      sources: noContextSources,
-      tree: {
-        async resolveDocumentAddress() {
-          throw new Error("Live tree reads are unavailable in memory");
-        },
-      },
-      workAuthorityResolver,
-    }),
-    projectExport: createProjectExport({
-      pendingDocuments: {
-        async count() {
-          return 0;
-        },
-      },
-      snapshot: {
-        async read() {
-          return { documents: [], folders: [], sources: [], settlements: new Map() };
-        },
-      },
-      documents: exportDocumentsFrom(documentSync),
-      files: createAllowAllFileAccess(),
-      objects: {
-        async getStream() {
-          throw new Error("No export objects in memory");
-        },
-      },
-    }),
-    linkScopes: createStaticDocumentLinkScopes(),
-    projects: {
-      async ensureDefaultBootstrapReady() {
-        return false;
-      },
-      async ensureDefaultBootstrap() {
-        throw new Error("in-memory projects are not implemented");
-      },
-    },
-    works: {
-      async transaction(operation) {
-        return operation();
-      },
-      async readSnapshot(operation) {
-        return operation();
-      },
-      async snapshotIdentity() {
-        return { authorityRevision: "0" };
-      },
-      async create() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async findById() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async findByHandle() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async findNoWork() {
-        return null;
-      },
-      async ensureNoWork() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async lockById() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async listByProject() {
-        return [];
-      },
-      async update() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async archive() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async unarchive() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async softDelete() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async restore() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async touch() {},
-      async lockRestoreNamespaces() {},
-      async setDefaultAiWriteMode() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-    },
-    projectRepo: {
-      async create() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async findById() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async findLiveByOwnerSlug() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async listByUser() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async search() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async update() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async softDelete() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async restore() {
-        throw new Error("in-memory project repository is not implemented");
-      },
-      async touch() {},
-    },
-    users: {
-      async ensureUser() {
-        throw new Error("in-memory user repository is not implemented");
-      },
-    },
-    workRepo: {
-      async transaction(operation) {
-        return operation();
-      },
-      async readSnapshot(operation) {
-        return operation();
-      },
-      async snapshotIdentity() {
-        return { authorityRevision: "0" };
-      },
-      async create() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async findById() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async findByHandle() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async findNoWork() {
-        return null;
-      },
-      async ensureNoWork() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async lockById() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async listByProject() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async update() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async archive() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async unarchive() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async softDelete() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async restore() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async touch() {},
-      async lockRestoreNamespaces() {},
-      async setDefaultAiWriteMode() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-    },
-    workAuthorityResolver,
-    workContext: unavailableWorkContext,
-    workContextNotices: delivery,
-    asks,
-    billing: billingDomain.service,
-    agentRevisions,
-    agentCatalog,
-    packageFetcher: createCachedPackageFetcher(
-      options.packageFetcher ?? {
-        async fetchTree() {
-          throw new Error("Package fetching is unavailable in memory");
-        },
-      },
-    ),
-    eventSink: createNoopEventSink(),
-    accountSettings,
-    mcpConnections: new Proxy({} as McpConnections, {
-      get() {
-        throw new Error("MCP connections require Postgres");
-      },
-    }),
-    connections: new Proxy({} as ConnectionsPort, {
-      get() {
-        throw new Error("MCP connections require Postgres");
-      },
-    }),
-    recentDocuments,
-    orchestrator: {
-      async prepare() {
-        throw new Error("in-memory orchestrator is not implemented");
-      },
-    },
-    runner: {
-      async prepare() {
-        throw new Error("in-memory run preparation is not implemented");
-      },
-      async retryReply() {
-        throw new Error("in-memory reply retry is not implemented");
-      },
-      getRunningTurn() {
-        return null;
-      },
-      getRunningTurnId() {
-        return null;
-      },
-      isThreadRunning() {
-        return false;
-      },
-      beginShutdown() {},
-      async startDrain() {
-        throw new Error("in-memory turn runner is not implemented");
-      },
-      async stop() {
-        throw new Error("in-memory chat Stop is not implemented");
-      },
-      async handBack() {
-        throw new Error("in-memory hand-back is not implemented");
-      },
-      async sendNow() {
-        throw new Error("in-memory Send now is not implemented");
-      },
-      async cancel() {
-        return "not_found" as const;
-      },
-      async stopThreads() {},
-    },
-    async stopThreads() {},
-    runStarter,
-    delivery,
-    recovery,
-    handoffBriefs,
-    userTurnAdmission: {
-      async admit(input) {
-        return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };
-      },
-      async lookup(input) {
-        return { kind: "not-seen", submissionId: input.submissionId };
-      },
-      async retire(input) {
-        return { kind: "retired", submissionId: input.submissionId, code: "retired" };
-      },
-    },
-    runClaim,
-    toolRegistry: {
-      getDefinitions() {
-        return [];
-      },
-      getRegistration() {
-        return undefined;
-      },
-      register() {},
-    },
-    toolExecutor: {
-      async executeTool() {
-        throw new Error("in-memory tool executor is not implemented");
-      },
-    },
-    objectStore: createInMemoryObjectStore(),
-    localObjectStore: null,
-    uploadIntake: {
-      async start() {
-        throw new Error("in-memory upload intake is not implemented");
-      },
-      async finish() {
-        throw new Error("in-memory upload intake is not implemented");
-      },
-      async sweepAbandoned() {
-        return 0;
-      },
-    },
-    chatUploads: {
-      async list() {
-        return { uploads: [] };
-      },
-    },
-    uploadIdentity: {
-      async lookupUpload() {
-        return null;
-      },
-      async lookupDocument() {
-        return null;
-      },
-      async lookupDocuments() {
-        return [];
-      },
-    },
-    figureAssets: {
-      async getSignedFigureUrl() {
-        throw new Error("in-memory figure assets are not implemented");
-      },
-    },
-    documentProperties: { findStored: async () => null },
-    fileAccess: createAllowAllFileAccess(),
-    fileAccessChanges: createLocalFileAccessChanges(),
-    notices,
-    modelRequestDebug,
-    mockModelScript: null,
-    async shutdown() {
-      await backgroundTasks.drain();
-    },
-  };
-}
-
-function createInMemoryContextPorts(): UnifiedContextPortFactory {
-  const unavailable = (): never => {
-    throw new Error("Context requires durable persistence");
-  };
-  return {
-    lineages: {
-      async byId() {
-        return null;
-      },
-      async rootForThreadRef() {
-        return null;
-      },
-      async byRef() {
-        return null;
-      },
-      async list() {
-        return [];
-      },
-    },
-    chats: {
-      async byRef() {
-        return null;
-      },
-    },
-    topPrimaryChats: { resolveTopPrimaryChat: async () => null },
-    chatFiles: emptyOwnerLookup,
-    forProject: unavailable,
-    forWork: unavailable,
-  };
-}
-
-function createInMemoryNoticePort(): NoticePort {
-  const rows: Notice[] = [];
-  let nextId = 1;
-  return {
-    async record(input) {
-      const notice: Notice = { ...input, id: nextId++, createdAt: new Date() };
-      rows.push(notice);
-    },
-    async peek(threadId) {
-      return rows.filter((notice) => notice.scope.threadId === threadId);
-    },
-    async consume(ids) {
-      const consumed = new Set(ids);
-      for (let index = rows.length - 1; index >= 0; index -= 1) {
-        if (consumed.has(rows[index]?.id ?? -1)) rows.splice(index, 1);
-      }
-    },
-  };
-}
-
-export type { ThreadRepositories } from "../domains/threads/ports/index.js";
 
 function exportDocumentsFrom(documents: Pick<CollabDomain, "readForExport">): ExportDocumentReader {
   return {

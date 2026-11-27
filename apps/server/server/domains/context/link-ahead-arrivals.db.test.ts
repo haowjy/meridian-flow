@@ -75,7 +75,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       );
       const register = (address: string) => {
         const aheadId = randomUUID();
-        return app.linkAheadRegistry
+        return ports.linkAheadRegistry
           .register([{ aheadId, holderProjectId: projectId as never, address }])
           .then(() => aheadId);
       };

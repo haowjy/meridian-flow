@@ -27,7 +27,7 @@ import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
-import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
+import { findConversationalHead } from "../../domain/visible-conversation-policy.js";
 import { orderTurnsByPosition } from "../../order-turns.js";
 import type { StoredAsk } from "../../ports/ask-repository.js";
 import type {
@@ -238,18 +238,14 @@ export function createInMemoryRepositories(
   }
 
   function projectThread(thread: Thread): Thread {
-    let head = thread.activeLeafTurnId ? turns.get(thread.activeLeafTurnId) : undefined;
-    while (
-      head &&
-      !isVisibleConversationalTurn({
-        role: head.role,
-        metadata: head.metadata ?? null,
-        hasCustomBlock: [...blocks.values()].some(
-          (block) => block.turnId === head?.id && block.blockType === "custom",
+    const head = findConversationalHead(
+      thread.activeLeafTurnId ? turns.get(thread.activeLeafTurnId) : undefined,
+      (turn) => (turn.parentTurnId ? turns.get(turn.parentTurnId) : undefined),
+      (turn) =>
+        [...blocks.values()].some(
+          (block) => block.turnId === turn.id && block.blockType === "custom",
         ),
-      })
-    )
-      head = head.prevTurnId ? turns.get(head.prevTurnId) : undefined;
+    );
     return {
       ...thread,
       lastActivityAt: head?.completedAt ?? head?.createdAt ?? thread.createdAt,

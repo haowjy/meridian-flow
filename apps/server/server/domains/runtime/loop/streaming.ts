@@ -39,7 +39,7 @@ export class DuplicateToolCallIdError extends Error {
 }
 
 export function collectToolCalls(result: GenerateResult): ToolCall[] {
-  const fromContent = result.content
+  const calls = result.content
     .filter((p): p is Extract<ContentPart, { type: "tool_use" }> => p.type === "tool_use")
     .map((p) => ({
       id: p.toolCallId,
@@ -48,17 +48,11 @@ export function collectToolCalls(result: GenerateResult): ToolCall[] {
       ...(p.inputParseError ? { argumentsParseError: p.inputParseError } : {}),
     }));
   const seen = new Set<string>();
-  for (const { id } of fromContent) {
+  for (const { id } of calls) {
     if (seen.has(id)) throw new DuplicateToolCallIdError(id);
     seen.add(id);
   }
-  for (const call of result.toolCalls) {
-    if (!seen.has(call.id)) {
-      fromContent.push(call);
-      seen.add(call.id);
-    }
-  }
-  return fromContent;
+  return calls;
 }
 
 export function contentPartToBlockInput(

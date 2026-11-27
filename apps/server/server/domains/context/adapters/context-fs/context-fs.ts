@@ -3,6 +3,7 @@ import {
   canonicalLeaf,
   documentFilenameAt,
   type ParsedDocumentFilename,
+  renderFilename,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
@@ -22,7 +23,7 @@ import type {
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
 import { type FileDestination, sourceDestination } from "../../../file-policy/index.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
-import { joinPath, renderFilename, splitPath } from "../../context/paths.js";
+import { joinPath, splitPath } from "../../context/paths.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,

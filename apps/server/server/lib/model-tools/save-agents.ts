@@ -7,7 +7,7 @@ import {
 import { meridianErrorFromTool } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { z } from "zod";
-import { parseUnifiedContextUri } from "../../domains/context/index.js";
+import { parseUnifiedContextUriResult } from "../../domains/context/index.js";
 import type { BoundAgentCatalog } from "../../domains/packages/index.js";
 import {
   modelToolSchema,
@@ -31,7 +31,7 @@ const SaveAgentsInputSchema = z
 const LEVEL_NAME: Record<AgentsLevel, string> = { project: ".agents", user: "~/.agents" };
 
 function packageOf(path: string): { level: AgentsLevel; folder: string } | null {
-  const parsed = parseUnifiedContextUri(path);
+  const parsed = parseUnifiedContextUriResult(path);
   const at = parsed.ok ? agentsLocationOf(parsed.value.scheme, parsed.value.path) : null;
   if (!at) return null;
   const [dir, name] = at.path.split("/");

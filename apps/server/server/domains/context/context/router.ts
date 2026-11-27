@@ -1,6 +1,6 @@
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
-import { contextRootUri } from "@meridian/contracts/context-uri";
+import { canonicalContextUri, contextRootUri } from "@meridian/contracts/context-uri";
 import {
   documentFilenameAt,
   entrySegment,
@@ -39,7 +39,7 @@ import type {
 } from "../ports/context-port.js";
 import { invalidEntryError } from "./invalid-entry-error.js";
 import { callAdapter, toFileEntry, toFileRef, toGrepFile } from "./router-adapter-results.js";
-import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
+import { type ParseContextUriOptions, parseContextUriResult } from "./uri.js";
 
 export interface ContextSourceBinding {
   adapter: ContextSchemeAdapter;
@@ -126,7 +126,7 @@ type SourceLocation = {
 };
 
 function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContextAuthority): string {
-  return toCanonical(scheme, path, authority);
+  return canonicalContextUri(scheme, path, authority);
 }
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
@@ -206,7 +206,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   }
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
-    const parsed = parseContextUri(uri, parseOptions);
+    const parsed = parseContextUriResult(uri, parseOptions);
     if (!parsed.ok) {
       const { error } = parsed;
       return error.code === "invalid_uri" && error.slip
@@ -304,7 +304,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         uri,
         reason: "No scratch owner here. ls scratch://@ lists the owners.",
       });
-    const canonical = toCanonical(scheme, path, canonicalAuthority);
+    const canonical = canonicalContextUri(scheme, path, canonicalAuthority);
 
     if (!adapter) {
       return Err({
@@ -595,7 +595,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             })),
         });
       }
-      const listed = parseContextUri(uri, parseOptions);
+      const listed = parseContextUriResult(uri, parseOptions);
       if (listed.ok && listed.value.authority.kind === "owners") {
         const { scheme } = listed.value;
         const rows =
