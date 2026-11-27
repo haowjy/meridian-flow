@@ -11,9 +11,7 @@ document sessions: one per room, keyed by `sessionRoomKey` (the bare document id
 `fork:<draft>:<document>` for a draft's fork room), held by retain/release, closed after a grace
 once no host wants it and its unsent edits are acknowledged. A lease is only the account's right
 to hold one room's session (`{accountId, projectId, documentId, room}`): nothing orders or fences
-it, because the project's list says whether a document is there. A room sign-out opens only to
-deliver a stored copy (`openStoredUnsent`) has no lease, and so no project, until something
-admits it.
+it, because the project's list says whether a document is there.
 
 A fork session (design §6, "The session lifecycle") is the same `DocumentSession` class on the
 fork room, built over its document's Live session: its docs are `RoomDocs.draftOf` the Live
@@ -43,10 +41,15 @@ answer is whether the server's version covers `pending`, and each doc key goes o
 transport merges a server batch, or an acknowledged one, into `serverVersion()` before handing it
 on, and the session recounts after, so a sign-out waiting on another tab's typing wakes when that
 tab's delivery comes back. Another tab's typing that tab never delivers (it closed offline) is
-sent from here once the other tab has been quiet for `TAB_QUIET_MS` (2 s): the session asks its
-transport to send what the server still lacks (`sendLacking`). The writing tab normally delivers
-first and the server's relay of it covers `pending` here, so the timer sends nothing; it restarts on
-each batch, so continuous typing elsewhere is never sent twice.
+sent from here once the tabs have been quiet for `TAB_QUIET_MS` (2 s, restarted by each batch):
+a connected session asks its transport to send what the server still lacks (`sendLacking`). The
+writing tab normally delivers first and the server's relay covers `pending` here, so nothing is
+sent; with a third tab, or a relay slower than 2 s, each extra tab may resend the undelivered part
+once per quiet period, which the server takes as a no-op. A session off its socket (kept for Undo,
+or detached) never sees the relay: at quiet it reads the server mark the writing tab keeps in the
+copy, and only what that leaves sets `undeliveredTabWrites`, on which the registry gives it its
+socket back and holds it until acknowledged (`deliverTabWrites`). Reconnecting on `pending` alone
+would rejoin on every keystroke typed in another tab.
 
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
@@ -505,8 +508,12 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
 - **What the server has.** Each copy keeps the room version the server is known to hold
   (`SERVER_META` in the copy's `meta` store). The transport knows it per connection: the
   server's Join version, merged with each batch the server acked or sent
-  (`serverVersion()`); the session writes it to the copy each time the server has acknowledged
-  everything, merging by per-peer maximum. Ops the copy holds beyond it are all the server can
+  (`serverVersion()`); the session writes it to the copy as it grows: a batch the server sent is
+  stored with the mark that covers it in one transaction, and each time the server has
+  acknowledged everything the mark is written at once, as at detach and destroy. A tab closed or
+  reloaded right after typing or receiving a peer's edit leaves a current mark (an unload-time
+  write did not land reliably). The write merges into the stored mark by per-peer maximum
+  (`LocalCopyStore.markServer`): tabs write their own views, and none may roll another's back. Ops the copy holds beyond it are all the server can
   lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
   version in each text doc; a change with no words is dropped silently.
 - **Who drops.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s `retiring`)

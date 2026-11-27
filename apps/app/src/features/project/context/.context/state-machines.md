@@ -61,12 +61,24 @@ stateDiagram-v2
   the sign-out with `SignOutIncomplete("copies")` when one remains). Sign-out first waits up to
   8 s for unsent edits (`SignOutIncomplete("unsent")` otherwise): its own, those another tab
   typed into a copy this tab has open, and those in a stored copy no session has open. The
-  registry opens a session on each current copy that holds ops beyond its server mark (read from
-  the bytes' headers, `storedOpsBeyondMark`), with no lease, so it delivers like an open document
-  and then retires; on a timeout it stays held until acknowledged, so the next Retry passes once
-  it has delivered. A room the server won't take writes from (read access, ended) is not waited
-  for, open or stored, and its copy goes at sign-out. `clearAll` deletes without reading: by then
-  every deliverable copy has delivered.
+  registry reads each current copy, one at a time, for ops beyond its server mark (from the
+  bytes' headers, `storedOpsBeyondMark`) and opens a session on each that has them, so it
+  delivers like an open document and then retires; on a timeout it stays held until
+  acknowledged, so the next Retry passes once it has delivered. The wait's answer is whether every
+  such copy and session was acknowledged: the account closing under it, a session destroyed with
+  ops pending, or a room it could not open (a teardown outlasting the wait) is a no. If anything
+  but this sign-out closed the account, `clearForSignOut` refuses too. Only the signing-out tab
+  reads stored copies: a tab told of the sign-out (`signedOutElsewhere`) waits on its open
+  sessions only, since opening a copy there could recreate one the other tab just deleted.
+- **What reaches `clearAll` without that wait**, as it stands: a Retry after
+  `SignOutIncomplete("copies")` (the account is already closed, so it deletes again);
+  `signedOutElsewhere`, which ignores its wait's answer; an account switch, which deletes another
+  account's copies unread (below). A lapsed sign-in never reaches `clearAll`: its copies stay.
+- **Words in a room the server won't take writes from are dropped** at sign-out, open or stored:
+  they aren't waited for and their copy is deleted. Read access shows one "Couldn't save" (likely
+  hidden by the `/logout` navigation that follows); a room unauthorized, deleted or ended drops
+  them with no notice. Whether words typed offline into a chapter deleted or made read-only
+  meanwhile should be kept is the owner's call.
 - **Another account's copies are deleted unread.** `clearCopiesOfOtherAccounts`, at each account
   lifetime's start, deletes every copy of every other account in this browser. Their undelivered
   ops are lost, since only that account's session may send them; keeping them for that account's

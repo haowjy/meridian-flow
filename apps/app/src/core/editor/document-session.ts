@@ -47,7 +47,6 @@ import { wordsBeyond } from "./unsent-words";
 export type { SchemaFence } from "./schema-fence";
 
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
-const NOTE_SERVER_MS = 1_000;
 const TAB_QUIET_MS = 2_000;
 const COMPACT_EVERY = 200;
 
@@ -81,6 +80,8 @@ export type DocumentSessionSnapshot = {
   contentHeld: boolean;
   schemaFence: SchemaFence | null;
   holdsUndeliverableEdits: boolean;
+  /** Off its socket, it holds another tab's writes the server lacks and that tab has gone quiet. */
+  undeliveredTabWrites: boolean;
 };
 
 export type DocumentSessionAccess = "edit" | "read";
@@ -141,8 +142,8 @@ export class DocumentSession {
   private contentHeld = false;
   private transportAcknowledged = false;
   private readonly pending = new Map<DocKey, DocVersion>();
-  private noteServerTimer: ReturnType<typeof setTimeout> | undefined;
   private tabQuietTimer: ReturnType<typeof setTimeout> | undefined;
+  private undeliveredTabWrites = false;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private emittedKey = "";
@@ -256,7 +257,8 @@ export class DocumentSession {
     this.recomputeStatus();
   }
 
-  private importRemote(batch: Uint8Array, store = true): void {
+  /** `server`: the batch came from the server, which holds that version; it is stored with it. */
+  private importRemote(batch: Uint8Array, server?: RoomVersion): void {
     if (this.destroyed || this.docs.isFreed) return;
     this.importing = true;
     try {
@@ -267,7 +269,10 @@ export class DocumentSession {
     } finally {
       this.importing = false;
     }
-    if (store) this.append(batch);
+    if (server) {
+      mergeVersion(this.server, server);
+      this.append(batch, this.server);
+    }
     this.contentChanged();
   }
 
@@ -280,10 +285,10 @@ export class DocumentSession {
     for (const listener of [...this.contentListeners]) listener();
   }
 
-  private append(batch: Uint8Array): void {
+  private append(batch: Uint8Array, server?: RoomVersion): void {
     const store = this.store;
     if (!store) return;
-    void store.append(batch).catch(noop);
+    void store.append(batch, server).catch(noop);
     if (++this.appended >= COMPACT_EVERY) this.compact();
   }
 
@@ -311,8 +316,8 @@ export class DocumentSession {
         void store.close();
         return;
       }
-      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
-      for (const batch of loaded.updates) this.importRemote(batch, false);
+      if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots));
+      for (const batch of loaded.updates) this.importRemote(batch);
       this.forwardFromLive();
       const server = loaded.meta.get(SERVER_META);
       if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
@@ -362,16 +367,33 @@ export class DocumentSession {
     tabs.onmessage = (event: MessageEvent<TabMessage>) => {
       const batch = event.data?.batch;
       if (!(batch instanceof Uint8Array)) return;
-      this.importRemote(batch, false);
+      this.importRemote(batch);
       mergeVersion(this.pending, batchEnd(batch));
       this.recomputeStatus();
-      // A tab closed while offline never sends what it wrote: once it is quiet, this tab does.
       clearTimeout(this.tabQuietTimer);
-      this.tabQuietTimer = setTimeout(() => {
-        if (this.hasUnacknowledgedEdits()) this.transportProvider?.sendLacking();
-      }, TAB_QUIET_MS);
+      this.tabQuietTimer = setTimeout(
+        () => void this.tabsQuiet().catch((error: unknown) => reportError(error)),
+        TAB_QUIET_MS,
+      );
     };
     this.tabs = tabs;
+  }
+
+  /**
+   * Another tab's writes are its to send, but a tab closed while offline never will: once the
+   * tabs are quiet, a connected session sends what the server lacks. One off its socket first
+   * reads the server mark the writing tab keeps in the copy, and flags only what that leaves.
+   */
+  private async tabsQuiet(): Promise<void> {
+    if (this.transportProvider) {
+      if (this.hasUnacknowledgedEdits()) this.transportProvider.sendLacking();
+      return;
+    }
+    const mark = await this.store?.readMeta(SERVER_META);
+    if (this.destroyed || this.transportProvider) return;
+    if (mark instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(mark));
+    this.undeliveredTabWrites = this.hasUnacknowledgedEdits();
+    this.recomputeStatus();
   }
 
   private stopTabs(): void {
@@ -415,13 +437,14 @@ export class DocumentSession {
           return entries.size > 0 ? encodeEnvelope(entries) : null;
         },
         importRemote: (batch) => {
-          this.importRemote(batch);
+          this.importRemote(batch, provider.serverVersion());
           this.recomputeStatus();
         },
       },
       presence: this.localPresence.store,
     });
     this.transportAttachmentPending = false;
+    this.undeliveredTabWrites = false;
     this.transportProvider = provider;
     this.resolveTransportAttached();
     this.unsubscribers.push(
@@ -444,7 +467,7 @@ export class DocumentSession {
       }),
       provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
-        if (acknowledged) this.noteServerSoon();
+        if (acknowledged) this.noteServer();
         this.recomputeStatus();
       }),
     );
@@ -453,20 +476,13 @@ export class DocumentSession {
     this.emit();
   }
 
-  private noteServerSoon(): void {
-    if (this.noteServerTimer !== undefined) return;
-    this.noteServerTimer = setTimeout(() => this.noteServer(), NOTE_SERVER_MS);
-  }
-
   private noteServer(): void {
-    clearTimeout(this.noteServerTimer);
-    this.noteServerTimer = undefined;
     const provider = this.transportProvider;
     if (!provider || this.docs.isFreed) return;
     const known = provider.serverVersion();
     if (versionCovers(this.server, known)) return;
     mergeVersion(this.server, known);
-    void this.store?.putMeta(SERVER_META, encodeRoomVersion(this.server)).catch(noop);
+    void this.store?.markServer(this.server).catch(noop);
   }
 
   private computeUndeliverable(): boolean {
@@ -594,6 +610,7 @@ export class DocumentSession {
       contentHeld: this.contentHeld,
       schemaFence: this.schemaFence,
       holdsUndeliverableEdits: this.holdsUndeliverable,
+      undeliveredTabWrites: this.undeliveredTabWrites,
     };
   }
 
@@ -758,7 +775,7 @@ export class DocumentSession {
     const acknowledged =
       next === "synced" &&
       (this.access === "read" ? !this.holdsUndeliverable : this.transportAcknowledged);
-    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnacknowledgedEdits()}`;
+    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnacknowledgedEdits()}|${this.undeliveredTabWrites}`;
     if (key === this.emittedKey && this.transportState === this.lastEmittedState) return;
     this.emittedKey = key;
     this.lastEmittedState = this.transportState;

@@ -31,8 +31,6 @@ const KEPT_FOR_UNDO_CAP = 8;
 type RoomState = {
   room: DocumentRoom;
   session: DocumentSession | null;
-  /** Null for a room opened only to deliver what its stored copy holds. */
-  lease: DocumentSessionLease | null;
   hold: Promise<CopyHold> | null;
 };
 
@@ -81,9 +79,7 @@ export class DocumentSessionRegistry {
     const key = sessionRoomKey(room);
     this.teardownOwner.assertAvailable(key);
     const lease = Object.freeze({ accountId: this.accountId, projectId, documentId, room });
-    const state = this.rooms.get(key);
-    if (state) state.lease = lease;
-    else this.rooms.set(key, { room, session: null, lease, hold: null });
+    if (!this.rooms.has(key)) this.rooms.set(key, { room, session: null, hold: null });
     return lease;
   }
 
@@ -120,24 +116,36 @@ export class DocumentSessionRegistry {
     await this.copies.clear(documentId, () => this.dropWords());
   }
 
-  async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
-    await this.openStoredUnsent();
+  /**
+   * Whether every session's deliverable unsent edits were acknowledged within `timeoutMs`, and
+   * unless `storedCopies` is false every stored copy's too. What keeps the wait from knowing (the account
+   * closing, a session destroyed with ops pending, a room it could not open) is false.
+   */
+  async settleUnsentEdits(timeoutMs: number, { storedCopies = true } = {}): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    const stored = storedCopies ? await this.openStoredUnsent(deadline) : [];
+    if (!stored || stored.some((room) => !this.openSession(room))) return false;
     const sessions = [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : []));
-    const pending = (session: DocumentSession) =>
-      session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
+    const outcome = (session: DocumentSession) => {
+      if (session.getSnapshot().status === "destroyed") return !session.hasUnacknowledgedEdits();
+      if (session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits()) return null;
+      return true;
+    };
     const settled = sessions.map(
       (session) =>
         new Promise<boolean>((resolve) => {
-          if (!pending(session)) return resolve(true);
+          const now = outcome(session);
+          if (now !== null) return resolve(now);
           const timer = setTimeout(() => {
             stop();
             resolve(false);
-          }, timeoutMs);
+          }, deadline - Date.now());
           const stop = session.subscribe(() => {
-            if (pending(session)) return;
+            const settledAs = outcome(session);
+            if (settledAs === null) return;
             clearTimeout(timer);
             stop();
-            resolve(true);
+            resolve(settledAs);
           });
         }),
     );
@@ -146,30 +154,42 @@ export class DocumentSessionRegistry {
 
   /**
    * Opens a session on each stored copy no session has open that holds ops beyond its server
-   * mark, so it delivers them as an open document does, then retires once they are acknowledged.
+   * mark, so it delivers them as an open document does and retires once they are acknowledged.
+   * Returns those rooms, or null when the account closed or a room's teardown outlasted the wait.
    */
-  private async openStoredUnsent(): Promise<void> {
-    const copies = await this.copies.currentCopies();
-    const unsent = await Promise.all(
-      copies.map(async ({ name, room }) =>
-        !this.openSession(room) && (await this.copies.holds(name, storedOpsBeyondMark))
-          ? room
-          : null,
-      ),
+  private async openStoredUnsent(deadline: number): Promise<DocumentRoom[] | null> {
+    const unsent: DocumentRoom[] = [];
+    // One at a time: holding every copy's bytes at once costs their sum.
+    for (const { name, room } of await this.copies.currentCopies())
+      if (!this.openSession(room) && (await this.copies.holds(name, storedOpsBeyondMark)))
+        unsent.push(room);
+    const rooms = unsent.flatMap((room): DocumentRoom[] =>
+      room.kind === "fork" ? [{ kind: "live", documentId: room.documentId }, room] : [room],
     );
-    if (this.accountClosing.aborted) return;
-    for (const room of unsent) {
-      if (!room) continue;
-      if (room.kind === "fork") this.openToDeliver({ kind: "live", documentId: room.documentId });
-      if (room.kind === "live" || this.rooms.get(room.documentId)?.session)
-        this.openToDeliver(room);
-    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const drained = await Promise.race([
+      Promise.all(rooms.map((room) => this.teardownOwner.drainRoom(sessionRoomKey(room)))).then(
+        () => true,
+        (error: unknown) => {
+          reportError(error);
+          return false;
+        },
+      ),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), deadline - Date.now());
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!drained || this.accountClosing.aborted) return null;
+    for (const room of rooms) this.openToDeliver(room);
+    return unsent;
   }
 
   private openToDeliver(room: DocumentRoom): void {
     const key = sessionRoomKey(room);
-    const state = this.rooms.get(key) ?? { room, session: null, lease: null, hold: null };
+    const state = this.rooms.get(key) ?? { room, session: null, hold: null };
     if (state.session || this.teardownOwner.retiring(key)) return;
+    if (room.kind === "fork" && !this.rooms.get(room.documentId)?.session) return;
     this.rooms.set(key, state);
     this.getOrCreateLiveSession(state, true);
     this.scheduleTeardownIfUnretained(key);
@@ -460,9 +480,10 @@ export class DocumentSessionRegistry {
       if (snapshot.holdsUndeliverableEdits)
         this.requestReplacement(session, historyCutOff(snapshot.connectionState));
     });
-    session.subscribe(() => {
+    session.subscribe((snapshot) => {
       this.settleDrainedRoom(session);
       this.settleRetainedTransport(session);
+      if (snapshot.undeliveredTabWrites) queueMicrotask(() => this.deliverTabWrites(session));
     });
     return session;
   }
@@ -642,6 +663,18 @@ export class DocumentSessionRegistry {
         this.scheduleTeardown(key);
       }
     }
+  }
+
+  /** Its socket back, the session's Join sends them; it is held until they are acknowledged. */
+  private deliverTabWrites(session: DocumentSession): void {
+    const key = session.roomKey;
+    const state = this.rooms.get(key);
+    if (state?.session !== session || this.accountClosing.aborted) return;
+    if (session.getSnapshot().status !== "detached" || !this.mustKeepForUnsentEdits(session))
+      return;
+    this.cancelPendingTeardown(key);
+    this.attachSessionTransport(session);
+    if (!this.isRetained(key)) this.releaseUnheld(key, state, session);
   }
 
   private detachUnwantedTransport(session: DocumentSession): void {

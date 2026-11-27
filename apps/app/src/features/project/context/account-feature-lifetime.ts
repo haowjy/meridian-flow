@@ -44,6 +44,7 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
+  private signingOut = false;
 
   constructor(
     readonly accountId: string,
@@ -89,7 +90,9 @@ export class AccountFeatureLifetime {
   }
 
   private async signedOutElsewhere(): Promise<void> {
-    if (!this.epochSignal.aborted) await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
+    // The signing-out tab delivers the stored copies; opening them here would race its deletion.
+    if (!this.epochSignal.aborted)
+      await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
     await this.finishClose();
     window.location.assign("/logout");
   }
@@ -112,9 +115,12 @@ export class AccountFeatureLifetime {
   }
 
   async clearForSignOut(): Promise<void> {
-    if (!this.epochSignal.aborted) {
-      if (!(await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS)))
-        throw new SignOutIncomplete("unsent");
+    if (!this.signingOut) {
+      // Closed by anything but this sign-out, the wait no longer knows what was delivered.
+      if (this.epochSignal.aborted) throw new SignOutIncomplete("unsent");
+      const settled = await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS);
+      if (!settled || this.epochSignal.aborted) throw new SignOutIncomplete("unsent");
+      this.signingOut = true;
       this.signOutChannel?.postMessage({ accountId: this.accountId });
     }
     await this.finishClose();

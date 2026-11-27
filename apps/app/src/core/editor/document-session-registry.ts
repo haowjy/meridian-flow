@@ -23,7 +23,7 @@ export type PressRooms = Readonly<{
 export interface LiveDocumentSessionRegistry {
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease;
   clearLocalCopy(documentId: DocumentId): Promise<void>;
-  settleUnsentEdits(timeoutMs: number): Promise<boolean>;
+  settleUnsentEdits(timeoutMs: number, options?: { storedCopies?: boolean }): Promise<boolean>;
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: DocumentSessionLease): DocumentSession;
   openRoomVersion(documentId: DocumentId): Uint8Array | null;
