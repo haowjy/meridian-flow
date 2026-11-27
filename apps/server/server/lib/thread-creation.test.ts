@@ -8,8 +8,8 @@ import {
 import {
   createInMemoryProjectRepository,
   createInMemoryWorkRepository,
-  WorkLifecycleUnavailableError,
 } from "../domains/projects/index.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 import { createInMemoryAppServices } from "./compose.js";
 import {
   createThreadForProject,

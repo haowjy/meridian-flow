@@ -719,6 +719,7 @@ export async function createProductionAppPorts(input: {
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
     db,
+    projects: projectRepo,
     documents: documentSync,
     treeLists,
   });

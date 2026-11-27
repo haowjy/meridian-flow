@@ -31,12 +31,10 @@ with no row and on a row with no break.
 | `collab` | `file-policy` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts` |
 | `context` | `collab` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/bound-writes.ts` |
 | `context` | `file-policy` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
-| `context` | `projects` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
 | `context` | `threads` | domains are acyclic | `apps/server/server/domains/context/document-revisions.ts` |
 | `file-policy` | `context` | domains are acyclic | `apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts` |
-| `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/index.ts` |
-| `threads` | `context` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/repositories.ts` |
-| `threads` | `projects` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/thread-works-repository.ts` |
+| `projects` | `context` | domains are acyclic | `apps/server/server/domains/projects/adapters/drizzle-project-bootstrap.ts` |
+| `threads` | `projects` | domains are acyclic | `apps/server/server/domains/threads/domain/derive-conversation.ts` |
 
 ## Reading the table
 

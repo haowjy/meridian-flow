@@ -59,6 +59,6 @@ stateDiagram-v2
   `works_no_work_not_archived` check), and the repository refuses to change it
   (`WorkLockedError`, answered 400 `work_locked`).
 - A caller that finds the Work unavailable gets `WorkLifecycleUnavailableError` with
-  `missing`, `deleted` or `archived` (`domain/work-lifecycle.ts`): the lock layer's draft writes
+  `missing`, `deleted` or `archived` ([`shared/work-lifecycle-lock.ts`](../../../shared/work-lifecycle-lock.ts)): the lock layer's draft writes
   and archive of a deleted Work; the writer's routes and the model's update catch it into the `returned` answer. `missing` is a lookup result,
   never a stored state.

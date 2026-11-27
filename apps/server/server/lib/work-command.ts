@@ -2,12 +2,9 @@ import type { CommandId, ProjectId, UserId } from "@meridian/contracts";
 import type { CommandKind, Settlement } from "@meridian/contracts/commands";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
-import {
-  WorkLifecycleUnavailableError,
-  WorkLockedError,
-  type WorkRepository,
-} from "../domains/projects/index.js";
+import { WorkLockedError, type WorkRepository } from "../domains/projects/index.js";
 import type { CommandStore } from "../shared/commands/drizzle-commands.js";
+import { WorkLifecycleUnavailableError } from "../shared/work-lifecycle-lock.js";
 import { runRouteCommand } from "./command-route.js";
 
 type WorkCommandResult =
