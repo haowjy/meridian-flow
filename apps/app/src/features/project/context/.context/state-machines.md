@@ -134,7 +134,8 @@ stateDiagram-v2
   start delivers them. Whether to keep them for that account is the open account-switch question.
 - **What reaches `clearAll` without that wait**, as it stands: a Retry after
   `SignOutIncomplete("copies")` (the account is already closed, so it deletes again);
-  a lifetime ended elsewhere, which ignores its wait's answer; an account switch, which deletes another
+  the copies a lifetime ended elsewhere had open, since it closes whatever its own wait answers and
+  the owner's deletion then takes them; an account switch, which deletes another
   account's copies unread (below). A lapsed sign-in never reaches `clearAll`: its copies stay.
 - **Words in a room the server won't take writes from are dropped** at sign-out, open or stored:
   they aren't waited for and their copy is deleted. Read access shows one "Couldn't save" (likely
