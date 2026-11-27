@@ -32,7 +32,7 @@ export const apiCommand: CommandSpec = {
   examples: [
     "./mf api GET /api/threads",
     "./mf api GET /api/projects",
-    `./mf api PATCH /api/threads/<id>/title --data '{"title":"Chapter 3 notes"}'`,
+    `./mf api PATCH /api/threads/<id>/title --data '{"title":"Chapter 3 notes","commandId":"<uuid>"}'`,
   ],
   async run(ctx) {
     const method = requirePositional(ctx, 0, "<METHOD>").toUpperCase() as HttpMethod;

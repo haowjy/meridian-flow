@@ -15,7 +15,6 @@ import type {
   CreateProjectInput,
   ListProjectsOptions,
   ProjectRepository,
-  UpdateProjectInput,
 } from "../../ports/project-repository.js";
 import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
@@ -102,7 +101,7 @@ export function createDrizzleProjectRepository(
       const where = opts?.includeDeleted
         ? eq(projects.userId, userId)
         : and(eq(projects.userId, userId), isNull(projects.deletedAt));
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(projects)
         .where(where)
@@ -111,7 +110,7 @@ export function createDrizzleProjectRepository(
     },
     async search(userId: UserId, query: string): Promise<Project[]> {
       const pattern = `%${query}%`;
-      const rows = await db
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(projects)
         .where(
@@ -124,11 +123,12 @@ export function createDrizzleProjectRepository(
         .orderBy(desc(projects.lastActivityAt));
       return rows.map(mapProject);
     },
-    async update(id: ProjectId, input: UpdateProjectInput): Promise<Project> {
-      const patch: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
-      if (input.title !== undefined) patch.name = input.title;
-      if (input.description !== undefined) patch.systemPrompt = input.description;
-      const [row] = await db.update(projects).set(patch).where(eq(projects.id, id)).returning();
+    async rename(id: ProjectId, title: string): Promise<Project> {
+      const [row] = await currentDrizzleDb(db)
+        .update(projects)
+        .set({ name: title, updatedAt: new Date() })
+        .where(eq(projects.id, id))
+        .returning();
       if (!row) throw new Error(`Project not found: ${id}`);
       return mapProject(row);
     },
@@ -165,15 +165,6 @@ export function createDrizzleProjectRepository(
         if (!row) throw new Error(`Project not found: ${id}`);
         return mapProject(row);
       });
-    },
-    async touch(id: ProjectId): Promise<void> {
-      const [project] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-      if (!project || project.deletedAt) return;
-      const now = new Date();
-      await db
-        .update(projects)
-        .set({ updatedAt: now, lastActivityAt: now })
-        .where(eq(projects.id, id));
     },
   };
 }

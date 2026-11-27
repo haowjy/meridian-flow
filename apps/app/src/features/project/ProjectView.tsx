@@ -13,10 +13,10 @@ import {
   contextRouteRequest,
   type ProjectRouteCommands,
 } from "@/client/project-shell/project-route";
+import { useRenameProject } from "@/client/query/project-commands";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useProjectWake } from "@/client/query/useProjectWake";
-import { useRenameProject } from "@/client/query/useRenameProject";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
@@ -93,7 +93,7 @@ export type ProjectViewProps = {
 export function ProjectView(props: ProjectViewProps) {
   const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
-  const renameProject = useRenameProject(cachedProject ?? props.project);
+  const renameProject = useRenameProject(props.projectId);
   const accountId = useAccountId();
   useProjectWake(props.projectId);
   const presented = useOptionalPresentedDocuments();

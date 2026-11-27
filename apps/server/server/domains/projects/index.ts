@@ -28,7 +28,6 @@ export type {
   CreateProjectInput,
   ListProjectsOptions,
   ProjectRepository,
-  UpdateProjectInput,
 } from "./ports/project-repository.js";
 export {
   AccountLinkConflictError,

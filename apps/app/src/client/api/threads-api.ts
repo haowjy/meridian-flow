@@ -15,7 +15,6 @@ import {
   apiThreadRestorePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
-  apiThreadTitlePath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
   apiThreadTurnRetryPath,
@@ -28,8 +27,6 @@ import {
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
   type ModelRequestDebugListResponse,
-  type RenameThreadRequest,
-  type RenameThreadResponse,
   type ReplyRetryRequest,
   type ReplyRetryResponse,
   type RetireAdmissionResult,
@@ -234,16 +231,6 @@ export function updateThreadUserState(
   request: UpdateThreadUserStateRequest,
 ): Promise<UpdateThreadUserStateResponse> {
   return patchJson(apiThreadUserStatePath(threadId), request);
-}
-
-export function renameThread(
-  threadId: string,
-  request: RenameThreadRequest,
-  options?: { signal?: AbortSignal },
-): Promise<RenameThreadResponse> {
-  return patchJson<RenameThreadResponse>(apiThreadTitlePath(threadId), request, {
-    signal: options?.signal,
-  });
 }
 
 export function rebindThreadWork(

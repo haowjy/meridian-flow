@@ -59,7 +59,13 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
     const { projectId } = record.body as PressBody | PressUndoBody;
     const since = record.settledAt ?? Date.now();
     const before = since <= opened;
-    const read = whenRead(client, { queryKey: projectQueryKeys.draftsOf(projectId) }, before);
+    const read = whenRead(
+      client,
+      { queryKey: projectQueryKeys.draftsOf(projectId) },
+      {
+        loaded: before,
+      },
+    );
     void Promise.all([
       before
         ? refreshWorksSnapshotSince(client, projectId, since)

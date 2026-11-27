@@ -8,7 +8,9 @@ import {
 import { useMemo } from "react";
 
 import { getProjectChatFeed } from "@/client/api/projects-api";
+import { useCommands } from "@/client/commands/driver-context";
 import { flattenChatFeed, projectChatFeedPage } from "./chat-projections";
+import { projectChatTitles } from "./chat-rename-command";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   admitThreadUserStateItems,
@@ -51,9 +53,14 @@ export function useProjectChatFeed(
   const query = useInfiniteQuery(
     projectChatFeedQueryOptions(client, projectId, favorite, search, workId),
   );
+  const records = useCommands();
   const items = useMemo(
-    () => flattenChatFeed(query.data).filter((item) => !favorite || item.isFavorite),
-    [query.data, favorite],
+    () =>
+      projectChatTitles(
+        records,
+        flattenChatFeed(query.data).filter((item) => !favorite || item.isFavorite),
+      ),
+    [records, query.data, favorite],
   );
   return { ...query, items };
 }

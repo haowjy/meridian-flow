@@ -30,7 +30,6 @@ import {
   type ListProjectThreadsResponse,
   type ListWorksResponse,
   type ThreadListItem,
-  type UpdateProjectRequest,
   type Work,
 } from "@meridian/contracts/protocol";
 import { threadSchema } from "@meridian/contracts/threads";
@@ -73,16 +72,6 @@ export async function listProjects(init?: RequestInitOptions): Promise<Project[]
     headers: init?.headers,
   });
   return response.projects;
-}
-
-export function updateProject(
-  projectId: string,
-  data: UpdateProjectRequest,
-  init?: RequestInitOptions,
-): Promise<Project> {
-  return patchJson<Project>(urlFor(apiProjectPath(projectId), init), data, {
-    headers: init?.headers,
-  });
 }
 
 export async function listProjectThreads(

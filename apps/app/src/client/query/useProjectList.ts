@@ -1,10 +1,12 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { getProject, listProjects } from "@/client/api/projects-api";
+import { useCommands } from "@/client/commands/driver-context";
 import { unwrapListQuery } from "./list-query";
+import { projectProjectTitles } from "./project-commands";
 import { projectQueryKeys } from "./project-query-keys";
-import { pendingProjectTitles } from "./useRenameProject";
 
 function mergeApiProjects(prev: Project[] | null, apiProjects: Project[]): Project[] {
   const apiIds = new Set(apiProjects.map((project) => project.id));
@@ -19,12 +21,7 @@ function useProjectListQuery() {
     queryFn: async () => {
       const apiProjects = await listProjects();
       const prev = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      const pendingTitles = pendingProjectTitles(queryClient);
-      const reconciled = apiProjects.map((project) => {
-        const title = pendingTitles.get(project.id);
-        return title ? { ...project, title, name: title } : project;
-      });
-      return mergeApiProjects(prev ?? null, reconciled);
+      return mergeApiProjects(prev ?? null, apiProjects);
     },
     staleTime: 60_000,
   });
@@ -39,8 +36,9 @@ export type ProjectListStatus = {
 
 export function useProjectListStatus(): ProjectListStatus {
   const { data, isError, isFetching, refetch } = unwrapListQuery(useProjectListQuery());
-
-  return { projects: data, isError, isFetching, refetch };
+  const records = useCommands();
+  const projects = useMemo(() => data && projectProjectTitles(records, data), [records, data]);
+  return { projects, isError, isFetching, refetch };
 }
 
 export function useProjectList(): Project[] | null {
@@ -51,13 +49,14 @@ export function useProject(
   projectId: string,
   initialProject?: Project | null,
 ): Project | undefined {
-  const projects = useProjectList();
-  const listProject = projects?.find((project) => project.id === projectId);
+  const listProject = useProjectListQuery().data?.find((project) => project.id === projectId);
   const detail = useQuery<Project>({
     queryKey: projectQueryKeys.detail(projectId),
     queryFn: () => getProject(projectId),
     initialData: initialProject ?? listProject,
     staleTime: 30_000,
   });
-  return listProject ?? detail.data ?? initialProject ?? undefined;
+  const records = useCommands();
+  const project = listProject ?? detail.data ?? initialProject ?? undefined;
+  return useMemo(() => project && projectProjectTitles(records, [project])[0], [records, project]);
 }

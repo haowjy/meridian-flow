@@ -50,6 +50,7 @@ export async function requireThreadOwner(
   repos: { threads: Pick<ThreadRepository, "findByIdIncludingDeleted"> },
   threadId: string,
   userId: UserId,
+  options?: { includeDeleted?: boolean },
 ): Promise<Thread> {
   const parsedThreadId = parseRequestId(threadId);
   if (!parsedThreadId) {
@@ -57,7 +58,8 @@ export async function requireThreadOwner(
   }
   const row = await repos.threads.findByIdIncludingDeleted(parsedThreadId);
   const code = threadAvailabilityCode(row, row?.project, userId);
-  if (code === "thread_deleted") throwThreadDeleted(userId, !!row?.project?.deletedAt);
+  if (code === "thread_deleted" && !options?.includeDeleted)
+    throwThreadDeleted(userId, !!row?.project?.deletedAt);
   if (code === "thread_not_found" || !row) throwThreadNotFound(userId);
   const { project: _project, ...thread } = row;
   return thread;

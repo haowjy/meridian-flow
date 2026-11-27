@@ -42,7 +42,9 @@ A draft is its tree records and its fork rooms, one per document it changed (`do
 with the rows under `fork:<draft>:<document>` in `document_snapshots`). `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
-its project and chat, so a resend of a create cannot create twice.
+its project and chat, so a resend of a create cannot create twice. `kind` has no CHECK: kinds are
+server literals (`COMMAND_KINDS`), and the resolve route checks the one a client names, so a new kind
+changes no schema.
 
 `document_snapshots` holds every room's text: a row is one doc of one room (`room_key`,
 `doc_key`), so a save writes only the docs that changed. Rows have no foreign key, so a document's

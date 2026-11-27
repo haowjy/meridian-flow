@@ -38,13 +38,18 @@ No instance follows every rule. Before copying one, check what it does:
 
 | Instance | Survives a reload | Retries by itself | Retry after a refusal |
 |---|---|---|---|
-| Command driver (Work commands) | Yes, in the account's IndexedDB journal | Yes, backoff, from the one tab holding the lock | Same record, new send id |
+| Command driver (Work, draft, press, project create and rename, chat overrides and rename) | Yes, in the account's IndexedDB journal | Yes, backoff, from the one tab holding the lock | Same record, new send id |
 | Chat submission | Yes, in the account's journal | Yes, the driver replays | New submission id |
 | Creation record | No, memory only | No; one lookup, then `failed` | Same id |
 | Import creation | No, memory only | No | Same import id |
 | Queued control | No, memory only | No | Same id; a refusal and no answer are both `failed` |
 | Hand-back and Stop | Yes, in the host's command store | No; Retry or resume | None: a refusal drops the command |
 | Package Save word | No, memory only | No; Retry | None: a failed check is a result, not a refusal |
+
+Not on the driver yet, each with its own request id, attempts and failure state, in memory or
+the query cache: chat pin, chat delete, Send now, reply retry, and the handoff brief's Stop. Each
+is a driver kind still to build, the chat ones on the chat's lane `chat:<id>` that chat rename
+uses.
 
 Four keep the command in memory only, so a reload forgets it while the server may keep its
 effect. Two also break the second rule. A creation record that gets no answer and whose one

@@ -9,8 +9,9 @@ client contracts, stores and server-owned runtime behavior.
 - New persistent state picks a tier before it ships ([state tiers][state-tiers]).
 - Choose a command's lifecycle before wiring it ([writer commands][commands]).
   A command the server may not have received is a kind on the command driver
-  (`client/commands/`, `@meridian/command-driver`), as Work commands are: the driver
-  delivers it, the domain projects its unsettled records over its own data.
+  (`client/commands/`, `@meridian/command-driver`), as Work commands and renames are: the
+  driver delivers it, the domain projects its unsettled records over its own data. The
+  actions not moved yet are listed in [a command that may have landed][may-have-landed].
 - `/_authenticated` mounts one unconditional provider tree, `AccountComposition`
   (`client/account/`). Gating a provider by
   pathname drops `ThreadStoreProvider` during transitions.
@@ -59,3 +60,4 @@ Depth: [architecture and contracts](.context/CONTEXT.md),
 [state-tiers]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/state-tier-contract.md
 [commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/optimistic-commands.md
 [copy-and-feedback]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
+[may-have-landed]: ../../.context/state-machines/command-that-may-have-landed.md

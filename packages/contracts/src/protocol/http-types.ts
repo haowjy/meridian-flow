@@ -63,11 +63,6 @@ export type CreateProjectRequest = {
 
 export type CreateProjectResponse = ProjectDto;
 
-export type UpdateProjectRequest = {
-  title?: string;
-  description?: string | null;
-};
-
 export type ListProjectsResponse = {
   projects: ProjectDto[];
 };
