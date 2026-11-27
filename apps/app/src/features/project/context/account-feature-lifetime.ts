@@ -17,10 +17,6 @@ import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
 
-export function logoutHref(accountId: string): string {
-  return `/logout?${new URLSearchParams({ account: accountId })}`;
-}
-
 export class SignOutIncomplete extends Error {
   constructor(readonly left: "unsent" | "copies") {
     super(`Sign-out left ${left} behind`);
@@ -52,6 +48,7 @@ export class AccountFeatureLifetime {
 
   constructor(
     readonly accountId: string,
+    private readonly externalId: string,
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.signedIn = signedInSince(accountId);
@@ -106,7 +103,7 @@ export class AccountFeatureLifetime {
     // here would race a sign-out's deletion.
     await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
     await this.finishClose();
-    window.location.assign(logoutHref(this.accountId));
+    window.location.assign(this.logoutHref());
   }
 
   resumeFeatureLease(): void {
@@ -134,7 +131,11 @@ export class AccountFeatureLifetime {
     this.featureLease.suspend();
   }
 
-  async clearForSignOut(): Promise<void> {
+  private logoutHref(): string {
+    return `/logout?${new URLSearchParams({ account: this.externalId })}`;
+  }
+
+  async clearForSignOut(): Promise<string> {
     if (!this.signingOut) {
       // Closed by anything but this sign-out, the wait no longer knows what was delivered.
       if (this.epochSignal.aborted) throw new SignOutIncomplete("unsent");
@@ -147,6 +148,7 @@ export class AccountFeatureLifetime {
     await this.finishClose();
     if (!(await clearAccountCopies(this.accountId as AccountId)))
       throw new SignOutIncomplete("copies");
+    return this.logoutHref();
   }
 
   async finishClose(): Promise<void> {

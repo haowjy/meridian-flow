@@ -556,6 +556,7 @@ apps/app/src/lib/utils.ts	Tailwind-merge needs every custom text/shadow/tracking
 apps/app/src/routes/_authenticated.tsx	Composition-root prerequisite: product descendants create both client sockets as soon as they render, so capture must be installed first.
 apps/app/src/routes/_authenticated.tsx	Dev-only debug surface. Inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY` gate so the entire feature (and its lazy chunk) is dead-code-eliminated from production builds. Off by default in dev; toggle with ?debug=1 / ⌘⌃D, then Alt+click any turn/block to inspect its record. See features/debug.
 apps/app/src/routes/end-session.tsx	With no WorkOS session, an absolute returnTo makes signOut redirect to itself forever
+apps/app/src/routes/logout.tsx	A named account's sign-out was counted by whoever sent it here; a typed `/logout` names none.
 apps/app/src/server/api-route-ownership.ts	Route-owner rules are ordered; exact app routes precede server families and every new server family must be listed
 apps/app/src/server/content-security-policy.ts	Img-src allows no other origin: a remote image would send the writer's text to its host
 apps/app/src/server/ssr-no-external.ts	Keep AuthKit packages bundled in dev SSR; externalizing loses named exports

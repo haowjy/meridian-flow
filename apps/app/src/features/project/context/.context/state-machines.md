@@ -88,9 +88,8 @@ stateDiagram-v2
 - **The count is the one signal that a lifetime's account is no longer the browser's.** The
   cookie is the browser's, so a tab can't know from its own requests which account they go out
   as. Four things count a sign-out: the sign-out (`clearAccountCopies`, before it deletes);
-  `/logout`, which runs in the browser before the server ends the session (`/end-session`) and
-  counts the account it names, or every account this browser has signed in when it names none (a
-  typed `/logout`); a lifetime's start, for every other account, before it deletes their copies
+  `/logout` when it names no account (a typed `/logout`), which runs in the browser before the
+  server ends the session (`/end-session`) and counts every account this browser has signed in; a lifetime's start, for every other account, before it deletes their copies
   (`endOtherAccounts`); and a Join the server answers `account-changed` (each Join names the
   account, and the server compares it with the socket's session). A lifetime records its account
   here when it starts (`signedInSince`), which is what lets another account's start count it. It
@@ -99,9 +98,14 @@ stateDiagram-v2
   only while mounted (`resumeFeatureLease`), and checks the count on mounting and on a restore from
   the back-forward cache (`pageshow`), which hears no `storage` event while cached. Hearing it, the
   lifetime ends as on a sign-out elsewhere: it waits up to 8 s for its open sessions, closes, and
-  goes to `/logout?account=<its account>`. `/end-session` ends the session only if the session is
-  that account's, and otherwise goes to `/`, so a tab whose account left never signs out the one
-  that signed in since; the menu's Log out sends its account the same way. Between the count
+  goes to `/logout?account=<its sign-in provider id>`. The lifetime holds that id (`externalId`,
+  the WorkOS user id) beside its own: `/end-session` compares it with the session's
+  (`getAuth().user.id`, already refreshed by the AuthKit middleware), so no call to the API decides
+  it. It ends the session only on a match, and otherwise goes to `/`, so a tab whose account left
+  never signs out the one that signed in since. The menu's Log out goes to the address
+  `clearForSignOut` resolves to, the same one, never the id AuthKit's client hook holds now, which
+  in a stale tab may already be the new account's. A `/logout` that names an account counts
+  nothing: whoever sent it there has counted already. Between the count
   moving and the event's task running, a session that opens gets no copy and runs from memory; the
   lifetime then ends.
 - **A full `localStorage` degrades the signal, not the app.** A count or record that can't be

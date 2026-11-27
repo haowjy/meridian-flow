@@ -17,13 +17,14 @@ boot-script preferences are separate from this envelope.
 `src/server/config.ts` is server-only. It parses `APP_ENV`, `LOG_LEVEL`, the WorkOS
 redirect URI, and `MERIDIAN_WWW_ORIGIN`; isomorphic helpers keep guarded environment reads local instead of
 importing server config. Auth is WorkOS AuthKit: the hosted callback mints the
-sealed `wos-session` cookie and logout clears it. `/logout` runs in the browser: it counts a
-sign-out of the account its `?account=` names, or of every account this browser has signed in
-when it names none, so their tabs end (Account lifetime in
-`features/project/context/.context/state-machines.md`), then loads `/end-session` with the same
-query as a full document. Without JavaScript `/logout` ends nothing. `/end-session` ends the
-session on the server, unless `?account=` names another account than the session's (one signed
-in since), when it goes to `/`; reach it only as a full document, never
+sealed `wos-session` cookie and logout clears it. `/logout` runs in the browser: with no
+`?account=` (typed) it counts a sign-out of every account this browser has signed in, so their
+tabs end (Account lifetime in `features/project/context/.context/state-machines.md`); then it
+loads `/end-session` with the same query as a full document. Without JavaScript `/logout` ends
+nothing. `?account=` is the WorkOS user id (`AuthMeResponse.user.externalId`). `/end-session`
+ends the session on the server unless that id isn't the session's (`getAuth().user.id`), when it
+goes to `/`: an account signed in since stays signed in. The comparison is local to the request,
+so there is no case where it can't tell; reach it only as a full document, never
 by a client-side navigation: `signOut()` redirects to api.workos.com, which a `fetch` fails on
 CORS. It passes `returnTo` = `MERIDIAN_WWW_ORIGIN` when set, otherwise `/login` on the request
 origin, and that URL must be registered in WorkOS as a sign-out redirect. With no WorkOS session

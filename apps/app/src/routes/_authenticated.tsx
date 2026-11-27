@@ -138,12 +138,13 @@ function AuthenticatedAccountProviderTree({
   now: number;
   user: {
     userId: string;
+    externalId: string;
     accountSettings: AccountSettings | null;
     accountSettingsReadGeneration: number;
   };
 }) {
   return (
-    <AccountFeatureComposition accountId={user.userId}>
+    <AccountFeatureComposition accountId={user.userId} externalId={user.externalId}>
       <AccountCommandDriver>
         <AccountSettingsProvider
           serverValue={user.accountSettings}
