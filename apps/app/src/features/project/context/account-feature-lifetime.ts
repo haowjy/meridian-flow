@@ -103,7 +103,7 @@ export class AccountFeatureLifetime {
     // here would race a sign-out's deletion.
     await this.registry.settleUnsentEdits(UNSENT_EDITS_WAIT_MS, { storedCopies: false });
     await this.finishClose();
-    window.location.assign(this.logoutHref());
+    window.location.assign(this.endSessionHref());
   }
 
   resumeFeatureLease(): void {
@@ -131,8 +131,8 @@ export class AccountFeatureLifetime {
     this.featureLease.suspend();
   }
 
-  private logoutHref(): string {
-    return `/logout?${new URLSearchParams({ account: this.externalId })}`;
+  private endSessionHref(): string {
+    return `/end-session?${new URLSearchParams({ account: this.externalId })}`;
   }
 
   async clearForSignOut(): Promise<string> {
@@ -148,7 +148,7 @@ export class AccountFeatureLifetime {
     await this.finishClose();
     if (!(await clearAccountCopies(this.accountId as AccountId)))
       throw new SignOutIncomplete("copies");
-    return this.logoutHref();
+    return this.endSessionHref();
   }
 
   async finishClose(): Promise<void> {

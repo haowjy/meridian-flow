@@ -57,6 +57,20 @@ stateDiagram-v2
   commands and the removal lease, then joins the registry's one close attempt: a second close
   while one is in flight waits on the same retirement, and a failed one is tried again by the
   next call.
+- **One owner signs an account out of this browser: `clearForSignOut`.** Every path that ends
+  the account's session here runs it, so every one deletes the account's copies after delivering
+  what they hold, or refuses ("Couldn't log out", Retry) and deletes nothing. The menu runs it in
+  the tab's mounted lifetime, which holds the open sessions and their typing. `/logout`, typed or
+  opened in a new tab, runs it in a lifetime it builds for the session's account
+  (`/api/auth/me`), shows "Logging out…" meanwhile and "Couldn't log out" with Retry on a
+  refusal, and only then goes to `/end-session`. A lifetime that ends because its account's count
+  moved (the owner ran in another tab) does not delete: it waits on its open sessions, closes,
+  releases its holds so the owner's deletion can take them, and goes to `/end-session`. A copy
+  left by a tab closed before the sign-out is a stored copy: the owner's wait reads it, delivers
+  what it holds and deletes it with the rest. Words typed in another tab after the owner's wait
+  answered, before that tab hears the count, are deleted unsent; the window is the time the count
+  takes to reach it. A lifetime ended by another account signing in is the account-switch rule
+  (below), not a sign-out.
 - **Closing does not by itself delete local copies.** A copy goes on a fact that is final (the
   node's purge, its Work or chat purged, the account removed from the project:
   `list-removal-observer`) or at sign-out (`clearForSignOut` → `clearAccountCopies`, which fails
@@ -87,10 +101,9 @@ stateDiagram-v2
   afterwards starts a lifetime that may.
 - **The count is the one signal that a lifetime's account is no longer the browser's.** The
   cookie is the browser's, so a tab can't know from its own requests which account they go out
-  as. Four things count a sign-out: the sign-out (`clearAccountCopies`, before it deletes);
-  `/logout` when it names no account (a typed `/logout`), which runs in the browser before the
-  server ends the session (`/end-session`) and counts every account this browser has signed in; a lifetime's start, for every other account, before it deletes their copies
-  (`endOtherAccounts`); and a Join the server answers `account-changed` (each Join names the
+  as. Three things count a sign-out: the sign-out (`clearAccountCopies`, before it deletes, from
+  the menu or `/logout`); a lifetime's start, for every other account, before it deletes their
+  copies (`endOtherAccounts`, which also runs when `/logout` builds its lifetime); and a Join the server answers `account-changed` (each Join names the
   account, and the server compares it with the socket's session). A lifetime records its account
   here when it starts (`signedInSince`), which is what lets another account's start count it. It
   hears the count move through the `storage` event, which never fires in the tab that wrote it, so
@@ -98,14 +111,13 @@ stateDiagram-v2
   only while mounted (`resumeFeatureLease`), and checks the count on mounting and on a restore from
   the back-forward cache (`pageshow`), which hears no `storage` event while cached. Hearing it, the
   lifetime ends as on a sign-out elsewhere: it waits up to 8 s for its open sessions, closes, and
-  goes to `/logout?account=<its sign-in provider id>`. The lifetime holds that id (`externalId`,
+  goes to `/end-session?account=<its sign-in provider id>`. The lifetime holds that id (`externalId`,
   the WorkOS user id) beside its own: `/end-session` compares it with the session's
   (`getAuth().user.id`, already refreshed by the AuthKit middleware), so no call to the API decides
   it. It ends the session only on a match, and otherwise goes to `/`, so a tab whose account left
-  never signs out the one that signed in since. The menu's Log out goes to the address
-  `clearForSignOut` resolves to, the same one, never the id AuthKit's client hook holds now, which
-  in a stale tab may already be the new account's. A `/logout` that names an account counts
-  nothing: whoever sent it there has counted already. Between the count
+  never signs out the one that signed in since. A sign-out goes to the address `clearForSignOut`
+  resolves to, the same one, never the id AuthKit's client hook holds now, which in a stale tab
+  may already be the new account's. Between the count
   moving and the event's task running, a session that opens gets no copy and runs from memory; the
   lifetime then ends.
 - **A full `localStorage` degrades the signal, not the app.** A count or record that can't be

@@ -32,10 +32,6 @@ function recordedAccounts(): string[] {
   return accounts;
 }
 
-export function countEverySignOut(): void {
-  for (const account of recordedAccounts()) countSignOut(account);
-}
-
 export function countSignOutsExcept(current: string): void {
   for (const account of recordedAccounts()) if (account !== current) countSignOut(account);
 }
