@@ -3,12 +3,13 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import { logCommandFailure, occurrenceKey } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { announce } from "@/client/announcements";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { commandFailureInput } from "@/client/failures/command-failure";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, useThreadActions } from "@/client/stores";
+import { useThreadActions } from "@/client/stores";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
   type CompactControl,

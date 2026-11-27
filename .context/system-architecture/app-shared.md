@@ -21,21 +21,20 @@ flowchart LR
 
 ## components
 
-Shared UI: primitives and the composer.
+Shared UI: primitives, link chips and notices.
 
-`ui/` holds the primitives (buttons, menus, lists and rows, pickers, the phone shell); `app/` holds the composer, link chips and notices. The composer toolbar has a state machine.
+`ui/` holds the primitives (buttons, menus, lists and rows, pickers, the phone shell); `app/` holds link chips, notices and the failure toast.
 
 - Kind: module
 - Paths: `apps/app/src/components`
 - Docs: [app CONTEXT](../../apps/app/.context/CONTEXT.md)
-- Machines: [composer toolbar](../../apps/app/src/components/app/composer-toolbar/.context/state-machines.md)
-- Drift: No written dependency rule covers the app's layers, and imports run both ways between them: `client` imports `features/project`, `components` imports `features/editor` and `features/project`, `core/editor` imports `components`, `client` and `features/project`, and `lib` imports `features/agents`.
+- Drift: No written dependency rule covers the app's layers, and imports run both ways between them: `client` imports `features/project` and `features/chat`, `core/editor` imports `components` and `client`, and `rich-content` imports `features/project`.
 
 ## hooks
 
 Small shared React hooks.
 
-Pointer type, the phone shell, text size, theme, a minute clock and scroll-edge detection. No server state.
+Pointer type, the phone shell, text size, theme, a ticking clock (`useClock`) and scroll-edge detection. No server state.
 
 - Kind: module
 - Paths: `apps/app/src/hooks`
@@ -43,9 +42,9 @@ Pointer type, the phone shell, text size, theme, a minute clock and scroll-edge 
 
 ## lib
 
-Helpers: utils, i18n and optimistic thread helpers.
+Helpers: utils, i18n and formatting.
 
-Context-URI parsing, formatting, thread titles and the optimistic send helper `send-project-chat.ts`.
+Context-URI parsing, formatting and thread titles.
 
 - Kind: module
 - Paths: `apps/app/src/lib`

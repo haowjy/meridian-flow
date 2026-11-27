@@ -15,7 +15,7 @@ and the model's `work switch` never call this path
 ([rule](../../../../../server/server/domains/runtime/.context/tools.md#permissions)).
 
 The toolbar's placement and focus are in the
-[composer-toolbar contracts](../../../components/app/composer-toolbar/.context/CONTEXT.md).
+[composer-toolbar contracts](../composer/toolbar/.context/CONTEXT.md).
 
 ## The value and the switch
 

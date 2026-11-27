@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { isHandoffSeed } from "@meridian/contracts/threads";
 import { useEffect, useRef } from "react";
-import { announce } from "@/client/stores";
+import { announce } from "@/client/announcements";
 
 function announcementFor(turn: Turn): string | null {
   if (turn.role === "compaction") {

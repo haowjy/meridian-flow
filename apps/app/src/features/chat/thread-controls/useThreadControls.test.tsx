@@ -15,7 +15,8 @@ const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
 const store = vi.hoisted(() => ({ dispatchRunState: vi.fn() }));
-vi.mock("@/client/stores", () => ({ ...announcements, useThreadActions: () => store }));
+vi.mock("@/client/announcements", () => announcements);
+vi.mock("@/client/stores", () => ({ useThreadActions: () => store }));
 
 import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { act } from "react";

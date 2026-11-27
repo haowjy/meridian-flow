@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/meridian-error";
-import { ComposerSessionDraft } from "@/client/composer-drafts";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
 import { browserSubmissionLock } from "./adapters/browser-lock";
 import { MemorySubmissionLock } from "./adapters/memory-lock";
+import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
+import { ComposerSessionDraft } from "./composer-drafts";
 import {
   cleanDeletedChat,
   cleanDeletedChatsOnBind,

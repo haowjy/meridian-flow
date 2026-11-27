@@ -1,6 +1,6 @@
 import { type RefObject, useEffect } from "react";
-import type { ComposerHandle } from "@/components/app/composer";
 import type { DocumentReference } from "@/core/completion";
+import type { ComposerHandle } from "@/features/chat/composer";
 
 const composers = new Map<string, RefObject<ComposerHandle | null>>();
 

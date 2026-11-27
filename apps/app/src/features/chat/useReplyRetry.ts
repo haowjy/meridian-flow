@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
+import { announce } from "@/client/announcements";
 import { retryReply } from "@/client/api/threads-api";
-import { announce } from "@/client/stores";
 import { type RetryStandIns, useRetryStandIns } from "./useRetryStandIns";
 
 export type ReplyRetry = Pick<

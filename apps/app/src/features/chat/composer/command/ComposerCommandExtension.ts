@@ -1,10 +1,9 @@
+import { composerSkillContent } from "@/client/chat-submissions/composer-document";
 import {
   createSuggestionLane,
   defaultSuggestionLaneDriver,
   type SuggestionLaneOptions,
 } from "@/core/editor/extensions/suggestion";
-
-import { composerSkillContent } from "../composer-document";
 import {
   type ComposerCommandCatalog,
   type ComposerCommandGroupId,

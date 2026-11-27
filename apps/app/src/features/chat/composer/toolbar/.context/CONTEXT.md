@@ -41,4 +41,4 @@ rendered owner.
   contradict the one toolbar-owned dialog and strand focus.
 
 Feature-adapter behavior and mid-thread Work rebinding:
-[`composer-write-mode.md`](../../../../features/chat/.context/composer-write-mode.md).
+[`composer-write-mode.md`](../../../.context/composer-write-mode.md).

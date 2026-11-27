@@ -2,12 +2,12 @@ import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useCallback, useState } from "react";
 import { useThreadActions } from "@/client/stores";
-import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
+import type { ComposerSubmitEnvelope } from "@/features/chat/composer";
+import { sendProjectChat } from "@/features/chat/send-project-chat";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { usePanePlace } from "@/features/project/pane-place";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { sendProjectChat } from "@/lib/send-project-chat";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 export function useCreationComposer(projectId: string) {

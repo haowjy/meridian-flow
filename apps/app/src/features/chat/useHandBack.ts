@@ -11,7 +11,7 @@ import {
 } from "@meridian/thread-client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
-import { composerSessionDraft } from "@/client/composer-drafts";
+import { composerSessionDraft } from "@/client/chat-submissions/composer-drafts";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { useRunState, useThreadActions } from "@/client/stores";
 

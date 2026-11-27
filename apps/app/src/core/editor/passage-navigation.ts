@@ -1,4 +1,4 @@
-import type { OpenDocumentOutcome } from "@/features/project/context/open-project-document";
+import type { OpenDocumentOutcome } from "@/client/stores";
 import {
   showPassageInTarget,
   waitForLiveRangeRetry,

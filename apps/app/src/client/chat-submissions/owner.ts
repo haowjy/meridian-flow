@@ -16,7 +16,6 @@ import {
   enqueueThreadControl,
   getThreadSnapshot,
 } from "@/client/api/threads-api";
-import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { removeChatRow } from "@/client/query/chat-projections";
 import {
@@ -26,10 +25,11 @@ import {
 } from "@/client/query/project-invalidation";
 import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import type { ThreadStoreActions } from "@/client/stores";
-import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
-import { makeOptimisticThread } from "@/lib/optimistic-thread";
+import { makeOptimisticThread } from "@/features/chat/optimistic-thread";
 import { browserSubmissionLock } from "./adapters/browser-lock";
+import type { ComposerSubmitEnvelope } from "./composer-document";
+import { type ComposerDraftScope, composerSessionDraft } from "./composer-drafts";
 import { cleanDeletedChat } from "./deleted-chat";
 import { ChatSubmissionDriver } from "./driver";
 import {

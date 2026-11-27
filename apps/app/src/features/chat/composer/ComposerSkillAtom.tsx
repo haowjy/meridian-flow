@@ -1,6 +1,6 @@
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
+import type { ComposerSkillAttrs } from "@/client/chat-submissions/composer-document";
 import { SkillToken } from "@/rich-content/SkillToken";
-import type { ComposerSkillAttrs } from "./composer-document";
 
 export function ComposerSkillAtom({ node }: NodeViewProps) {
   const skill = node.attrs as ComposerSkillAttrs;

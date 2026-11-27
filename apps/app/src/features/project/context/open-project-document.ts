@@ -17,7 +17,12 @@ import {
   useState,
 } from "react";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
-import { isEditorScheme, type OpenDocument, type ServerOpenDocument } from "@/client/stores";
+import {
+  isEditorScheme,
+  type OpenDocument,
+  type OpenDocumentOutcome,
+  type ServerOpenDocument,
+} from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
 import type {
@@ -191,11 +196,6 @@ export type OpenProjectDocumentRequest = {
   signal?: AbortSignal;
 };
 
-export type OpenDocumentOutcome =
-  | { kind: "committed"; documentId: string }
-  | { kind: "trashed"; documentId: string }
-  | { kind: "cancelled" }
-  | { kind: "refused"; reason: "gone" | "lookup-failed"; name?: string };
 export type OpenProjectDocument = (
   request: OpenProjectDocumentRequest,
 ) => Promise<OpenDocumentOutcome>;

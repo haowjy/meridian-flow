@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { waitingWriterMessages } from "@meridian/thread-client";
 import { useCallback, useRef } from "react";
-import { announce, useRunState, useThreadAsks } from "@/client/stores";
+import { announce } from "@/client/announcements";
+import { useRunState, useThreadAsks } from "@/client/stores";
 import type { ChatHandBack } from "./useHandBack";
 
 export type QueueControls = {

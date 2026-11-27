@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { type StopStatus, stopStatus } from "@meridian/thread-client";
 import { useCallback, useLayoutEffect, useRef } from "react";
-import { announce, useRunState } from "@/client/stores";
+import { announce } from "@/client/announcements";
+import { useRunState } from "@/client/stores";
 import type { ChatHandBack } from "./useHandBack";
 
 export type ChatStop = {

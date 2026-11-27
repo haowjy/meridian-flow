@@ -7,7 +7,7 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { makeOptimisticThread } from "@/lib/optimistic-thread";
+import { makeOptimisticThread } from "@/features/chat/optimistic-thread";
 import type { InheritedView } from "./inherited-view";
 
 export type DerivationKind = "fork" | "handoff";

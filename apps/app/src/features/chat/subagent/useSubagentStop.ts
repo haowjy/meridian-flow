@@ -12,10 +12,11 @@ import {
   stopStatus,
 } from "@meridian/thread-client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { announce } from "@/client/announcements";
 import { getThreadSnapshot } from "@/client/api/threads-api";
 import { commandFailureInput } from "@/client/failures/command-failure";
 import { useFailureLog } from "@/client/failures/failure-log";
-import { announce, useRunState, useThreadActions } from "@/client/stores";
+import { useRunState, useThreadActions } from "@/client/stores";
 import { useHandBack } from "../useHandBack";
 
 export type SubagentStop = {

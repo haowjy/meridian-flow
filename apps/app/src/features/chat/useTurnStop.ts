@@ -3,11 +3,11 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { type CommandFailure, logCommandFailure, type Occurrence } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { announce } from "@/client/announcements";
 import { commandFailureInput } from "@/client/failures/command-failure";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce } from "@/client/stores";
 
 export type TurnStopCopy = { stopping: string };
 

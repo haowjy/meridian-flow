@@ -7,11 +7,8 @@ import {
   scenarioGate,
   ThreadRunScenario,
 } from "@/client/copilot/test-support/ThreadRunScenario";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
 import { MemorySubmissionLock } from "./adapters/memory-lock";
+import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 import { ChatSubmissionDriver, type SubmissionDriverOptions } from "./driver";
 import type { ChatSubmission } from "./store";
 

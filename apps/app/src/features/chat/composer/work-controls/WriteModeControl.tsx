@@ -2,13 +2,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useRef } from "react";
-import {
-  ComposerCurrentValueTrigger,
-  type ComposerToolbarControl,
-} from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
+import { ComposerCurrentValueTrigger, type ComposerToolbarControl } from "../toolbar";
 
 export function useWriteModeToolbarControl({
   value,

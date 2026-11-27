@@ -3,12 +3,12 @@ import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/p
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { NewChatSubmission } from "@/client/chat-submissions";
+import type { ComposerDraftSnapshot } from "@/client/chat-submissions/composer-document";
+import type { ComposerDraftScope } from "@/client/chat-submissions/composer-drafts";
 import { recordAndProjectSubmission } from "@/client/chat-submissions/owner";
-import type { ComposerDraftScope } from "@/client/composer-drafts";
 import type { ThreadStoreActions } from "@/client/stores";
-import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { deriveTitleFromMessage } from "./thread-title";
+import { deriveTitleFromMessage } from "@/lib/thread-title";
 
 export type SendProjectChatArgs = {
   accountId: string;
