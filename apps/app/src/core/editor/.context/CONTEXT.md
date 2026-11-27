@@ -9,7 +9,7 @@ boundaries. The app schema must remain structurally aligned with
 `DocumentSessionRegistry` (`document-session-registry-implementation.ts`) owns the account's
 document sessions: one per room, keyed by `sessionRoomKey` (the bare document id for a Live room,
 `fork:<draft>:<document>` for a draft's fork room), held by retain/release, closed after a grace
-once no host wants it and its unsent edits are acknowledged. A lease is only the account's right
+once no host wants it and the server has saved its edits. A lease is only the account's right
 to hold one room's session (`{accountId, projectId, documentId, room}`): nothing orders or fences
 it, because the project's list says whether a document is there.
 
@@ -32,30 +32,36 @@ server or another tab, arrives by `importRemote`, which calls the binding's `imp
 and so goes through its composition guard: a batch is held, as bytes, while any editor on the
 room is composing.
 
-Whether the copy holds ops the server lacks (`hasUnacknowledgedEdits`) is one version map,
-`pending`: the end of every batch in the copy that the server hasn't been seen to hold, whoever
-wrote it. Opening merges in what the loaded copy holds beyond the stored server mark (one pass over
-the document, once), and until then the answer is yes. Each batch this tab publishes and each
-batch another tab posts merges in its own end, so a keystroke costs no pass over every block. The
-answer is whether the server's version covers `pending`, and each doc key goes once it does. The
-transport merges a server batch, or an acknowledged one, into `serverVersion()` before handing it
-on, and the session recounts after, so a sign-out waiting on another tab's typing wakes when that
-tab's delivery comes back. Another tab's typing that tab never delivers (it closed offline) is
+Whether the copy holds ops the server lacks is one version map, `unsaved`: the end of every batch
+in the copy that the server hasn't been seen to save, whoever wrote it, the server's own relays
+included. Opening merges in what the loaded copy holds beyond the stored mark (one pass over the
+document, once), and until then the answer is yes. Each batch this tab publishes, each batch
+another tab posts and each batch the server sends merges in its own end, so a keystroke costs no
+pass over every block. Two questions read it against two versions of the transport:
+`hasUnsavedEdits` against `savedVersion()` (what the server saved), which every decision to let go
+of or delete the copy asks (sign-out's wait, the teardown hold), and which drops each doc key once
+saved covers it; and the private `hasUnacknowledgedEdits` against `serverVersion()` (what it
+received), which only says whether another tab's typing still needs sending. Detached, both read
+the stored mark. The session recounts on each saved frame, so a sign-out waiting on another tab's
+typing wakes when the server saves it. Another tab's typing that tab never delivers (it closed offline) is
 sent from here once the tabs have been quiet for `TAB_QUIET_MS` (2 s, restarted by each batch):
 a connected session asks its transport to send what the server still lacks (`sendLacking`). The
 writing tab normally delivers first and the server's relay covers `pending` here, so nothing is
 sent; with a third tab, or a relay slower than 2 s, each extra tab may resend the undelivered part
 once per quiet period, which the server takes as a no-op. A session off its socket (kept for Undo,
-or detached) never sees the relay: at quiet it reads the server mark the writing tab keeps in the
+or detached) never sees the relay: at quiet it reads the saved mark the writing tabs keep in the
 copy, and only what that leaves calls the session's `onUndeliveredTabWrites`, on which the
-registry gives it its socket back and holds it until acknowledged (`deliverTabWrites`). Reconnecting on `pending` alone
-would rejoin on every keystroke typed in another tab.
+registry gives it its socket back and holds it until saved (`deliverTabWrites`). Reconnecting on `unsaved` alone
+would rejoin on every keystroke typed in another tab. Because the mark is saved, not received,
+the writing tab's mark lags its typing by the 2 s save debounce, so a detached session often finds
+the typing unsaved at quiet and Joins once per burst; it sends nothing and lets go at the saved
+frame.
 
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
 `local-copy-store.ts`): a snapshot per doc key, a log of envelope batches folded into snapshots
 every `COMPACT_EVERY` batches and at open, and a `meta` store holding the room version the server
-is known to hold (`SERVER_META`). A fork room's copy is named under its document's, so a document's
+is known to have saved (`SAVED_META`, key `"server"`). A fork room's copy is named under its document's, so a document's
 copies (Live and every fork) are found and deleted together. It is
 deleted only when it cannot come back to this account: the node's `purge`, the project, Work
 or chat deleted for good, the account removed from the project, or sign-out. A `delete` (a
@@ -476,23 +482,25 @@ keyboard, pointer, drop, or recovery answer.
 - A retained session's socket is open when some owner wants it (a host is on screen, reported
   through `setHosted` / `retain`'s `detachedDocumentIds`) or it has unsent edits it can still
   deliver. One function, `DocumentSessionRegistry.reconcileRetainedSessions`, applies that on every
-  retain/release, and the session's own snapshots re-apply it when the edits are acknowledged.
+  retain/release, and the session's own snapshots re-apply it when the edits are saved.
   Nothing else attaches or detaches a retained live session. `DocumentSession.detachTransport`
   also cancels an attach still waiting for local persistence.
 - When the last host releases a live document, the registry retires its session after a
-  3 s grace, unless it is kept for its undo (above). A session with unacknowledged edits is
+  3 s grace, unless it is kept for its undo (above). A session with unsaved edits is
   held first, so edits made offline reach the server without the writer reopening the
-  document; once they are acknowledged it is kept for its undo or retired. Reopening takes the
+  document; once the server has saved them (about 2 s after the last batch) it is kept for its
+  undo or retired. Reopening takes the
   same session back and cancels the hold.
 - `DocumentSession.canDeliverUnsentEdits()` says whether the wait can still end in
   delivery. It is false for a reset, unauthorized, terminal, destroyed or read-only room
   (the server drops a read-only room's writes without closing it). The live registry
   asks it and keeps no list of its own.
-- A held session ends when the server acknowledges its edits, when the predicate turns
+- A held session ends when the server has saved its edits, when the predicate turns
   false, when the document is removed or access revoked
   (the room closes, `settleDrainedRoom`), when the account closes
   (the registry's `close`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
-  without an acknowledgement. That cap is for a room that answers but never accepts; the
+  without a save. That cap is for a room that answers but never saves (a failing save, ops the
+  server holds as pending for missing dependencies); the
   clock runs only while the connection is up and restarts on each drop, so offline time
   never counts and a writer who types on a train gets delivery on reconnect, however
   long it takes. (Elapsed connected time, not a refusal count.)
@@ -509,19 +517,15 @@ Copy and no words, and nothing stored. `DocumentSessionRegistry.observeDroppedTy
 observers each time words are dropped (the account lifetime shows the pill under one key, so
 a repeat replaces it). A change with no words (a deletion, a format change) is dropped silently.
 
-- **What the server has.** Each copy keeps the room version the server is known to hold
-  (`SERVER_META` in the copy's `meta` store). The transport knows it per connection: the
-  server's Join version, merged with each batch the server acked or sent
-  (`serverVersion()`); the session writes it to the copy as it grows: a batch the server sent is
-  stored with the mark that covers it in one transaction, and each time the server has
-  acknowledged everything the mark is written at once, as at detach and destroy. A tab closed or
-  reloaded right after typing or receiving a peer's edit leaves a current mark (an unload-time
-  write did not land reliably). The write merges into the stored mark by per-peer maximum
-  (`LocalCopyStore.markServer`): tabs write their own views, and none may roll another's back.
-  The mark is what the server acknowledged, which is not what it saved: a room saves 2 to 10 s
-  after a batch, and a server that stops in that window loses ops the mark already covers (a Join
-  sends them again, but a copy deleted meanwhile, as at sign-out, does not). Beyond that gap, ops
-  the copy holds beyond the mark are all the server can lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
+- **What the server has.** Each copy keeps the room version the server is known to have saved
+  (`SAVED_META` in the copy's `meta` store). The transport knows it per connection
+  (`savedVersion()`: the Join's saved version, merged with each saved frame); the session writes
+  it to the copy on each saved frame, and at detach and destroy. An ack only means the server
+  received a batch: a room saves it 2 to 10 s later, and a server killed in between loses it, so
+  nothing that may delete the copy reads received. The write merges into the stored mark by
+  per-peer maximum (`LocalCopyStore.markSaved`): tabs write their own views, and none may roll
+  another's back. Marks written by builds before saved frames were received marks and are read as
+  saved. Ops the copy holds beyond the mark are all the server can lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
   version in each text doc; a change with no words is dropped silently.
 - **Who drops.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s `retiring`)
   reads its copy beyond its mark (`LocalDocumentCopies.holds` with `storedWordsBeyond`); the copy has every

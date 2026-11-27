@@ -65,3 +65,7 @@ stateDiagram-v2
 - **A close forgets the unacknowledged batches.** The next Join sends `exportSince` of the
   version the server answers with: whatever the server lacks, not the forgotten batches as they
   were. A batch the server imported whose `Ack` was lost is not sent again.
+- **Each Join replaces both versions.** `JoinResponseOk` clears what the server received and saved
+  and takes them again from the answer, so a server that restarted and lost unsaved batches
+  answers lower, and the copy sends what that lacks. Saved moves within a connection only on a
+  saved frame ([CONTEXT.md](CONTEXT.md#received-and-saved)).

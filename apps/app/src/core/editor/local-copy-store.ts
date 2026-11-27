@@ -10,7 +10,8 @@ const VERSION = 1;
 const SNAPSHOTS = "snapshots";
 const UPDATES = "updates";
 const META = "meta";
-export const SERVER_META = "server";
+// Builds before saved frames stored the received version under this key; they read as saved.
+export const SAVED_META = "server";
 export const INITIALIZED_META = "content-initialization";
 
 export type LoadedCopy = {
@@ -72,10 +73,10 @@ export async function readCopy(db: IDBDatabase): Promise<LoadedCopy> {
 
 /** Merged into the stored mark, never over it: each tab writes its own view of the server. */
 async function mergeMark(meta: IDBObjectStore, version: RoomVersion): Promise<void> {
-  const stored = await request(meta.get(SERVER_META));
+  const stored = await request(meta.get(SAVED_META));
   const merged = stored instanceof Uint8Array ? decodeRoomVersion(stored) : new Map();
   mergeVersion(merged, version);
-  meta.put(encodeRoomVersion(merged), SERVER_META);
+  meta.put(encodeRoomVersion(merged), SAVED_META);
 }
 
 export class LocalCopyStore {
@@ -100,12 +101,10 @@ export class LocalCopyStore {
     return request(this.db.transaction(META, "readonly").objectStore(META).get(key));
   }
 
-  /** One transaction: a tab closed right after a server batch must not leave it beyond the mark. */
-  append(batch: Uint8Array, server?: RoomVersion): Promise<void> {
+  append(batch: Uint8Array): Promise<void> {
     return this.queue(async () => {
-      const transaction = this.db.transaction(server ? [UPDATES, META] : UPDATES, "readwrite");
+      const transaction = this.db.transaction(UPDATES, "readwrite");
       transaction.objectStore(UPDATES).add(batch);
-      if (server) await mergeMark(transaction.objectStore(META), server);
       await done(transaction);
     });
   }
@@ -120,7 +119,7 @@ export class LocalCopyStore {
     });
   }
 
-  markServer(version: RoomVersion): Promise<void> {
+  markSaved(version: RoomVersion): Promise<void> {
     return this.queue(async () => {
       const transaction = this.db.transaction(META, "readwrite");
       await mergeMark(transaction.objectStore(META), version);

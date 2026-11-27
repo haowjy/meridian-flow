@@ -4,9 +4,16 @@ import { decodeEnvelope, encodeEnvelope } from "../envelope.js";
 import { freshServerPeerId } from "../peer.js";
 import { type Imported, RoomDocs } from "../room-docs.js";
 import type { DocKey, ShapeSchema } from "../shape.js";
-import { decodeRoomVersion, encodeRoomVersion } from "../version.js";
+import {
+  type DocVersion,
+  decodeRoomVersion,
+  docVersion,
+  encodeRoomVersion,
+  type RoomVersion,
+} from "../version.js";
 import { encodeChanges } from "../write.js";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "./document-rooms.js";
+import { advanceSaved, savedLag } from "./saved.js";
 
 export interface SnapshotRow {
   snapshot: Uint8Array;
@@ -29,12 +36,14 @@ interface Loaded {
   room: DocumentRoom;
   docs: RoomDocs;
   dirty: Set<DocKey>;
+  saved: Map<DocKey, DocVersion>;
 }
 
 export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRooms {
   const stored = new Map<string, Map<DocKey, SnapshotRow>>();
   const loadedRooms = new Map<string, Loaded>();
   const listeners = new Map<string, Set<(batch: RoomBatch) => void>>();
+  const savedListeners = new Map<string, Set<(saved: RoomVersion) => void>>();
 
   const load = (room: DocumentRoom): Loaded => {
     const name = loroRoomName(room);
@@ -43,7 +52,8 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     const live = room.kind === "fork" ? load(liveRoomOf(room)).docs : null;
     const rows = new Map([...(stored.get(name) ?? [])].map(([key, row]) => [key, row.snapshot]));
     const docs = RoomDocs.load(shape, freshServerPeerId(), rows, live);
-    const loaded = { room, docs, dirty: new Set(docs.forward().changed) };
+    const saved = docs.version();
+    const loaded = { room, docs, saved, dirty: new Set(docs.forward().changed) };
     loadedRooms.set(name, loaded);
     return loaded;
   };
@@ -72,21 +82,30 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     return { pending: imported.pending };
   };
 
-  const save = (loaded: Loaded, keys: Iterable<DocKey>, into = stored) => {
+  const save = (loaded: Loaded, keys: Iterable<DocKey>, into = stored): RoomVersion => {
     const name = loroRoomName(loaded.room);
     let rows = into.get(name);
     if (!rows) {
       rows = new Map();
       into.set(name, rows);
     }
+    const written = new Map<DocKey, DocVersion>();
     for (const [key, snapshot] of loaded.docs.snapshots(keys)) {
-      const frontiers = loaded.docs.doc(key)?.frontiers() ?? [];
-      rows.set(key, { snapshot, frontiers, savedAt: Date.now() });
+      const doc = loaded.docs.doc(key);
+      if (doc) written.set(key, docVersion(doc));
+      rows.set(key, { snapshot, frontiers: doc?.frontiers() ?? [], savedAt: Date.now() });
     }
+    return written;
+  };
+
+  const noteSaved = (loaded: Loaded, written: RoomVersion) => {
+    const moved = advanceSaved(loaded.saved, written);
+    if (moved.size === 0) return;
+    for (const listener of savedListeners.get(loroRoomName(loaded.room)) ?? []) listener(moved);
   };
 
   const flush = (loaded: Loaded) => {
-    save(loaded, loaded.dirty);
+    noteSaved(loaded, save(loaded, loaded.dirty));
     loaded.dirty.clear();
   };
 
@@ -105,11 +124,13 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       return load(room).docs.fork(options?.peer ?? freshServerPeerId());
     },
     async sync(room, version) {
-      const { docs } = load(room);
+      const { docs, saved } = load(room);
       const update = docs.exportSince(decodeRoomVersion(version));
+      const at = docs.version();
       return {
-        version: encodeRoomVersion(docs.version()),
+        version: encodeRoomVersion(at),
         update: update.size > 0 ? encodeEnvelope(update) : null,
+        saved: savedLag(at, saved),
       };
     },
     async write(room, batch, origin) {
@@ -118,15 +139,18 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     async commit(tx, room, batch, origin) {
       const loaded = load(room);
       const scratch = loaded.docs.fork(freshServerPeerId());
+      let written: RoomVersion;
       try {
         const { changed } = scratch.importBatch(decodeEnvelope(batch));
-        save({ ...loaded, docs: scratch }, changed, tx.rows);
+        written = save({ ...loaded, docs: scratch }, changed, tx.rows);
       } finally {
         scratch.free();
       }
       tx.afterCommit.push(() => {
         const now = loadedRooms.get(loroRoomName(room));
-        if (now) importInto(now, batch, origin);
+        if (!now) return;
+        importInto(now, batch, origin);
+        noteSaved(now, written);
       });
     },
     async seed(tx, room, snapshots) {
@@ -136,9 +160,12 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
         rows = new Map();
         tx.rows.set(name, rows);
       }
+      const written = new Map<DocKey, DocVersion>();
       for (const [key, snapshot] of decodeEnvelope(snapshots)) {
         const probe = RoomDocs.load(shape, freshServerPeerId(), new Map([[key, snapshot]]));
         try {
+          const doc = probe.doc(key);
+          if (doc) written.set(key, docVersion(doc));
           rows.set(key, {
             snapshot,
             frontiers: probe.doc(key)?.frontiers() ?? [],
@@ -150,7 +177,9 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       }
       tx.afterCommit.push(() => {
         const now = loadedRooms.get(name);
-        if (now) importInto(now, snapshots, "server:seed");
+        if (!now) return;
+        importInto(now, snapshots, "server:seed");
+        noteSaved(now, written);
       });
     },
     subscribe(room, listener) {
@@ -159,6 +188,16 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
       if (!set) {
         set = new Set();
         listeners.set(name, set);
+      }
+      set.add(listener);
+      return () => set.delete(listener);
+    },
+    subscribeSaved(room, listener) {
+      const name = loroRoomName(room);
+      let set = savedListeners.get(name);
+      if (!set) {
+        set = new Set();
+        savedListeners.set(name, set);
       }
       set.add(listener);
       return () => set.delete(listener);

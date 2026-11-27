@@ -71,24 +71,28 @@ stateDiagram-v2
   whose own sign-out is running when the count moves lets that sign-out finish instead
   (`signOutRunning`): both deliver and delete the same copies, and ending the lifetime under it
   would only make it answer "Couldn't log out" before the tab leaves. If that sign-out refuses
-  (its own words couldn't be delivered in 8 s) and the count has moved meanwhile, the lifetime
+  (its own words couldn't be saved within its wait) and the count has moved meanwhile, the lifetime
   then ends as on a sign-out elsewhere, so the tab doesn't stay open under a session that ended. A copy
   left by a tab closed before the sign-out is a stored copy: the owner's wait reads it, delivers
   what it holds and deletes it with the rest. Words typed in another tab after the owner's wait
   answered, before that tab hears the count, are deleted unsent, and so are words that tab can't
-  deliver within its own 8 s wait: the window is the time the count takes to reach the tab, plus
+  have saved within its own wait: the window is the time the count takes to reach the tab, plus
   that wait. A lifetime ended by another account signing in is the account-switch rule
   (below), not a sign-out.
 - **Closing does not by itself delete local copies.** A copy goes on a fact that is final (the
   node's purge, its Work or chat purged, the account removed from the project:
   `list-removal-observer`) or at sign-out (`clearForSignOut` → `clearAccountCopies`, which fails
-  the sign-out with `SignOutIncomplete("copies")` when one remains). Sign-out first waits up to
-  8 s for unsent edits (`SignOutIncomplete("unsent")` otherwise): its own, those another tab
-  typed into a copy this tab has open, and those in a stored copy no session has open. The
-  registry reads each current copy, one at a time, for ops beyond its server mark (from the
-  bytes' headers, `storedOpsBeyondMark`) and opens a session on each that has them, so it
-  delivers like an open document and then retires; on a timeout it stays held until
-  acknowledged, so the next Retry passes once it has delivered. The wait answers from one fresh
+  the sign-out with `SignOutIncomplete("copies")` when one remains). Sign-out first waits for
+  every edit to be saved by the server, not only received (`SignOutIncomplete("unsent")`
+  otherwise): its own, those another tab typed into a copy this tab has open, and those in a
+  stored copy no session has open. The wait is `UNSENT_EDITS_WAIT_MS`, the server's save cap
+  (`ROOM_SAVE_MAX_WAIT_MS`, 10 s) plus 2 s, since anyone typing in the chapter restarts its 2 s
+  save debounce; right after typing it ends in about 2 s. While another tab or device keeps typing
+  in the same chapter the server never has everything saved, so sign-out answers "Couldn't log
+  out" until the typing stops. The registry reads each current copy, one at a time, for ops beyond
+  its saved mark (from the bytes' headers, `storedOpsBeyondMark`) and opens a session on each
+  that has them, so it delivers like an open document and then retires; on a timeout it stays
+  held until saved, so the next Retry passes once the server has saved it. The wait answers from one fresh
   synchronous pass over every room's session, taken after a last read of the stored copies if it
   waited since the one before; while anything is pending and the deadline holds, it waits for the
   next change and looks again. So typing into any chapter during the wait, or a session opened
@@ -118,7 +122,7 @@ stateDiagram-v2
   a tab's own sign-out, and a lifetime React builds and never mounts, can't end it; it listens
   only while mounted (`resumeFeatureLease`), and checks the count on mounting and on a restore from
   the back-forward cache (`pageshow`), which hears no `storage` event while cached. Hearing it, the
-  lifetime ends as on a sign-out elsewhere: it waits up to 8 s for its open sessions, closes, and
+  lifetime ends as on a sign-out elsewhere: it waits up to 12 s for its open sessions, closes, and
   goes to `/end-session?account=<its sign-in provider id>`. The lifetime holds that id (`externalId`,
   the WorkOS user id) beside its own: `/end-session` compares it with the session's
   (`getAuth().user.id`, already refreshed by the AuthKit middleware), so no call to the API decides

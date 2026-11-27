@@ -166,7 +166,7 @@ path address does: once nothing lives at the path it names no document, and find
 tombstone at a path belongs to a later track.
 
 Unsent text is kept: a delete closes the view, but the session and its local copy stay until the
-unsent edits are acknowledged; only a purge, an ended source, a lost project or sign-out deletes the
+server has saved its edits; only a purge, an ended source, a lost project or sign-out deletes the
 copy (`local-document-copies.ts`).
 
 ### Multi-Work review representations

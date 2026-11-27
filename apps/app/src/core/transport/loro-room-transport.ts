@@ -4,6 +4,7 @@ import {
   encodeLoroJoinAuth,
   LORO_JOIN_ERROR,
   LORO_ROOM_ERROR,
+  LORO_SAVED_CRDT,
   LORO_WS_PATH,
   type LoroRoom,
   loroRoomErrorOf,
@@ -82,6 +83,7 @@ export type LoroRoomTransport = {
    */
   whenSentAcknowledged(): Promise<void>;
   serverVersion(): RoomVersion;
+  savedVersion(): RoomVersion;
   readonly synced: boolean;
   readonly whenSynced: Promise<void>;
   subscribeStatus(listener: (state: RoomConnectionState) => void): () => void;
@@ -89,6 +91,7 @@ export type LoroRoomTransport = {
     listener: (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void,
   ): () => void;
   subscribeServerAcknowledgement(listener: (acknowledged: boolean) => void): () => void;
+  subscribeSaved(listener: () => void): () => void;
   destroy(): void;
 };
 
@@ -134,6 +137,7 @@ export function createLoroRoomTransport({
     (access: DocumentSessionAccess, closedWhy: ClosedOwnerWhy | null) => void
   >();
   const ackListeners = new Set<(acknowledged: boolean) => void>();
+  const savedListeners = new Set<() => void>();
   let state: RoomConnectionState = { kind: "connecting", attempt: 1 };
   let access: { access: DocumentSessionAccess; why: ClosedOwnerWhy | null } | null = null;
   let socket: WebSocket | null = null;
@@ -159,6 +163,11 @@ export function createLoroRoomTransport({
     }
   };
   const server = new Map<DocKey, DocVersion>();
+  const saved = new Map<DocKey, DocVersion>();
+  let savedIsReceived = false;
+  const emitSaved = () => {
+    for (const listener of savedListeners) listener();
+  };
   const fragments = new Map<string, { count: number; parts: Uint8Array[] }>();
   let resolveSynced!: () => void;
   const whenSynced = new Promise<void>((resolve) => {
@@ -250,6 +259,18 @@ export function createLoroRoomTransport({
     if (lacking) sendDoc(lacking);
   };
 
+  const receiveSaved = (bytes: Uint8Array) => {
+    const version = decodeRoomVersion(bytes);
+    mergeVersion(saved, version);
+    mergeVersion(server, version);
+    emitSaved();
+  };
+
+  const receive = (crdt: CrdtType, bytes: Uint8Array) => {
+    if (crdt === LORO_SAVED_CRDT) receiveSaved(bytes);
+    else receiveBatch(bytes);
+  };
+
   const receiveBatch = (bytes: Uint8Array) => {
     const received = batchEnd(bytes);
     // Before the import: the session reads the server's version to learn another tab's ops landed.
@@ -277,7 +298,12 @@ export function createLoroRoomTransport({
         server.clear();
         const joinVersion = decodeRoomVersion(message.version);
         mergeVersion(server, joinVersion);
-        const { readOnlyWhy } = decodeLoroJoinExtra(message.extra);
+        const { readOnlyWhy, saved: lagging } = decodeLoroJoinExtra(message.extra);
+        savedIsReceived = lagging === undefined;
+        saved.clear();
+        mergeVersion(saved, joinVersion);
+        for (const [key, version] of decodeRoomVersion(lagging ?? new Uint8Array()))
+          saved.set(key, version);
         if (message.permission === "write") emitAccess("edit", null);
         else emitAccess("read", readOnlyWhy ?? null);
         if (presence) {
@@ -295,6 +321,7 @@ export function createLoroRoomTransport({
         if (!synced) catchUp = { want: joinVersion, handed: new Map(copy.version()) };
         settleSynced();
         emitStatus({ kind: "connected" });
+        emitSaved();
         return;
       }
       case MessageType.JoinError: {
@@ -314,7 +341,7 @@ export function createLoroRoomTransport({
         return;
       }
       case MessageType.DocUpdate:
-        for (const update of message.updates) receiveBatch(update);
+        for (const update of message.updates) receive(message.crdt, update);
         return;
       case MessageType.DocUpdateFragmentHeader:
         fragments.set(message.batchId, { count: message.fragmentCount, parts: [] });
@@ -333,7 +360,7 @@ export function createLoroRoomTransport({
           whole.set(part, at);
           at += part.length;
         }
-        receiveBatch(whole);
+        receive(message.crdt, whole);
         return;
       }
       case MessageType.Ack: {
@@ -343,6 +370,7 @@ export function createLoroRoomTransport({
         unacked.delete(message.refId);
         mergeVersion(server, version);
         emitAck();
+        if (savedIsReceived) emitSaved();
         return;
       }
       case MessageType.RoomError: {
@@ -383,6 +411,7 @@ export function createLoroRoomTransport({
           schema: formatCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
           peer,
           account,
+          saved: true,
         }),
         version: encodeRoomVersion(copy.version()),
       });
@@ -465,6 +494,7 @@ export function createLoroRoomTransport({
       });
     },
     serverVersion: () => server,
+    savedVersion: () => (savedIsReceived ? server : saved),
     get synced() {
       return synced;
     },
@@ -483,6 +513,10 @@ export function createLoroRoomTransport({
       ackListeners.add(listener);
       listener(acknowledged());
       return () => ackListeners.delete(listener);
+    },
+    subscribeSaved(listener) {
+      savedListeners.add(listener);
+      return () => savedListeners.delete(listener);
     },
     destroy() {
       if (destroyed) return;

@@ -1,5 +1,5 @@
 import { t } from "@lingui/core/macro";
-import type { AccountId } from "@meridian/contracts/protocol";
+import { type AccountId, ROOM_SAVE_MAX_WAIT_MS } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
@@ -24,7 +24,7 @@ export class SignOutIncomplete extends Error {
 }
 
 export const SIGN_OUT_FAILURE = "sign-out";
-const UNSENT_EDITS_WAIT_MS = 8_000;
+const UNSENT_EDITS_WAIT_MS = ROOM_SAVE_MAX_WAIT_MS + 2_000;
 
 export class AccountFeatureLifetime {
   private readonly closing = new AbortController();

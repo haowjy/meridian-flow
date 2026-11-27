@@ -1,4 +1,4 @@
-import { JoinErrorCode, RoomErrorCode } from "loro-protocol";
+import { CrdtType, JoinErrorCode, RoomErrorCode } from "loro-protocol";
 import { z } from "zod";
 import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId, DraftId } from "../ids.js";
@@ -54,10 +54,16 @@ export function liveRoomOf(room: DocumentRoom): DocumentRoom {
 export const SERVER_PEER_LIMIT = 1n << 48n;
 export const PEER_ID_LIMIT = 1n << 64n;
 
+export const ROOM_SAVE_MAX_WAIT_MS = 10_000;
+
+/** loro-protocol has no message for "saved": a saved frame borrows the tag of a CRDT Flow never uses. */
+export const LORO_SAVED_CRDT = CrdtType.Flock;
+
 export interface LoroJoinAuth {
   schema: string;
   peer: string;
   account: string;
+  saved?: true;
 }
 
 const joinAuthSchema = z.object({
@@ -68,6 +74,7 @@ const joinAuthSchema = z.object({
     .regex(/^\d{1,20}$/)
     .refine((peer) => BigInt(peer) >= SERVER_PEER_LIMIT && BigInt(peer) < PEER_ID_LIMIT),
   account: z.string().min(1),
+  saved: z.literal(true).optional(),
 });
 
 export function encodeLoroJoinAuth(auth: LoroJoinAuth): Uint8Array {
@@ -83,8 +90,8 @@ export function decodeLoroJoinAuth(bytes: Uint8Array): LoroJoinAuth | null {
   }
   const parsed = joinAuthSchema.safeParse(value);
   if (!parsed.success) return null;
-  const { schema, peer, account } = parsed.data;
-  return { schema, peer, account };
+  const { schema, peer, account, saved } = parsed.data;
+  return { schema, peer, account, ...(saved ? { saved } : {}) };
 }
 
 export const LORO_JOIN_ERROR = {
@@ -122,12 +129,13 @@ export function loroAccessChangedReason(why?: ClosedOwnerWhy): string {
   return why ? `${reason}:${why}` : reason;
 }
 
-export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string };
+export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string; saved?: Uint8Array };
 
 export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
   const value = {
     ...(extra.readOnlyWhy ? { readOnlyWhy: extra.readOnlyWhy } : {}),
     ...(extra.list ? { list: extra.list } : {}),
+    ...(extra.saved ? { saved: toBase64(extra.saved) } : {}),
   };
   return Object.keys(value).length > 0
     ? new TextEncoder().encode(JSON.stringify(value))
@@ -137,6 +145,7 @@ export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
 const joinExtraSchema = z.object({
   readOnlyWhy: z.enum(CLOSED_OWNER_WHYS).optional(),
   list: z.string().optional(),
+  saved: z.string().optional(),
 });
 
 export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtra {
@@ -147,10 +156,21 @@ export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtr
     return {
       ...(parsed.data.readOnlyWhy ? { readOnlyWhy: parsed.data.readOnlyWhy } : {}),
       ...(parsed.data.list ? { list: parsed.data.list } : {}),
+      ...(parsed.data.saved !== undefined ? { saved: fromBase64(parsed.data.saved) } : {}),
     };
   } catch {
     return {};
   }
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function fromBase64(text: string): Uint8Array {
+  return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 }
 
 export function loroRoomErrorOf(message: string) {

@@ -34,7 +34,7 @@ import type {
   RoomConnectionState,
 } from "@/core/transport/loro-room-transport";
 import { DocumentHistory } from "./editor-history";
-import { INITIALIZED_META, LocalCopyStore, SERVER_META } from "./local-copy-store";
+import { INITIALIZED_META, LocalCopyStore, SAVED_META } from "./local-copy-store";
 import {
   createLocalPresence,
   type LocalPresence,
@@ -141,7 +141,8 @@ export class DocumentSession {
   private transportInitialSyncComplete = false;
   private contentHeld = false;
   private transportAcknowledged = false;
-  private readonly pending = new Map<DocKey, DocVersion>();
+  // A batch the server sent counts too: a session let go before it is saved leaves it beyond the mark.
+  private readonly unsaved = new Map<DocKey, DocVersion>();
   private tabQuietTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly onUndeliveredTabWrites: () => void;
   private status: DocumentSessionStatus = "detached";
@@ -150,7 +151,7 @@ export class DocumentSession {
   private transportState: RoomConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
   private closedWhy: ClosedOwnerWhy | null = null;
-  private readonly server = new Map<DocKey, DocVersion>();
+  private readonly saved = new Map<DocKey, DocVersion>();
   private holdsUndeliverable = false;
   private inert = false;
   private importing = false;
@@ -246,7 +247,7 @@ export class DocumentSession {
   }
 
   private publishBatch(batch: Uint8Array): void {
-    mergeVersion(this.pending, batchEnd(batch));
+    mergeVersion(this.unsaved, batchEnd(batch));
     this.append(batch);
     this.contentChanged();
     if (this.inert) return;
@@ -260,7 +261,7 @@ export class DocumentSession {
     this.recomputeStatus();
   }
 
-  private importRemote(batch: Uint8Array, server?: RoomVersion): void {
+  private importRemote(batch: Uint8Array, store = false): void {
     if (this.destroyed || this.docs.isFreed) return;
     this.importing = true;
     try {
@@ -271,9 +272,9 @@ export class DocumentSession {
     } finally {
       this.importing = false;
     }
-    if (server) {
-      mergeVersion(this.server, server);
-      this.append(batch, this.server);
+    if (store) {
+      mergeVersion(this.unsaved, batchEnd(batch));
+      this.append(batch);
     }
     this.contentChanged();
   }
@@ -287,10 +288,10 @@ export class DocumentSession {
     for (const listener of [...this.contentListeners]) listener();
   }
 
-  private append(batch: Uint8Array, server?: RoomVersion): void {
+  private append(batch: Uint8Array): void {
     const store = this.store;
     if (!store) return;
-    void store.append(batch, server).catch(noop);
+    void store.append(batch).catch(noop);
     if (++this.appended >= COMPACT_EVERY) this.compact();
   }
 
@@ -326,8 +327,8 @@ export class DocumentSession {
       if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots));
       for (const batch of loaded.updates) this.importRemote(batch);
       this.forwardFromLive();
-      const server = loaded.meta.get(SERVER_META);
-      if (server instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(server));
+      const mark = loaded.meta.get(SAVED_META);
+      if (mark instanceof Uint8Array) mergeVersion(this.saved, decodeRoomVersion(mark));
       this.countStored();
       this.store = store;
       store.db.onversionchange = () => {
@@ -349,9 +350,9 @@ export class DocumentSession {
   /** The copy's stored ops beyond the server's stored mark: one pass over the document, at open. */
   private countStored(): void {
     const stored = [...this.docs.version()].filter(
-      ([key, version]) => !docCovers(this.server.get(key), version),
+      ([key, version]) => !docCovers(this.saved.get(key), version),
     );
-    mergeVersion(this.pending, new Map(stored));
+    mergeVersion(this.unsaved, new Map(stored));
   }
 
   private forwardFromLive(): void {
@@ -375,7 +376,7 @@ export class DocumentSession {
       const batch = event.data?.batch;
       if (!(batch instanceof Uint8Array)) return;
       this.importRemote(batch);
-      mergeVersion(this.pending, batchEnd(batch));
+      mergeVersion(this.unsaved, batchEnd(batch));
       this.recomputeStatus();
       clearTimeout(this.tabQuietTimer);
       this.tabQuietTimer = setTimeout(
@@ -391,9 +392,9 @@ export class DocumentSession {
       if (this.hasUnacknowledgedEdits()) this.transportProvider.sendLacking();
       return;
     }
-    const mark = await this.store?.readMeta(SERVER_META);
+    const mark = await this.store?.readMeta(SAVED_META);
     if (this.destroyed || this.transportProvider) return;
-    if (mark instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(mark));
+    if (mark instanceof Uint8Array) mergeVersion(this.saved, decodeRoomVersion(mark));
     this.recomputeStatus();
     if (this.hasUnacknowledgedEdits()) this.onUndeliveredTabWrites();
   }
@@ -439,7 +440,7 @@ export class DocumentSession {
           return entries.size > 0 ? encodeEnvelope(entries) : null;
         },
         importRemote: (batch) => {
-          this.importRemote(batch, provider.serverVersion());
+          this.importRemote(batch, true);
           this.recomputeStatus();
         },
       },
@@ -468,7 +469,10 @@ export class DocumentSession {
       }),
       provider.subscribeServerAcknowledgement((acknowledged) => {
         this.transportAcknowledged = acknowledged;
-        if (acknowledged) this.noteServer();
+        this.recomputeStatus();
+      }),
+      provider.subscribeSaved(() => {
+        this.noteSaved();
         this.recomputeStatus();
       }),
     );
@@ -477,17 +481,17 @@ export class DocumentSession {
     this.emit();
   }
 
-  private noteServer(): void {
+  private noteSaved(): void {
     const provider = this.transportProvider;
     if (!provider || this.docs.isFreed) return;
-    const known = provider.serverVersion();
-    if (versionCovers(this.server, known)) return;
-    mergeVersion(this.server, known);
-    void this.store?.markServer(this.server).catch(noop);
+    const known = provider.savedVersion();
+    if (versionCovers(this.saved, known)) return;
+    mergeVersion(this.saved, known);
+    void this.store?.markSaved(this.saved).catch(noop);
   }
 
   private computeUndeliverable(): boolean {
-    const server = this.transportProvider?.serverVersion() ?? this.server;
+    const server = this.transportProvider?.serverVersion() ?? this.saved;
     return wordsBeyond(this.docs, server);
   }
 
@@ -510,7 +514,7 @@ export class DocumentSession {
       this.recomputeStatus();
       return;
     }
-    this.noteServer();
+    this.noteSaved();
     for (const stop of this.unsubscribers.splice(0)) stop();
     if (!this.presenceHeldForTransport) {
       this.presenceHeldForTransport = true;
@@ -566,13 +570,21 @@ export class DocumentSession {
     this.detachTransport();
   }
 
-  hasUnacknowledgedEdits(): boolean {
+  private hasUnacknowledgedEdits(): boolean {
     // Until the copy loads, what it stores is uncounted, not absent.
     if (!this.localPersistenceSynced) return true;
-    const server = this.transportProvider?.serverVersion() ?? this.server;
-    for (const [key, version] of this.pending) {
-      if (!docCovers(server.get(key), version)) return true;
-      this.pending.delete(key);
+    const received = this.transportProvider?.serverVersion() ?? this.saved;
+    for (const [key, version] of this.unsaved)
+      if (!docCovers(received.get(key), version)) return true;
+    return false;
+  }
+
+  hasUnsavedEdits(): boolean {
+    if (!this.localPersistenceSynced) return true;
+    const saved = this.transportProvider?.savedVersion() ?? this.saved;
+    for (const [key, version] of this.unsaved) {
+      if (!docCovers(saved.get(key), version)) return true;
+      this.unsaved.delete(key);
     }
     return false;
   }
@@ -749,7 +761,7 @@ export class DocumentSession {
       window.removeEventListener("pagehide", this.onPageHide);
       window.removeEventListener("pageshow", this.onPageShow);
     }
-    this.noteServer();
+    this.noteSaved();
     for (const stop of this.unsubscribers.splice(0)) stop();
     this.transportProvider?.destroy();
     this.transportProvider = null;
@@ -775,7 +787,7 @@ export class DocumentSession {
     const acknowledged =
       next === "synced" &&
       (this.access === "read" ? !this.holdsUndeliverable : this.transportAcknowledged);
-    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnacknowledgedEdits()}`;
+    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnsavedEdits()}`;
     if (key === this.emittedKey && this.transportState === this.lastEmittedState) return;
     this.emittedKey = key;
     this.lastEmittedState = this.transportState;
