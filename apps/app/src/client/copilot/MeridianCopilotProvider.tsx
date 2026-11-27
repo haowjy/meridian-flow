@@ -1,12 +1,3 @@
-/**
- * MeridianCopilotProvider — exposes Meridian's shared thread run controller.
- *
- * Constructs one `ThreadRunController` per `ThreadTransport` so chat surfaces
- * can submit and recover admissions without AG-UI client plumbing.
- * The historical provider/context names stay as the app seam while the value is
- * now the direct transport controller.
- */
-
 import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";

@@ -1,7 +1,3 @@
-/**
- * Browse-layer helpers for project context HTTP routes.
- * Project routes use the same scheme names as the unified ContextPort.
- */
 import {
   type CanonicalContextAuthority,
   canonicalContextUri,
@@ -10,7 +6,6 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
-/** Serialize the canonical authority selected by the project browse route. */
 export function projectBrowseContextUri(
   scheme: OwnedContextUriScheme,
   path: string,

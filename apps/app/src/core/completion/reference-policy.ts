@@ -1,4 +1,3 @@
-/** Canonical reference identity and deterministic lexical ranking over a source's tree. */
 import {
   type CanonicalContextUri,
   type DocumentId,
@@ -28,7 +27,6 @@ export type DocumentReference = {
   label: string;
 };
 
-/** A folder, named by its node; its URI is only where it is now. Area roots are never one. */
 export type FolderReference = {
   kind: "folder";
   folderId: FolderId;
@@ -36,12 +34,10 @@ export type FolderReference = {
   label: string;
 };
 
-/** What a terminal row names: a document or a folder. Each host inserts by `kind`. */
 export type AuthoritativeReference = DocumentReference | FolderReference;
 
 export type ReferenceNavigationAction = {
   type: "navigate";
-  /** One authority segment or a full canonical source/folder prefix. */
   prefix: string;
   sourceId: string;
   containerId?: string;
@@ -55,7 +51,6 @@ export type ReferenceSelectAction<Reference extends AuthoritativeReference = Doc
 type NavigationRowBase = {
   rowId: string;
   label: string;
-  /** A twin's `~id`, which the label doesn't carry. */
   suffix?: string;
   location: string;
   matchAliases: readonly string[];
@@ -70,7 +65,6 @@ export type ReferenceRow =
       kind: "file";
       rowId: string;
       label: string;
-      /** As a folder row's. */
       suffix?: string;
       location: string;
       fileKind: "document" | "asset";
@@ -78,7 +72,6 @@ export type ReferenceRow =
       matchedAlias: string | null;
       action: ReferenceSelectAction;
     }
-  /** The folder being listed, offered first under Back. Its label is the folder's name. */
   | {
       kind: "folder-mention";
       rowId: string;
@@ -87,21 +80,17 @@ export type ReferenceRow =
       action: ReferenceSelectAction<FolderReference>;
     };
 
-/** A row that names a reference rather than opening a level. */
 export type ReferenceTerminalRow = Extract<ReferenceRow, { kind: "file" | "folder-mention" }>;
 
-/** A source as the browser lists it: where its addresses point and what the writer calls its owner. */
 export type ReferenceSource = {
   id: string;
   scheme: ProjectContextTreeScheme;
   authority: StableReferenceAuthority;
-  /** A Work's name for a source it owns; empty for every other owner. */
   ownerLabel: string;
 };
 
 export type ReferenceSourceView = { source: ReferenceSource; tree: TreeView };
 
-/** The authority a source's addresses carry. A chat's handle is null until the chat exists. */
 export function referenceSourceOf(
   source: ContextSource,
   context: { projectId: string; accountId: string; ownerLabel?: string },
@@ -146,7 +135,6 @@ export type ReferenceRankingPriors = {
   contextualDocumentIds?: ReadonlySet<string>;
 };
 
-/** Folders are mentionable only where a host takes them; files are documents or assets. */
 export type ReferenceKind = "document" | "asset" | "folder";
 
 export type ReferencePolicyOptions = ReferenceRankingPriors & {
@@ -179,7 +167,6 @@ export function authoritativeReferenceForFile(
   };
 }
 
-/** A folder a writer can mention: one whose address carries its source's stable authority. */
 export function folderReferenceForEntry(
   dir: TreeDirectory,
   source: ReferenceSource,
@@ -188,12 +175,10 @@ export function folderReferenceForEntry(
   return uri ? { kind: "folder", folderId: dir.entryId, uri, label: dir.name } : null;
 }
 
-/** The directories above a node, as the row's location: `a/b` for `/a/b/c.md`. */
 export function locationOf(path: string): string {
   return path.split("/").filter(Boolean).slice(0, -1).join("/");
 }
 
-/** The terminal browser row for a file. */
 export function referenceRowForFile(
   file: TreeFile,
   source: ReferenceSource,
@@ -213,7 +198,6 @@ export function referenceRowForFile(
   };
 }
 
-/** The terminal browser row that names a folder rather than opening it. */
 export function referenceRowForFolder(
   dir: TreeDirectory,
   source: ReferenceSource,
@@ -311,7 +295,6 @@ export function referenceUriForAuthority(
       ? parsed.value.normalized
       : null;
   if (authority.kind === "chat") {
-    // A New chat's upload has no handle yet, so its URI is whatever the intake issued.
     if (parsed.value.scheme !== "uploads") return null;
     return authority.chatRef === null ||
       (parsed.value.authority.kind === "chat" &&

@@ -1,7 +1,3 @@
-/**
- * Browser owner for account recents. Reads are synchronous; account mismatch
- * discards the record before any consumer can paint it.
- */
 import {
   type AccountRecentItem,
   DeviceAccountRecentsStore,

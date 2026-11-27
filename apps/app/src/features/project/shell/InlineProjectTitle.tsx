@@ -1,8 +1,3 @@
-/**
- * The project's name, renamed in place in the desktop rail and the phone
- * drawer. Renames show at once (the rename mutation updates the cache); a
- * refused one reopens the field with the writer's text.
- */
 import { t } from "@lingui/core/macro";
 import type { Ref } from "react";
 import { LabelNote } from "@/components/ui/marks";
@@ -22,9 +17,7 @@ export function InlineProjectTitle({
 }: ProjectTitleEdit & {
   editRef?: Ref<TitleEditHandle>;
   title: string;
-  /** The resting button: geometry, typography, hover. */
   className?: string;
-  /** The same geometry and typography without the hover, so editing moves nothing. */
   inputClassName?: string;
   showRenameHint?: boolean;
 }) {

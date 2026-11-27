@@ -1,4 +1,3 @@
-/** A project still being created: a quiet line while it is on its way, Retry or Discard once refused. */
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
 import type { ProjectCreationState } from "@/client/query/useProjectCreation";

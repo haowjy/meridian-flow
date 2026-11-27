@@ -18,17 +18,12 @@ export interface SelectorFields {
 }
 
 interface SelectorIssue {
-  /**
-   * The argument the issue is reported on: `target` is the document path,
-   * `arguments` the call as a whole.
-   */
   field: keyof SelectorFields | "target" | "arguments";
   message: string;
 }
 
 const ONE_SCOPE_MESSAGE = "in, around and a #fragment are alternatives, not together";
 
-/** Every selector rule the given fields break, in a stable order. */
 export function selectorIssues(
   command: SelectorCommand,
   fields: SelectorFields,

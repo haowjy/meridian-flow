@@ -1,8 +1,3 @@
-/**
- * One scratch PostgreSQL database with the committed baseline, the production collab adapters
- * wired over it, and the project-level rows every model-edit probe shares. Each probe seeds its
- * own Work and documents, so the probes run in any order against one database.
- */
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { type DraftId, newDraftId } from "@meridian/contracts";
@@ -36,16 +31,10 @@ import {
 import { resolveCurrentRepoRoot } from "../../../dev/lib/dev-env.ts";
 import { runMigrations } from "../../../dev/lib/migration-runner.ts";
 
-/** Every scratch database this harness creates or accepts starts with this prefix. */
 const SCRATCH_PREFIX = "lfd_probe_";
 
 export type Harness = Awaited<ReturnType<typeof openHarness>>;
 
-/**
- * A scratch database: created, migrated, and dropped by `drop`. It lives on a CI runner's own
- * Postgres (`DATABASE_URL`) or else the local dev one, through the shared `dev-db` helpers, which
- * refuse unsafe and reserved names and any other server.
- */
 export async function createScratchDatabase(): Promise<{ url: string; drop(): Promise<void> }> {
   const { DATABASE_URL } = process.env;
   const server = new URL(
@@ -69,7 +58,6 @@ export async function createScratchDatabase(): Promise<{ url: string; drop(): Pr
   return { url, drop };
 }
 
-/** The production adapters over `url`, with the project-level rows every probe shares. */
 export async function openHarness(url: string) {
   const name = new URL(url).pathname.slice(1);
   if (!name.startsWith(SCRATCH_PREFIX))
@@ -117,7 +105,6 @@ export async function openHarness(url: string) {
     raw,
     ids,
 
-    /** A fresh Work with its active draft, and a thread bound to it. */
     async seedWork(label: string) {
       const workId = randomUUID() as WorkId;
       const draftId: DraftId = newDraftId();
@@ -139,13 +126,7 @@ export async function openHarness(url: string) {
       return { workId, draftId, threadId, turnId, handle };
     },
 
-    /** A live document holding one paragraph of `text`. */
-    async seedDocument(
-      label: string,
-      text = "Base",
-      /** A Work's drafted create (its tree view only) instead of a live document. */
-      seed: { view?: View; actor?: string } = {},
-    ) {
+    async seedDocument(label: string, text = "Base", seed: { view?: View; actor?: string } = {}) {
       documents += 1;
       const documentId = randomUUID() as DocumentId;
       await seeds.document(ids.source, `${label}-${documents}.md`, { id: documentId, ...seed });
@@ -160,13 +141,11 @@ export async function openHarness(url: string) {
       return { documentId };
     },
 
-    /** The text of each top-level block of the live document, as its stored rows hold it. */
     liveParagraphs: (documentId: string): Promise<string[]> =>
       storedLive(documentId, (docs) =>
         readDocument(docs).map((block) => nodeOf(schema, block).textContent),
       ),
 
-    /** The writer types `suffix` at the end of block `index`, committed as a client's batch. */
     writerTypes: (documentId: string, index: number, suffix: string) =>
       storedLive(documentId, async (docs) => {
         const since = docs.shownVersion();
@@ -191,7 +170,6 @@ export async function openHarness(url: string) {
   };
 }
 
-/** A one-shot gate: `wait` resolves once `open` is called. */
 export function gate(): { wait: Promise<void>; open(): void } {
   let open!: () => void;
   const wait = new Promise<void>((done) => {

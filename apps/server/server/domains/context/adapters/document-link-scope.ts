@@ -1,15 +1,3 @@
-/**
- * Context-tree adapter for the document-link scope: one snapshot per
- * (project, reader) operation, filled in batches by what each door is about to
- * spell or bind (contract §4.4).
- *
- * A prepare loads only keys the snapshot has not seen: an ahead ref's live settlement, documents
- * by id, and every document at an exact or extension-omitted address. Each view reads
- * from the tree view's identity status: where a document is in that view, and whether it
- * exists only in that Work's draft ("in a draft"). Readability comes from the file policy's
- * list path.
- */
-
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { CatalogFolder, ContextSourceId, DraftId } from "@meridian/contracts";
 import {
@@ -65,54 +53,40 @@ import { createDrizzleProjectContextAvailability } from "./project-context-avail
 
 type Row = {
   id: string;
-  /** Who owns it: a project, or the account for a home document. */
   list: TreeList;
   scheme: ContextUriScheme;
   owner: ResolvedContextOwner;
-  /** Path inside its source, with extension, at the row's own location. */
   path: string;
-  /** Decoded canonical URI at the row's own location. */
   uri: string;
   deleted: boolean;
   image: boolean;
-  /** In the project's own manuscript (not a Work's): the only images the `asset:` rule spells by path. */
   manuscript: boolean;
 };
 
-/** An address in a source: what the tree walks. */
 type Place = { uri: string; contextSourceId: ContextSourceId | null; path: string };
 
-/** One view's index: where each loaded document sits in that view. */
 type ViewIndex = {
   statuses: ReadonlyMap<DocumentId, IdentityStatus>;
-  /** The draft, for a draft's view: what "in a draft" names. */
   draft?: { draftId: DraftId };
 };
 
 type Snapshot = {
   projectId: string | null;
   viewer: string | null;
-  /** The reader's thread, used to join nested scopes with the same authority. */
   viewerThreadId: string | null;
-  /** Doors known to share this project. */
   members: Set<string>;
   open: boolean;
   prepared: boolean;
   rows: Map<string, Row | null>;
-  /** Row URIs: the image rules' last-address lookups. */
   byUri: Map<string, Row[]>;
   folderIds: Set<string>;
   folderAddresses: Set<string>;
   foldersByView: Map<string, Map<string, CatalogFolder | null>>;
   foldersAtByView: Map<string, Map<string, CatalogFolder | null>>;
-  /** Decoded addresses whose rows and tree answers are all loaded. */
   addresses: Set<string>;
-  /** View key → address → the document the tree reaches there in that view (null: none). */
   resolved: Map<string, Map<string, DocumentId | null>>;
-  /** The live settlement by ahead id; null = unsettled or unregistered. */
   settlements: Map<string, string | null>;
   readable: Map<string, boolean>;
-  /** View key → that view's identity statuses and address index. */
   views: Map<string, ViewIndex>;
 };
 
@@ -125,7 +99,6 @@ const memberKey = (key: LinkScopeKey) =>
       ? `thread:${key.threadId}`
       : `document:${key.documentId}`;
 
-/** One key per tree view: a reply sees what its view sees. */
 const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `draft:${view.draftId}`);
 
 const treeViewOf = (view: LinkView): TreeView =>
@@ -142,11 +115,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
   const tree = createTreeReader(db);
   const storage = new AsyncLocalStorage<Snapshot>();
 
-  /**
-   * Who a scope reads as: the project it reads in (the key's, its thread's, or its document's
-   * owner) and the account reading. A home document has no project, so it reads in the viewer
-   * thread's, or the enclosing one's; with neither it reads in none, as its own account.
-   */
   async function resolveReader(
     key: LinkScopeKey,
     threadId: string | null,
@@ -226,15 +194,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const id of newIds) snapshot.rows.set(id, null);
     for (const row of loadedById) remember(snapshot, row);
 
-    // Written relative links resolve against the holder, at its address in its view.
     if (holder && request.written?.length) {
       for (const target of writtenAddresses(request.written, holderUri, request.uploadsChat)) {
         (target.kind === "folder" ? folderAddresses : addresses).add(target.uri);
       }
     }
-    // A deleted picture keeps its path only while no other image holds it. Loading by the
-    // row's own deleted flag is a superset of the view's rule: presence is still decided
-    // by identity status alone.
     for (const id of newIds) {
       const row = snapshot.rows.get(id);
       if (row?.deleted && row.image) addresses.add(row.uri);
@@ -308,7 +272,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
     }
   }
 
-  /** The live settlement of every ahead id the snapshot doesn't hold yet; returns the documents they name. */
   async function loadMeanings(snapshot: Snapshot, requested: ReadonlySet<string>) {
     const named = new Set<string>();
     const fresh = [...requested].filter((id) => !snapshot.settlements.has(id) && isUuid(id));
@@ -343,11 +306,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       : (snapshot.rows.get(holder.documentId)?.uri ?? null);
   }
 
-  /**
-   * Rows whose own name matches each address (exact and extension-omitted), plus, in a
-   * draft view, whatever that draft has at the exact address (its location may not be
-   * its row's).
-   */
   async function loadAddresses(
     snapshot: Snapshot,
     uris: readonly string[],
@@ -386,10 +344,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const uri of uris) snapshot.addresses.add(uri);
   }
 
-  /**
-   * What each view's tree reaches at each address a link names: the folder walk, so a name
-   * shared by a document and a folder reaches the folder's contents. Their rows join the snapshot.
-   */
   async function loadResolved(
     snapshot: Snapshot,
     uris: readonly string[],
@@ -422,10 +376,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const row of await loadRows({ ids: [...named] }, views)) remember(snapshot, row);
   }
 
-  /**
-   * The source and source-relative path each address names (a null source: it names nothing).
-   * Which source an address is in depends on its scheme and authority only, so each is looked up once.
-   */
   async function placesOf(holder: AheadHolder, uris: readonly string[]): Promise<Place[]> {
     const sources = new Map<string, Promise<ContextSourceId | null>>();
     return Promise.all(
@@ -459,25 +409,18 @@ export function createDrizzleDocumentLinkScopes(deps: {
     );
   }
 
-  /** Storage coordinates of canonical addresses; an address naming nothing is skipped. */
   async function coordinatesOf(projectId: ProjectId, uris: readonly string[]) {
     const out: DocumentCoordinates[] = [];
     for (const address of uris) {
       try {
         out.push(await resolveCanonicalAddress(db, { holderProjectId: projectId, address }));
       } catch (cause) {
-        // Not canonical, no extension, or a Work that doesn't exist: nothing sits there.
         if (!(cause instanceof UnresolvableAddressError)) throw cause;
       }
     }
     return out;
   }
 
-  /**
-   * Documents and the canonical URIs their folder chains spell, deleted rows included: where
-   * live places each, else where a Work's view in `views` does (a document that exists only
-   * in a draft).
-   */
   async function loadRows(
     selection: DocumentAddressSelection,
     views: readonly LinkView[],
@@ -511,7 +454,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       (row): row is Row => row !== null && !snapshot.readable.has(row.id),
     );
     if (unknown.length === 0) return;
-    // A document that exists only in a Work's draft has its facts from that Work's view.
     const draftViews = new Map<DocumentId, TreeView>();
     for (const { statuses, draft } of snapshot.views.values()) {
       if (!draft) continue;
@@ -555,8 +497,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const member = memberKey(key);
       const members = [member, ...(key.documentIds ?? []).map((id) => `document:${id}`)];
       const threadId = key.viewer?.threadId ?? ("threadId" in key ? key.threadId : null);
-      // A door joins only a snapshot read as its account in its thread: readability
-      // depends on both, so a more specific reader never inherits a vaguer one.
       const joins = (snapshot: Snapshot) =>
         (key.viewer?.accountId === undefined || snapshot.viewer === key.viewer.accountId) &&
         (threadId === null || snapshot.viewerThreadId === threadId);
@@ -565,8 +505,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
         return operation();
       }
       const reader = await resolveReader(key, threadId);
-      // One whose project can't be found has nothing of its own to load; a home document
-      // with none of its own reads in the enclosing project, when its account is reading.
       if (outer && reader === null) return operation();
       const fits = (snapshot: Snapshot) =>
         reader?.projectId === null
@@ -618,8 +556,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const holderRow = snapshot.rows.get(documentId);
       if (holderRow === undefined) miss(`holder:${documentId}`);
       const status = snapshot.views.get(viewKey(view))?.statuses.get(documentId as DocumentId);
-      // The holder's own row owns its project; a home document reads in the snapshot's, and a
-      // key that named no project leaves it empty.
       return createHolderLinkScope(
         {
           uri: status?.kind === "visible" ? status.address.uri : (holderRow?.uri ?? null),
@@ -632,7 +568,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
     },
     reader({ uri, view }) {
       const snapshot = storage.getStore();
-      // Same rule as a holder: only an open snapshot answers.
       if (!snapshot?.open) {
         observer.unscoped(uri ?? "reader");
         return createHolderLinkScope({ uri, projectId: "", view }, EMPTY_CATALOG);
@@ -664,8 +599,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
         candidate = occupants.length === 1 ? (occupants[0] ?? null) : null;
       }
       if (candidate === null) return null;
-      // A holder is a document this reader may name and read, by the catalog's own rule:
-      // an id alone is no capability, so an unreachable one stays unresolved and unspelled.
       await prepare({ holders: [], refs: [`doc:${candidate}`], views: [view] });
       const document = snapshotCatalog(snapshot, view, () => {}).document(candidate);
       const status = snapshot.views.get(viewKey(view))?.statuses.get(candidate as DocumentId);
@@ -676,7 +609,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
   };
 }
 
-/** A document the reader may name, read and reach: the one authorization boundary. */
 function reachable(document: CatalogDocument | null): document is CatalogDocument {
   return (
     document !== null && document.presence !== "deleted" && document.readable && document.nameable
@@ -714,13 +646,8 @@ const EMPTY_CATALOG: HolderCatalog = {
   assetFor: () => null,
 };
 
-/** Identity status this view needs was never loaded: the lookup is a miss, not an absence. */
 const UNLOADED = Symbol("unloaded");
 
-/**
- * The snapshot as one view sees it, from one holder (null for a reader door); reads the
- * maps at each call, so later prepares count.
- */
 function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
@@ -729,7 +656,6 @@ function snapshotCatalog(
   const key = viewKey(view);
   const owned = (row: Row) =>
     ownedByRequest(row.list, { projectId: snapshot.projectId, accountId: snapshot.viewer });
-  /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
   const statusOf = (row: Row) => {
     const status = snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
     if (status) return status;
@@ -746,7 +672,6 @@ function snapshotCatalog(
         : status.kind === "visible"
           ? status.address
           : null;
-    // "In a draft": it exists only in the Work whose view this is.
     const draft =
       status.kind === "visible" && status.existsOnlyInDraft
         ? snapshot.views.get(key)?.draft
@@ -762,7 +687,6 @@ function snapshotCatalog(
       nameable: owned(row),
     };
   };
-  /** The document this view's tree reaches at an address a link names; undefined: not loaded. */
   const reachedAt = (uri: string): CatalogDocument | null | undefined => {
     const id = snapshot.resolved.get(key)?.get(uri);
     if (id === undefined) {
@@ -774,9 +698,6 @@ function snapshotCatalog(
     const document = row === null ? null : toDocument(row);
     return document === UNLOADED ? undefined : document;
   };
-  // Pictures by their rows' own addresses; presence, as for every link, is the view's
-  // identity status: a document in no view is gone, never a deleted picture at its path.
-  // Each answers UNLOADED when any image at the path has no status in this view.
   const images = (uri: string) => {
     const found: { row: Row; kind: IdentityStatus["kind"] }[] = [];
     for (const row of snapshot.byUri.get(uri) ?? []) {
@@ -801,10 +722,6 @@ function snapshotCatalog(
       : undefined;
   };
   return {
-    /**
-     * What this draft view created at an address a typed link names, as the tree reaches it. Only the view's own draft counts (`documentAt` shows
-     * an ahead ref any draft's creation), and only a document the reader may name and read.
-     */
     draftCreatedAt(uri) {
       if (view.kind !== "draft" || !snapshot.addresses.has(uri)) return null;
       const id = snapshot.resolved.get(key)?.get(uri);
@@ -846,9 +763,6 @@ function snapshotCatalog(
       if (!row?.image || !owned(row)) return null;
       const status = statusOf(row);
       if (status === UNLOADED) return undefined;
-      // "gone" is a document in no view, or one with no spellable address: it names nothing
-      // this reader can reach, so it is unspelled like a missing id. A row in a retired
-      // source still spells its last address.
       if (status.kind === "gone") return null;
       if (row.manuscript && status.kind === "visible") return { kind: "path", path: row.path };
       if (row.manuscript) {

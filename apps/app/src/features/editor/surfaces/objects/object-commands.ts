@@ -1,17 +1,3 @@
-/**
- * The verbs behind the object row, the ⋯ menu, and the code chips.
- *
- * Document operations dispatch through the editor; export operations touch the
- * clipboard and the filesystem. Both are here so the components stay about
- * arrangement and state, and so a verb can be tested without a surface.
- *
- * The clipboard itself is not this lane's: capability, the rich/plain fallback,
- * and what a refusal was all belong to the feature's one adapter
- * ([`../../clipboard.ts`](../../clipboard.ts)). What is this lane's is the
- * payload — a fence's source, a diagram rasterized, an asset fetched — and the
- * dialect its feedback speaks, which is Errors.
- */
-
 import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
 
@@ -23,13 +9,6 @@ import {
   writeClipboardText,
 } from "@/features/editor/clipboard";
 
-/**
- * An export that could not happen, with the reason kept.
- *
- * The browser's own failures arrive as `DOMException` with a name worth
- * reading; ours need the same treatment, so `verb-feedback` has one thing to
- * translate rather than a pile of English message strings.
- */
 export class ExportError extends Error {
   constructor(readonly kind: "unreadable" | "unsupported") {
     super(kind);
@@ -37,7 +16,6 @@ export class ExportError extends Error {
   }
 }
 
-/** The text a code fence holds — a diagram's source, or plain code. */
 export function fenceSource(editor: Editor, pos: number): string {
   return editor.state.doc.nodeAt(pos)?.textContent ?? "";
 }
@@ -49,7 +27,6 @@ export function setFenceLanguage(editor: Editor, pos: number, language: string):
   return true;
 }
 
-/** Place a copy directly after the object, and select it. */
 export function duplicateObject(editor: Editor, pos: number): boolean {
   const node = editor.state.doc.nodeAt(pos);
   if (!node) return false;
@@ -94,8 +71,6 @@ export function deleteObject(editor: Editor, pos: number): boolean {
   return true;
 }
 
-// ── export ────────────────────────────────────────────────────────────────
-
 export async function copyText(text: string): Promise<void> {
   await copiedOrThrown(writeClipboardText(text));
 }
@@ -137,7 +112,6 @@ export function sizedSvgMarkup(svg: string): { markup: string; width: number; he
   return { markup: new XMLSerializer().serializeToString(parsed), width, height };
 }
 
-/** Raster scale for image export: a diagram is read at 100%, not sampled. */
 const EXPORT_PIXEL_RATIO = 2;
 
 export async function svgToPngBlob(svg: string): Promise<Blob> {
@@ -171,14 +145,6 @@ export async function svgToPngBlob(svg: string): Promise<Blob> {
   }
 }
 
-/**
- * Put a rendered diagram on the clipboard as an image.
- *
- * The ⋯ verb, not the row's copy chip: image-copy is the clipboard API's
- * fussiest corner and the row's copy puts Mermaid source there instead —
- * source is the bridge into the chat loop where diagrams get revised, and it
- * works in every browser.
- */
 export async function copySvgImage(svg: string): Promise<void> {
   const blob = await svgToPngBlob(svg);
   await copiedOrThrown(writeClipboardImage(blob));
@@ -195,26 +161,10 @@ export function downloadPng(svg: string, filename: string): Promise<void> {
   });
 }
 
-/**
- * The SVG the page already rendered for this diagram.
- *
- * Reading it back beats rendering a second copy: it is the exact markup the
- * writer is looking at, generated ids and all, and no parse runs to produce it.
- * The selector is the diagram module's own contract, so every provider's render
- * is found by one reading (`core/editor/diagrams/DiagramBody.tsx`).
- */
 export function renderedDiagramSvg(element: HTMLElement): string | null {
   return element.querySelector(`${DIAGRAM_PREVIEW_SELECTOR} svg`)?.outerHTML ?? null;
 }
 
-/**
- * Put a raster image on the clipboard.
- *
- * Fetched rather than read off the element because the clipboard wants bytes,
- * and a signed asset URL is the only place they exist. A cross-origin host
- * without CORS will reject this, which is why the caller shows the failure
- * instead of assuming success (law 5).
- */
 export async function copyImageFrom(url: string): Promise<void> {
   if (!url) throw new ExportError("unreadable");
   const response = await fetch(url);

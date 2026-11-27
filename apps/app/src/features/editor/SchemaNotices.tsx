@@ -1,14 +1,8 @@
-/**
- * SchemaNotices — the one-line bar a schema verdict puts above the toolbar: this tab's Meridian is
- * older than the chapter, so writing stops until the writer reloads. Error tone, Refresh on the
- * bar.
- */
 import { Trans } from "@lingui/react/macro";
 import { CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SchemaFence } from "@/core/editor/schema-fence";
 
-/** A 44px touch target under a coarse pointer, without making the bar taller. */
 const BAR_ACTION = "shrink-0 coarse:-my-2.5 coarse:h-11";
 
 export function SchemaNotices({ fence }: { fence: SchemaFence | null }) {
@@ -21,7 +15,6 @@ export function SchemaNotices({ fence }: { fence: SchemaFence | null }) {
       className="flex min-h-8 items-center gap-2 rounded-md border border-destructive-border bg-destructive-tint py-1 pr-1 pl-2.5 text-xs text-destructive"
     >
       <CircleAlert aria-hidden className="size-3.5 shrink-0" />
-      {/* Wraps rather than truncates on a phone: the reason is the point. */}
       <p className="min-w-0 flex-1">
         <Trans>Editing paused</Trans>
       </p>

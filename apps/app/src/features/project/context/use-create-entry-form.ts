@@ -1,11 +1,3 @@
-/**
- * useCreateEntryForm — inline context entry creation, built on useInlineEdit.
- *
- * Adds create-specific metadata (dynamic file icon, kind-aware placeholder) and
- * the create record. Submit semantics are the shared inline-edit protocol:
- * Enter or blur commits, Escape or an empty name cancels.
- */
-
 import { t } from "@lingui/core/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -29,20 +21,14 @@ export type UseCreateEntryFormOptions = {
   projectId: string;
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
-  /** The folder the entry goes in, or the id of the tree's source at the top. */
   parentId: string;
-  /** That folder's path; `""` at the top. */
   parent?: string;
-  /** Called when the form completes (successful create or cancel). */
   onDone: () => void;
-  /** Called on cancel instead of `onDone`. */
   onCancel?: () => void;
-  /** Called after a successful create, with the new entry's id. */
   onCreated?: (node: string) => void;
 };
 
 export type CreateEntryForm = InlineEdit & {
-  /** Icon for the current kind + name (updates dynamically by extension). */
   icon: LucideIcon;
   placeholder: string;
 };
@@ -60,8 +46,6 @@ export function useCreateEntryForm({
   const actions = useEntryActions(projectId);
   const registry = useLiveDocumentSessionRegistry();
 
-  // The entry is appended to the writer's copy of the list and shows at once; a refusal by the
-  // server comes back on its row.
   const handleSubmit = useCallback(
     (typed: string) => {
       const at = joinContextEntryPath(parent, typed.trim()).slice(1);
@@ -123,7 +107,6 @@ function storedNameAt(
     : { ok: false, message: stored.message };
 }
 
-/** The icon previews the name the file will be stored under; an empty field is prose. */
 function iconName(draft: string): string {
   const stored = storedDocumentName(draft);
   return stored.ok ? stored.name : draft;

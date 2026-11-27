@@ -1,11 +1,3 @@
-/**
- * threads-api — HTTP client for thread lifecycle and snapshot endpoints.
- *
- * Typed wrappers for list/create thread, append user message, cancel turn,
- * queue or withdraw writer controls, retry a handoff brief or a failed reply,
- * delete thread, and fetch/deserialize a thread snapshot. Owns the thread
- * network surface the chat flow and snapshot sync build on.
- */
 import {
   type AdmissionLookup,
   API_THREADS_PATH,
@@ -106,8 +98,6 @@ export async function listThreads(init?: {
     headers: init?.headers,
     schema: listThreadsResponseSchema,
   });
-  // Server returns domain types; JSON serialization strips brands + converts Dates to strings,
-  // yielding the Wire shape the frontend operates on.
   return response.threads;
 }
 
@@ -145,7 +135,6 @@ export function retryReply(
   return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
 }
 
-/** One page of a thread's effective or inherited transcript. */
 export function readThreadTranscript(
   threadId: string,
   options: TranscriptPagePathOptions,
@@ -210,10 +199,6 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
   );
 }
 
-/**
- * A hand-back command's POST (Stop, the x, Cancel queue, Send now) for the shared operation: the
- * status and decoded body, never a typed error. A transport failure is `status: null`.
- */
 export async function postCommand(path: string, body: unknown): Promise<HttpResult> {
   try {
     const response = await fetch(path, {
@@ -230,10 +215,6 @@ export async function postCommand(path: string, body: unknown): Promise<HttpResu
     return { status: null };
   }
 }
-/**
- * Queue a writer control. The id is client-minted, so a retry with the same id
- * is a no-op on the server (201 new, 200 existing).
- */
 export function enqueueThreadControl(
   threadId: string,
   request: EnqueueThreadControlRequest,
@@ -242,7 +223,6 @@ export function enqueueThreadControl(
   return postJson(apiThreadControlsPath(threadId), request, options);
 }
 
-/** Withdraw a queued control; one that already started answers `already_started`. */
 export function withdrawThreadControl(
   threadId: string,
   controlId: string,
@@ -254,7 +234,6 @@ export function deleteThread({ data }: { data: { threadId: string } }): Promise<
   return deleteRequest(apiThreadPath(data.threadId));
 }
 
-/** Brings a chat back from Trash; restoring one that is not in Trash changes nothing. */
 export function restoreThread(threadId: string): Promise<unknown> {
   return postJson(apiThreadRestorePath(threadId), {});
 }
@@ -279,7 +258,6 @@ export function updateThreadUserState(
   return patchJson(apiThreadUserStatePath(threadId), request);
 }
 
-/** PATCH /api/threads/:threadId/title — persists a writer-authored thread title. */
 export function renameThread(
   threadId: string,
   request: RenameThreadRequest,
@@ -299,10 +277,6 @@ export function rebindThreadWork(
   });
 }
 
-/**
- * `getThreadSnapshot` runs through {@link deserializeTransport} (Dates, bigint).
- * Normalize to the wire JSON shape the store and UI expect (ISO date strings, plain ids).
- */
 export function deserializeThreadSnapshot(
   response: ThreadSnapshotResponse,
 ): ThreadSnapshotResponse {
@@ -313,7 +287,6 @@ export function deserializeThreadSnapshot(
   ) as ThreadSnapshotResponse;
 }
 
-/** GET /api/threads/:threadId/debug/model-requests — dev-only orchestrator capture. */
 export function getThreadModelRequestDebugRecords({
   data,
 }: {
@@ -327,7 +300,6 @@ export function getThreadModelRequestDebugRecords({
   );
 }
 
-/** GET /api/threads/:threadId/debug/turn-context-preview — dev-only next-turn model context. */
 export function getThreadTurnContextPreview({
   data,
 }: {

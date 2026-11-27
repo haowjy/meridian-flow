@@ -1,9 +1,3 @@
-/**
- * The project-create command kind. The command driver delivers it (journal, lookup after a lost
- * answer, resend under the same id); this file says what it sends, what a record means to a
- * screen, and what settling it does to this tab's data. A project with an unsettled or refused
- * create is not on the server yet, so its reads wait (`project-read-gate`).
- */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
 import type { StoredResult } from "@meridian/contracts/commands";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
@@ -19,19 +13,14 @@ export const PROJECT_CREATE_KIND = "project_create";
 /** What the record stores: the identity the client minted, so a resend creates the same project. */
 export type ProjectCreateBody = { id: string; title: string; userId: string };
 
-/** The create's own answer is the project; the stored outcome of one wraps it as `{ project }`. */
 type ProjectResult = Project | (StoredResult & { project?: Project });
 
 export type ProjectCreation = {
-  /** The driver record's id. */
   recordId: string;
   projectId: string;
   title: string;
-  /** `sending`: on its way. `never`: the server turned it away. `done`: the server has it. */
   state: CommandRecord["state"];
-  /** The project the server returned; set once `done`. */
   project?: Project;
-  /** The error code of the attempt the server turned away. */
   code: string | null;
 };
 
@@ -53,7 +42,6 @@ export function projectCreationOf(record: CommandRecord): ProjectCreation | null
   };
 }
 
-/** The project as the writer asked for it, shown until the server returns its own. */
 export function pendingProject(
   { id, title, userId }: ProjectCreateBody,
   now = new Date().toISOString(),
@@ -72,7 +60,6 @@ export function pendingProject(
   };
 }
 
-/** The project's create the server has not taken: on its way, or refused and not yet retried or discarded. */
 export function unsettledProjectCreation(
   records: readonly CommandRecord[],
   projectId: string,
@@ -81,7 +68,6 @@ export function unsettledProjectCreation(
   return creation?.state === "done" ? undefined : creation;
 }
 
-/** The project's create, in whatever state the driver holds it. */
 export function projectCreationFor(
   records: readonly CommandRecord[],
   projectId: string,
@@ -103,7 +89,6 @@ type AccountJournal = { driver: CommandDriver | null; opened: Deferred };
 type Deferred = { promise: Promise<void>; resolve: () => void };
 
 const journals = new Map<string, AccountJournal>();
-/** The account whose provider is mounted: the one the read gate's queries belong to. */
 let mountedAccount: string | null = null;
 
 function deferred(): Deferred {
@@ -122,7 +107,6 @@ function journalOf(accountId: string): AccountJournal {
   return journal;
 }
 
-/** The account's unsent create of this project, if its driver is bound. */
 function pendingCreationIn(
   accountId: string | null,
   projectId: string,
@@ -131,15 +115,9 @@ function pendingCreationIn(
   return driver ? unsettledProjectCreation(driver.getSnapshot().records, projectId) : undefined;
 }
 
-/** For the read gate: the mounted account's create of this project the server has not taken. */
 export const readPendingProjectCreation = (projectId: string) =>
   pendingCreationIn(mountedAccount, projectId);
 
-/**
- * For the route loader: the account's unsent create of the project, read once that account's
- * journal has opened (it is local and quick), so a reload shows the project as pending the way
- * the first load did. The server has no journal: there the answer is "unknown" (`undefined`).
- */
 export async function awaitPendingProjectCreation(
   accountId: string,
   projectId: string,
@@ -154,7 +132,6 @@ export function projectDomain(client: QueryClient): CommandDomain {
     [PROJECT_CREATE_KIND]: {
       version: 1,
       migrate: (body) => body as ProjectCreateBody,
-      // The project's Work commands wait for it to succeed, through a refusal and its Retry.
       holdsLane: true,
       request: ({ body }) => {
         const { id, title } = body as ProjectCreateBody;

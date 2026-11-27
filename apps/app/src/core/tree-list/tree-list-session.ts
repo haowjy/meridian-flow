@@ -1,10 +1,3 @@
-/**
- * One list's session in this browser: a Loro copy of the list, stored in IndexedDB and joined to
- * the list's room on `/ws/loro`, and a sync status. The same shape as a document's session
- * (`core/editor/document-session.ts`): every local write is stored, posted to this browser's other
- * tabs and sent to the room; every peer's batch is imported and stored. Each tab joins the room
- * itself, under a peer id of its own.
- */
 import { decodeLoroJoinExtra, loroRoomName, type TreeListRef } from "@meridian/contracts/protocol";
 import {
   decodeEnvelope,
@@ -25,18 +18,6 @@ import {
 } from "../transport/loro-room-transport";
 import { treeListCopyPrefix } from "./copy-names";
 
-/**
- * - `waiting`: the server's list has not been read in this session ("waiting for the list"): an
- *   address that finds no node must wait, not decide
- * - `synced`: the copy holds the server's list and the server holds the copy's records
- * - `offline`: the connection dropped after a sync; the copy still shows what it had and takes
- *   records, which the next Join sends
- * - `broken`: the server ended the room for what the copy holds; the records stay in the copy and
- *   nothing connects again
- * - `unauthenticated`: the sign-in lapsed; the copy takes records as offline, and the room rejoins
- *   once the writer signs in again
- * - `denied`: this account has no access to the list
- */
 export type TreeListStatus =
   | "waiting"
   | "synced"
@@ -48,14 +29,11 @@ export type TreeListStatus =
 export type TreeListSnapshot = {
   /** The copy. A copy of another list is replaced by a new document: read it from the snapshot each time. */
   readonly doc: LoroDoc;
-  /** Counts the changes to `doc` (records appended here, in another tab or by the server) and its replacements: what a reader of the replay recomputes on. */
   readonly version: number;
   readonly status: TreeListStatus;
 };
 
-/** The list doc's key in the room's envelope: a tree room holds one doc. */
 const LIST = STRUCTURE_KEY;
-/** The id of the server's list the copy is of, in the copy's `meta` store. */
 const LIST_META = "list";
 const COMPACT_EVERY = 200;
 
@@ -135,7 +113,6 @@ export class TreeListSession {
         this.listId = typeof listId === "string" ? listId : null;
         this.store = store;
         store.db.onversionchange = () => {
-          // Another tab is deleting this copy (a sign-out): stop writing to it.
           this.store = null;
           void store.close();
         };
@@ -149,7 +126,6 @@ export class TreeListSession {
     this.connect();
   }
 
-  /** Every local write leaves by one path: stored, posted to the other tabs, sent to the room. */
   private watch(doc: LoroDoc) {
     this.stopLocal?.();
     this.stopLocal = doc.subscribeLocalUpdates((bytes) => {
@@ -205,10 +181,6 @@ export class TreeListSession {
     this.tabs = tabs;
   }
 
-  /**
-   * A copy of another list (a reset database, a recreated account list) is dropped for a fresh
-   * one, and the room is joined again from nothing.
-   */
   private onJoined = (extra: Uint8Array | undefined): "rejoin" | undefined => {
     const named = decodeLoroJoinExtra(extra).list ?? null;
     if (named === null || named === this.listId) return undefined;
@@ -272,11 +244,6 @@ export class TreeListSession {
     { doc: LoroDoc; edits: number; projection: TreeProjection }
   >();
 
-  /**
-   * The replay of the copy as it stands in `view` (live, or live and one Work's pending records),
-   * records appended a moment ago included: one replay per change and view however many views and
-   * writers read it.
-   */
   replay(view: View = LIVE): TreeProjection {
     const { doc } = this.current;
     const held = this.replayed.get(view.draft);

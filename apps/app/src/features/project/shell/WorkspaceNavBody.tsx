@@ -1,9 +1,3 @@
-/**
- * WorkspaceNavBody — the phone drawer's body: the Write | Chat switch (main's mode), the
- * sources (`children`), and the account row. `NavigationDrawer` owns the Sheet and
- * closes it on select; this body never needs to know it lives in one.
- */
-
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
@@ -21,7 +15,6 @@ export function WorkspaceNavBody({
   projectId: string;
   /** After the switch has moved main: the drawer closes onto it. */
   onSwitched: () => void;
-  /** The sources, between the switch and the account row. */
   children?: ReactNode;
 }) {
   return (
@@ -38,7 +31,6 @@ export function WorkspaceNavBody({
         className="shrink-0 border-t border-border-subtle px-2 pt-2"
         style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
       >
-        {/* The account sits before the way out, so a near miss never leaves the project. */}
         <AccountMenu />
         <Link
           to="/"

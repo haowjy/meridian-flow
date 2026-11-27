@@ -15,33 +15,24 @@ import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
 import { type EntryDrag, type EntryRef, entrySystem } from "./entry";
 
-/** A tree a list shows, and so a place a drop can land. */
 export type MoveArea = {
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
   tree: TreeView;
   view?: CopyContextEntryView;
-  /**
-   * The owner takes changes: arrivals by move or copy, and its rows moved out. An archived or
-   * deleted Work's Scratch takes none (`useWorkSourceWritable`): it can be copied from.
-   */
   writable: boolean;
 };
 
-/** The trees a list shows: what a drop is judged against. */
 export type PlacementView = { areas: readonly MoveArea[] };
 
-/** An entry as the trees place it now. */
 export type PlacedEntry = {
   ref: EntryRef;
   name: string;
-  /** The folder it sits in, or its source's id at the top. */
   parentId: string;
   area: MoveArea;
   entry: TreeEntry;
 };
 
-/** One row ready to move: its current parent. */
 export type MoveRow = {
   entry: EntryRef;
   from: string;
@@ -49,16 +40,12 @@ export type MoveRow = {
 
 export type MovePlan =
   | { kind: "none" }
-  /** A folder over its own subtree; the only drop that refuses rather than doing nothing. */
   | { kind: "inside-itself" }
   | {
       kind: "ready";
       destinationName: string;
-      /** The sibling an edge drop lands beside, by name, for the hint. */
       beside?: { kind: "before" | "after"; name: string };
-      /** Where the rows land, together and in order. */
       to: TreeDestination;
-      /** The area they land in; names the list that takes the records. */
       area: MoveArea;
       moves: readonly MoveRow[];
     };
@@ -67,12 +54,10 @@ export type ReadyMove = Extract<MovePlan, { kind: "ready" }>;
 
 const NONE: MovePlan = { kind: "none" };
 
-/** Whether a tree belongs to the account's list (`user://`) rather than the project's. */
 export const isAccountArea = (area: Pick<MoveArea, "scheme">) => area.scheme === "user";
 
 const kindOf = (entry: TreeEntry): EntryRef["kind"] => (entry.kind === "dir" ? "folder" : "file");
 
-/** Where `ref` sits now, or null when it is gone from every tree the list shows. */
 export function placeEntryRef(view: PlacementView, ref: EntryRef): PlacedEntry | null {
   for (const area of view.areas) {
     const entry = area.tree.entry(ref.id);
@@ -88,12 +73,10 @@ export function placeEntryRef(view: PlacementView, ref: EntryRef): PlacedEntry |
   return null;
 }
 
-/** The name `ref` carries now; null once the row is gone. */
 export function entryNameNow(view: PlacementView, ref: EntryRef): string | null {
   return placeEntryRef(view, ref)?.name ?? null;
 }
 
-/** Whether `folderId` is `parentId` itself or sits above it. */
 export function within(area: MoveArea, parentId: string, folderId: string): boolean {
   const seen = new Set<string>();
   let current: string | null = parentId;
@@ -126,21 +109,15 @@ export function outermost<T extends { ref: EntryRef }>(
     .map(({ item }) => item);
 }
 
-/** A parent's name, or null once that folder is gone. */
 export function parentName(area: MoveArea, parentId: string): string | null {
   if (parentId === area.tree.root.entryId) return schemeLabel(area.scheme);
   return area.tree.entry(parentId)?.name ?? null;
 }
 
-/** A folder dropped on itself or anywhere below itself. */
 function insideItself(source: PlacedEntry, into: string): boolean {
   return source.ref.kind === "folder" && within(source.area, into, source.ref.id);
 }
 
-/**
- * Why `ref` can't move into `into`, judged by identity from the trees (the same rule a drop
- * uses); null when it can or when `ref` isn't placed yet.
- */
 export function moveRefusal(
   view: PlacementView,
   ref: EntryRef,
@@ -153,7 +130,6 @@ export function moveRefusal(
   return placed.parentId === into && !position ? "already-there" : null;
 }
 
-/** A carried entry as the trees place it now, with what a Copy of it reads. */
 export type PlacedSource = PlacedEntry & { view: CopyContextEntryView };
 
 /**
@@ -162,41 +138,20 @@ export type PlacedSource = PlacedEntry & { view: CopyContextEntryView };
  * neither resolves identities again.
  */
 export type ResolvedDrop = {
-  /** The carried entries as the trees place them; one inside a carried folder rides with it and is left out. */
   sources: readonly PlacedSource[];
-  /** The target's parent: a folder's id, or the id of the tree's source. */
   into: string;
-  /** The tree the drop lands in. */
   area: MoveArea;
   destinationName: string;
-  /** A sibling edge in `into`; absent when the folder or area itself is the target. */
   position?: ContextSiblingPosition;
-  /**
-   * The drop asks Move, Copy or Cancel instead of moving at once: some source sits in another
-   * system than the target (the project's areas are one; User and each Scratch or Uploads
-   * owner are their own), or the drag is a reference, which only a list row within one system outranks.
-   */
   asks: boolean;
-  /** A carried folder would land on itself or below itself. */
   insideItself: boolean;
   /** Carried rows no shown tree places now (gone). Nothing acts on a selection that has lost rows. */
   unavailable: readonly EntryRef[];
-  /** The target's scheme, for the records a Copy makes there. */
   scheme: ProjectContextTreeScheme;
-  /**
-   * Every carried row may Move: its area is writable. A row in an ended Work's Scratch can be
-   * copied from, not moved out of.
-   */
   canMove: boolean;
-  /** A carried row is in the account's files and the target in a project, or the other way: two lists, between which the action is Copy. */
   crossesLists: boolean;
 };
 
-/**
- * Resolves dropping `drag` on `target` from the trees as they are now; null when the target
- * isn't a place a drop can land (no such area, an owner that accepts no arrivals, a folder that
- * is gone).
- */
 export function resolveDrop(
   view: PlacementView,
   drag: EntryDrag,
@@ -232,11 +187,6 @@ export function resolveDrop(
   };
 }
 
-/**
- * What a resolved drop would do as a Move: move, refuse with a reason, or
- * nothing. A drop that asks plans like any other; whether to move at once
- * or ask first is the list's call (`resolved.asks`).
- */
 export function planMove(resolved: ResolvedDrop | null): MovePlan {
   if (!resolved) return NONE;
   const { sources, into, area, destinationName, position } = resolved;
@@ -244,34 +194,28 @@ export function planMove(resolved: ResolvedDrop | null): MovePlan {
   if (!resolved.canMove || resolved.unavailable.length > 0 || resolved.crossesLists) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(sources, resolved, position);
-  // Rows already there stay put; a taken name never refuses a move: twins are made.
   const moves = sources.flatMap((source) => (source.parentId === into ? [] : [moveRowOf(source)]));
   return moves.length === 0
     ? NONE
     : { kind: "ready", destinationName, to: { parentId: into }, area, moves };
 }
 
-/** One row a Copy duplicates: the row as it is named now, where it is read from, and the view it reads. */
 export type CopyRow = {
   entry: EntryRef;
   name: string;
   view: CopyContextEntryView;
-  /** Where the server finds the row: its tree's scheme and owner, and its path there. */
   place: { scheme: ProjectContextTreeScheme; owner: ContextOwner; path: string };
 };
 
 export type CopyPlan =
   | { kind: "none" }
-  /** A folder copied over its own subtree: refused like a Move, with the same words. */
   | { kind: "inside-itself" }
   | {
       kind: "ready";
       destinationName: string;
       beside?: { kind: "before" | "after"; name: string };
       scheme: ProjectContextTreeScheme;
-      /** The tree the copies land in. */
       area: MoveArea;
-      /** The folder's id, or the source's id at the top. */
       into: string;
       position?: ContextSiblingPosition;
       copies: readonly CopyRow[];

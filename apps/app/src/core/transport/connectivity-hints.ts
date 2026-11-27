@@ -1,4 +1,3 @@
-/** Shared recovery signals; connection owners retain their own retry policy. */
 export type ConnectivityHint = "retry-now" | "suspect-offline";
 export type ConnectivitySource = object;
 export type ConnectivityHintsPort = Pick<

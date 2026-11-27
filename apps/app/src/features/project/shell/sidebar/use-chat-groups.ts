@@ -4,10 +4,6 @@ import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { groupChats } from "./chat-groups";
 
-/**
- * The project's chats grouped as every chat list shows them (`groupChats`): the scoped Work's,
- * the others', pinned first. Every pin loads, so no chat beyond the first page offers "Pin".
- */
 export function useChatGroups(
   projectId: string,
   scopeWorkId: string | null,

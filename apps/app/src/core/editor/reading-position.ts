@@ -1,8 +1,3 @@
-/**
- * Document-relative viewport and selection capture and restore: the block the reading line is in by
- * its id, and the text there and the selection as Loro points, so the place survives edits above
- * it, anyone's.
- */
 import type { RoomDocs } from "@meridian/document-model";
 import { resolveCursor } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
@@ -21,7 +16,6 @@ function resolve(docs: RoomDocs, doc: Node, value: ReadingAnchor): number | null
   return point && resolveCursor(docs, doc, point);
 }
 
-/** The first block with an id at or inside `node`: a table or a quote is found by its first. */
 function blockIdIn(node: Node): string | null {
   if (typeof node.attrs.id === "string") return node.attrs.id;
   let id: string | null = null;
@@ -74,7 +68,6 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
           : null;
       const text = textPos === null ? null : anchor(docs, doc, textPos);
       const line = textPos === null ? null : editor.view.coordsAtPos(textPos);
-      // Dimensionless line offset (or block fraction for opaque content), never pixels.
       const offset = line
         ? Math.max(0, Math.min(1, (top - line.top) / Math.max(1, line.bottom - line.top)))
         : Math.max(0, Math.min(1, (top - rect.top) / rect.height));
@@ -131,7 +124,6 @@ export function restoreReadingPosition(
     const reading = text ?? block;
     const from = resolve(docs, doc, place.selection.anchor);
     const to = resolve(docs, doc, place.selection.head) ?? from;
-    // Text deleted since leaves no caret to restore: the reading line takes it, never the top.
     let selection = reading === null ? null : Selection.near(doc.resolve(reading));
     if (from !== null && to !== null) {
       const selectedNode = doc.nodeAt(from);
@@ -149,7 +141,6 @@ export function restoreReadingPosition(
       editor.view.dispatch(editor.state.tr.setSelection(selection).setMeta("addToHistory", false));
     return true;
   } catch {
-    // Deleted types, replaced content, and unavailable layout are convenience loss, never a broken editor.
     if (!scrolled) pane.scrollTop = 0;
     return true;
   }

@@ -1,18 +1,3 @@
-/**
- * Every table verb, and the one answer to "can it run here, and if not why".
- *
- * The grips make a selection; every verb reads that selection. That is the
- * whole model: clicking a row grip selects the row, so "delete row" is just
- * `deleteRow` over whatever is selected, and the same verb runs identically
- * from the menu, from a keyboard twin, and from a cell selection the writer
- * swept by hand. No verb takes a row index, so no verb can act on a row the
- * writer is not looking at.
- *
- * Availability is computed from the same command the item dispatches wherever
- * prosemirror-tables already answers it (`mergeCells`, `splitCell`), because a
- * control that looks live and does nothing is a dead control.
- */
-
 import type { Editor } from "@tiptap/core";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import type { Command, EditorState, Selection } from "@tiptap/pm/state";
@@ -93,9 +78,7 @@ export type TableBlockedReason =
   | "no-column-widths";
 
 export type TableVerbState = {
-  /** The verb's state is already applied: a toggle shows what it did. */
   active: boolean;
-  /** Why it cannot run here. Null means it runs. */
   blockedBy: TableBlockedReason | null;
 };
 
@@ -135,12 +118,6 @@ export const TABLE_VERB_COMMANDS: Record<TableVerbId, Command> = {
   deleteTable,
 };
 
-/**
- * The alignment every cell in the selected columns already carries, or null
- * when they disagree or none is set. Null is a real answer: a column with no
- * alignment renders in the reading direction and has not been decided, which
- * is different from a column decided to be left.
- */
 export function selectedColumnAlignment(state: EditorState): TableAlignment | null {
   const selection = tableSelection(state);
   if (!selection) return null;
@@ -171,13 +148,11 @@ export function selectedTablePlacement(state: EditorState): TablePlacement {
   return align === "center" || align === "right" ? align : "left";
 }
 
-/** Why a merge cannot run, in the order the writer would notice them. */
 function mergeRefusal(state: EditorState, cellCount: number): TableBlockedReason {
   if (mergeCrossesHeader(state)) return "header-and-body";
   return cellCount <= 1 ? "one-cell-selected" : "cells-not-rectangular";
 }
 
-/** How many cells the current selection covers. One means a bare caret in a cell. */
 function selectedCellCount(state: EditorState): number {
   const { selection } = state;
   if (!(selection instanceof CellSelection)) return 1;
@@ -188,12 +163,6 @@ function selectedCellCount(state: EditorState): number {
   return count;
 }
 
-/**
- * Every verb's state for the current selection.
- *
- * Read-only outranks every structural reason: on a document the writer cannot
- * change, saying so once is the honest answer.
- */
 export function tableVerbStates(
   state: EditorState,
   { editable = true }: { editable?: boolean } = {},
@@ -207,8 +176,6 @@ export function tableVerbStates(
   const map = TableMap.get(table);
   const header = hasHeaderRow(table);
   const spans = tableHasSpans(table);
-  // A header row is structural where it exists: nothing goes above it, and it
-  // does not travel. A headerless table has no such floor.
   const floor = header ? 1 : 0;
   const onHeader = rowFrom < floor;
 
@@ -261,7 +228,6 @@ export function tableVerbStates(
   };
 }
 
-/** Runs a verb and hands the caret back to the manuscript. */
 export function runTableVerb(editor: Editor, id: TableVerbId): boolean {
   if (editor.isDestroyed) return false;
   const ran = TABLE_VERB_COMMANDS[id](editor.state, editor.view.dispatch, editor.view);
@@ -284,25 +250,15 @@ export function runTableVerb(editor: Editor, id: TableVerbId): boolean {
  * to hold: that arrangement mounts the menu and unmounting it is how it ends.
  */
 export type TableMenuTarget =
-  /** A grip's row or column, named by the cell the grip serves. */
   | { kind: "axis"; cell: NodeHold; axis: "row" | "column" }
-  /** A rectangle the writer swept, named by the two cells that describe it. */
   | { kind: "cells"; anchor: NodeHold; head: NodeHold }
   | { kind: "selection" };
 
-/** Where a held cell stands now, or null once it is not that cell any more. */
 function resolveHeldCell(state: EditorState, hold: NodeHold): ResolvedPos | null {
   const at = resolveNodeHold(state, hold);
   return at ? resolveCellBefore(state, at.from) : null;
 }
 
-/**
- * The selection the target describes in this state, or null once it is gone.
- *
- * Null is a whole answer: absent beats wrong, so a target that can no longer be
- * described closes its menu instead of aiming it at whatever the selection has
- * become.
- */
 function targetSelection(state: EditorState, target: TableMenuTarget): Selection | null {
   if (target.kind === "selection") return state.selection;
 
@@ -338,14 +294,6 @@ export function tableTargetState(editor: Editor, target: TableMenuTarget): Edito
   return selection ? state.apply(state.tr.setSelection(selection)) : null;
 }
 
-/**
- * Run a verb on a menu's target: materialize the target, then run.
- *
- * Every verb still reads the selection — that is the whole model — and this is
- * what makes the selection it reads the one the writer opened the menu on,
- * however many peers have written since. False when the target is gone: the
- * menu closes on the same answer.
- */
 export function runTableVerbOn(editor: Editor, target: TableMenuTarget, id: TableVerbId): boolean {
   if (editor.isDestroyed) return false;
   if (target.kind !== "selection") {
@@ -374,22 +322,6 @@ function pointerInsideCellSelection(state: EditorState, docPos: number | null): 
   return inside;
 }
 
-/**
- * The two cells a right-click on a swept rectangle opens a menu for, or null
- * when this right-click is not that. Synchronous by contract.
- *
- * A rectangle of cells is the one table selection no grip can make, and the
- * only path to merging two arbitrary cells. Nothing above this rung wants it:
- * the formatting menu admits `TextSelection` and `AllSelection` only, so
- * without this a writer who swept two cells and right-clicked got silence.
- *
- * A bare caret in a cell is NOT this: it falls to the ladder's `caret` rung,
- * where the formatting menu opens carrying the table's own lists.
- *
- * The cells rather than a boolean, because the claim is the last moment the
- * rectangle is on screen: the menu it opens has to hold what it acts on before
- * the next remote write turns the selection back into a caret.
- */
 export function claimedSweptCells(
   editor: Editor,
   target: ContextClaimTarget,
@@ -398,14 +330,11 @@ export function claimedSweptCells(
   const { selection } = editor.state;
   if (!(selection instanceof CellSelection)) return null;
   if (!pointerInsideCellSelection(editor.state, target.docPos)) return null;
-  // A grip or an overlay row standing over the table is chrome, and its own
-  // rung took the event further up the ladder.
   const chrome = getEditorChrome(editor);
   if (chrome && isEditorChromeElement(chrome, target.element)) return null;
   return { anchor: selection.$anchorCell.pos, head: selection.$headCell.pos };
 }
 
-/** A resolved position standing immediately before a table cell, or null. */
 function resolveCellBefore(state: EditorState, cellPos: number) {
   if (cellPos < 0 || cellPos > state.doc.content.size) return null;
   const $cell = state.doc.resolve(cellPos);
@@ -413,10 +342,6 @@ function resolveCellBefore(state: EditorState, cellPos: number) {
   return role === "cell" || role === "header_cell" ? $cell : null;
 }
 
-/**
- * Select a whole row or column, which is what a grip press means before it
- * opens anything. Returns false when the cell left the document under it.
- */
 export function selectTableAxis(editor: Editor, cellPos: number, axis: "row" | "column"): boolean {
   if (editor.isDestroyed) return false;
   const { state } = editor.view;
@@ -429,11 +354,6 @@ export function selectTableAxis(editor: Editor, cellPos: number, axis: "row" | "
   return true;
 }
 
-/**
- * What the add tabs do: a new last row or last column, whatever the pointer
- * was over. They select the edge first so the insert is the same verb the
- * menu runs, rather than a second insertion path that could drift from it.
- */
 export function appendTableAxis(editor: Editor, cellPos: number, axis: "row" | "column"): boolean {
   if (editor.isDestroyed) return false;
   const $cell = resolveCellBefore(editor.view.state, cellPos);

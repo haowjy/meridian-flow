@@ -1,9 +1,3 @@
-/**
- * Composition root: wires production adapters into AppServices and owns the pure
- * runtime service graph. App startup supplies process-level resources; this file
- * chooses concrete server adapters and assembles domain services behind ports.
- */
-
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -321,9 +315,7 @@ export type AppServices = {
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
-  /** The command record every kind of request claims its id in. */
   commands: CommandStore;
-  /** The project tree's lists: the one function that admits records, and the room's reads. */
   treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextSources: ContextSources;
@@ -332,7 +324,6 @@ export type AppServices = {
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
   documentLinks: DocumentLinkResolver;
-  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
   linkScopes: DocumentLinkScopes;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
@@ -350,9 +341,7 @@ export type AppServices = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
-  /** The writer's MCP connections, over the process's one MCP client. */
   mcpConnections: McpConnections;
-  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
   connections: ConnectionsPort;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
@@ -364,7 +353,6 @@ export type AppServices = {
   asks: AskService;
   handoffBriefs: HandoffBriefs;
   shutdown(): Promise<void>;
-  /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;
     repairOrphans(): Promise<number>;
@@ -379,7 +367,6 @@ export type AppServices = {
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
-  /** Dev-only scripted replies for the in-process mock model; null with real providers. */
   mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
@@ -388,9 +375,7 @@ export type AppServices = {
   chatUploads: ChatUploads;
   figureAssets: FigureAssetService;
   documentProperties: DocumentPropertiesReader;
-  /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
-  /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
   fileAccessChanges: FileAccessChanges;
   notices: NoticePort;
 };
@@ -401,13 +386,9 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
-  /** Detached work any port started; the composed app drains it at shutdown. */
   backgroundTasks: DetachedWorkTracker;
-  /** A thread's delegation chain, read fresh (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
-  /** The chain's effective permission, from the lighter lineage walk. */
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
-  /** The file policy every model read and write asks (file-access §1). */
   fileAccess: FileAccess;
   fileAccessChanges: PgFileAccessChanges;
   gateway: Gateway;
@@ -418,22 +399,15 @@ export type ProductionAppPorts = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
-  /** The project tree's lists: the one function that admits records, and the room's reads. */
   treeLists: PgTreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextSources: ContextSources;
   documentTrash: DocumentTrash;
-  /** Trash as the tree gives it, per view: one entry per delete in force. */
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
-  /** The Works projection: counts, revisions, and the wake a Work's change sends. */
   workProjectionMutation: WorkProjectionMutation;
   documentLinks: DocumentLinkResolver;
-  /**
-   * Per-(project, reader) link snapshots: every serializing door spells
-   * through them and the resolver endpoint answers ref links from one.
-   */
   linkScopes: DocumentLinkScopes;
   exportSnapshot: ExportSnapshotStore;
   linkAheadRegistry: LinkAheadRegistry;
@@ -455,17 +429,13 @@ export type ProductionAppPorts = {
   accountSettings: AccountSettingsRepository;
   mcpConnections: McpConnections;
   mcpStore: ConnectionStore;
-  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
   connections: ConnectionsPort;
-  /** The one MCP client, closed with the app. */
   mcpClient: McpClient;
-  /** The one script runner behind `mcp_run`, closed with the app. */
   scriptRunner: ScriptRunner;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
   mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
-  /** Deletes stored objects with their previews; every compensating delete goes through it. */
   objectRelease: ObjectRelease;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
@@ -477,13 +447,9 @@ export type ProductionAppPorts = {
   notices: NoticePort;
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
-  /** Links shown to the model per thread and document (contract §7). */
-  /** The removal record behind a missing file the model asked for. */
   documentRemovals: DocumentRemovals;
-  /** What each transcript block showed the model of a document, per room. */
 };
 
-/** Max threads one wake sweep starts; the sweep repeats on its interval. */
 const WAKE_SWEEP_LIMIT = 100;
 
 export async function createProductionAppPorts(input: {
@@ -575,7 +541,6 @@ export async function createProductionAppPorts(input: {
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const mcpClient = createProcessMcpClient((event) => {
-    // A child's stderr is a program's own text; only the session's life goes to the log.
     if (event.type !== "stderr")
       emitEvent(eventSink, {
         level: "info",
@@ -606,7 +571,6 @@ export async function createProductionAppPorts(input: {
     },
     cipher: createTokenCipher(resolveMcpTokenKey(environment)),
     sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
-    // A hint, then the app asks again; one hint per open project of the account.
     statusChanged: (row) =>
       projectWakeHub.publishToUser(row.accountId, (projectId) => ({
         type: "mcp-connections-hint",
@@ -644,8 +608,6 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
-  // Every compensating or post-commit object delete goes through this; a key's preview goes
-  // with it. A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
   const objectRelease = createObjectRelease({
     objectStore,
     onFailure(key, error) {
@@ -657,10 +619,6 @@ export async function createProductionAppPorts(input: {
       });
     },
   });
-  // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
-  // thread peers) exists only once the collab domain does, which binds it; nothing retires
-  // before a commit, so the late binding is never observed unbound in production.
-  // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
   const treeLists = createDrizzleTreeListStore({
     db,
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
@@ -885,11 +843,9 @@ export async function createProductionAppPorts(input: {
   };
 }
 
-/** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const { backgroundTasks } = ports;
   const shutdown = { started: false };
-  // A short claim that turned a wake away wakes the chat on release.
   const runClaim = wakeOnContendedRelease(ports.runClaim, (threadId) => {
     backgroundTasks.track(
       wakeIfRunnable(threadId).catch((error) =>
@@ -909,7 +865,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
-    // A hint is lossy: a missed one leaves a list stale until its next read, never wrong.
     onLifecycleCommitted: (threadId) =>
       backgroundTasks.track(
         ports.threadRepos.threads
@@ -1090,10 +1045,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       },
       threadId,
     );
-  // A drain-woken subagent run (a child report or thread_message) has no driver
-  // to emit its activity frames; refresh its parent's activity when its lease goes
-  // live and after it releases, so the strip never reads `asleep` during the run
-  // nor stays `awake` after it.
   const refreshSubagentActivity = createSubagentActivityRefresher({
     findThread: (id) => ports.threadRepos.threads.findById(id),
     eventWriter: threadEventHub,
@@ -1447,7 +1398,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
 }
 
-/** `packageFetcher` is the live-network opt-in: without one, fetching a package throws. */
 export function createInMemoryAppServices(
   options: { packageFetcher?: PackageFetcher } = {},
 ): AppServices {
@@ -1481,7 +1431,6 @@ export function createInMemoryAppServices(
   const journal = createInMemoryEventJournalWriter(transactionOwner);
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
-    // This composition has no document tools, so no call can leave a command open.
     async recoverCommands() {},
     workContext: {
       async renderForThread() {
@@ -1550,7 +1499,6 @@ export function createInMemoryAppServices(
     expireAsks: () => asks.expireDue(),
   };
 
-  // No Works in memory: a lineage's root chat is the only row that names a draft.
   const documentSync: CollabDomain = createInMemoryCollabDomain(async (owner) => {
     if (owner.kind !== "lineage") return null;
     const root = await threadRepos.threads.findByIdIncludingDeleted(owner.rootThreadId);
@@ -1621,7 +1569,6 @@ export function createInMemoryAppServices(
     },
   };
 
-  // Nothing in the in-memory composition registers or settles ahead refs; fail loudly, never pretend.
   const unsupported = (): never => {
     throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
   };
@@ -1794,7 +1741,6 @@ export function createInMemoryAppServices(
         return { documents: new Map(), folders: new Map(), inconsistent: new Set() };
       },
       async held() {
-        // The in-memory app has no rows; its creates answer replays from their own store.
         return null;
       },
       serializeCreate: (_entryId, create) => create(),
@@ -2116,7 +2062,6 @@ export function createInMemoryAppServices(
   };
 }
 
-/** The in-memory app has no tree: a port for any context is refused where it is asked for. */
 function createInMemoryContextPorts(): UnifiedContextPortFactory {
   const unavailable = (): never => {
     throw new Error("Context requires durable persistence");
@@ -2170,7 +2115,6 @@ function createInMemoryNoticePort(): NoticePort {
 
 export type { ThreadRepositories } from "../domains/threads/ports/index.js";
 
-/** Adapts Collab's export read door and live membership to the port Export owns. */
 function exportDocumentsFrom(documents: Pick<CollabDomain, "readForExport">): ExportDocumentReader {
   return {
     readForExport: (documentId, scope) => documents.readForExport(documentId, scope),

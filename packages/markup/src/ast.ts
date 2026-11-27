@@ -1,5 +1,3 @@
-/** Markdown and MDX AST shapes used by markup codecs. */
-
 export type MdastRoot = { type: "root"; children: MdastBlock[] };
 export type MdastBlock =
   | MdastParagraph

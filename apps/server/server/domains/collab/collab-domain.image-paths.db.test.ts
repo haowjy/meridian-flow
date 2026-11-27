@@ -51,14 +51,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       db,
       sourceId: async () => SOURCE_ID,
     });
-    /** A live edit of the tree (rename, delete), as a person's would be. */
     async function liveEdit(edit: (writer: TreeWriter) => unknown) {
       await seeder.store.submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => edit(writer),
       });
     }
-    /** A chapter showing `assets/map.png`, and the model's grant in this project. */
     async function seedChapterWithMap(collab: ReturnType<typeof createTestCollab>) {
       await seeder.file(SOURCE_ID, "assets/map.png", png, {
         id: "00000000-0000-4000-8000-000000000712",
@@ -90,15 +88,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success" });
     }
 
-    // The adapter's snapshot reuse is pinned in `document-link-scope.db.test.ts`.
     it("shares search paths across chapters in a thread view", async () => {
       const links = createTestDocumentLinkScopes(db);
       const collab = createTestCollab(links);
       await seedChapterWithMap(collab);
       const secondDocumentId = "00000000-0000-4000-8000-000000000713";
       await seeder.document(SOURCE_ID, "chapter-two", { id: secondDocumentId });
-      // Two uploads no path spells: a deleted cover whose path a new cover took,
-      // and an id with no document behind it.
       const OLD_COVER = "00000000-0000-4000-8000-000000000718";
       const LOST = "00000000-0000-4000-8000-000000000719";
       await seeder.file(SOURCE_ID, "cover.png", png, { id: OLD_COVER });
@@ -157,7 +152,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(JSON.stringify(hit.matches)).toContain("assets/map.png");
         expect(JSON.stringify(hit.matches)).not.toContain("art/map.png");
         expect(JSON.stringify(hit.matches)).not.toMatch(/asset:|doc:/);
-        // The capture records the upload's identity where the read showed it.
         expect(hit.shown?.passages.flat()).toContainEqual({
           ref: "asset:00000000-0000-4000-8000-000000000712",
           address: "manuscript://assets/map.png",
@@ -174,7 +168,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "![Old cover](manuscript://cover.png) and ![Lost map]()",
       );
 
-      // The model's read spells them alike, and records the deleted cover where it showed it.
       const grant = testFileGrant({ kind: "live" }, secondDocumentId);
       const read = await collab.agentEdit().read(
         { file: "chapter-two", documentId: secondDocumentId },

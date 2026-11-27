@@ -1,12 +1,3 @@
-/**
- * Page-scoped Work goal editing lifecycle. The name is renamed in the band's
- * heading; this owns the goal, which never saves on blur and so guards
- * navigation while a draft is dirty. Saving closes the editor at once and the
- * command is the driver's; a save the server did not apply (a closed Work, a
- * refusal) reopens the editor with the writer's text. An open editor never
- * closes because the Work changed underneath: an archived Work only shows it
- * when a save bounces.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
@@ -31,7 +22,6 @@ export function useWorkMetadataController(
   const [draft, setDraft] = useState("");
   const { failure, fail, end } = useFailure();
   const error = failure?.message ?? null;
-  // A closed Work kept none of the goal: the field keeps the text and says so beside Save.
   const [closed, setClosed] = useState<string | null>(null);
   const [hasPendingIntent, setHasPendingIntent] = useState(false);
   const heldRef = useRef<HeldIntent>(null);
@@ -148,27 +138,14 @@ export function useWorkMetadataController(
 }
 export type WorkMetadataController = ReturnType<typeof useWorkMetadataController>;
 
-// Typography lives on the wrapper so the resting button and the editing field
-// both inherit it; the field then sets no font of its own.
 const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
-// Quiet text actions that sit under the goal and read as part of it.
 const goalAction =
   "focus-ring min-h-6 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground coarse:min-h-11";
 
-/** Blank-line runs become paragraph breaks, so a clamp never ends on a blank line. */
 function goalParagraphs(goal: string): string[] {
   return goal.trim().split(/\n\s*\n/);
 }
 
-/**
- * The Work goal: body text clamped to three lines. Show more (or clicking a
- * clamped goal) shows all of it; Show less folds it again. Edit goal (or
- * clicking an empty goal) edits in place: the field takes the text's exact
- * position and size. Cancel then Save sit left-aligned under the field, so
- * Cancel lands where Edit goal was; blur never saves. The goal's actions sit
- * directly under the text; a read-only goal has no Edit goal, and an empty one
- * shows nothing.
- */
 export function WorkGoal({
   work,
   controller: c,
@@ -210,7 +187,6 @@ export function WorkGoal({
   const bindEditFocus = (node: HTMLButtonElement | null) => {
     c.displayRef.current = node;
   };
-  // Nothing to show or edit: no empty box to space the header around.
   if (readOnly && !editing && !work.goal) return null;
   const hasActions = overflows || !readOnly;
   return (

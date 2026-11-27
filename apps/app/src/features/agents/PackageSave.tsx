@@ -1,8 +1,3 @@
-/**
- * An Agent package's Save state and its Save, one look wherever the writer meets it: a level's
- * heading, an import's folder row, an open Agent file, an applied draft, the AI's write. After a
- * Save the same place says what it did ("Saved" with Undo, or "Not saved: 2 problems").
- */
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type {
@@ -35,12 +30,6 @@ import {
 } from "./package-save";
 import { UndoSave } from "./UndoSave";
 
-/**
- * `package` (a level's heading, an import's row, a removed import's line): Save alone says there
- * is something to save, since a chip beside it would push a 264px row's name out. `file` (an open
- * file, one the writer or the AI just changed) says "Unsaved" before Save. Either shows a
- * package-level problem (a broken `mars.toml`) as a chip, the one place it is said.
- */
 export type PackageSaveLook = "package" | "file";
 
 export function PackageSave({
@@ -55,9 +44,7 @@ export function PackageSave({
   pkg: PackageRef;
   status: AgentPackageStatus | undefined;
   look?: PackageSaveLook;
-  /** A file whose own chip already says what keeps it out of use, left out of the package's count. */
   shownFile?: string;
-  /** Shown first, only when there is something to say: the package's name on a line of its own. */
   before?: ReactNode;
 }) {
   const saves = usePackageSaves(projectId);
@@ -133,7 +120,6 @@ function StateAndSave({
           }
         />
       ) : null}
-      {/* A Save of a package nothing of which can be read can only fail. */}
       {failsSave(status) ? null : <SaveButton label={label} onSave={onSave} />}
     </>
   );
@@ -158,7 +144,6 @@ function SaveButton({ label, onSave }: { label: string; onSave: (() => void) | u
   );
 }
 
-/** What the last Save or Undo did, where the state shows. */
 function Word({
   projectId,
   pkg,
@@ -181,12 +166,9 @@ function Word({
       const out = outOfUseAfterSave(files?.files ?? [], files?.packages ?? [], pkg).filter(
         (item) => item.file.path !== shownFile,
       );
-      // Nothing new was saved: the edits kept out of use are all the Save has to say.
       const nothingNew = word.outcome.outcome === "unchanged";
       return (
         <>
-          {/* The chip's list opens with what was saved, and a 264px row or a 390px toolbar has no
-              room for both. */}
           {nothingNew || out.length > 0 ? null : (
             <RowWord tone="done" word={<Trans>Saved</Trans>} sentence={savedSentence(word)} />
           )}
@@ -236,11 +218,6 @@ function Word({
   }
 }
 
-/**
- * The count of a package's problems. On its own row the row names the package; on an open file
- * the word does, so a good file of a broken package never reads as broken itself. A long name
- * gives way before the count does: the popover's heading says it in full.
- */
 function problemsWord(pkg: PackageRef, count: number, look: PackageSaveLook): ReactNode {
   if (look === "package") return plural(count, { one: "# problem", other: "# problems" });
   const name = (
@@ -282,7 +259,6 @@ function savedSentence(word: Extract<PackageWord, { kind: "saved" }>): ReactNode
   );
 }
 
-/** A package's problems (a broken `mars.toml`), as a chip that lists them by file. */
 function PackageProblems({
   projectId,
   pkg,
@@ -313,11 +289,6 @@ function PackageProblems({
   );
 }
 
-/**
- * What of the package is out of use after a Save, counted as every level counts it
- * (`outOfUseWord`): the same before the server answers and after the files are read again. It
- * lists each file with what keeps it out of use, then what the Save did save and its notes.
- */
 function OutOfUseChip({
   projectId,
   pkg,
@@ -329,7 +300,6 @@ function OutOfUseChip({
   pkg: PackageRef;
   outcome: SaveOutcome;
   items: readonly OutOfUse[];
-  /** What else the Save said (`savedNotes`). */
   notes: readonly string[];
 }) {
   const openFile = useOpenAgentFile(projectId);
@@ -394,7 +364,6 @@ function OutOfUseChip({
   );
 }
 
-/** What a Save that left something out did save, below what it left out. */
 function SavedChanges({ outcome }: { outcome: SaveOutcome }) {
   const held = new Set(
     [...outcome.kept, ...outcome.leftOut].map((file) => `${outcome.folder}${file}`),
@@ -423,10 +392,6 @@ export function changeLine({ path, change }: AgentFileChange): string {
   }
 }
 
-/**
- * The heading for what a Save kept out of use, naming the items: the AI's card says
- * them, and a package's Save chip says the heading.
- */
 export function heldHeading(outcome: SaveOutcome): string {
   const label = packageLabel(outcome);
   const items = [...outcome.kept, ...outcome.leftOut];
@@ -446,11 +411,6 @@ function listOf(items: string[]): string {
   return t`${head} and ${last}`;
 }
 
-/**
- * Findings by file, in the order they came: each file's path, then what a Save did with it ("Left
- * out:", the path struck through, or "Your latest edit isn't in use:"), then each finding in Flow's
- * words. A press on the path opens the file.
- */
 export function FindingList({
   pkg,
   findings,
@@ -512,10 +472,6 @@ export function FindingList({
   );
 }
 
-/**
- * What a settled Save said beyond "Saved" and what it kept out of use (its chip lists those), as
- * lines: renames and warnings; `null` when it said none.
- */
 export function savedNotes(word: PackageWord | null): string[] | null {
   if (word?.kind !== "saved" || !word.settled) return null;
   const { renamed, findings } = word.outcome;
@@ -528,7 +484,6 @@ export function savedNotes(word: PackageWord | null): string[] | null {
   return lines.length ? lines : null;
 }
 
-/** The errors of the Agent and skill files a Save did not use, in the order it listed them. */
 export function heldBack(outcome: SaveOutcome): AgentFinding[] {
   return outcome.findings.filter(
     (finding) =>
@@ -537,10 +492,6 @@ export function heldBack(outcome: SaveOutcome): AgentFinding[] {
   );
 }
 
-/**
- * The Save state of the package one file is in, for a place that speaks of that file (an open
- * Agent file, an applied draft, the AI's write); nothing for a file in no Agents level.
- */
 export function AgentFileSave({
   projectId,
   scheme,
@@ -549,7 +500,6 @@ export function AgentFileSave({
 }: {
   projectId: string;
   scheme: ContextUriScheme;
-  /** The file's path in its scheme, with or without the leading slash. */
   path: string;
   before?: ReactNode;
 }) {

@@ -1,5 +1,3 @@
-/** Desired-identity planning is independent of whichever surface submitted it. */
-
 import { describe, expect, it } from "vitest";
 import { deriveIdentityCommitPlan } from "./use-identity-commit";
 

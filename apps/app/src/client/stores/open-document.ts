@@ -1,7 +1,3 @@
-/**
- * The descriptor a document host paints from: identity, owner and kind, derived per view from
- * the project's tree, a draft row or the sources. Nothing stores it.
- */
 import type {
   ChatOwnerRef,
   ContextOwner,
@@ -12,11 +8,6 @@ import type {
   TrackedSchemaType,
   WorkOwnerRef,
 } from "@meridian/contracts/protocol";
-/**
- * A tab's owner, a `ContextOwner`: a Work row id (Scratch), a No Work chat's lineage with the
- * handle its URI spells, or a chat (uploads), whose handle it has once the chat does. Project
- * schemes have none.
- */
 export type OpenDocumentOwner =
   | (WorkOwnerRef & { workId?: string })
   | (LineageOwnerRef & { rootThreadRef: string })
@@ -43,7 +34,6 @@ export function replaceOwner(owner: OpenDocumentOwner): OpenDocumentOwner {
     : { workId: owner.workId, rootThreadId: undefined, rootThreadRef: undefined, ...absent };
 }
 
-/** The owner a tab names, for catalog and request lookups. */
 export function documentContextOwner(owner: OpenDocumentOwner): ContextOwner {
   if (owner.chatThreadId !== undefined)
     return { chatThreadId: owner.chatThreadId, chatRef: owner.chatRef };
@@ -82,15 +72,10 @@ export type OpenDocument =
 
 export type ServerOpenDocument = Extract<OpenDocument, { kind: "tracked" | "viewer" }>;
 
-/**
- * The one scheme the Editor never opens: uploads belong to a chat and open in
- * their resource view.
- */
 export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
   return scheme !== "uploads";
 }
 
-/** Whether a main view can hold the document: every kind but an upload. */
 export function isEditorOpenDocument(tab: OpenDocument): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }

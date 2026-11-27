@@ -1,10 +1,3 @@
-/**
- * ContextFS: filesystem-shaped adapter for Meridian-managed context schemes
- * (`manuscript`/`kb`/`scratch`/`user`/`uploads`). It hides the document-store +
- * Loro room backing behind path-oriented filesystem operations; every create, move and delete is a
- * record of the project's list made at the call (`tree-writes.ts`).
- */
-
 import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   canonicalLeaf,
@@ -72,10 +65,6 @@ import { LiveCreate } from "./live-create.js";
 import { type ContextPlacement, type CreatePlacement, createPlacement } from "./placement.js";
 import { actorOf, type SourceTree, type TreeWriteTarget, viewOfDraft } from "./tree-writes.js";
 
-/**
- * A document path's leaf through the name codec: its folders and canonical parts, null for
- * the source root, or the `invalid_name` fault a leaf that can't name a document is.
- */
 function parseDocumentPath(
   scheme: ContextScheme,
   path: string,
@@ -87,14 +76,10 @@ function parseDocumentPath(
 }
 
 export interface ContextFSDeps {
-  /** Search spells its source's chapters from one snapshot; each read prepares its own. */
   links: Pick<DocumentLinkScopes, "within">;
   store: ContextDocumentStore;
-  /** This source's tree writes: records of the project's list. */
   writes: SourceTree;
-  /** Who a person's Copy through this adapter is attributed to: `user:<id>`. */
   actor: string;
-  /** Settles ahead refs when a document arrives; absent in a composition without them. */
   arrivals?: DocumentArrivals;
   documentSync: MarkdownDocumentStore &
     Pick<CollabDomain, "refreshDocumentProjection"> &
@@ -108,17 +93,9 @@ export interface ContextFSDeps {
     >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
-  /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
-  /**
-   * The project a document created here belongs to, and the URI authority of
-   * this source (a Work-scoped scheme's Work): content written into a new
-   * document binds its links as that document's address (contract §6.2).
-   */
   holder: { projectId: string; authority?: CanonicalContextAuthority };
-  /** Where creates land and what reads see; the port factory decides it (`placementFor`). */
   placement: ContextPlacement;
-  /** The thread reading through this adapter; without one, reads are live. */
   threadView?: ThreadContextView;
 }
 
@@ -151,7 +128,6 @@ export class ContextFS implements ContextSchemeAdapter {
     command: (input) => this.treeCommand(input),
     read: (input) => this.treeRead(input),
   };
-  /** Copy's read and insert halves (`context/copy/` decides what to copy). */
   readonly copy: ContextCopyAdapter;
 
   constructor(deps: ContextFSDeps) {
@@ -241,18 +217,10 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
-  /**
-   * What reads see: a draft placement's Work's active draft, unless the thread asked for
-   * the live text; live otherwise. Resolved once per command, never creating a draft.
-   */
   private readTreeView(): Promise<TreeView> {
     return this.placement.readView(this.readView?.version);
   }
 
-  /**
-   * The document `path` addresses in `view`, by any spelling the store resolves. A path two of
-   * the view's files share is the clash fault, never one of them.
-   */
   private async findDocumentAt(
     view: TreeView,
     path: string,
@@ -263,7 +231,6 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok(found.kind === "found" ? found.node : null);
   }
 
-  /** A pending move keeps the live source address as an identity alias until Apply. */
   private async findAddressedDocument(
     view: TreeView,
     path: string,
@@ -316,11 +283,9 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
     const refused = this.placement.refuse("take a whole-file write");
     if (refused) return Err(refused);
-    // An actor's overwrite keeps the refs of links it leaves in place; import and system writes bind fresh.
     const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
     const existing = await this.boundWrites.lookup(path);
     if (!existing.ok) return existing;
-    // A whole-file write overwrites a document; it never creates one (creation is `create`).
     if (!existing.value) return Err({ code: "not_found" });
     const bound = await this.boundWrites.bind(
       path,
@@ -366,10 +331,6 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
-  /**
-   * Bind content for a document about to be created at `path`, before the
-   * caller's transaction opens (an upload binds before finalizing).
-   */
   async bindTrackedDocument(
     path: string,
     content: string,
@@ -439,7 +400,6 @@ export class ContextFS implements ContextSchemeAdapter {
     options?: ContextListOptions,
   ): Promise<Result<AdapterFileEntry[], AdapterFault>> {
     const view = await this.readTreeView();
-    // Every segment of `path` is a folder name (no trailing filename to split).
     const folder = await this.store.resolveFolderAt(view, path);
     if (folder.kind === "not_found") return Err({ code: "not_found" });
     const folderId = folder.node?.id ?? null;
@@ -549,7 +509,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const viewOf = (documentId: string) =>
       this.threadView(access.get(documentId)?.destination) ?? { destination: "live" as const };
     const stored = async (ids: string[]) => {
-      // Each document's text is read where its own access reads it.
       const groups = new Map<string, string[]>();
       for (const id of ids) {
         const key = JSON.stringify(viewOf(id));
@@ -565,8 +524,6 @@ export class ContextFS implements ContextSchemeAdapter {
       );
       return new Map<string, string>(texts.flatMap((read) => [...read]));
     };
-    // One source has one owner, a project or (the home folder) an account; its
-    // chapters' reads join this snapshot, so it is read in their thread.
     return this.links.within(
       {
         documentId: first.id,
@@ -604,18 +561,12 @@ export class ContextFS implements ContextSchemeAdapter {
     );
   }
 
-  /**
-   * The thread reading this source and the version it reads, or null outside a thread. A
-   * document's own access decision gives `decided`; only a read with no decision (a person
-   * opening a path) falls back to what this source's scheme sends the chat's writes to.
-   */
   private threadView(
     decided?: FileDestination,
   ): ({ threadId: ThreadId } & EffectiveReadVersion) | null {
     const view = this.readView;
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId };
-    // Without a separate draft both versions are the same document.
     const at =
       decided ??
       view.destination ??
@@ -637,10 +588,6 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.documentSync.readAsMarkdown(documentId);
   }
 
-  /**
-   * A document's blocks as grep matches them, and the link facts each spells. Outside a thread
-   * the live document is read, through the same reader.
-   */
   private async readGrepBlocks(
     documentId: string,
     view: { threadId?: ThreadId } & EffectiveReadVersion,
@@ -656,7 +603,6 @@ export class ContextFS implements ContextSchemeAdapter {
       revision,
       locate,
       shownOf: ({ blocks: passageBlocks }) => {
-        // Only the returned passages can be shown, never the matches past the cap.
         const passages = passageBlocks.map((block) => blocks[block]?.links ?? []);
         return holder.uri && passages.some((facts) => facts.length > 0)
           ? { holderUri: holder.uri, view: holder.view, passages }
@@ -665,11 +611,6 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
-  /**
-   * A tree command in this source: the records of one command transaction. A drafted one is a
-   * record of the Work's draft, which the transaction makes and locks; a live one is live.
-   * `afterWrite` runs inside it once the records are made.
-   */
   private async inTreeCommand<T>(
     input: { origin?: WriteProvenance; drafted?: boolean; fromSourceId: string },
     write: (target: TreeWriteTarget) => Promise<Result<T, AdapterFault>>,
@@ -700,7 +641,6 @@ export class ContextFS implements ContextSchemeAdapter {
         return made;
       });
       await input.afterWrite?.(result, { view: target.view });
-      // Only live documents arrive at a live address; a drafted one has none.
       if (!target.view.draft && arrived.length > 0)
         await this.liveCreate.arrive(arrived as DocumentId[]);
       return Ok(result);

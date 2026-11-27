@@ -1,4 +1,3 @@
-// Adapts the pure markup codec to agent-edit's hash-prefixed block display contract.
 import type {
   DocumentLinkScope,
   MarkupCodec,
@@ -11,20 +10,14 @@ import type {
 import { createShownLinkLedger, type ShownLinkLedger } from "./links/shown.js";
 import { toHashline } from "./model/hashline.js";
 
-/** A codec bound to one holder's link scope: every serialization spells through it. */
 export interface AgentEditCodec {
-  /** The underlying pure markup codec. */
   readonly markup: MarkupCodec;
 
-  /** `within`: the `open` of the block the content lands beside, so its nesting reads there. */
   parse(content: string, options?: ParseOptions): ParsedContent;
-  /** Parse with each link occurrence's source span (pure syntax, like `parse`). */
   parseWithSpans(content: string, options?: ParseOptions): ParsedContentWithSpans;
   serialize(blocks: PMNode[]): string;
-  /** Each block as it sits in the document, with the gap that separates it from the one before. */
   serializeBlockBodies(blocks: readonly PMNode[]): SerializedBlock[];
 
-  /** Serialize a single block with the hash prefix used by agent-edit echoes. */
   serializeBlock(block: PMNode, hash: string): string;
 
   /**
@@ -43,10 +36,6 @@ export interface AgentEditCodec {
     picked: readonly number[],
   ): SerializedBlock[];
 
-  /**
-   * Host-only facts for items this codec rendered as hashlines (whole or as a
-   * prefix): each ref and the address it spelled at that render.
-   */
   shownLinks: ShownLinkLedger["shownLinks"];
 }
 

@@ -48,7 +48,6 @@ export const fileDropDoor: DropDoor = {
   plan(editor, landing, event, phase) {
     const transfer = event.dataTransfer;
     const dropped = phase === "drop" ? Array.from(transfer?.files ?? []) : null;
-    // A files drag that carries none at the drop is not ours to name.
     if (dropped?.length === 0) return null;
     const listed: FileLike[] =
       dropped ??
@@ -57,7 +56,6 @@ export const fileDropDoor: DropDoor = {
         .map((item) => ({ type: item.type, name: "" }));
     if (landing.kind === "source") return { kind: "refuse", hint: t`Can’t put a file inside code` };
 
-    // Only pictures: the picture lane decides where one may stand.
     const picturesOnly =
       listed.length > 0 && listed.every((file) => !isUnread(file) && isImageFile(file));
     const at: Exclude<Landing, { kind: "source" }> =
@@ -74,7 +72,6 @@ export const fileDropDoor: DropDoor = {
       };
     }
 
-    // A chip's slot is the same wherever it is: probed with a stand-in, committed with the files.
     const probe = chipFor(editor, "file", crypto.randomUUID(), "unfiled");
     const placed = probe && placeNodes(editor.view, at, [probe]);
     if (!placed) return { kind: "refuse", hint: t`Can’t drop here` };
@@ -104,7 +101,6 @@ function chipFor(
 
 type Reserved = { ok: true; name: string } | { ok: false; reason: unknown };
 
-/** Sends the file. Text up to the text cap becomes an editable document the chip links to. */
 function sendRun(host: FileDropHost, documentId: string, file: File): UploadRun {
   return async (signal, onProgress) => {
     await host.send({ documentId, file, signal, onProgress });
@@ -137,7 +133,6 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     return found && { kind, pos: found.from };
   };
 
-  /** Chips waiting for the next picture or the end of the drop, so a run of them is one edit. */
   let run: Array<{ file: File; documentId: string; reserved: Promise<Reserved> }> = [];
 
   const flush = async () => {
@@ -159,7 +154,6 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         );
         return;
       }
-      // The app's own first label: the name the file takes, which the writer's words then own.
       const node = chipFor(editor, outcome.name, entry.documentId, host.scheme);
       if (node) ready.push({ node, documentId: entry.documentId, file: entry.file });
     });

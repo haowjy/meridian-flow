@@ -1,9 +1,3 @@
-/**
- * The runtime's view of a writer's MCP connections: the catalogue for a prompt, and the three
- * tools' calls. A tool call reads the thread's pins through the bake in effect (a compaction
- * writes a new one, so it is read per call, not held), and the full reply and its media go to
- * the thread's own storage prefix, which goes with the thread.
- */
 import type { UserId } from "@meridian/contracts";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { Thread } from "@meridian/contracts/threads";
@@ -82,7 +76,6 @@ export function createConnections(deps: {
 
     async bake(thread) {
       if (!thread.parentThreadId) return baker.forWriter(thread.userId as UserId, thread.projectId);
-      // A subagent holds what its parent's bake in effect holds, whatever the writer's connections are now.
       const parent = await deps.repos.threads.findByIdIncludingDeleted(thread.parentThreadId);
       const held: readonly McpBakedConnection[] = parent
         ? ((await bakeOf(parent))?.bakedConnections ?? [])
@@ -166,9 +159,6 @@ export function createConnections(deps: {
         bake: bake ?? { bakedConnections: [] },
         names: input.names,
       });
-      // A bake other than the thread's first is a compaction's: this read is the one the new prompt
-      // asks for again. The response that issued it is the round trip it adds
-      // (`model_responses.latency_ms` on the event's `responseId`), so a query can sum both.
       if (bake && bake.id !== thread.initialPromptBakeId)
         emitEvent(deps.eventSink, {
           level: "info",

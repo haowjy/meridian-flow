@@ -103,8 +103,6 @@ export function ReferenceSuggestionMenu({
           row.kind === "link-ahead" || row.kind === "folder-mention" ? undefined : rowLocation(row),
         opens: row.kind !== "link-ahead" && row.kind !== "folder-mention" && row.kind !== "file",
         before:
-          // The link-ahead row is a different kind of answer: everything above
-          // it exists, and it does not yet.
           row.kind === "link-ahead" && index > 0 ? (
             <div className="my-1 border-border-subtle border-t" />
           ) : undefined,
@@ -112,8 +110,6 @@ export function ReferenceSuggestionMenu({
           row.kind === "link-ahead" ? (
             <>
               <FilePlus2 aria-hidden />
-              {/* It writes a link, not a document: Create is offered when the
-                  link is followed. */}
               <span className="truncate">{t`Link to “${row.label}” (not written yet)`}</span>
             </>
           ) : row.kind === "folder-mention" ? (
@@ -134,10 +130,6 @@ export function ReferenceSuggestionMenu({
   );
 }
 
-/**
- * Where a file lives, so two documents with one name are told apart: its
- * folder, after the area it is in unless that is the manuscript.
- */
 function rowLocation(row: Exclude<ReferenceRow, { kind: "folder-mention" }>): string {
   if (row.kind !== "file") return row.location;
   const parsed = parseContextUri(row.action.reference.uri);

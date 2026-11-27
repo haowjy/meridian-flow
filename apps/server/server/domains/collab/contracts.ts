@@ -1,4 +1,3 @@
-/** Public contracts for the collab domain. */
 import type { CommandId, DraftId, LinkView } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
@@ -75,7 +74,6 @@ export type DocumentWriteHook = (event: {
 export type ServerDocumentRooms = DocumentRooms<DrizzleDb> & { close(): Promise<void> };
 
 export type CollabTransport = {
-  /** The one door to document rooms (design §4): the socket, commands, reads. */
   rooms: ServerDocumentRooms;
   /** The newest collab schema that wrote the document; null when there is no such document. */
   documentSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
@@ -97,17 +95,12 @@ export type CollabTransport = {
 };
 
 export type AgentEditAccess = {
-  /** The model's reads; each names its destination. */
   agentEdit(): AgentEditRouter;
-  /** A model's document-changing calls as commands. */
   modelEdits(): ModelEdits;
-  /** What the model was shown of documents: written at an edit and at a stored result. */
   modelEvidence(): ModelEvidence;
-  /** The model's moves and deletes in the documents' edit history. */
   treeHistory(): AgentTreeHistory;
 };
 
-/** A node a tree call changed, with its address before and after (null: created, or deleted). */
 export type TreeReceiptNode = {
   nodeId: string;
   beforeAt: string | null;
@@ -115,9 +108,7 @@ export type TreeReceiptNode = {
   copiedFrom?: string;
 };
 
-/** One record a model's tree call admitted, as its receipt keeps it. */
 export type TreeReceiptInput = {
-  /** The node the handle hangs on: the one acted on, or the folder several were moved into. */
   subject: string;
   /** Every node the call changed, the subject included: each takes a write ordinal of its own. */
   nodes: readonly TreeReceiptNode[];
@@ -128,11 +119,8 @@ export type TreeReceiptInput = {
   turnId?: TurnId;
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
-  /** The Work's draft the record was drafted in; absent when it is live. */
   draftId?: DraftId;
-  /** The path the model gave. */
   shownAt: string;
-  /** An undo or redo names the receipt it reverses. */
   reverses?: { kind: "undo" | "redo"; receipt: string };
 };
 
@@ -145,15 +133,11 @@ export type TreeReceipt = {
   reverses: string | null;
   draftId: string | null;
   turnId: string | null;
-  /** The path the model gave for it. */
   shownAt: string | null;
   /** The command that made it: a create with content is one command, so one Undo step. */
   commandId: string | null;
-  /** The write ordinal of the node this receipt was found by. */
   wId: number;
-  /** The write ordinal on the subject's counter: the handle the model was given. */
   handle: number;
-  /** Every node the call changed. */
   nodes: string[];
 };
 
@@ -166,7 +150,6 @@ export type NodeHistory = {
   /** Receipts that take a step back (a write or a redo) and were not themselves reversed, newest first. */
   undo: TreeReceipt[];
   /** Receipts that took a step back (an undo) and were not redone, newest first. */
-  /** Every receipt of the node by its handle on that node. */
   all: TreeReceipt[];
   /** The ordinals of the text edits Undo would take, newest first. */
   text: {
@@ -182,7 +165,6 @@ export type AgentTreeHistory = {
    * handle on the subject's counter for this chat.
    */
   recordAgentTreeChange(input: TreeReceiptInput): Promise<{ handle: string; id: string }>;
-  /** Whether the turn (one reply) already made a drafted tree change. */
   draftedInReply(turnId: TurnId): Promise<boolean>;
   /**
    * What a card Undo of a reply takes: the reply's receipts that were not reversed, newest
@@ -205,7 +187,6 @@ export type AgentTreeHistory = {
     at: string,
     holds: (folder: string, rest: string) => boolean,
   ): Promise<{ node: string; folder: boolean } | null>;
-  /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */
   historyOf(threadId: ThreadId, nodeId: string, isDocument: boolean): Promise<NodeHistory>;
 };
 
@@ -240,27 +221,19 @@ export type TurnReversalAccess = {
 
 export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 
-/** One block of a hashline read: what `read` shows, and what grep matches and spells. */
 export type HashlineBlock = {
   hash: string;
-  /** The block as `read` shows it, with no addressing prefix. */
   body: string;
-  /** The block's markdown with link destinations spelled empty. */
   destinationFree: string;
-  /** What grep matches in this block: the writer's text, or a code file's text as stored. */
   text: string;
-  /** A code file's block: `text` is not a decoding of `destinationFree`. */
   verbatim: boolean;
-  /** The ref-bearing links the block spells. */
   links: readonly SpelledLinkFact[];
 };
 
 export type HashlineRead = {
   blocks: HashlineBlock[];
   revision: string | null;
-  /** The holder `links` were spelled from, as the read's own binding named it. */
   holder: { uri: string | null; view: LinkView };
-  /** A range of a block's `destinationFree` markdown, placed in its `body`; null when it can't be. */
   locate(
     block: Pick<HashlineBlock, "body" | "destinationFree">,
     range: { start: number; end: number },
@@ -291,9 +264,7 @@ export type MarkdownDocumentStore = LinkBinder & {
    * documents that never got a row (an import that ended early).
    */
   endDocumentRooms(documentIds: readonly DocumentId[]): Promise<void>;
-  /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
-  /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */
   installSeeds(
     seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
   ): Promise<void>;
@@ -321,7 +292,6 @@ export type DocumentProjectionRefresher = {
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
-/** The model-facing list row: which documents have a draft, nothing more. */
 export type ModelDraftRow = {
   documentId: DocumentId;
   documentName: string | null;
@@ -330,19 +300,14 @@ export type ModelDraftRow = {
 };
 
 export type DraftReviewApi = {
-  /** The day-30 purge of presses and their Undos (`drizzle-discard-purge.ts`); the rows removed. */
   purgeDiscards(): Promise<number>;
   list(input: { draft: DraftId }): Promise<ModelDraftRow[]>;
-  /** The review list route's one read: the draft's listed items with live text tokens. */
   listItems(input: { draft: DraftId }): Promise<{
     items: DraftReviewItem[];
-    /** The folders the draft has a row on. */
     folders: { id: string }[];
     threadTitles: ReadonlyMap<string, string>;
-    /** Each list's cut, read before the items. */
     saw: import("@meridian/contracts/drafts").TreeSaw;
   }>;
-  /** Pending documents summed over the project's drafts. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;
   /** Every draft in the project with changes to the document, oldest first. */
   draftsChangingDocument(input: {
@@ -351,9 +316,7 @@ export type DraftReviewApi = {
   }): Promise<DocumentDraftOrigin[]>;
   /** The draft's listed items, live text tokens unread: what Apply authorizes. */
   items(input: { draft: DraftId }): Promise<{ draftId: DraftId; items: DraftReviewItem[] }>;
-  /** The item a key names, when its draft exists. */
   resolveItem(input: { itemKey: string }): Promise<ResolvedReviewItem | null>;
-  /** One document of a draft. */
   resolveItemInDraft(input: {
     draftId: DraftId;
     documentId: DocumentId;
@@ -365,25 +328,19 @@ export type DraftReviewApi = {
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  /** A Work's drafts: list, create, rename, delete and its Undo, and which one a chat writes into. */
   workDrafts: import("./adapters/drizzle-work-drafts.js").WorkDrafts;
-  /** Apply and Discard on documents, folders or a Work, and their Undo. */
   presses: import("./adapters/drizzle-press.js").PressStore;
 };
 
-/** The one draft resolver (Work → active draft, made only at the write boundary). */
 export type CollabDraftResolver = {
   drafts: Drafts;
-  /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
   workDraftDisposal: WorkDraftDisposal;
-  /** Document trash purge's check that nothing holds the documents, and their rooms' close. */
   documentPurgeDisposal: DocumentPurgeDisposal;
 };
 
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
-  /** The folders the turn changed: its card lists them with the documents. */
   listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
   getDocumentAndTreeChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
@@ -397,13 +354,10 @@ export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
   | { destination: "draft"; draft: DraftId };
 
-/** A copy's source cut: the blocks, the revision they had, how they spelled, and its vector. */
 export type EffectiveBlocksRead = VersionedDocumentRead<
   readonly import("@meridian/markup").PMNode[]
 > & {
-  /** The content version used by this view. */
   version: "live" | "draft";
-  /** Canonical address the cut's links spell from; null for a chat with no holder. */
   holderUri: string | null;
   roomVersion: Uint8Array;
   /**
@@ -413,12 +367,10 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   aheadSettlements: ReadonlyMap<string, string>;
 };
 
-/** Reads a document as one reader sees it: Live, or its draft's fork of it. */
 export type EffectiveDocumentReader = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
-      /** The reading thread, whose draft the read sees. */
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
@@ -433,11 +385,7 @@ export type EffectiveDocumentReader = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<Map<DocumentId, string>>;
-  /** Words per document whose derived outputs are current; the others are absent. */
   readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
-  /**
-   * A document's markdown in a draft's view: the draft's fork of it. Needs no reading chat.
-   */
   readDraftMarkdown(input: {
     documentId: DocumentId;
     draft: DraftId;
@@ -478,7 +426,6 @@ export type EffectiveDocumentReader = {
   ): Promise<void>;
 };
 
-/** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
   /**
    * Drops projection runs that haven't started; running ones finish.

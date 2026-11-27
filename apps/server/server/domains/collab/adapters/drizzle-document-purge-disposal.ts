@@ -1,4 +1,3 @@
-/** Collab's half of a content purge: nothing may write the documents once their content is released. */
 import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
@@ -15,7 +14,6 @@ import { retentionHolds } from "../../context/tree/retention-holds.js";
 export function createDrizzleDocumentPurgeDisposal(
   db: Database,
   deps: {
-    /** After commit: the documents' live rooms close `4208`, while their removal still stands. */
     closeRemovedRooms(documentIds: readonly DocumentId[]): Promise<void>;
   },
 ): DocumentPurgeDisposal {
@@ -28,7 +26,6 @@ export function createDrizzleDocumentPurgeDisposal(
       const [held] = await tx.execute<{ held: boolean }>(sql`
         SELECT EXISTS (SELECT 1 FROM (${retentionHolds(sorted)}) p) AS held`);
       if (held?.held) return "pending";
-      // A document in Trash keeps its room; the purge closes it, once the content is released.
       runAfterDrizzleCommit(() => deps.closeRemovedRooms(sorted));
       return "closed";
     },

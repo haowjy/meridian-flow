@@ -1,10 +1,3 @@
-/**
- * Retention over Postgres: nothing is released while anything can still bring the document
- * back. A Work's view is kept for every Work that can come back (open, archived, deleted and
- * restorable), so an archived Work's drafted create, an archived Work's pending fork of a trashed
- * document and a restorable deleted Work's drafted create all outlive the purge windows, and
- * discarding a draft's tree records whole (a Work's purge) ends a drafted create's hold.
- */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -79,7 +72,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     )[0];
   const document = async (id: string) =>
     (await db.select().from(documents).where(eq(documents.id, id)))[0];
-  /** A list change that has nothing to do with the Work: it replays every kept view. */
   const unrelatedChange = async () => {
     await seed.document(SOURCE, `other-${randomUUID()}.md`);
   };
@@ -109,7 +101,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
 
   it("keeps a trashed document an archived Work still has a pending fork of", async () => {
     const id = (await seed.document(SOURCE, "live.md")) as DocumentId;
-    // The Work's draft has a pending fork of the document.
     await db.insert(documentForks).values({ draftId, documentId: id, pending: true });
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
     await treeLists.submit({
@@ -138,8 +129,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     expect(await trash.purge()).toBe(0);
     expect((await document(id))?.contentPurgedAt).toBeNull();
 
-    // The Work is purged for good: its draft is discarded whole, its view's rows go, and the
-    // document is in no view until the window passes.
     await runInDrizzleTransaction(db, () =>
       discardTreeRecords(db, { treeLists }, { draftId, userId: USER, commandId: randomUUID() }),
     );

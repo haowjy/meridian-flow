@@ -1,4 +1,3 @@
-/** QueryClient-scoped normalized authority for Project-chat favorite state. */
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useSyncExternalStore } from "react";
@@ -275,8 +274,6 @@ async function advance(
   }
 
   syncChatFeeds(client, projectId, threadId);
-  // Rows already show the settled value in place; only Favorites membership
-  // can have changed, so only Favorites feeds refetch.
   void client.invalidateQueries({
     queryKey: projectQueryKeys.chatFeedFilter(projectId, { favorite: true }),
   });

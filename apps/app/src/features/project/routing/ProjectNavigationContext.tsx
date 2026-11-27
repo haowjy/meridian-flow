@@ -1,4 +1,3 @@
-/** Route-owned command channel for project destination commands. */
 import { createContext, type ReactNode, useContext } from "react";
 import type { OpenDocument } from "@/client/stores";
 import type { ReviewTarget } from "./project-address";
@@ -7,20 +6,13 @@ import type { ContextRouteRequest, ProjectRouteCommands } from "./project-route"
 
 export type OpenContextOptions = {
   replace?: boolean;
-  /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   document?: OpenDocument;
-  /** Live lacks the document: its draft created it, or live deleted it while the draft keeps it. */
   draftOnly?: boolean;
-  /** The destination is a document the writer just made: its editor takes the caret once live. */
   focus?: true;
-  /** Runs only once the navigation committed. */
   afterCommit?: () => void;
-  /** The draft the page shows; its key names the draft. Omission opens Live. */
   itemKey?: string;
-  /** Review changes on, against this; omission opens the plain draft. */
   review?: ReviewTarget;
-  /** The change in focus in Review changes. */
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
@@ -31,7 +23,6 @@ export type OpenContextRoute = (
   options?: OpenContextOptions,
 ) => Promise<NavigationSettlement>;
 
-/** Main's deleted document: the one the address names, and the command that shows one. */
 export type TrashNavigation = {
   shown: string | undefined;
   open: (documentId: string, options?: { replace?: boolean }) => Promise<unknown>;
@@ -86,7 +77,6 @@ export function useTrashNavigation(): TrashNavigation {
   return trash;
 }
 
-/** The route's own commands (Recently opened), for a control outside main's header. */
 export function useProjectRouteCommands(): ProjectRouteCommands {
   const commands = useContext(ProjectNavigationContext)?.routeCommands;
   if (!commands) throw new Error("Project route commands are required");

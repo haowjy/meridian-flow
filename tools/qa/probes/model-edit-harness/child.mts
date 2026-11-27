@@ -1,21 +1,3 @@
-/**
- * One composed server process for the model-edit crash probes: the production ports and services
- * over the scratch database, a mock model, and the test hook points. The parent drives it with
- * JSON lines on stdin and reads JSON lines from stdout (`harness.mts` has both ends).
- *
- *   {op:"script", script}            queue scripted model replies
- *   {op:"arm", point, action, nth?}  "kill": SIGKILL on the nth arrival; "hold": wait for release
- *   {op:"release", point}
- *   {op:"send", threadId, userId, text, disallowedTools?}   admit a message, as the chat route does
- *   {op:"sweep"}                     the recovery lanes once: wake scan, orphan repair
- *   {op:"reverse", threadId, userId, turnId, commandId, direction}   a chat card's Undo or Redo, as the route sends it
- *   {op:"resolve", threadId, responseId, toolCallId, accountId, projectId}   settle a model call's key, as recovery does
- *   {op:"timeout", tool, ms}        shorten a tool's registered timeout, for the timeout cases
- *   {op:"exit"}
- *
- * Output: {event:"ready"} once composed, {event:"at", point} on each armed point, {id, ok, ...}
- * answering each op that carries an `id`.
- */
 import { createInterface } from "node:readline";
 import { createDb } from "@meridian/database";
 import { NoopEventSink } from "../../../../apps/server/server/domains/observability/index.ts";
@@ -31,7 +13,6 @@ import {
 
 const emit = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
 
-/** With `CHILD_EVENTS=1`, warnings and errors go to stderr: why a run failed. */
 class StderrEventSink extends NoopEventSink {
   override emit(event: { level?: string; source?: string; name?: string; payload?: unknown }) {
     if (process.env.CHILD_EVENTS && (event.level === "warn" || event.level === "error"))

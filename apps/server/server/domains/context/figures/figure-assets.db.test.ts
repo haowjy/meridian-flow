@@ -1,7 +1,3 @@
-import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
-
-/** Postgres-backed coverage for independent figure asset identity. */
-
 import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -14,6 +10,7 @@ import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";

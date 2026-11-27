@@ -382,7 +382,6 @@ it("a tab with no surface claims only after it is attended and the chat is still
   expect(f.waiting).toHaveLength(1);
   expect(f.records()).toHaveLength(1);
   expect(f.source.initialDraft).not.toBeNull();
-  // Undone before the tab was looked at: nothing moves.
   f.verdict("present");
   f.waiting[0]?.();
   await new Promise((resolve) => setTimeout(resolve));
@@ -436,7 +435,6 @@ it("Undo of an own delete moves the words back, unless New chat was typed in sin
   restoreOwnDeletedChatWords("owner", "chat", g.ports.draft);
   expect(g.target.notices).toHaveLength(1);
   expect(g.source.initialDraft).toBeNull();
-  // A failed Undo moves again: nothing is left to move, so New chat is not doubled.
   const kept = g.target.initialDraft;
   await cleanDeletedChat("owner", "chat", "project", "own-delete", g.ports);
   expect(g.target.initialDraft).toEqual(kept);

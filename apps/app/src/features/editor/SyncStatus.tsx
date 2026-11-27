@@ -1,28 +1,3 @@
-/**
- * SyncStatus — collaboration sync indicator pill for the document editor.
- *
- * Subscribes to a `DocumentSession` snapshot and renders at most one localized
- * label, derived from the session's status semantics (see
- * `core/editor/document-session.ts`). `synced` only means the connection is up
- * and its handshake is done, not that the server has the latest edits, so the
- * pill says nothing in healthy use:
- *   - `destroyed`   → "Closed" (session torn down); always wins
- *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial); always wins,
- *     except for a removed document (4208), which says nothing: the tab closes on its own
- *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
- *     It begins when the status is `offline`, and ends at once
- *     when the session says its unsent edits can't be delivered
- *     (`canDeliverUnsentEdits()`: the room ended, or it was admitted read-only,
- *     as for an archived Work, whose notice says so beside it). It stays through
- *     the reconnect until the server has acknowledged every local change
- *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
- *     changes saved)" for a few seconds and hides.
- *   - otherwise nothing: `detached` alone is not an outage (a healthy cold load
- *     spends about a second there), so there is no timer and a first load never
- *     shows a label.
- * Pure presentational leaf; owns only the pill chrome, its subscription, and
- * the confirmation timer.
- */
 import { Trans } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
 
@@ -30,7 +5,6 @@ import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/doc
 
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 
-/** idle: never offline (or confirmation done); awaiting: offline seen, server not yet caught up. */
 type OutagePhase = "idle" | "awaiting" | "confirmed";
 
 /**
@@ -56,14 +30,12 @@ function nextPhase(
   return snapshot.serverHasLocalChanges ? "confirmed" : "idle";
 }
 
-/** Everything derived from one session's history; never carried to another session. */
 type Tracked = {
   session: DocumentSession;
   snapshot: DocumentSessionSnapshot;
   phase: OutagePhase;
 };
 
-/** A session already offline or stalled when the pill mounts shows its label on the first render. */
 function trackSession(session: DocumentSession): Tracked {
   const snapshot = session.getSnapshot();
   return { session, snapshot, phase: nextPhase("idle", snapshot, session.canDeliverUnsentEdits()) };
@@ -108,9 +80,6 @@ export function SyncStatus({ session }: { session: DocumentSession }) {
     return () => clearTimeout(timer);
   }, [phase, session]);
 
-  // Autosync is assumed, so the healthy and transient states say nothing:
-  // "no news is good news." Terminal states win over any outage phase. Rendered
-  // inside the editor's status pill (SessionEditor). A removed room says nothing.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";

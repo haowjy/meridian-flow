@@ -17,11 +17,6 @@ const NONE: ReadonlySet<BlockId> = new Set();
 
 type MapValues = Readonly<Record<string, unknown>>;
 
-/**
- * A removed block's `order` (design §1, "Removed blocks"), stored as JSON text: the key the block
- * had, and for every text doc under it (itself included) the version the removal read. A doc
- * with no entry was read empty.
- */
 export interface Removal {
   at: string;
   seen: ReadonlyMap<DocKey, DocVersion>;
@@ -41,7 +36,6 @@ type StoredRemoval = {
   seen?: Record<DocKey, Record<PeerId, number>>;
 };
 
-/** The record an `order` value holds, or null: a key, or a removal written without one. */
 export function removalOf(value: unknown): Removal | null {
   if (typeof value !== "string" || isOrderKey(value)) return null;
   let parsed: StoredRemoval;
@@ -69,25 +63,12 @@ export const encodeRemoval = ({ at, seen }: Removal): string =>
     seen: Object.fromEntries([...seen].map(([key, version]) => [key, Object.fromEntries(version)])),
   });
 
-/**
- * What the show rule reads of a structure: whether a block has a place in the order (a key, or a
- * kept block's record), its parent as stored (null: the document; undefined: none) and its node.
- */
 interface ShowInput {
   placed(id: BlockId): boolean;
   parent(id: BlockId): BlockId | null | undefined;
   node(id: BlockId): string | undefined;
 }
 
-/**
- * The one rule for which of the blocks `ids` show (design §1). A cycle (concurrent moves of a cell
- * and a `jsx_container`) reads with its smallest id as a child of the document, on every peer
- * alike. A block shows when it has a place in the order, its node is known, and its parent is the
- * document or a shown block; then a required container that cannot be filled (a table, a row)
- * with no shown child it accepts goes, which may empty its own parent, until nothing changes. No
- * text doc decides it. Returns the parents as read (the cycle rule applied) and the blocks that
- * show.
- */
 function showRule(
   shape: ShapeSchema,
   ids: readonly BlockId[],
@@ -177,7 +158,6 @@ export class StructureView {
   private readonly orders = new Map<BlockId, string>();
   private below: Map<BlockId, BlockId[]> | undefined;
   readonly shown: ReadonlySet<BlockId>;
-  /** Every block id the structure names, shown or not. */
   readonly ids: readonly BlockId[];
 
   constructor(
@@ -239,23 +219,19 @@ export class StructureView {
       );
   }
 
-  /** The value a reader sees: a draft's override where it has one, else Live's. */
   value(name: StructureMap, key: string): unknown {
     const override = this.override(name, key);
     return override === undefined ? this.base[name][key] : override;
   }
 
-  /** Live's value, under any override. */
   baseValue(name: StructureMap, key: string): unknown {
     return this.base[name][key];
   }
 
-  /** The draft's override, if it has one. */
   override(name: StructureMap, key: string): unknown {
     return this.overrides?.[name][key];
   }
 
-  /** The keys the draft holds overrides for. */
   overrideKeys(name: StructureMap): string[] {
     return Object.keys(this.overrides?.[name] ?? {});
   }
@@ -265,19 +241,16 @@ export class StructureView {
     return typeof node === "string" ? node : undefined;
   }
 
-  /** The key a reader sorts by: the stored one, a kept block's old one; null when removed. */
   order(id: BlockId): string | null | undefined {
     const order = this.orders.get(id);
     if (order !== undefined) return order;
     return this.value("order", id) === undefined ? undefined : null;
   }
 
-  /** The removal stored for `id`, if its `order` holds one. */
   removal(id: BlockId): Removal | null {
     return removalOf(this.value("order", id));
   }
 
-  /** Every text doc key under `id` (itself included), by the parents as read, shown or not. */
   textKeysUnder(id: BlockId): DocKey[] {
     if (!this.below) {
       const below = new Map<BlockId, BlockId[]>();
@@ -303,12 +276,10 @@ export class StructureView {
     return this.attrIndex.get(id) ?? {};
   }
 
-  /** The parent as read, after the cycle rule: null is the document, undefined a missing key. */
   parent(id: BlockId): BlockId | null | undefined {
     return this.parentOf.get(id);
   }
 
-  /** The shown children of `parent` (null: the document), in order. */
   children(parent: BlockId | null): readonly BlockId[] {
     return this.childrenOf.get(parent) ?? [];
   }

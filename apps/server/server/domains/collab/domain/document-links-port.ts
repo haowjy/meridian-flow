@@ -1,9 +1,3 @@
-/**
- * The server's `DocumentLinksPort` for agent-edit's core: the core names a document and its write
- * context, and this turns them into a holder in the context's view (Live, or the Draft chat's
- * draft, whose tree its links spell in) over the operation's document-link scope (contract
- * §4.3–4.4).
- */
 import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { parseLinkRef } from "@meridian/contracts";
 import { cutRevision } from "./document-revision.js";
@@ -41,10 +35,6 @@ export function createScopedDocumentLinks(input: {
   };
 }
 
-/**
- * The registry rows for minted ahead refs: each under the project its holder scope had,
- * and in the draft its holder was minted in (B7), so the draft's occupant settles it there.
- */
 export function aheadRegistrations(mints: readonly AheadMint[]) {
   return mints.map((mint) => {
     const parsed = parseLinkRef(mint.ref);

@@ -1,9 +1,5 @@
 const PRESS_SLOP_PX = 4;
 
-/**
- * Whether a pointer has travelled far enough from its press to be a drag.
- * Straight-line distance, so every press follower agrees on one measure.
- */
 export function pastSlop(dx: number, dy: number): boolean {
   return Math.hypot(dx, dy) >= PRESS_SLOP_PX;
 }
@@ -16,11 +12,9 @@ type PressHost = {
    * Returns the handler for every move from `at` on.
    */
   lift(at: MouseEvent): (event: MouseEvent) => void;
-  /** Tracking is over, once: released without a lift (`click`) or after one (`drop`), or lost or stopped (`cancel`, `at` null). */
   end(how: "click" | "drop" | "cancel", at: MouseEvent | null): void;
 };
 
-/** What the tracker reads of the press: a DOM `mousedown` or `pointerdown`, or React's `pointerdown`. */
 export type PressStart = Pick<MouseEvent, "type" | "clientX" | "clientY"> & { pointerId?: number };
 
 /**

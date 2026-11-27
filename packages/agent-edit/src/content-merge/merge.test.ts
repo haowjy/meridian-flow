@@ -29,7 +29,6 @@ import { contentMerge } from "./merge.js";
 
 const schema = buildDocumentSchema();
 
-/** Idempotence and the degenerate cases every merge must get exactly right. */
 function metaChecks(B: PMNode[], L: PMNode[], D: PMNode[], M: readonly PMNode[]): string[] {
   const out: string[] = [];
   const again = contentMerge(schema, L, L, [...M]);
@@ -45,7 +44,6 @@ function metaChecks(B: PMNode[], L: PMNode[], D: PMNode[], M: readonly PMNode[])
   return out;
 }
 
-/** A side moved a paragraph and rewrote most of it: by content a deletion plus a new paragraph (spec section 9). */
 function rewrittenMove(sc: Scenario): boolean {
   const base = toPM(schema, sc.base);
   for (const [script, doc] of [
@@ -63,7 +61,6 @@ function rewrittenMove(sc: Scenario): boolean {
   return false;
 }
 
-/** Text-level failures: a word lost, invented, duplicated or brought back. The rest is placement. */
 const isSafety = (f: string) =>
   !/^(order|blocks|block type|em on|strong on|conflict on blocks)/.test(f);
 
@@ -111,8 +108,6 @@ describe("contentMerge", () => {
     expect(result.orderConflict).toBe(false);
   });
 
-  // Live cut " and the moon was bright", the writer undid the cut, and the draft's replacement of
-  // `bright` by `dim` kept its own copy of the cut words: two versions of one text at one point.
   it("keeps the draft's version of words live restored, without both copies", () => {
     const [base, live, draft] = [
       "p#a:The river was cold.",
@@ -148,9 +143,6 @@ describe("contentMerge", () => {
     ).toEqual([]);
   });
 
-  // Risk: a concurrent edit script drops, invents, duplicates or resurrects a word, or breaks
-  // idempotence, identical-change collapse or the degenerate cases. Placement misses outside the
-  // spec's envelope (section 9) are excluded; safety failures inside it are not allowed.
   it("keeps every word across 200 seeded concurrent edit scripts", () => {
     const suites: GenOptions[] = [
       {},

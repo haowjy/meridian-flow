@@ -1,14 +1,3 @@
-/**
- * One list of rows is one selection, one route for rows dropped on it and one
- * drop scope. The sidebar is one list over the project's areas, User and the
- * picked Work's Scratch, a chat's Scratch one over the current and Earlier
- * notes, and a Work's Files one over its Scratch.
- * Shells declare the trees they show; this owns the rest: what a hovered
- * target would do and what a drop does. A list row dropped within one system
- * moves at once; a drop across systems, and any other source (a chip, tab,
- * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
- * at the drop point, Move or Copy (see `drop-choice.ts`).
- */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type TrashEntry, useTrashRows } from "@/client/query/useDocumentTrash";
@@ -53,7 +42,6 @@ import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "
 type EntryListController = {
   selection: EntrySelection;
   route: EntriesRoute;
-  /** The menu a drop across systems waits on; null while none does. */
   choice: DropChoiceState | null;
 };
 
@@ -62,7 +50,6 @@ export function useEntryList({
   areas,
 }: {
   projectId: string;
-  /** Every tree this list shows; a target names its tree by root ID. */
   areas: readonly MoveArea[];
 }): EntryListController {
   const actions = useEntryActions(projectId);
@@ -99,7 +86,6 @@ export function useEntryList({
       const view = latest.current;
       return { drag, resolved: resolveDrop(view, drag, target) };
     };
-    // Trash rows the drag carries, as Trash lists them now; a row Trash no longer lists is gone.
     const trashed = (drag: NonNullable<ReturnType<typeof activeDragSession>>) => {
       const listed = latest.current.trashRows ?? [];
       const entries = drag.entries.flatMap(({ ref }) => {
@@ -120,7 +106,6 @@ export function useEntryList({
       if (!drop || !resolved) return null;
       if (resolved.unavailable.length > 0) return { kind: "refuse", label: noLongerThere() };
       if (resolved.insideItself) return { kind: "refuse", label: insideItself() };
-      // A drop that asks offers what the menu would; the hint is the first thing it offers.
       if (resolved.asks) {
         const first = dropChoices(resolved, target).items.find((item) => item.enabled);
         if (!first) return null;
@@ -203,7 +188,6 @@ export function useEntryList({
   return useMemo(() => ({ selection, route, choice }), [selection, route, choice]);
 }
 
-/** Gives a list's rows and targets its selection and drop scope. */
 export function EntryList({
   list,
   files,

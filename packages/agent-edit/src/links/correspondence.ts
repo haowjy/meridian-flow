@@ -1,49 +1,28 @@
-// Pure link identity correspondence over host-provided address and observation evidence.
 import { type CandidateRow, matchOccurrences } from "./correspondence-matching.js";
 
-/** One showing of a link to the model in this holder document (host-only evidence). */
 export interface ShownLink {
   ref: string;
-  /**
-   * Canonical absolute address shown, without suffix (the speller's key space).
-   * Empty for a picture shown as an empty destination: an empty written source
-   * then continues it in pass 1, but no showing at no address claims one in pass 2.
-   */
   address: string;
-  /** The holder's URI when it was shown; written relative hrefs normalize against it. */
   holderUri: string;
-  /** Observation order; larger is more recent. */
   at: number;
 }
 export interface OldOccurrence {
-  /** Plain text of the linked run, in the replaced span, in document order. */
   label: string;
-  /**
-   * Null for an identity-free occupant (a literal empty picture): it matches only
-   * the written spelling it has now, so it keeps its place among empty sources.
-   */
   ref: string | null;
-  /** Kind-aware correspondence key for the canonical address it spells now. */
   current: string;
-  /** Its target resolves live now (resolution rules 1 and 3). */
   live: boolean;
 }
 export interface WrittenLink {
   label: string;
-  /** Destination as written, suffix stripped (relative or full). */
   href: string;
 }
 export interface CorrespondenceInput {
   old: readonly OldOccurrence[];
   written: readonly WrittenLink[];
   shown: readonly ShownLink[];
-  /** The holder's current URI (null: none), for compatibility with current spellings. */
   holderUri: string | null;
-  /** Written href → canonical absolute address in the same key space, or null if not internal. */
   normalize(href: string, holderUri: string | null): string | null;
-  /** A shown identity and address → the same kind-aware key space. */
   showingKey?(ref: string, address: string): string;
-  /** Current liveness of a shown ref at the address it was shown, for pass 2 ties. */
   isLive(ref: string, address: string): boolean;
 }
 export type LinkMatch = { pass: 1; occurrence: number } | { pass: 2; ref: string } | { pass: 3 };
@@ -70,7 +49,6 @@ function showingOrder(a: ShownLink, b: ShownLink) {
   return a.holderUri < b.holderUri ? -1 : a.holderUri > b.holderUri ? 1 : 0;
 }
 
-/** Passes 1 and 2 of ref assignment; classification and fresh resolution remain the caller's. */
 export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
   const showingKey = input.showingKey ?? ((_ref: string, address: string) => address);
   const history = new Map<string, ShownLink[]>();

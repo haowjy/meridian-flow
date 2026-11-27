@@ -1,4 +1,3 @@
-/** Drizzle store for what is pending review in a Work: counts, the drafts changing a document and evidence. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { drafts, threads, works } from "@meridian/database/schema";
@@ -8,11 +7,6 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { pendingDocuments, pendingFolders } from "../../context/tree/pending-documents.js";
 import type { WorkDraftPendingStore } from "../domain/ports/work-draft-pending-store.js";
 
-/**
- * What is pending in a Work is the one reviewable-pending predicate
- * (`context/tree/pending-documents.ts`), the review list's too: the Work count (with the folders it changes) and the document hint both
- * count by it, and the Works boundary reconciles each Work's stored count through it.
- */
 export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
   return {
     async countPendingByOwners({ workIds, rootThreadIds }) {
@@ -22,7 +16,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           list.map((id) => sql`${id}::uuid`),
           sql`, `,
         );
-      // The drafts these owners name.
       const named = sql.join(
         [
           workIds.length
@@ -35,7 +28,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         ].filter((clause) => clause !== null),
         sql` UNION `,
       );
-      // One row per draft: its documents and its folders changed, whichever arm made each pending.
       const rows = await currentDrizzleDb(db).execute<{
         draft_id: string;
         project_id: string;
@@ -78,9 +70,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
     async listDraftsChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
       const inProject = sql`SELECT b.id FROM drafts b WHERE b.project_id = ${projectId}::uuid`;
-      // The same membership as the counts, narrowed to one document. Archived Works and
-      // lineages with no live member stay (their drafts remain reviewable); deleted Works and
-      // drafts nothing names are out, since the review address needs a live owner's label.
       const lineageRoot = alias(threads, "lineage_root");
       const rows = await tx
         .select({
@@ -120,8 +109,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         : documentIds
           ? sql`AND false`
           : sql``;
-      // The chats are those whose writes landed in this fork (their receipts name it), read from
-      // rows: the list loads no room.
       const rows = await currentDrizzleDb(db).execute<{
         document_id: string;
         checked_at: Date | string;

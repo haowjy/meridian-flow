@@ -1,7 +1,3 @@
-/**
- * The model's reads: at the grant's destination (Live, or the chat's draft fork), or Live for a
- * `version: "live"` read.
- */
 import type { ReadCommand, WriteOutcome } from "@meridian/agent-edit/integration";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { FileDestination } from "../../file-policy/index.js";
@@ -18,8 +14,6 @@ export function createAgentEditRouter(input: { core: AgentEditCore }): AgentEdit
     async read(command, routed) {
       const { grant, liveVersion, ...context } = routed;
       const destination: FileDestination = liveVersion ? { kind: "live" } : grant.destination;
-      // A move out of a never-drafted source (Scratch) shows live text at a path only the Work's
-      // draft has; the grant's facts say so, so the label needs no lookup.
       const parsed = parseUnifiedContextUri(command.file);
       const draftedPath =
         !liveVersion &&

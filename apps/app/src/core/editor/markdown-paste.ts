@@ -37,35 +37,15 @@ import type { PluggableList } from "unified";
 
 import { clipboardLinkScope } from "./links";
 
-/**
- * Does this parse carry anything plain-text paste would have thrown away?
- *
- * Anything that is not a bare paragraph does: headings, lists, quotes, fences,
- * tables, dividers. So does a paragraph holding a mark or a non-text inline
- * node, because a link, an emphasis or an image is the structure those literal
- * characters were spelling.
- *
- * What deliberately does not: paragraphs of plain text, however many. That is
- * the false-positive guard. A soft-wrapped line, a `#` inside a sentence, an
- * asterisk used as punctuation — each parses to plain paragraphs, so the codec
- * and the default paste agree and the default wins.
- */
 export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
   return blocks.some((block) => !isBodyText(block) || carriesInlineStructure(block));
 }
 
-/**
- * Parsing is pure syntax: every link comes out unbound. The editor's
- * `transformPasted` binds them, and every picture source, for every paste,
- * text or HTML (`links/link-clipboard.ts`).
- */
 export function markdownClipboardParser(
   schema?: Schema,
-  /** Parse extensions other editor extensions contribute, read per paste. */
   remarkPlugins: () => PluggableList = () => [],
 ): NonNullable<EditorProps["clipboardTextParser"]> {
   return (text, $context, plain, view) => {
-    // Paste-without-formatting asked for the characters, and gets them.
     if (plain) return defaultPlainTextPaste();
 
     let blocks: readonly PMNode[];
@@ -81,8 +61,6 @@ export function markdownClipboardParser(
     const meaningful = blocks.filter(isMeaningfulBlock);
     if (!markdownPasteAddsStructure(meaningful)) return defaultPlainTextPaste();
 
-    // One paragraph is inline content wherever the caret is: a bolded phrase
-    // pasted mid-sentence must join the sentence, not break it in two.
     const only = meaningful.length === 1 ? meaningful[0] : undefined;
     if (only && isBodyText(only)) return new Slice(Fragment.from(only), 1, 1);
 
@@ -92,7 +70,6 @@ export function markdownClipboardParser(
   };
 }
 
-/** A link, an emphasis, an image: structure the literal characters spelled. */
 function carriesInlineStructure(block: PMNode): boolean {
   let found = false;
   block.descendants((node) => {
@@ -107,13 +84,6 @@ function isMeaningfulBlock(block: PMNode): boolean {
   return !(isBodyText(block) && block.childCount === 0);
 }
 
-// Block structure cannot live inside a code fence — its content is the literal
-// characters — so a paste landing in one declines and lets ProseMirror's
-// default plain-text handling run. ProseMirror already keeps clipboard text
-// literal inside a code block, but the rule is ours, so it is stated here
-// rather than inherited. Table cells deliberately do not decline: a cell holds
-// any block, so it takes structured paste exactly like prose (a fence inside a
-// cell still refuses, because the rule is the fence's).
 function canHostBlocks($context: ResolvedPos): boolean {
   for (let depth = $context.depth; depth >= 0; depth -= 1) {
     if ($context.node(depth).type.spec.code) return false;
@@ -127,12 +97,6 @@ function defaultPlainTextPaste(): Slice {
   return undefined as unknown as Slice;
 }
 
-/**
- * Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor
- * structure. Internal links go out as full current addresses, so the text
- * means the same thing wherever it lands, holder or not. Pasted back, the
- * editor's paste door binds them fresh (`links/link-clipboard.ts`).
- */
 export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
   copied,
   view,
@@ -162,6 +126,5 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
   } catch {
     entries = mdxCodec({ schema }).serializeBlocks(blocks, links);
   }
-  // Joined by the document's own gaps, so tight items stay tight.
   return entries.map((entry) => entry.gap + entry.body).join("");
 };

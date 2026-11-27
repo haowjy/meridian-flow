@@ -1,4 +1,3 @@
-/** Infinite, filtered project chat feed with favorite state projected onto its rows. */
 import {
   infiniteQueryOptions,
   keepPreviousData,
@@ -37,9 +36,6 @@ export function projectChatFeedQueryOptions(
       );
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    // Keep the previous filter/search results on screen while the next
-    // settles, so switching Favorites or a settled search term never drops
-    // back to the skeleton after the first real load.
     placeholderData: keepPreviousData,
     retry: false,
   });
@@ -55,10 +51,7 @@ export function useProjectChatFeed(
   const query = useInfiniteQuery(
     projectChatFeedQueryOptions(client, projectId, favorite, search, workId),
   );
-  // Stable across renders that don't change `query.data`, so a keystroke
-  // elsewhere in the tree does not invalidate every row's memo.
   const items = useMemo(
-    // An unfavorited row leaves Favorites at once, before the refetch confirms.
     () => flattenChatFeed(query.data).filter((item) => !favorite || item.isFavorite),
     [query.data, favorite],
   );

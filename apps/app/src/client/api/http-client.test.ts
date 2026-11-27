@@ -1,4 +1,3 @@
-/** HTTP failures keep their response headers, and `Retry-After` reads in either form. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isMeridianApiError, postJson, retryAfterMs } from "./http-client";
 

@@ -1,8 +1,3 @@
-/**
- * SideHeader — the band above the side view: the picker naming what it shows, and Swap with main. The
- * side's page sits below it, inset from main's. The side's own toggle is the shell's corner button;
- * the spacer holds its place.
- */
 import { t } from "@lingui/core/macro";
 import { ArrowLeftRight, MessageSquare } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -21,10 +16,6 @@ import { SidePicker } from "./SidePicker";
 import { useNewChatAbout, useSideItem } from "./SideView";
 import type { SideFailure } from "./side-item";
 
-/**
- * The side's chat's name: its title, or for a new chat what its composer will attach: main's
- * document while the composer follows it, else the chip the writer kept.
- */
 export function useSideChatName(projectId: string, chatId: string | null): string {
   const title = useChatTitle(projectId, chatId);
   const about = useNewChatAbout().about;
@@ -44,22 +35,18 @@ function SideBand({
   onOpenInMain,
 }: {
   projectId: string;
-  /** Null while the side shows nothing. */
   name: string | null;
   icon: ReactNode;
   actions?: ReactNode;
   onOpenInMain?: () => void;
 }) {
   const side = useSideItem();
-  // The failure object lives as long as that failure, so a dismissal holds until a new one.
   const [dismissed, setDismissed] = useState<SideFailure | null>(null);
   const failed = side.failed !== dismissed ? side.failed : null;
   return (
     <PaneHeader
       title={<SidePicker projectId={projectId} name={name} icon={icon} />}
       actions={
-        // The corner toggle always floats over this band, open or closed: its spacer is the
-        // side's own, not PaneHeader's closed-rail one.
         <div className="flex items-center gap-0.5">
           {actions}
           {onOpenInMain ? (
@@ -132,7 +119,6 @@ export function SideChatHeader({
   );
 }
 
-/** The side with nothing to show: a document's lookup is out, or no document has been opened. */
 export function SideEmptyHeader({ projectId }: { projectId: string }) {
   const side = useSideItem();
   return (

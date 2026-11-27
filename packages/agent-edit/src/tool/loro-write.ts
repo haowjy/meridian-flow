@@ -1,6 +1,3 @@
-// The model's `read` and `write` on Loro (design §5): read the room fresh, plan on a view at the
-// frontiers the model read, lower with `applyOps`, save the view's update as one batch with its
-// record, and record what the result showed.
 import {
   decodeEnvelope,
   editSince,
@@ -76,19 +73,12 @@ import {
 
 export interface LoroEditCoreOptions {
   rooms: AgentEditRooms;
-  /** Mints the `e<N>` handle of each write. */
   ordinals: WriteOrdinals;
   schema: Schema;
-  /** Parses purely; each command takes its codec for its prepared holder scope. */
   codec: AgentEditCodecFactory;
-  /** A document's own codec where it is not `codec`: a code document's text is not Markdown. */
   codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
   links: DocumentLinksPort;
   documentEdits?: LoroDocumentEdits;
-  /**
-   * The chat a commit by a turn (`CommitAuthor`) names, as the model reads it (`agent (c15)`); null for a
-   * turn the host can't trace. Absent: every turn but the reader's own is `another agent`.
-   */
   authorOfTurn?(turnId: string): Promise<string | null>;
   defaultSessionId?: string;
   defaultThreadId?: string;
@@ -191,7 +181,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     return session;
   }
 
-  /** The call's room copy, freed when `use` settles; a missing document answers its result. */
   async function withRoom(
     documentId: string,
     commandName: DocumentCommandName,
@@ -326,15 +315,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     };
   }
 
-  /**
-   * The document a write plans on: a view of the room at the frontiers the model last read the
-   * document at (in any of its rooms: `latestRead`) plus the reply's own writes since
-   * (`RoomDocs.at`), or the room copy itself when no read was recorded (a utility write, or a write
-   * to a document the model never read), or an empty view for a document this reply created.
-   * `uncomparable` when the model read the document but this room can't check that read out (below
-   * the history cutoff, or a draft's read of text Live doesn't hold): a replace then plans on the
-   * transcript. The caller frees `view`.
-   */
   async function planningDoc(
     read: AgentRoomRead,
     copy: LoroDocument,
@@ -446,7 +426,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
               }
             : {}),
         });
-        // The document began empty for the model: its later writes in this reply plan from that.
         if (!existing && result.status === "success")
           context.frontiers?.reply?.noteCreated(address.documentId);
         return result;
@@ -544,8 +523,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
               ? resolved.error.details.documentBlocks
               : undefined,
           );
-          // A hash or number the view does not hold: the answer shows the document, and the next
-          // write plans on it.
           return resolved.error.code === "not_found"
             ? withCurrentText(failed, read, copy, commandLinks, address, context)
             : failed;
@@ -600,14 +577,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
 
   type Plan = { edits: readonly ResolvedEdit[] } | { blocks: readonly Block[] };
 
-  /**
-   * A whole-document replace's content that writes the model's command as a merge with what it
-   * read, when its frontiers are below the history cutoff (design §5): base is each block as a
-   * result last showed it in full (else the room's), ours is the command applied to base, theirs
-   * is the room. Without it an old chat's write would bring back text the writer deleted since.
-   * Null when no shown block matches the room, a body doesn't parse as one block, or the command
-   * doesn't resolve on the read.
-   */
   function transcriptMerge(
     copy: LoroDocument,
     shown: readonly ShownBlock[],
@@ -658,15 +627,12 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     return schema.nodeFromJSON({ ...json, attrs: { ...json.attrs, id } });
   }
 
-  /** One write landing: applied on its plan doc, exported as one batch, saved with its record. */
   async function finish(edit: {
     command: WriteCommand;
     session: ActorSession;
     context: WriteContext;
     read: AgentRoomRead;
-    /** The call's room copy: the echo, the delta and the recorded frontier read it. */
     copy: LoroDocument;
-    /** What the write plans and applies on: the model's view, or the room copy itself. */
     planDoc: LoroDocument;
     assigner: WriteLinkAssigner;
     links: CommandLinks;
@@ -700,7 +666,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     const planned = snapshotProjected(model.projectBlocks(toLoroHandle(planDoc)), edit.links.codec);
     const textBefore = blocksOf(copy);
     const since = read.docs.shownVersion();
-    // Who the concurrent-change report names (design §5): none is the writer.
     planDoc.write = actor.kind === "agent" ? { by: { turn: actor.turnId } } : {};
     let changed: string[] = [];
     let deleted: string[] = [];
@@ -802,10 +767,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     }));
   }
 
-  /**
-   * `result` with the document as the room holds it now, recorded as the model's latest view: an
-   * answer about a view that lost what it named carries the text the next write plans on.
-   */
   function withCurrentText(
     result: InternalWriteResult,
     read: AgentRoomRead,
@@ -830,7 +791,6 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     });
   }
 
-  /** An edit naming a block the room no longer shows; an insert after a removed block is new words. */
   function missingTarget(edits: readonly ResolvedEdit[], current: LoroDocument): boolean {
     return edits.some((edit) => {
       if (edit.kind === "insert" || !edit.block) return false;

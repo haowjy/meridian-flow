@@ -1,5 +1,3 @@
-/** Maps the reserved Layout wire wrapper to layout attrs on ordinary block nodes. */
-
 import type { Node as PMNode } from "prosemirror-model";
 
 import { builtInComponents } from "../../components.js";
@@ -19,7 +17,6 @@ type LayoutAlign = "center" | "right";
 
 export function createLayoutCodec(): BlockCodec<MdastJsxFlow> {
   return {
-    // Layout is a wire-only wrapper, so this name is intentionally not a schema node.
     name: "layout",
 
     serialize() {
@@ -127,7 +124,6 @@ function parseWidths(value: string, columnCount: number): Array<number | null> |
   return widths;
 }
 
-/** A cell's colspan, defaulting the way the schema does. */
 function colspanOf(cell: PMNode): number {
   const value = cell.attrs.colspan;
   return typeof value === "number" && value > 0 ? value : 1;
@@ -138,20 +134,10 @@ function rowspanOf(cell: PMNode): number {
   return typeof value === "number" && value > 0 ? value : 1;
 }
 
-/**
- * Walk the table's cells with the GRID column each one starts at.
- *
- * `widths` is a per-column list, and a cell's index among its row's children
- * stops being its column the moment anything spans: a colspan covers several
- * columns, and a rowspan from an earlier row pushes every cell after it along.
- * This is the smallest walk that keeps the wire's promise honest without
- * pulling prosemirror-tables into a package that only knows the model.
- */
 function forEachCellWithColumn(
   table: PMNode,
   visit: (cell: PMNode, column: number, rowIndex: number, cellIndex: number) => void,
 ): number {
-  // Rows still owed to a rowspan from above, per grid column.
   const heldBelow: number[] = [];
   let gridWidth = 0;
 
@@ -240,15 +226,6 @@ function widthsFromFirstRow(table: PMNode): string | null {
   return hasWidth ? slots.join(",") : null;
 }
 
-/**
- * `colwidth` is one entry per column the cell covers, and zero means "this
- * column has no width" — the shape prosemirror-tables writes when a resize
- * touches one column of a spanning cell, and the shape the table view reads.
- *
- * The entries are pixel widths, not necessarily whole ones: sizing a spanned
- * column divides the cell's box by its colspan. Serialization rounds them; a
- * shape that cannot describe the cell at all is what throws.
- */
 function validateColwidths(table: PMNode): void {
   table.forEach((row) => {
     row.forEach((cell) => {

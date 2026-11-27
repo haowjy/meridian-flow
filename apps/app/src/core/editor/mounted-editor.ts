@@ -28,14 +28,10 @@ import { markEditorTarget } from "./reading-position-navigation";
 
 type EditorMountBase = {
   documentId: string;
-  /** Stable local binding identity across a pre-authority remint. */
   bindingKey?: string;
-  /** Asset image rendering resolves `asset:` refs against the owning project. */
   projectId?: string;
-  /** The Work the viewer is in; a draft-only picture is signed through it. */
   viewingOwner?: string;
   schemaType: TrackedSchemaType;
-  /** A code document's filetype: the language its fence is painted in. */
   filetype?: Filetype;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
@@ -47,17 +43,11 @@ type EditorMountBase = {
  * remount — and nothing outside this type may cause one.
  */
 export type EditorMountIdentity = EditorMountBase & {
-  /** Not-yet-materialized document kept off server transport. */
   detached: boolean;
 };
 
-/** Values that may change while the same editor keeps running. */
 export type EditorSurfaceOptions = {
   editable: boolean;
-  /**
-   * ProseMirror props: DOM attributes and handlers. Applied live, so a caller
-   * that rebuilds this object pays an extra `view.setProps` — never a remount.
-   */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
   /**
    * Whether this editor may publish the client's caret. A view hidden
@@ -66,7 +56,6 @@ export type EditorSurfaceOptions = {
   publishPresence: boolean;
 };
 
-/** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
   // Only a code file's editor is built from its filetype: a prose rename keeps the editor.
   const filetype = identity.schemaType === "code" ? (identity.filetype ?? "") : "";
@@ -80,7 +69,6 @@ export type MountedEditorInput = {
    * input the session lookup depends on, so it is constant for this mount.
    */
   session: DocumentSession;
-  /** The signed-in writer, published with the caret. Read once at mount. */
   user: EditorUser;
   placeholder: string;
   /**
@@ -180,7 +168,6 @@ export function useMountedEditor({
 
   const [editor, setEditor] = useState<Editor | null>(null);
 
-  // Going to the back takes the caret off the wire, once, on this editor's say.
   useEffect(() => {
     if (!surface.publishPresence) construction.caretGate.retire();
   }, [construction, surface.publishPresence]);

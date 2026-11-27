@@ -648,7 +648,6 @@ describe("write-mode switches in the journal", () => {
   });
   const messageAfter = (seq: number): ChatSubmission => {
     const { creation: _creation, ...rest } = record();
-    // Same millisecond as the switch: only `seq` says which the writer did first.
     return { ...rest, recordId: "record-2", submissionId: "sub-2", seq, createdAt: SWITCH_AT };
   };
 
@@ -656,7 +655,6 @@ describe("write-mode switches in the journal", () => {
     const r = rig();
     const order: string[] = [];
     try {
-      // Storage enumerates the later message first; the switch still goes before it.
       r.records.set("record-2", messageAfter(3));
       r.records.set("switch-1", switchRecord(2));
       const { owner } = r.mount({
@@ -679,7 +677,6 @@ describe("write-mode switches in the journal", () => {
       await owner.drive("thread_1");
       expect(order).toEqual(["switch after 1 message(s)"]);
       expect(r.scenario.appendRequests).toHaveLength(2);
-      // The answer is stamped on the record for every tab to read; it is not posted again.
       expect([...r.records.keys()]).toEqual(["switch-1"]);
       expect(r.records.get("switch-1")?.answer?.runState).toMatchObject({
         version: "0",
@@ -727,7 +724,6 @@ describe("write-mode switches in the journal", () => {
       expect(r.scenario.appendRequests).toHaveLength(1);
       expect(r.records.get("switch-1")?.answer).toBeDefined();
       r.records.delete("switch-1");
-      // Withdraw is the other way out: it never reached the server, so the journal drops it.
       refuse = true;
       r.records.set("switch-1", switchRecord(4));
       r.records.set("record-3", {

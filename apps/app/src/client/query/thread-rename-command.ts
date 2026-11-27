@@ -1,5 +1,3 @@
-/** thread-rename-command — QueryClient-scoped authority for the thread-title P1 command. */
-
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -13,15 +11,10 @@ export type ThreadRenameFailureKind = "rejected" | "ambiguous" | "abandoned";
 export type ThreadRenameFailure = { kind: "rejected" | "ambiguous"; error: Error };
 
 export type ThreadRenameRecord = {
-  /** Last server-confirmed title; the value a rejection reverts to. */
   baseTitle: string | null;
-  /** Latest requested title; the value Retry resubmits. */
   desiredTitle: string | null;
-  /** Revision of the latest submitted intent. */
   revision: number;
-  /** Highest confirmed revision; keeps a stale success from rewinding the base. */
   confirmedRevision: number;
-  /** Number of submitted intents that have not settled. */
   pendingCount: number;
   failure?: ThreadRenameFailure;
 };
@@ -63,7 +56,6 @@ function writeRecord(
   client.setQueryData(recordKey(projectId, threadId), record);
 }
 
-/** Current cached title for a thread, or null when the list has not loaded. */
 export function readCachedThreadTitle(
   client: QueryClient,
   projectId: string,
@@ -73,12 +65,6 @@ export function readCachedThreadTitle(
   return list?.find((thread) => thread.id === threadId)?.title ?? null;
 }
 
-/**
- * Project a title into every cached representation of the thread: the
- * project's thread list (which does not know its own project id, so every
- * mounted project's list is checked) and this project's chat/Work feed rows,
- * patched in place rather than invalidated.
- */
 function projectTitle(
   client: QueryClient,
   projectId: string,
@@ -91,12 +77,10 @@ function projectTitle(
   });
 }
 
-/** The authoritative thread list is the header projection; refetch it fenced. */
 function invalidateThreadList(client: QueryClient, projectId: string): void {
   void client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId), exact: true });
 }
 
-/** A snapshot of every live rename revision for a project. */
 export type ThreadRenameFence = ReadonlyMap<
   string,
   { revision: number; confirmedRevision: number }
@@ -121,7 +105,6 @@ export function captureThreadRenameFence(
   return snapshot;
 }
 
-/** Re-apply the newest known title to a list read whose rename fence moved. */
 export function applyThreadRenameFence(
   client: QueryClient,
   projectId: string,
@@ -155,7 +138,6 @@ export function classifyThreadRenameFailure(error: unknown): ThreadRenameFailure
   return "ambiguous";
 }
 
-/** Project the requested title immediately and stamp the intent's revision. */
 export function beginThreadRename(
   client: QueryClient,
   projectId: string,
@@ -183,7 +165,6 @@ export function beginThreadRename(
   return { projectId, threadId, revision };
 }
 
-/** Settle a confirmed rename. */
 export function confirmThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,
@@ -208,7 +189,6 @@ export function confirmThreadRename(
   return true;
 }
 
-/** Revert the projection to the last confirmed title and surface Retry. */
 export function rejectThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,
@@ -229,7 +209,6 @@ export function rejectThreadRename(
   });
 }
 
-/** Retain the projection for an unknown outcome and refresh the authoritative thread list instead of treating the write as rejected. */
 export function reconcileThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,
@@ -249,10 +228,6 @@ export function reconcileThreadRename(
   }
 }
 
-/**
- * Route teardown for a non-latest abort: drop the intent quietly, no
- * writer-visible refusal, and do not refetch a list the caller is leaving.
- */
 export function abandonThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,
@@ -268,7 +243,6 @@ export function abandonThreadRename(
   });
 }
 
-/** Account replacement drops the whole record and its projection. */
 export function discardThreadRename(
   client: QueryClient,
   projectId: string,

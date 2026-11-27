@@ -1,4 +1,3 @@
-/** Cached text reads used by read-only text and Markdown previews. */
 import { useQuery } from "@tanstack/react-query";
 
 export type TextPreviewSource = { content: string } | { url: string };

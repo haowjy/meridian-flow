@@ -1,5 +1,3 @@
-/** Whole-source Markdown parsing with conservative unfinished-mark repair. */
-
 import type { Node as PMNode } from "prosemirror-model";
 import remend from "remend";
 
@@ -39,7 +37,6 @@ export function parseStreamingDocument(
   return { blocks: candidate.blocks, openCode };
 }
 
-/** The last source character must belong to ordinary prose, not an opaque inline construct. */
 export function repairableTail(block: unknown, sourceLength: number): boolean {
   if (!block || typeof block !== "object") return false;
   const typed = block as { type?: string; children?: unknown[] };

@@ -1,4 +1,3 @@
-/** Drizzle document projection and activity read-model effects. */
 import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, threadDocuments } from "@meridian/database";
 import { and, eq } from "drizzle-orm";

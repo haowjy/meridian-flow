@@ -150,10 +150,8 @@ it("keeps a review address out of the live view and repairs only its review addr
     />,
     async () => {
       await act(async () => {});
-      // A review address never admits the live document.
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
-      // The review's item names its draft, so a copy of the address opens the same draft.
       expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?item=draft-1`);
     },
   );

@@ -33,9 +33,6 @@ export const TableEnterKeymapExtension = Extension.create({
           const release = getEditorChrome(editor)?.registerKeymap({
             id: "enter-cell",
             scope: "table",
-            // The scope says a table is somewhere above; this says the caret is
-            // in a cell's prose rather than on an object or a fence inside it,
-            // which keep Enter's own meanings.
             appliesTo: (context) => context.owner === "table-cell",
             bindings: { Enter: guardCellSweep() },
           });

@@ -26,7 +26,6 @@ export function useLineage(
           : thread.ref === key.rootThreadRef && thread.rootThreadId === thread.id,
       )
     : undefined;
-  // Only an id can ask the route; a handle names a chat the live list must hold.
   const rootThreadId = key && "rootThreadId" in key ? key.rootThreadId : null;
   const stored = useQuery({
     queryKey: ["projects", projectId, "lineage", rootThreadId],

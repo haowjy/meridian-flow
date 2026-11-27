@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-/**
- * A pasted wiki-style note's `[[Name]]` arrives as standard links through the
- * Editor's real paste path, whichever door the clipboard text takes: Markdown
- * with structure, or plain prose.
- */
 import { Editor } from "@tiptap/core";
 import { afterEach, expect, it } from "vitest";
 
@@ -25,7 +20,6 @@ afterEach(() => {
   for (const editor of live.splice(0)) editor.destroy();
 });
 
-/** An Editor whose link index holds `targets`, or is still loading (null). */
 function editor(
   targets: readonly { documentId: string; uri: string }[] | null,
   content = "<p></p>",
@@ -129,9 +123,6 @@ it("keeps the characters of an HTML-only clipboard pasted into code, by key or f
   expect(links(keyed)).toEqual([]);
   expect(keyed.state.doc.textContent).toContain("see [[Lin Feng]] here");
 
-  // The menu's Paste has no clipboard event: it calls pasteHTML on the view
-  // (`clipboard-commands.ts`). The event passed here only stands in for the
-  // one ProseMirror would construct, which jsdom cannot.
   const menu = editor(DOCUMENTS, "<pre><code>x</code></pre>");
   menu.commands.setTextSelection(2);
   menu.view.pasteHTML("<p>see [[Lin Feng]] here</p>", menuPaste());

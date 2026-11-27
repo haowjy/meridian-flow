@@ -1,18 +1,3 @@
-/**
- * What a press puts the selection on, from where `landingAt` says it landed.
- *
- * A press on text belongs to the browser, except one on a selection's highlight,
- * which `selection-drag.ts` takes. This is for the presses with no text
- * under them: a margin, the gap between blocks, a cell's padding, the space
- * around a rendered diagram. It also owns the seam policy: where a caret goes
- * when the pointer is between blocks, and which neighbour wins.
- *
- * A press past the document's end, below a last block that isn't prose, goes
- * where Ctrl/Cmd+End goes (`documentEndTransaction`): the only press that can
- * write, since after a fence or diagram that place is a new empty line. The
- * walk stays pure; `pressOnInertTarget` does the write.
- */
-
 import type { Editor } from "@tiptap/core";
 import { GapCursor } from "@tiptap/pm/gapcursor";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -30,10 +15,6 @@ import {
 } from "./point-landing";
 import { viewGeometry } from "./view-geometry";
 
-/**
- * The selection a press at `point` makes, or null when nothing there can hold
- * one. `start` confines the walk to the pressed cell.
- */
 export function pressSelection(
   state: EditorState,
   point: Point,
@@ -44,7 +25,6 @@ export function pressSelection(
   return press === DOCUMENT_END ? null : press;
 }
 
-/** A press past the document's end, below a last block that isn't prose. */
 const DOCUMENT_END = "document-end";
 
 function pressOutcome(
@@ -80,21 +60,16 @@ function seamSelection(
   const [near, far] = gapAbove <= gapBelow ? [above, below] : [below, above];
   const nearIsAbove = near === above;
 
-  // The nearer neighbour's line keeps the pointer's column.
   if (near && isProse(near.node)) {
     const line = lineIn(state, near, nearIsAbove, point, geometry, start);
     if (line) return line;
   }
   if (seam === doc.content.size && above && !isProse(above.node)) return DOCUMENT_END;
   if (near && isTable(near.node) && gapCursorFits($seam)) return new GapCursor($seam);
-  // Beside a table, source or an object, prose beats it.
   if (near && far && isProse(far.node)) {
     const line = lineIn(state, far, !nearIsAbove, point, geometry, start);
     if (line) return line;
   }
-  // A fence with no prose on its other side (a diagram, a table, a cell's
-  // edge) is the nearest text there is: the caret goes to its edge facing the
-  // seam.
   for (const [fence, other] of [
     [near, far],
     [far, near],
@@ -110,12 +85,10 @@ function seamSelection(
   return outward === null ? null : TextSelection.create(doc, outward);
 }
 
-/** Text the writer reads and types into, as opposed to a table, an object or source. */
 function isProse(node: PMNode): boolean {
   return !isTable(node) && !isObjectLike(node);
 }
 
-/** The line of `neighbour` nearest the seam, at the pointer's column. */
 function lineIn(
   state: EditorState,
   neighbour: Child,
@@ -158,7 +131,6 @@ export function pressOnInertTarget(view: EditorView, editor: Editor, event: Mous
   return true;
 }
 
-/** The pane's margin (`view.dom` itself) or a container block's own element: not text, not an object. */
 function isContainerElement(view: EditorView, target: EventTarget | null): boolean {
   if (!(target instanceof Element) || !view.dom.contains(target)) return false;
   if (target === view.dom) return true;
@@ -172,10 +144,6 @@ function isContainerElement(view: EditorView, target: EventTarget | null): boole
   return parent.isBlock && !parent.isTextblock && !parent.isAtom && !isObjectLike(parent);
 }
 
-/**
- * The first (`1`) or last (`-1`) position inside `node` a writer can see a
- * caret in, or null when the node holds none.
- */
 function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | null {
   if (isOpaqueObject(node)) return null;
   if (node.isTextblock) {
@@ -194,7 +162,6 @@ function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | 
   return null;
 }
 
-/** The nearest writer text at or beyond `boundary`, scanning the scope's blocks. */
 function nearestWriterText(
   scope: { node: PMNode; start: number },
   boundary: number,

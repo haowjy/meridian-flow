@@ -1,13 +1,3 @@
-/**
- * Main's address and main's document view, kept in step. An address arriving by push, pop or load
- * (a link, a reload, Back) is a command: it sets the view's pin to the draft its `item` names, or
- * drops the pin when it names none; naming the scope's draft also sets the toggle to Draft. A
- * replace is not, unless it changes main's document: it rewrites its entry in place (`arrivalOf`).
- * After that what the document shows (`shownDraft`) is the owner and the address's `item` follows
- * it by replace, so a draft the writer picks, leaves or flips the toggle on rewrites the address in
- * place and never adds a Back step. A pin that changes drops `review` and `change` in that same
- * replace (`writeItemKey`): Review changes is of the draft it was opened on.
- */
 import type { RouterHistory } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -60,15 +50,11 @@ export function useDraftAddressSync({
   writeItemKey,
 }: {
   projectId: string;
-  /** The chat on screen, whose Work's drafts the shell shows under None. */
   chatThreadId: string | null;
-  /** The rendered history entry's key. */
   locationKey: string | undefined;
-  /** The draft the address's item reviews (`addressDraftOwner`); null without one. */
   draftOwner: string | null;
   address: {
     itemKey: string | undefined;
-    /** Main's document, as the address resolved it; undefined when main holds no document. */
     documentId: string | undefined;
     admission: DraftAddressAdmission | undefined;
   };
@@ -81,7 +67,6 @@ export function useDraftAddressSync({
     entryKey === undefined || !documentId
       ? undefined
       : JSON.stringify([arrivalOf(history, entryKey), documentId]);
-  /** The arrival, and main's document in it, whose address main's view has taken in. */
   const arrived = useRef<string | undefined>(undefined);
   // What main's document shows, by the one rule: the address follows it. `shownOf` reads the
   // store when called, so `stored` is what re-runs the follow when the pin moves (a change focused).
@@ -95,7 +80,6 @@ export function useDraftAddressSync({
     arrived.current = locationKey;
     const next =
       address.itemKey && draftOwner ? { draftId: draftOwner, itemKey: address.itemKey } : null;
-    // An address naming the scope's draft is the toggle's Draft: every page shows its draft.
     if (next && next.draftId === scopeDraftId)
       writeTreeVersionChoice(accountId, projectId, "draft");
     const current = readDocumentView(accountId, projectId, documentId).pin;

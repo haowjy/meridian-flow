@@ -1,7 +1,3 @@
-/**
- * document-properties-api — HTTP client for a document's imported properties,
- * which load by document id rather than riding in every catalog entry.
- */
 import type { DocumentProperties } from "@meridian/contracts";
 
 import { getJson } from "./http-client";

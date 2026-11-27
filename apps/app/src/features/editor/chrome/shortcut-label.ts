@@ -22,7 +22,6 @@ function onApplePlatform(): boolean {
   return APPLE_PLATFORM.test(platform ?? navigator.userAgent);
 }
 
-/** `"Mod+K"` reads as `⌘K` on macOS and `Ctrl+K` elsewhere. */
 export function shortcutLabel(spelling: string): string {
   const keys = spelling.split("+");
   if (!onApplePlatform()) return keys.map((key) => (key === "Mod" ? "Ctrl" : key)).join("+");

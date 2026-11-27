@@ -1,5 +1,3 @@
-/** Structural recognition for Markdown block containers. */
-
 export interface MarkdownFence {
   marker: string;
   length: number;

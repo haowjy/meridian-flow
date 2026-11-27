@@ -1,4 +1,3 @@
-/** Account/system Agent choices with Project-scoped availability and cache ownership. */
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { listAgentCatalog } from "@/client/api/agents-api";

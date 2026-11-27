@@ -1,5 +1,3 @@
-/** Tab submission model: durable handoff, row projection, and writer commands. */
-
 import { type FailureEnd, type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
@@ -70,7 +68,6 @@ type ThreadModel = {
   rows: Map<string, Row>;
   presentation: Map<string, RecoveryState>;
   bindings: Set<ChatSubmissionOwner>;
-  /** Records of switches whose last attempt in this tab did not reach the server. */
   failedSwitches: Map<string, CommandFailure>;
   switches: readonly JournalSwitch[];
   unsavedSwitches: Map<string, { mode: AiWriteMode; seq: number; occurrence: Occurrence }>;
@@ -163,7 +160,6 @@ type OwnerOptions = {
 export class ChatSubmissionOwner {
   readonly driver: ChatSubmissionDriver;
   private readonly model: ThreadModel;
-  /** Shared eligibility/status, with commands bound only at the invoking pane. */
   private recovery = new Map<string, UserTurnRecovery>();
   get presentation(): ReadonlyMap<string, UserTurnRecovery> {
     return this.recovery;
@@ -302,7 +298,6 @@ export class ChatSubmissionOwner {
               )
             : undefined;
         if (entry.control) {
-          // A switch has no writer row: only its queued row (`switches`) shows the state.
           const previous = this.model.failedSwitches.get(entry.recordId);
           if (previous && (!failure || occurrenceKey(previous) !== occurrenceKey(failure)))
             this.log(previous, "retried");
@@ -323,7 +318,6 @@ export class ChatSubmissionOwner {
             ? { session: this.session, submissionId: entry.submissionId, signal }
             : undefined;
         if (status === "error") {
-          // A message moving to the message box is no failure; otherwise the failed row is a card.
           row.failed = !this.transferDestination(entry).hasReceived(entry.recordId);
           row.localFailure = !!localFailure;
         } else {
@@ -340,7 +334,6 @@ export class ChatSubmissionOwner {
       },
       transferReceived: (entry) => this.transferDestination(entry).hasReceived(entry.recordId),
       transferForEdit: (entry, cohort) => {
-        // Only messages carry words; a switch in the cohort leaves with them and has no draft.
         const messages = cohort.filter((record) => !record.control);
         const snapshots = messages.flatMap((record) => (record.draft ? [record.draft] : []));
         if (snapshots.length !== messages.length) return false;
@@ -393,11 +386,6 @@ export class ChatSubmissionOwner {
     return this.model.switches;
   }
 
-  /**
-   * Record a switch in the journal after everything the writer did before it, and drive.
-   * It carries the chat's creation inputs like a message does, so a switch made
-   * while navigate-first creation is in flight waits behind it in the same order.
-   */
   submitSwitch = (id: string, mode: AiWriteMode): boolean => {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
@@ -526,13 +514,11 @@ export class ChatSubmissionOwner {
       if (binding.options.current()) binding.publishPresentation();
   };
 
-  /** The switches still in the journal, oldest first. A new array only when one changed. */
   private rebuildSwitches(records: readonly ChatSubmission[]) {
     const found = records.filter((entry) => entry.control).sort(compareSubmissions);
     const failed = this.model.failedSwitches;
     for (const id of failed.keys()) {
       if (found.some((entry) => entry.recordId === id && !entry.answer)) continue;
-      // Withdrawn, answered by another tab, or retired: its "Couldn't switch" card ends.
       this.log(failed.get(id), "resolved");
       failed.delete(id);
     }
@@ -598,7 +584,6 @@ export class ChatSubmissionOwner {
     if (!same) this.model.switches = next;
   }
 
-  /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
   private async reconcileDestination() {
     if (this.reconciling) return;
     this.reconciling = true;
@@ -647,7 +632,6 @@ export class ChatSubmissionOwner {
       if (!records || records.some((entry) => entry.threadId === threadId)) return;
       const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
       const target = composerSessionDraft(accountId, { kind: "new-chat", id: projectId });
-      // The server never had this chat, so the draft's uploads still belong to its id.
       if (source.initialDraft && !target.recoverCreation(threadId, [source.initialDraft])) return;
       source.handoff();
       this.destination = "editing";
@@ -711,7 +695,6 @@ function commandFailure(entry: ChatSubmission, kind: CommandFailure["kind"]): Co
   };
 }
 
-/** A newer attempt is not evidence of failure; only its durable refusal can replace local facts. */
 function latestFailure(entry: ChatSubmission, local?: CommandFailure): CommandFailure {
   return local && (entry.state !== "rejected" || local.attempt >= (entry.occurrence?.attempt ?? 0))
     ? local

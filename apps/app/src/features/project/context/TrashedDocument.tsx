@@ -1,11 +1,3 @@
-/**
- * Main's view of a deleted document: its text read-only (an uploaded file: its card, since the
- * server serves no file in Trash), where it was deleted from and by whom, and Restore. Whether it is in Trash or purged, its name, its place and who deleted it are the
- * list's answer, and the text is the document's own session, so all of it reads offline. When it
- * was deleted and how long Trash keeps it are the server's: its read of this document, else the
- * Trash list the browser holds.
- */
-
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
@@ -135,7 +127,6 @@ export function TrashedDocument({
   );
 }
 
-/** The document's Live text as its session holds it now, offline typing included. */
 function useSessionText(session: DocumentSession | null): string {
   const [text, setText] = useState("");
   useEffect(() => {
@@ -166,12 +157,10 @@ function useOpenOnceLiving(projectId: string, documentId: string, living: boolea
   }, [living, documentId, openDocument]);
 }
 
-/** What the page says of the removal: the list's place, and the server's author, time and retention once it has answered. */
 type TrashedDetails = {
   scheme: ProjectContextTreeScheme;
   folders: readonly string[];
   actor: DocumentRemovalRecord["actor"];
-  /** When it was deleted and how long it stays: the server's, absent until it has answered once. */
   kept?: { time: string; retention: TrashRetention };
 };
 function useTrashedDetails(
@@ -218,10 +207,6 @@ function trashSentence(
   return `${deletedSentence(details.actor, place, deleted, accountId, chats)} ${retentionSentence(details.kept.retention, locale)}`;
 }
 
-/**
- * Names who deleted it only when that says something: you, another writer, a chat's AI or a Work,
- * as the Trash row says it. The date is left out until the server has said it.
- */
 function deletedSentence(
   actor: DocumentRemovalRecord["actor"],
   place: string,
@@ -240,7 +225,6 @@ function deletedSentence(
       : t`Deleted from ${place} by ${name}.`;
   }
   if (actor?.kind === "agent") {
-    // A chat's AI is named by its chat: the record's title, else the chat list's.
     const chat = actor.chatTitle ?? (actor.chatId ? chats(actor.chatId) : null);
     if (chat)
       return deleted

@@ -45,7 +45,6 @@ export interface LiveCreateDeps {
 export class LiveCreate {
   constructor(private readonly deps: LiveCreateDeps) {}
 
-  /** A live create at `path` with optional content (create routes, imports, a tool's create). */
   async create(
     path: string,
     content: BoundWrite | null,
@@ -64,10 +63,6 @@ export class LiveCreate {
     });
   }
 
-  /**
-   * The document's record, content and arrival as one unit, in the caller's command
-   * transaction. `content` null leaves the document empty.
-   */
   async atomically(
     target: CreateTarget,
     content: BoundWrite | null,
@@ -79,7 +74,6 @@ export class LiveCreate {
         record: string;
         folders: MadeFolder[];
         markdown: string;
-        /** The source-relative path it landed at. */
         path: string;
       },
       AdapterFault
@@ -159,7 +153,6 @@ export class LiveCreate {
     }
   }
 
-  /** Arrivals of documents created outside the aggregate (an upload's file). */
   async arrive(documentIds: readonly DocumentId[]): Promise<void> {
     if (!this.deps.arrivals) return;
     await this.deps.arrivals.lockNamespaces(documentIds, [

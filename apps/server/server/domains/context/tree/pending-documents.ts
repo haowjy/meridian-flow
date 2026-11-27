@@ -1,26 +1,6 @@
-/**
- * The one reviewable-pending predicate: a Work has a change to a document that review lists, the
- * Work's count counts and Apply all applies. It reads the Work's rows (`draft_tree_nodes`, the
- * view's difference from live, written by the replay of the list) and its text changes:
- *
- * - a document that exists only in the Work's draft (a creation);
- * - a document the Work's tree lacks while live shows it (a drafted delete);
- * - any other row the Work changed: it shows the document differently from live (a move,
- *   rename or reorder). A row that differs only in a twin's suffix is not one (`changed` is
- *   false), and a document in Trash in live is in Trash in every Work's view.
- * - the Work's fork of the document has a pending change, on a document the Work's tree shows: a
- *   drafted delete, or a document in no view, hides the text changes everywhere.
- *
- * A write and its undo net to no changed row, so they net to no item. The Work's review count adds the
- * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
- * each; the open browser counts the same two sets from its own replay (`changedFolders` in
- * `@meridian/project-tree`, which also writes a row for a folder whose change cannot land), and
- * this stored count serves the Works it has not opened.
- */
 import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
 
-/** The rows of a Work's differing nodes of `kind` that count, as `(draft_id, node_id)`. */
 function treeChanges(drafts: SQL, kind: "document" | "folder"): SQL {
   return sql`SELECT b.draft_id, b.id AS document_id
     FROM draft_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
@@ -30,10 +10,6 @@ function treeChanges(drafts: SQL, kind: "document" | "folder"): SQL {
       OR (NOT b.exists_only_in_draft AND NOT b.deleted))`;
 }
 
-/**
- * Every `(draft_id, document_id)` the predicate holds for, among the drafts `drafts`
- * selects (a SQL list of draft ids), narrowed to one document when given.
- */
 export function pendingDocuments(drafts: SQL, documentId?: DocumentId): SQL {
   const one = documentId ? sql` AND candidate.document_id = ${documentId}::uuid` : sql``;
   return sql`SELECT candidate.draft_id, candidate.document_id FROM (
@@ -51,20 +27,11 @@ export function pendingDocuments(drafts: SQL, documentId?: DocumentId): SQL {
     WHERE true${one}`;
 }
 
-/**
- * The documents a Work has text changes in, as `(draft_id, document_id)`: its forks flagged
- * pending (`document_forks.pending`, set by every save of the fork's room).
- */
 export function pendingText(drafts: SQL): SQL {
   return sql`SELECT f.draft_id, f.document_id FROM document_forks f
       WHERE f.draft_id IN (${drafts}) AND f.pending`;
 }
 
-/**
- * The folders a Work's tree changes (created, moved, renamed, deleted, or unable to land), as
- * `(draft_id, folder_id)`: every changed folder is one item of the Changes list and one of the
- * count.
- */
 export function pendingFolders(drafts: SQL): SQL {
   return sql`SELECT c.draft_id, c.document_id AS folder_id FROM (${treeChanges(drafts, "folder")}) c`;
 }

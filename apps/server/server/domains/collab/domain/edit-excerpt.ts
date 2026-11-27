@@ -1,4 +1,3 @@
-/** An AI write's recorded delta in words, and the schema an inverse reads blocks with. */
 import { readDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
 import { wordDiff } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -7,11 +6,6 @@ import type { Node as PMNode } from "prosemirror-model";
 /** The one schema an inverse reads and writes blocks with: nodes of another instance don't compare. */
 export const inverseSchema = buildDocumentSchema();
 
-/**
- * The words one edit part changed, for the model's list of its edits: what it took out and what it
- * put in, each block's runs joined by `…`, blocks by a line. Read from the part's recorded delta,
- * never from the document, which has moved on since.
- */
 export function deltaExcerpt(stored: StoredDelta | null): { before: string; after: string } {
   if (!stored) return { before: "", after: "" };
   const delta = readDelta(inverseSchema, stored);

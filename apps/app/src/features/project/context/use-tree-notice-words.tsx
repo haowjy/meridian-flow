@@ -19,35 +19,19 @@ import { useAccountId } from "./account-feature-context";
 import { useEntryActions } from "./entry-drag/entry-actions";
 
 export type TreeNoticeWords = {
-  /**
-   * The word a drawn row shows now, or null. On a row the writer's delete or restore just took
-   * (`gone`), its Undo takes the focus the row had.
-   */
   word: (node: string, gone?: boolean) => ReactNode;
-  /**
-   * The rows gone from under `parent` (a folder's or a source's id) that still say something: the
-   * latest delete's, and the creates the server bounced, where the writer made them.
-   */
   deleted: (parent: string) => GoneRow<Was>[];
-  /** The node was restored out of Trash by the latest gesture: its Trash row stays, struck through. */
   restored: (node: string) => boolean;
-  /** What has no row drawn to say it on, for the list's heading. */
   header: ReactNode;
-  /** The writer acted elsewhere in the sidebar's trees: their notices end. */
   end: () => void;
 };
 
-/** Where a list draws a node's row, so a word whose row isn't drawn goes to one that is. */
 export type NoticePlace = {
-  /** The list has a row for it, drawn or under a closed folder: a source's id counts. */
   holds: (node: string) => boolean;
-  /** The folder or source it is listed under; null in a flat list. */
   parent: (node: string) => string | null;
-  /** The folder's rows are drawn: always so for a source's top. */
   open: (folder: string) => boolean;
 };
 
-/** A source's tree as a place: its rows are drawn while every folder above them is open. */
 export function treePlace(tree: TreeView, isExpanded: (folder: string) => boolean): NoticePlace {
   const root = tree.root.entryId;
   return {
@@ -57,27 +41,16 @@ export function treePlace(tree: TreeView, isExpanded: (folder: string) => boolea
   };
 }
 
-/** A list that holds no tree rows. */
 export const NOWHERE: NoticePlace = { holds: () => false, parent: () => null, open: () => false };
 
 /** A word the writer's own delete or restore just made takes the focus, once per step. */
 const focused = new WeakSet<TreeStep>();
 
-/** The drawn row of a tree or Trash node: where focus goes when an Undo brings it back. */
 export const entryRowOf = (node: string) =>
   document.querySelector<HTMLElement>(
     `[data-entry-key="file:${CSS.escape(node)}"], [data-entry-key="folder:${CSS.escape(node)}"]`,
   );
 
-/**
- * What the project's and the account's lists say on a list's rows (`TreeNotice`): the writer's
- * latest gesture with its Undo, the same step Ctrl+Z takes, or what a press or a row's Undo
- * skipped or couldn't take back. A word goes on its row when the list draws it, else on the
- * nearest drawn folder above it, else on the list's heading; a list that doesn't hold the node
- * says nothing. A change the server bounced (`treeBounces`) says so on its own row while the list
- * draws it, and nowhere else; on a row with two words the bounce, which came later, wins. Read
- * once per list.
- */
 export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeNoticeWords {
   const accountId = useAccountId();
   const project = useTreeList({ kind: "project", projectId }).session;
@@ -102,8 +75,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
       notice.kind === "step" ? [{ step: notice.step, list }] : [],
     );
     const bounced = [project, account].flatMap((session) => treeBounces(session));
-    // A row the latest delete took, or a create the server bounced, stays drawn, struck through,
-    // where it was.
     const gone = new Map<string, Was>();
     for (const { step } of steps)
       if (step.gesture === "delete")
@@ -130,7 +101,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
     };
     const words = new Map<string, (gone: boolean) => ReactNode>();
     let header: ReactNode = null;
-    // Each word on its own drawn rows, or the nearest drawn folder above the first, or the heading.
     const put = (nodes: readonly string[], word: (node: string, gone: boolean) => ReactNode) => {
       const own = nodes.filter((node) => holds(node) && drawn(node));
       for (const node of own) if (!words.has(node)) words.set(node, (gone) => word(node, gone));
@@ -142,7 +112,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
         words.set(above, () => word(first, false));
       else header ??= word(first, false);
     };
-    // The latest bounce of a node speaks for it, before any other word.
     for (const bounce of [...bounced].reverse())
       if (holds(bounce.record.node) && drawn(bounce.record.node) && !words.has(bounce.record.node))
         words.set(bounce.record.node, () => (
@@ -186,11 +155,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
   }, [revision, project, account, actions, end, place, workName]);
 }
 
-/**
- * What a bounced change says: what didn't happen ("Not created", "Not renamed", "Not moved", "Not
- * deleted"), why, and the Copy it offers for a rename's name. `work` is the Work that was closed,
- * when the shell knows it.
- */
 export function bounceSaying(
   bounce: Bounce,
   work: string | null,

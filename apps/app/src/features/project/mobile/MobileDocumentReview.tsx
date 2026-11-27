@@ -1,10 +1,3 @@
-/**
- * MobileDocumentReview — the column a phone document's editor sits in: Review changes' bar above
- * it while the page is in Review changes, else what an Apply brought back; the page's notice
- * floats at its foot. The editor keeps one place in this tree, so entering and leaving Review
- * changes never remounts it.
- */
-
 import type { ReactNode } from "react";
 import type { OpenDocument } from "@/client/stores";
 import { PageNotice } from "@/features/draft-review/PageNotice";
@@ -54,10 +47,6 @@ export function MobileDocumentReview({
   );
 }
 
-/**
- * What an Apply brought back, in a row of the review header's own height and inset. The version
- * chip is in the toolbar row, as on a desktop.
- */
 function ManuscriptStateRow({ state }: { state: ManuscriptState | null }) {
   if (!state) return null;
   return (

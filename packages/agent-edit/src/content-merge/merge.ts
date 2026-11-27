@@ -1,15 +1,3 @@
-/**
- * The content merge: a pure three-way merge of base, live and draft top-level blocks. It brings live's
- * newer edits into a Work draft (and, with the patch as the draft side, writes an Apply into live).
- *
- * Nothing relates the sides' CRDT items. Blocks pair with base by id, the tokens of each side are aligned
- * to base, paragraph moves are lifted so the other side's edits travel with the paragraph
- * (`merge-order.ts`), and the two hunk lists are merged (`merge-hunks.ts`, `merge-settle.ts`; all
- * beside this file in `content-merge/`). Hunks from one side apply. Overlapping hunks with
- * equal results apply once. Insertions at one point keep both (live first). Anything else is a
- * conflict: the draft's version stays, so the conflict shows in review as diff(new base = live, draft).
- * It works on `align`'s token-level hunks. No CRDT here.
- */
 import { hasBlockId, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";
 import { align } from "../diff/align.js";
@@ -45,25 +33,23 @@ import { settleStretches } from "./stretch.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move" | "attributes";
-  baseIds: number[]; // original base block indices the conflict covers
+  baseIds: number[];
   base: Tok[];
   live: Tok[];
   draft: Tok[];
 }
 
 export interface ContentMergeResult {
-  overrode: number; // live words replaced by the draft in contested text
-  rules: RuleCounts; // how many times each rule fired
+  overrode: number;
+  rules: RuleCounts;
 
-  blocks: PMNode[]; // the new draft
-  conflicts: Conflict[]; // where both sides changed the same text; the draft's version is in `blocks`
-  orderConflict: boolean; // the two sides' paragraph moves admit no single order; the draft's order won
+  blocks: PMNode[];
+  conflicts: Conflict[];
+  orderConflict: boolean;
 }
 
-/** Base tokens between two one-sided changes checked for being one change the diffs placed differently. */
 const COALESCE_WINDOW = 3;
 
-/** Hunks from both sides that touch the same base tokens `lo..hi`. */
 interface Cluster {
   lo: number;
   hi: number;
@@ -71,7 +57,6 @@ interface Cluster {
   draft: Hunk[];
 }
 
-/** Live and draft hunks sorted by position, grouped into clusters of hunks that overlap each other. */
 function clusterHunks(
   liveHunks: Hunk[],
   draftHunks: Hunk[],
@@ -105,11 +90,6 @@ function clusterHunks(
 
 const isPureInsert = (c: Cluster) => [...c.live, ...c.draft].every((h) => h.from === h.to);
 
-/**
- * Two one-sided changes a few equal tokens apart may be one change the two diffs placed differently
- * (repeated block starts make that common), or a change and its extension. If one side's text for the
- * window carries the other's change, that text, kept once; otherwise null.
- */
 function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[] | null {
   const liveThenDraft =
     first.live.length && !first.draft.length && second.draft.length && !second.live.length;
@@ -126,7 +106,6 @@ function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[]
   return draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
 }
 
-/** Whether a table's cells, with their `colspan` and `rowspan`, fill a rectangle with no overlap or hole. */
 function isRectangular(table: PMNode): boolean {
   const taken = new Set<string>();
   let width = 0;
@@ -158,12 +137,6 @@ interface ContainerMerge {
   orderConflict: boolean;
 }
 
-/**
- * Both sides changed a run of containers (tables) that each side kept as the same
- * number of the same types, so the run merges pairwise by the containers' children instead of
- * as whole-block tokens. Null when the run does not have that shape, or when a merged node would
- * not be a valid container: the caller then keeps the `whole-block-unit` clash.
- */
 function mergeContainers(
   schema: Schema,
   base: Tok[],
@@ -208,7 +181,6 @@ function mergeContainers(
       Object.keys(dn.attrs).map((key) => [key, changed(dn, key) ? dn.attrs[key] : ln.attrs[key]]),
     );
     const marks = Mark.sameSet(dn.marks, bn.marks) ? ln.marks : dn.marks;
-    // Both sides changed one attribute (or the marks) to different values: the draft's stands.
     if (
       Object.keys(dn.attrs).some(
         (key) =>
@@ -243,7 +215,6 @@ function mergeContainers(
   return out;
 }
 
-/** A correspondence carried onto reordered sides. Pairs that no longer run in order stay; `align` skips them. */
 function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Correspondence {
   const baseAt = new Int32Array(c.partner.length).fill(-1);
   baseOrder.forEach((o, n) => {
@@ -267,12 +238,6 @@ function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Co
   return out;
 }
 
-/**
- * How much each base block should stay in place when the other side's `side` paired it out of
- * order: of two blocks swapped, the one `side` edited stays (its edit travels with it) and the
- * unchanged one moved; one `side` removed is the one that moved, so a move against a removal is
- * counted.
- */
 function staysFor(base: readonly PMNode[], side: readonly PMNode[]): (i: number) => 0 | 1 | 2 {
   const byId = new Map<string, PMNode>();
   for (const n of side) if (n.attrs.id != null && !byId.has(n.attrs.id)) byId.set(n.attrs.id, n);
@@ -282,7 +247,6 @@ function staysFor(base: readonly PMNode[], side: readonly PMNode[]): (i: number)
   };
 }
 
-/** `node` with the ids of `model`, a block equal to it but for ids. */
 function withIdsOf(node: PMNode, model: PMNode): PMNode {
   const kids: PMNode[] = [];
   node.forEach((child, _, i) => {
@@ -304,7 +268,6 @@ function unifyAdded(
   inDraft: Correspondence,
   fire: Fire,
 ): readonly PMNode[] {
-  // A block with no pair of its own (a split's later part has none), with the base block before it that stays in place.
   const added = (side: readonly PMNode[], c: Correspondence) => {
     const out = new Map<number, number[]>();
     let after = -1;
@@ -334,13 +297,6 @@ function unifyAdded(
   return out ?? draft;
 }
 
-/**
- * `block-attributes-merged`: a block both sides kept (paired by id, of one type) takes each
- * attribute from the side that changed it, and the draft's where both changed it to different
- * values (one clash for the block). The three versions then carry the same attributes, so the
- * token merge sees none changed and an edit or an insertion beside the block merges as if no
- * attribute had changed. A block one side removed is left to the token merge.
- */
 function mergeAttributes(
   base: readonly PMNode[],
   live: readonly PMNode[],
@@ -417,7 +373,7 @@ function merge(
   const attributes = mergeAttributes(base, live, draft, inLive, inDraft, fire);
   [base, live, draft] = attributes.sides;
   let sides = { base: buildSide(base), live: buildSide(live), draft: buildSide(draft) };
-  let baseIds = base.map((_, i) => i); // original base block index of each (reordered) base block
+  let baseIds = base.map((_, i) => i);
 
   const order = mergeOrder({ ...sides, inLive, inDraft });
   fire("draft-wins-order", order.contested.length + (order.cyclic ? 1 : 0));
@@ -435,7 +391,6 @@ function merge(
   const { base: baseSide, live: liveSide, draft: draftSide } = sides;
   const liveAlignment = align(baseSide, liveSide, inLive);
   const draftAlignment = align(baseSide, draftSide, inDraft);
-  // Each removed block is its own removal, so one side's removal of a run meets the other's block by block.
   for (const a of [liveAlignment, draftAlignment])
     a.hunks = a.hunks.flatMap((h) => {
       if (h.ins.length) return [h];
@@ -480,7 +435,6 @@ function merge(
       draft: [],
     })),
   ];
-  // A stretch where the pairing could not be trusted keeps the draft's blocks: one clash each.
   for (const st of stretches?.stretches ?? []) {
     const [l, d] = [st.live, st.draft].map((bs) => bs.flatMap((b) => tokenizeBlock(b)));
     replacedWords(
@@ -495,8 +449,6 @@ function merge(
       draft: d,
     });
   }
-  // Live's paste of text the draft changed is left out; the draft's paste of text live changed stays
-  // (the draft wins) but is reported, since it carries the text from before live's change.
   const movedByLive = dropMovedText(baseToks, liveAlignment.hunks, draftAlignment.hunks);
   const movedByDraft = dropMovedText(baseToks, draftAlignment.hunks, liveAlignment.hunks, true);
   const sourceIds = (source: number[]) => [
@@ -504,7 +456,6 @@ function merge(
   ];
   fire("moved-text-dropped", movedByLive.length);
   for (const m of movedByLive) {
-    // The stale paste vanished, but words kept at the edited source were not replaced.
     overrode += m.source.filter((i) => isWordTok(baseToks[i]) && draftAlignment.pos[i] < 0).length;
     conflicts.push({
       kind: "moved-text",
@@ -583,12 +534,9 @@ function merge(
       merged.push(...unionInsertions(liveVersion, draftVersion, fire));
       continue;
     }
-    // One side's text may already carry the other's change here (the same edit made on both sides
-    // and then extended): no conflict.
     const absorbed = draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
     if (absorbed) merged.push(...absorbed);
     else {
-      // Words cut by the draft may still survive at its paste destination.
       const retained = [...draftVersion];
       for (let i = lo; i < hi; i++) {
         const tok = draftPastes.get(i);

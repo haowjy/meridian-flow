@@ -1,9 +1,3 @@
-/**
- * The compact menu a drop across systems asks with, hung at the pointer where
- * the writer let go: the items the list derived (Move, Copy), then Cancel. No heading; the
- * labels name the destination. Escape, Cancel and a click outside all close it
- * with nothing changed, and focus goes back to the list.
- */
 import { t } from "@lingui/core/macro";
 import { Fragment, useId } from "react";
 import {
@@ -16,7 +10,6 @@ import {
 import { pointerAnchorStyle } from "@/features/editor/chrome";
 import type { DropAction, DropChoiceItem, PendingChoice } from "./drop-choice";
 
-/** What a list shows while a drop waits for its choice. */
 export type DropChoiceState = Pick<PendingChoice, "point" | "returnFocus"> & {
   items: readonly DropChoiceItem[];
   choose: (action: DropAction) => void;

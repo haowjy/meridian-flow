@@ -1,8 +1,3 @@
-/**
- * A chat's soft delete and its restore. The delete is optimistic: the row leaves every cached
- * chat projection at once, ahead of the server's confirmation, and a refusal puts the exact
- * pre-delete snapshot back.
- */
 import type { QueryClient } from "@tanstack/react-query";
 import { deleteThread, restoreThread } from "@/client/api/threads-api";
 import { removeChatRow, restoreChatRow, snapshotChatRow } from "./chat-projections";
@@ -34,10 +29,6 @@ export async function deleteProjectChat(
   }
 }
 
-/**
- * Brings a chat back from Trash: a delete's Undo, or Trash's Restore. Resolves once every list
- * that names the chat has reread it.
- */
 export async function restoreProjectChat(
   client: QueryClient,
   projectId: string,

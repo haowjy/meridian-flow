@@ -1,5 +1,3 @@
-/** Runs image upload and replacement commands. */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
@@ -40,7 +38,6 @@ import {
   UPLOAD_TOKEN_ATTR,
 } from "./pending-images";
 
-/** Ask the writer for an image file, and hand it to whoever asked. */
 function pickImageFile(onFile: (file: File) => void): void {
   const input = window.document.createElement("input");
   input.type = "file";
@@ -58,7 +55,6 @@ function pickImageFile(onFile: (file: File) => void): void {
   input.click();
 }
 
-/** Is there anywhere for a picture to go? */
 function ingressHost(editor: Editor | null): ImageIngressHost | null {
   const storage = imageIngressStorage(editor);
   if (!editor || !storage || !editor.isEditable) return null;
@@ -69,14 +65,10 @@ function ingressHost(editor: Editor | null): ImageIngressHost | null {
   return storage.host;
 }
 
-/** Where a picture the writer is about to choose goes. */
 export type ImagePickerTarget =
-  /** A new picture at a place in the prose. */
   | { kind: "insert"; at: EditorAnchor }
-  /** Another picture for a slot the writer already placed. */
   | { kind: "replace"; slot: NodeHold };
 
-/** A new picture where the caret is now, pinned before the chooser opens. */
 export function imageCaretTarget(editor: Editor | null): ImagePickerTarget | null {
   if (!editor || editor.isDestroyed) return null;
   // Select-all leaves a selection that starts at the document's edge, outside
@@ -85,17 +77,12 @@ export function imageCaretTarget(editor: Editor | null): ImagePickerTarget | nul
   return { kind: "insert", at: anchorRange(editor.state, { from: at, to: at }) };
 }
 
-/**
- * The picture at `pos`, for's Replace verb (on the object surface's ⋮), or
- * null when nothing starts there.
- */
 export function imageReplaceTarget(editor: Editor | null, pos: number): ImagePickerTarget | null {
   if (!editor || editor.isDestroyed) return null;
   const slot = holdNode(editor.state, pos);
   return slot && { kind: "replace", slot };
 }
 
-/** Ask the writer for a picture, and put it where the target says. */
 export function openImagePicker(editor: Editor | null, target: ImagePickerTarget | null): void {
   if (!editor || !target || !ingressHost(editor)) return;
   pickImageFile((file) =>
@@ -105,7 +92,6 @@ export function openImagePicker(editor: Editor | null, target: ImagePickerTarget
   );
 }
 
-/** A new picture at the place the writer asked from, however far the document has moved since. */
 function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): void {
   const storage = imageIngressStorage(editor);
   if (!storage) return;
@@ -117,7 +103,6 @@ function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): 
   insertImageFile(editor, file, { kind: "inline", pos: at.from });
 }
 
-/** Another picture for a slot the writer already placed. */
 function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): void {
   const storage = imageIngressStorage(editor);
   const host = ingressHost(editor);
@@ -134,9 +119,6 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   // for a slot that went away while the chooser was up — no entry, no request,
   // and no asset the project has no use for.
   if (!at || !node || objectSurfaceKind(node) !== "image") return;
-  // The writer's own alt text outlives the picture it described only if they
-  // wrote one; a slot that never had one takes the new file's name, as an insert
-  // does.
   const existing = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
   const id = openUpload(editor, {
     file,
@@ -149,14 +131,12 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   sendUpload(editor, host, id, file);
 }
 
-/** Put this picture in the document and start sending it. */
 export function insertImageFile(editor: Editor | null, file: File, at: Landing): void {
   openImageFileUpload(editor, file, (target, alt, token) =>
     insertPendingImageNode(target, alt, token, at),
   );
 }
 
-/** An image file arriving from the clipboard — the paste door's one decision. */
 export function pasteImageFile(editor: Editor | null, file: File): void {
   if (!editor || editor.isDestroyed) return;
   if (editor.state.selection instanceof CellSelection) {
@@ -164,14 +144,12 @@ export function pasteImageFile(editor: Editor | null, file: File): void {
     return;
   }
   const { from } = editor.state.selection;
-  // A selection that cannot hold a picture (code) puts it after its block.
   insertImageFile(editor, file, {
     kind: acceptsInlineImage(editor.state.doc, from) ? "inline" : "source",
     pos: from,
   });
 }
 
-/** One lifecycle for a picture file with somewhere to go: validate the file, open the upload, let `place` land the slot, and start the bytes. */
 function openImageFileUpload(
   editor: Editor | null,
   file: File,
@@ -199,17 +177,12 @@ function openImageFileUpload(
   sendUpload(editor, host, id, file);
 }
 
-/** Send a failed picture again, from the same slot with the same bytes. */
 export function retryPendingImage(editor: Editor | null, pos: number): void {
   if (!editor || editor.isDestroyed) return;
   const entry = pendingImageAt(ingressState(editor).pending, editor.state, pos);
   if (entry?.kind === "upload") uploads.retry(entry.id);
 }
 
-/**
- * Take the picture back out. Its upload stops as any slot's does when it leaves the text, so an
- * undo brings it back still sending, or ready to retry.
- */
 export function removePendingImage(editor: Editor | null, pos: number): void {
   if (!editor || editor.isDestroyed) return;
   const entry = pendingImageAt(ingressState(editor).pending, editor.state, pos);
@@ -217,11 +190,6 @@ export function removePendingImage(editor: Editor | null, pos: number): void {
   editor.view.dispatch(editor.state.tr.delete(pos, pos + 1));
 }
 
-/**
- * The picture's slot, opened where the landing says: in the text at an inline
- * landing, in a paragraph of its own at a seam, and after the block at a
- * source landing (a paste in code).
- */
 function insertPendingImageNode(
   editor: Editor,
   alt: string,
@@ -257,15 +225,12 @@ function insertPendingImageNode(
     imagePos = seam + 1;
   }
 
-  // The caret lands after the picture: the writer asked for an image mid
-  // sentence and the sentence continues.
   transaction.setSelection(TextSelection.near(transaction.doc.resolve(imagePos + 1)));
   transaction.scrollIntoView();
   editor.view.dispatch(transaction);
   return imagePos;
 }
 
-/** The picture's slot, landed as a sweep-replace: the swept cells emptied and the picture standing in its own paragraph in the rectangle's top-left cell, in one transaction — so one undo restores the sweep and takes the picture with it. */
 function insertPendingImageInSweep(editor: Editor, alt: string, token: string): number | null {
   const { state } = editor;
   const imageType = state.schema.nodes.image;
@@ -279,13 +244,10 @@ function insertPendingImageInSweep(editor: Editor, alt: string, token: string): 
   });
   const landed = sweepReplaceLanding(state, () => Fragment.from(paragraphType.create(null, image)));
   if (!landed) return null;
-  // The landing already put the caret after the picture, as an insert does.
   editor.view.dispatch(landed.transaction.scrollIntoView());
-  // The paragraph opens the landing; the picture is its first child.
   return landed.from + 1;
 }
 
-/** Write these attributes onto the slot at `pos`, over the ones it has now. */
 function writeSlot(
   editor: Editor,
   pos: number,
@@ -306,7 +268,6 @@ function writeSlot(
   editor.view.dispatch(transaction);
 }
 
-/** Open one picture's record in this editor: its token, which is its intake id, and its shape. */
 function openUpload(
   editor: Editor,
   input: { file: File; alt: string; landing: PendingImageUpload["landing"] },
@@ -330,7 +291,6 @@ function openUpload(
   return id;
 }
 
-/** Hand the bytes to the upload store, which sends them, holds the progress and any retry. */
 function sendUpload(editor: Editor, host: ImageIngressHost, id: string, file: File): void {
   const storage = imageIngressStorage(editor);
   if (!storage) return;
@@ -341,11 +301,6 @@ function sendUpload(editor: Editor, host: ImageIngressHost, id: string, file: Fi
   });
 }
 
-/**
- * The bytes arrived: the picture's own node becomes the picture. Throws when it cannot, which the
- * store shows on the slot as a failure: a slot out of the text that comes back retries, and
- * resuming a finished upload lands at once.
- */
 function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
   const entry = editor.isDestroyed ? null : uploadEntry(editor, id);
   const at = entry && resolvePendingImage(editor.state, entry);

@@ -1,14 +1,7 @@
 import { cn } from "@/lib/utils";
 
-/** Needle scale inside the cream-jade disc — reaches toward the ring like a compass. */
 const NEEDLE_IN_DISC_SCALE = 0.92;
 
-/**
- * Meridian brand mark — compass needle on a cream-jade disc (disc-cream-ring).
- *
- * Cinnabar north / jade south on a cream+ink pivot, seated on a warm cream+jade
- * puck with a hairline border ring. Token-driven fills (mark-disc-fill utility).
- */
 export function MeridianMark({ className }: { className?: string }) {
   return (
     <svg

@@ -1,24 +1,9 @@
-/**
- * The project's stored shell state, per (account, project) in this browser tab and seeded once from
- * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope, the sidebar's Live/Draft choice, and one slot per kind of item, the last chat and the last document on
- * screen in either pane (null: none, or the kind's empty page). Main's arrival writes the slot of
- * its kind (`useMainArrival`), a pick or link into the side writes the other; the side shows the
- * slot of the kind main is not. These are not the pane-state page's "current" items (what main
- * showed last, which are each lane's `selected` in `main-tabs.ts`).
- */
 import { useMemo, useSyncExternalStore } from "react";
 import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id";
 
-/** A Work row id, or `none` for No Work. Only the Work picker writes it. */
 export type ProjectScope = string;
 export const NO_SCOPE = "none";
 
-/**
- * A document in a slot. One followed from a link keeps the link's Work. The side has no address, so
- * its slot carries what main's address says beyond the document's pin: Review changes on
- * (`review`, what it compares against) and the change in focus.
- */
 export type ShownDocument = {
   documentId: string;
   workId?: string;
@@ -69,10 +54,6 @@ export function writeProjectScope(accountId: string, projectId: string, scope: P
   notify(accountId, projectId);
 }
 
-/**
- * The sidebar's Live/Draft toggle: whether the shell shows the picked Work's tree, and its drafts
- * of the page, or live. It holds while the Work has pending changes; with none the shell is live.
- */
 export type TreeVersionChoice = "live" | "draft";
 
 export function readTreeVersionChoice(accountId: string, projectId: string): TreeVersionChoice {
@@ -89,10 +70,6 @@ export function writeTreeVersionChoice(
   notify(accountId, projectId);
 }
 
-/**
- * Which of the picked Work's drafts the shell shows on Draft, as `<workId>:<draftId>`. A choice
- * for another Work, or for a draft the Work no longer lists, is the Work's default.
- */
 export type ShownWorkDraft = { workId: string; draftId: string };
 
 export function readShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
@@ -131,7 +108,6 @@ export function writeLastShownDocument(
   notify(accountId, projectId);
 }
 
-/** The chat slot: the last chat on screen, in main or beside. Null: none, or a new chat's composer. */
 export function readLastShownChat(accountId: string, projectId: string): string | null {
   return readRememberedId("chat", accountId, projectId);
 }
@@ -156,7 +132,6 @@ function subscribe(accountId: string, projectId: string, listener: () => void) {
   };
 }
 
-/** The stored scope, re-read when this tab's scope changes. */
 export function useProjectScope(accountId: string, projectId: string): ProjectScope {
   return useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
@@ -165,7 +140,6 @@ export function useProjectScope(accountId: string, projectId: string): ProjectSc
   );
 }
 
-/** The Live/Draft choice, re-read when this tab's changes. */
 export function useTreeVersionChoice(accountId: string, projectId: string): TreeVersionChoice {
   return useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
@@ -174,7 +148,6 @@ export function useTreeVersionChoice(accountId: string, projectId: string): Tree
   );
 }
 
-/** The picked Work's draft on Draft, re-read when it changes. */
 export function useShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
   const stored = useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
@@ -184,7 +157,6 @@ export function useShownWorkDraft(accountId: string, projectId: string): ShownWo
   return useMemo(() => decodeWorkDraft(stored), [stored]);
 }
 
-/** The document slot, re-read when it changes. Decoded from one stored string, so stable. */
 export function useLastShownDocument(accountId: string, projectId: string): ShownDocument | null {
   const stored = useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
@@ -194,7 +166,6 @@ export function useLastShownDocument(accountId: string, projectId: string): Show
   return useMemo(() => decodeDocument(stored), [stored]);
 }
 
-/** The chat slot, re-read when it changes. */
 export function useLastShownChat(accountId: string, projectId: string): string | null {
   return useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),

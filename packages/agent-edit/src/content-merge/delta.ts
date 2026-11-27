@@ -1,24 +1,16 @@
-/**
- * What an AI edit changed, as its receipt stores it: the blocks it changed, before and after, with
- * one unchanged block either side. The card and the model's list of its edits read it; every Undo
- * of the edit runs on design §2's rule (`@meridian/document-model`), never on this content.
- */
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { blocksEqual } from "../diff/equal.js";
 
-/** The blocks an edit's part changed, before and after, with one unchanged block either side. */
 export interface EditDelta {
   before: readonly PMNode[];
   after: readonly PMNode[];
 }
 
-/** An edit's delta as stored: ProseMirror JSON. */
 export interface StoredDelta {
   before: Record<string, unknown>[];
   after: Record<string, unknown>[];
 }
 
-/** What a write did to the text: the blocks it changed, before and after, with one block either side. Null when it changed nothing. */
 export function captureDelta(
   before: readonly PMNode[],
   after: readonly PMNode[],

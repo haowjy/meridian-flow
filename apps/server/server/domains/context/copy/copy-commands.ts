@@ -1,9 +1,3 @@
-/**
- * Copy's command record: one `copy` row in `commands`, claimed before its effect. Every answer it
- * stores is `done`: a copy, or one that made nothing and says why in `settled`. An error stores
- * nothing.
- */
-
 import type { ProjectId, UserId } from "@meridian/contracts";
 import type { CopyCommandResult } from "@meridian/contracts/drafts";
 import type {
@@ -16,7 +10,6 @@ import { CommandExistsError, commandDigest } from "../../../shared/commands/comm
 import { lookupCommand } from "../../../shared/commands/drizzle-commands.js";
 import { runDocumentCommand } from "../../collab/adapters/drizzle-document-commands.js";
 
-/** The effect answered an error: nothing is stored, so the same id stays sendable. */
 class FailedCopy extends Error {
   constructor(readonly result: Extract<ContextOperationResult, { ok: false }>) {
     super("Copy failed");
@@ -35,7 +28,6 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     error: { code: "command_conflict", uri: address },
   });
 
-  /** The stored receipt, for the writer's client to resolve an ambiguous attempt. */
   async function lookup(operationId: string): Promise<ContextOperationReceipt | null> {
     const found = await lookupCommand(db, { commandId: operationId, accountId });
     if (found.kind !== "stored" || found.commandKind !== "copy" || found.outcome.status === "never")
@@ -43,7 +35,6 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
     return (found.outcome.result as CopyCommandResult).receipt;
   }
 
-  /** A resend answers the stored result; another request under the id is `command_conflict`. */
   async function stored(
     operationId: string,
     command: ContextOperationCommand,
@@ -62,7 +53,6 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
   return {
     lookup,
 
-    /** `address` is where the Copy was aimed, which a `command_conflict` names. */
     async execute(
       operationId: string,
       command: ContextOperationCommand,

@@ -62,7 +62,6 @@ import {
 export type ToolExpand = () => ReactNode;
 
 export type ToolRenderer = {
-  /** Single-line summary of the tool action. Already i18n'd. */
   title: (tool: ToolView) => ReactNode;
   expand?: (tool: ToolView, renderRow: (tool: ToolView) => ReactNode) => ToolExpand | null;
 };

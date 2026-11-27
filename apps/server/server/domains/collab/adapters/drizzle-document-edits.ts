@@ -1,4 +1,3 @@
-// Immutable edit receipts shared by the model's writes, writer inverses and the model stack.
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
@@ -23,7 +22,6 @@ export interface ReceiptWrite {
   commandId?: string;
   toolCallId?: string | null;
   actor: "agent" | "human" | "system";
-  /** Reserved once by the logical model edit; never allocated at capture. */
   wId?: number;
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
@@ -32,23 +30,16 @@ export interface ReceiptWrite {
     origin: EditOrigin;
     targets?: EditTarget[];
     delta?: StoredDelta | null;
-    /** An AI write as an Undo-rule edit. */
     write?: { edit: StoredEdit };
   }[];
 }
 
 const modelEditCommand = { name: "model-edit-command" };
 
-/**
- * Every edit receipt recorded in the ambient transaction names this command, so the model's text
- * receipts and its tree entries carry the id of the one command that made them without each
- * writer threading it through.
- */
 export function bindEditsToCommand(commandId: string): void {
   setDrizzleTransactionLocal(modelEditCommand, commandId);
 }
 
-/** The command the ambient transaction runs, for a receipt that is not an edit's (a tree receipt). */
 export function boundCommandId(): string | undefined {
   return getDrizzleTransactionLocal<string>(modelEditCommand);
 }

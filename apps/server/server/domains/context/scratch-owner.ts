@@ -1,4 +1,3 @@
-/** One rule for a chat's Scratch, shared by context dispatch and file policy. */
 import { chatOwner } from "../../shared/draft-owner.js";
 export type ScratchOwner =
   | { scope: "work"; workId: string }

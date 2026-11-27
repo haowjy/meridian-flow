@@ -36,7 +36,6 @@ const input = (values: Partial<CorrespondenceInput>): CorrespondenceInput => ({
   ...values,
 });
 
-/** Independent exhaustive ranking: no components, assignment duals or alternating paths. */
 function exhaustive(values: CorrespondenceInput): LinkMatch[] {
   const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const showingOrder = (a: ShownLink, b: ShownLink) =>
@@ -116,7 +115,6 @@ function exhaustive(values: CorrespondenceInput): LinkMatch[] {
       }
       return;
     }
-    // Unmatched-first exploration intentionally differs from production's traversal.
     pairs[j] = -1;
     visit(j + 1);
     values.old.forEach((_, i) => {

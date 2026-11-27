@@ -78,7 +78,6 @@ describe("context router owner resolution", () => {
     work("w4", "Gone", "deleted"),
     work("w7", "W2"),
   ];
-  // The real owner component over fake storage, so the corrections under test are the shipped ones.
   const owners = bindOwners(
     createOwnerLookup({
       chats: { byRef: async (_p, ref) => ({ chatId: ref, chatRef: ref, live: ref === "c1" }) },

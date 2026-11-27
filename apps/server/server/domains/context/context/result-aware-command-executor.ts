@@ -1,4 +1,3 @@
-/** Transactional execution for commands whose domain failures are returned as Results. */
 import { Err, type Result } from "../../../shared/result.js";
 import type {
   ContextCommandActiveDraft,
@@ -87,7 +86,6 @@ export function createResultAwareCommandExecutor<TError>(input: {
     runInDraft(draft, operation, sourceIds) {
       return run(
         ({ draft: active }) => {
-          // The transaction contract: an `ensure` command always resolves a draft.
           if (!active) throw new Error("An ensuring command transaction resolved no draft");
           return operation(active);
         },

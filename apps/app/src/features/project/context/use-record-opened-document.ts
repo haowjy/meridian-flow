@@ -23,7 +23,6 @@ import {
   useOptionalTreeLists,
 } from "./account-feature-context";
 
-/** Resolves true once the project's list holds the copy's records on the server; false when it will not. */
 function whenListSynced(
   lists: TreeListRegistry,
   projectId: string,

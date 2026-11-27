@@ -1,13 +1,8 @@
-/**
- * RecencyGroupedList — Today / Yesterday / Earlier sections for project
- * resume lists. The Editor's Recently opened renders through it.
- */
 import { t } from "@lingui/core/macro";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { GroupLabel, RuledList } from "./RuledList";
 
-/** Age buckets the list groups under, oldest last. */
 const GROUPS = ["today", "yesterday", "earlier"] as const;
 export type RecencyGroup = (typeof GROUPS)[number];
 
@@ -39,7 +34,6 @@ function groupLabel(group: RecencyGroup): string {
   }
 }
 
-/** Newest-first items split into their non-empty buckets, each keeping that order. */
 function recencyGroups<T>(
   items: readonly T[],
   now: number,
@@ -51,7 +45,6 @@ function recencyGroups<T>(
   })).filter((bucket) => bucket.items.length > 0);
 }
 
-/** A bucket's label with the space above (except the first) and below it. */
 function RecencyGroupLabel({ group, first }: { group: RecencyGroup; first: boolean }) {
   return <GroupLabel className={cn(!first && "pt-7")}>{groupLabel(group)}</GroupLabel>;
 }
@@ -63,7 +56,6 @@ export function RecencyGroupedList<T>({
   itemKey,
   renderItem,
 }: {
-  /** Newest first; each bucket keeps this order. */
   items: readonly T[];
   now: number;
   timestamp: (item: T) => string;

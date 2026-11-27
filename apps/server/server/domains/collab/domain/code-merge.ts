@@ -1,7 +1,3 @@
-/**
- * Three-way merge of a code document's text, through the content merge: a code document is one
- * code block holding its text.
- */
 import { contentMerge } from "@meridian/agent-edit/content-merge";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 

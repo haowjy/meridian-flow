@@ -1,5 +1,3 @@
-/** The browser's side of the command driver: Web Lock, BroadcastChannel and fetch. */
-
 import type { ChangeChannel, DeliveryLock, Transport } from "@meridian/command-driver";
 import { EXPECTED_ACCOUNT_HEADER } from "@meridian/contracts/commands";
 import { deserializeTransport } from "@meridian/contracts/protocol";

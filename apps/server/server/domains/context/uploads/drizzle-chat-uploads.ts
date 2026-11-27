@@ -6,13 +6,9 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 
 export interface ChatUploads {
-  /** The chat's uploads that are placed in its list now, newest first. */
   list(projectId: string, chatId: string): Promise<ChatUploadsResult>;
 }
 
-/**
- * What the chat's own query adds to its uploads in the tree list: when each was attached.
- */
 export function createDrizzleChatUploads(db: Database): ChatUploads {
   return {
     async list(projectId, chatId) {

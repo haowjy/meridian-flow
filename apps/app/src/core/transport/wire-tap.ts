@@ -39,7 +39,6 @@ export function notifyThreadSocketClose(
   currentThreadTap?.onSocketClose(socketEpoch, code, wasClean);
 }
 
-/** Late-bound observer seam for each Loro room socket: its lifecycle and every decoded message. */
 export interface LoroWireTap {
   onMessage(
     direction: WireDirection,

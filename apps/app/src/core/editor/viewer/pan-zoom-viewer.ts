@@ -39,57 +39,32 @@ import {
 } from "./viewer-math";
 
 export type PanZoomViewerOptions = {
-  /** The clipping viewport. Gesture listeners bind here. */
   host: HTMLElement;
-  /**
-   * The transform host: the caller's own wrapper around the content, sized to
-   * the content's intrinsic dimensions. Never the content itself, so nothing
-   * the viewer does can be mistaken for an edit to what is being viewed.
-   */
   content: HTMLElement;
-  /** Absolute scale floor. Lowered to the fit scale when a diagram is huge. */
   minScale?: number;
   maxScale?: number;
-  /** Clear space kept around the content when fitting. */
   padding?: number;
-  /** Factor for one double-click or one zoom button press. */
   stepFactor?: number;
-  /**
-   * Ceiling on what Fit may reach. A vector diagram is happy filling the
-   * frame; a small photograph enlarged to fill it is just blurry, so a raster
-   * caller passes 1 and lets the writer zoom past it deliberately.
-   */
   maxFitScale?: number;
 };
 
 export type ViewerSizes = {
-  /** The host's viewport, CSS px. */
   host: ViewerSize;
-  /** The content's untransformed layout box, CSS px. */
   content: ViewerSize;
-  /** The scale at which the content would fit — what Fit lands on. */
   fitScale: number;
-  /** The scale actually applied right now. */
   realZoom: number;
 };
 
 export type PanZoomViewer = {
-  /** Applied scale. 1 means the content is at its intrinsic size. */
   readonly scale: number;
   readonly pan: ViewerPoint;
-  /** True until a gesture moves the view away from its fit. */
   readonly fitted: boolean;
   sizes(): ViewerSizes;
   /** `at` is host-relative; omitted means the host's center. */
   zoomBy(factor: number, at?: ViewerPoint): void;
   zoomTo(scale: number, at?: ViewerPoint): void;
   panBy(delta: ViewerPoint): void;
-  /** Fit and center. Also the mount state, and what Fit restores. */
   fit(): void;
-  /**
-   * Re-measure. An untouched view refits; a view the writer has moved keeps
-   * its transform, because a window resize is not a request to lose your place.
-   */
   resize(): void;
   subscribe(listener: () => void): () => void;
   destroy(): void;
@@ -137,13 +112,11 @@ export function createPanZoomViewer({
     height: content.offsetHeight,
   });
 
-  /** Absolute limits, floored at the fit so a wall-sized diagram still fits. */
   const limits = () => ({
     minScale: Math.min(minScale, fitScale(hostSize(), contentSize(), padding)),
     maxScale,
   });
 
-  /** What Fit is allowed to reach, which is not what a gesture is allowed to. */
   const fitLimits = () => {
     const bounds = limits();
     return { minScale: bounds.minScale, maxScale: Math.min(bounds.maxScale, maxFitScale) };
@@ -167,7 +140,6 @@ export function createPanZoomViewer({
     }
     transform = next;
     if (!keepsFit) fitted = false;
-    // Writes coalesce to one per frame; readers never wait for it.
     if (frame === 0) frame = requestAnimationFrame(write);
     for (const listener of listeners) listener();
   };
@@ -195,8 +167,6 @@ export function createPanZoomViewer({
     });
   };
 
-  // ── gestures ────────────────────────────────────────────────────────────
-
   const onPointerDown = (event: PointerEvent) => {
     // Mouse right/middle belong to the context menu and the browser.
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -216,9 +186,6 @@ export function createPanZoomViewer({
     const next = pointerSpan([...pointers.values()]);
     if (!next || !span) return;
 
-    // One equation for both gestures: the centroid's travel is the pan, the
-    // spread's ratio is the zoom. With one pointer the ratio is 1 and this is
-    // a drag; the branch never has to exist.
     const { factor, delta } = pinchStep(span, next);
     const moved = panTransformBy(transform, delta);
     span = next;
@@ -229,7 +196,6 @@ export function createPanZoomViewer({
     );
   };
 
-  /** Give a pointer back to the page, guarded: capture may already be gone. */
   const releaseCapture = (pointerId: number) => {
     if (host.hasPointerCapture(pointerId)) host.releasePointerCapture(pointerId);
   };
@@ -243,7 +209,6 @@ export function createPanZoomViewer({
     if (pointers.size === 0) delete host.dataset.panning;
   };
 
-  /** Drop every live pointer without touching the transform. */
   const endGesture = () => {
     for (const pointerId of pointers.keys()) releaseCapture(pointerId);
     pointers.clear();

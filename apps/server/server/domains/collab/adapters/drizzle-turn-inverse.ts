@@ -1,9 +1,3 @@
-/**
- * Durable multi-document inverse admission: a lock-free capture that plans which steps run, and
- * one commit scope whose steps resolve against the committed text under the documents' keys;
- * delivers only after it commits.
- */
-
 import { AsyncLocalStorage } from "node:async_hooks";
 import { captureDelta } from "@meridian/agent-edit/content-merge";
 import { editHandle, undoInRooms, type WriteOrdinals } from "@meridian/agent-edit/integration";
@@ -66,20 +60,14 @@ import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-invers
 
 type Dependencies = {
   db: Database;
-  /** The write ordinals the model's inverses take; the tree history reads it too. */
   ordinals: WriteOrdinals;
-  /** The text an inverse reads and commits into: Live's, or a Draft chat's fork. */
   rooms: DocumentRooms<DrizzleDb>;
   resolveDocumentUri(documentId: string): Promise<string | null>;
-  /** Where a document in Trash last stood, which names it while a Redo brings it back. */
   resolveLastDocumentUri(documentId: string, draftId?: DraftId): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
-  /** A revert changes pending membership, so it reconciles the Works' counts through it. */
   workProjection: Pick<WorkProjectionMutation, "mutate" | "ownersOf">;
-  /** A removed document's text is not reversed; its record words the refusal. */
   removals: DocumentRemovals;
-  /** The tree half of a card's reversal: the reply's tree receipts, in the lists that hold them. */
   treeLists: Pick<TreeListStore, "lock" | "read" | "submit">;
   fileAccess: Pick<
     FileAccess,
@@ -95,14 +83,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // The receipts' own adapter; its text stack is this service's, read once it exists.
     history: () => treeHistory,
   });
-  /** A card's reversal takes the reply's tree receipts too; the model's own tools take their own. */
   const treePlanOf = (query: TurnInverseQuery) =>
     query.model || !query.turnId
       ? Promise.resolve(NO_TREE_STEPS)
       : treeInverse.plan(query.threadId, query.turnId, query.learned);
-  /**
-   * An Undo that deletes a created document leaves its text with the document.
-   */
   async function createdDocumentsOf(query: TurnInverseQuery) {
     return new Set((await treePlanOf(query)).createdDocuments);
   }
@@ -112,19 +96,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
     ].sort();
   }
-  /**
-   * The room the chat writes `documentId` in now (`agentRoomFor`): the model's answer names it, and
-   * its batches there join the reply's frontier. A card's query has no chat destination: Live.
-   */
   const currentRoomOf = (query: Pick<TurnInverseQuery, "model">, documentId: DocumentId) =>
     query.model && currentDestination().kind === "draft"
       ? agentRoomFor(db(), documentId)
       : Promise.resolve(liveRoomOf(documentId));
-  /**
-   * The documents' parts an inverse of `threadId` reads, in order, each in the room it was written
-   * in: the chat's own, and every Undo and revert (which name the parts they took). A fork part
-   * whose draft is gone has nothing to come back to.
-   */
   async function history(documentIds: DocumentId[], threadId: string) {
     if (!documentIds.length) return [];
     const rows = await db()
@@ -166,12 +141,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       wId: edit.wId,
     }));
   }
-  /**
-   * Every affected document as the plan will see it: the history, and each room the chat's writes
-   * landed in (and the one it writes in now) as read now. Taken with no lock, so it only chooses
-   * the steps; each step reads the committed text it writes. The rooms' copies go into `held` as
-   * they are read, for the attempt to free.
-   */
   async function capture(query: TurnInverseQuery, held: RoomDocs[]): Promise<InverseCapture> {
     const createdDocuments = await createdDocumentsOf(query);
     const ids = await selectedDocuments(query);
@@ -201,7 +170,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             ? { kind: "draft", draftId: one.draftId, ownerHandle: null }
             : { kind: "live" },
         );
-        // A delete keeps the document's rooms: its inverse plans over the retained text.
         const docs = await input.rooms.read(one);
         held.push(docs);
         rooms.set(name, { room: one, docs, closed: availability.closed });
@@ -209,7 +177,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       await testHook("inverse.afterCaptureRead");
       documents.push({
         documentId,
-        // A deleted document has no address: the model's path, or where it last stood.
         uri:
           (await input.resolveDocumentUri(documentId)) ??
           query.path ??
@@ -225,11 +192,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     return { ids, documents };
   }
 
-  /**
-   * An inverse's one attempt: a capture plans the steps, `run` commits them in one savepoint. The
-   * steps read the committed text under their locks, so a write between the capture and the
-   * commit changes what they take, never whether the inverse runs. Deliveries wait for the commit.
-   */
   async function attempts<T>(
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
@@ -256,12 +218,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async ownersOf(query, userId) {
       const ids = await selectedDocuments(query);
       const tree = await treePlanOf(query);
-      // The Works and chats whose notes the tree steps change.
       let owners: OwnerLocks = {
         workIds: tree.owners.works,
         lineageRootIds: tree.owners.lineages,
       };
-      // Each document's own Work, which its write grant locks with the draft's.
       const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
       if (principal)
         for (const documentId of new Set([...ids, ...tree.documents.map((d) => d.documentId)])) {
@@ -296,7 +256,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const attempt = attemptStorage.getStore();
       if (!attempt) throw new Error("An inverse commits only inside its captured attempt");
       await testHook("inverse.beforeCommitScope");
-      // Off every lock: each plan's parts with provenance on its attempt-local view.
       const planned = new Map(
         plans.map((plan): [PreparedDocumentInverse, PlannedInverse] => [
           plan,
@@ -317,7 +276,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const handles: string[] = [];
       const taken: number[] = [];
       const deliveries: (() => Promise<void>)[] = [];
-      // Off every lock: the tree receipts the reply left, which lists and Works they write.
       const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query);
       const admission = await admitInverse(sequence, query, userId, tree.documents);
       const { grants } = admission;
@@ -325,7 +283,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         works: tree.owners.works,
         lineages: tree.owners.lineages,
       };
-      // What the scope below locks; a Work outside the caller's locks is past their order.
       const effect = mergeOwnerLocks(
         await input.workProjection.ownersOf(works),
         ...(grants ?? []).map((grant) => grantOwnerLocks(grant.facts)),
@@ -410,8 +367,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     treeDocuments: readonly { documentId: string; restore: boolean }[],
   ): Promise<{ grants: FileGrant<"edit">[] | null }> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
-    // Every inverse supplies its principal explicitly; an absent one here means a composition
-    // bug, not live routing.
     if (!principal) return { grants: null };
     const requirements = new Map<
       string,
@@ -426,8 +381,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           restore: false,
         });
       }
-    // A tree change is taken back by the one who may edit that document; a document in Trash
-    // may only be restored.
     for (const { documentId, restore } of treeDocuments)
       requirements.set(`${documentId}:live:${restore ? "restore" : "content"}`, {
         documentId: documentId as DocumentId,
@@ -449,7 +402,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const grants: FileGrant<"edit">[] = [];
     for (const requirement of admittedRequirements) {
       const holder = requirement.draftId ? byDraft.get(requirement.draftId) : undefined;
-      // A tree change's draft purged since restarts the command.
       if (requirement.draftId && !holder) throw new TreeOwnersMoved();
       const grant = await input.fileAccess.authorizeAt(
         principal,
@@ -469,13 +421,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     return { grants };
   }
 
-  /**
-   * One step inside the commit scope: its parts taken back on the committed rooms, each in the room
-   * it was written in, by design §2's Undo rule, newest first (`undoInRooms`: a part whose
-   * history the room cut since the capture stays as it is), each room's changes committed into it as
-   * one batch, and one receipt of kind `undo` or `revert` with a part per room, naming the parts it
-   * took there, with the model's chat and write ordinal or the writer.
-   */
   async function commitStep(
     entry: PlannedInverse,
     step: InverseStep,
@@ -503,7 +448,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         pending: room.kind === "fork" ? pendingBlocks(docs) : null,
       });
     }
-    // The model's inverse names its turn, as its writes do; the writer's card Undo is the user's.
     const by = query.model && query.turnId ? { turn: query.turnId } : undefined;
     const undone = undoInRooms(parts, docsOf, by);
     const taken = parts.filter((part) => !undone.compacted.has(part));
@@ -516,22 +460,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const batch = encodeChanges(changes);
       await input.rooms.commit(db(), room, batch, "server:inverse");
       entry.wrote = true;
-      // The reply's later writes plan on the batches the room it writes in holds: its own, and
-      // Live's in a fork, whose texts read Live's.
       if (name === loroRoomName(entry.room) || (room.kind === "live" && entry.room.kind === "fork"))
         entry.updates.push(batch);
       const before = seen.get(name);
-      // A draft that now differs from Live where it didn't: Live still holds what came out.
       if (before?.pending && [...pendingBlocks(docs)].some((id) => !before.pending?.has(id)))
         entry.inManuscript = true;
       const written = [...new Set(changes.map((change) => change.key))];
       const here = taken.filter((part) => loroRoomName(part.room) === name);
       receipts.push({
-        // The parts' own origin: the room, and the draft a Live room's text was written for.
         origin: (here[0] as UndoablePart).origin,
         targets: here.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
-        // The model's inverse is an edit on its stack: it records its delta and its edit, which a
-        // later Undo or revert reads back.
         ...(before?.blocks
           ? {
               delta: captureDelta(before.blocks, blocksIn(docs)),
@@ -540,7 +478,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           : {}),
       });
     }
-    // It takes the next write ordinal, as a write does.
     const wId = query.model
       ? await input.ordinals.reserveWriteOrdinal(documentId, query.threadId)
       : undefined;
@@ -568,7 +505,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     };
   }
 
-  /** After every step: the document's projections and the turn's notice, once it commits. */
   async function settleDocument(
     entry: PlannedInverse,
     kind: "undo" | "revert",
@@ -607,27 +543,18 @@ const roomOfOrigin = (origin: EditOrigin, documentId: DocumentId): DocumentRoom 
 const blocksIn = (docs: RoomDocs) =>
   readDocument(docs).map((block) => nodeOf(inverseSchema, block));
 
-/** The blocks a draft's copy holds a change in (`changedBlocks`). */
 const pendingBlocks = (docs: RoomDocs) =>
   new Set(changedBlocks(docs).flatMap((change) => change.blocks));
 
-/** What a commit builds up for one document: what its steps wrote, for delivery and the answer. */
 type PlannedInverse = {
   plan: PreparedDocumentInverse;
   documentId: DocumentId;
-  /** The room the chat writes the document in now. */
   room: DocumentRoom;
-  /** Each captured room as the commit scope found it, by room name, which the steps write through; freed at the scope's end. */
   docs: Map<string, RoomDocs>;
-  /** The batches the steps committed that the chat's room holds: the reply's frontier takes them. */
   updates: Uint8Array[];
-  /** Whether the steps committed anything, in any room. */
   wrote: boolean;
-  /** Text parts the steps took. */
   reversed: number;
-  /** Text parts whose history the room cut, left as they are. */
   compacted: number;
-  /** A step took text out of a draft that Live still holds (an Apply put it there). */
   inManuscript: boolean;
 };
 
@@ -636,7 +563,6 @@ type InverseCapture = {
   documents: InverseDocument[];
 };
 
-/** The attempt a store call runs in: its capture, and the deliveries that wait for its commit. */
 const attemptStorage = new AsyncLocalStorage<
   InverseCapture & { deliveries: (() => Promise<void>)[] }
 >();

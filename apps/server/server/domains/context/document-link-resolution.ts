@@ -1,5 +1,3 @@
-/** Scoped internal-link lookup over a source's live tree and Work authority. */
-
 import type { DocumentId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
@@ -20,7 +18,6 @@ import type {
 } from "./ports/document-link-resolver.js";
 import { LIVE_TREE, type TreeReader } from "./tree/tree-view.js";
 
-/** Whose source an address is in; `account` is the reader's own home folder. */
 type Owner = ContextSourceOwner;
 type Location = { owner: Owner; scheme: ContextUriScheme; path: string };
 
@@ -59,14 +56,11 @@ export function createDocumentLinkResolver({
       const lineage = await lineages?.byId(input.projectId, input.rootThreadId);
       scope = lineage ? { kind: "lineage", rootThreadId: lineage.rootThreadId } : null;
     } else if (scheme === "uploads") {
-      // Uploads belong to a chat; a Work owns none, so `uploads://@w3/` names nothing.
       const chatId =
         authority.kind === "chat"
           ? (await chats?.byRef(input.projectId, authority.chatRef))?.chatId
           : authority.kind === "contextual"
-            ? // A bare name means the holder chat's file. A document holder has no chat: the
-              // write path qualifies model-written embeds, so a stored bare one stays unresolved.
-              input.chatId
+            ? input.chatId
             : null;
       scope = chatId ? { kind: "chat", chatId } : null;
     } else if (authority.kind === "work") {

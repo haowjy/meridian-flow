@@ -1,4 +1,3 @@
-/** Project-scoped command channel for starting creation in the desktop context tree. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -6,7 +5,6 @@ import type { ContextCreateKind } from "./context-create-kind";
 export type TreeCreationRequest = {
   scheme: ProjectContextTreeScheme;
   kind: ContextCreateKind;
-  /** Target folder path (`""` = scheme root) the inline create row nests under. */
   parentPath: string;
 };
 type TreeCreationController = {

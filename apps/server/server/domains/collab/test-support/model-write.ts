@@ -3,10 +3,6 @@ import type { WriteCommand } from "@meridian/agent-edit/integration";
 import type { RoutedWriteContext, RoutedWriteOutcome } from "../domain/agent-edit-cores.js";
 import type { ModelEdits } from "../domain/model-edit.js";
 
-/**
- * One model tool call as the chat loop sends it: a command whose effect is the write. The
- * account and project come from the grant unless the caller names them.
- */
 export async function modelWrite(
   modelEdits: Pick<ModelEdits, "run" | "write">,
   command: WriteCommand,

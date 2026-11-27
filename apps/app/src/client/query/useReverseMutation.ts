@@ -1,9 +1,3 @@
-/**
- * useReverseMutation — React Query mutations for chat turn undo.
- *
- * The editor is updated by its Live room's sync; the mutation refreshes the
- * turn lineage cache so transcript undo affordances reflect server state.
- */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -21,8 +15,6 @@ export function useReverseTurnMutation(threadId: string) {
   return useMutation({
     mutationFn: (input: ReverseTurnInput) => reverseTurn(threadId, input),
     onSuccess: (outcome) => {
-      // A restored Work must reappear in the sidebar and rail without a
-      // reload, so its project's works and thread bindings refetch together.
       const reversals = successfulWorkReversals(outcome);
       if (reversals.length === 0) return;
       for (const { command, projectId } of reversals) {

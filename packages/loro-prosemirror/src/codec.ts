@@ -20,12 +20,6 @@ import { Fragment, Mark, type Node, type Schema } from "prosemirror-model";
 
 const shapes = new WeakMap<Schema, ShapeSchema>();
 
-/**
- * The shape's view of a ProseMirror schema (design §1): which nodes are textblocks, which marks
- * and inline nodes each allows, which containers need content and which of those an empty
- * paragraph can fill, `excludes: "_"` marks, and the `configTextStyle` set (`inclusive: false` is
- * `expand: none`, any other mark `after`; `comment` takes the default, `none`). Cached per schema.
- */
 export function shapeSchemaOf(schema: Schema): ShapeSchema {
   const cached = shapes.get(schema);
   if (cached) return cached;
@@ -65,7 +59,6 @@ export function shapeSchemaOf(schema: Schema): ShapeSchema {
   return shape;
 }
 
-/** A ProseMirror mark's stored style: `comment_<id>: true`, or the mark's name and attrs. */
 export function storedMark(mark: Mark): [string, unknown] {
   if (mark.type.name === COMMENT_MARK && mark.attrs.id != null)
     return [`${COMMENT_STYLE_PREFIX}${String(mark.attrs.id)}`, true];
@@ -100,7 +93,6 @@ export function marksOf(schema: Schema, marks: Marks): readonly Mark[] {
   return Mark.setFrom(out);
 }
 
-/** A textblock's inline content (or a fragment of it) as the shape stores it. */
 export function inlineOf(node: Node | Fragment): InlineItem[] {
   const out: InlineItem[] = [];
   node.forEach((child) => {
@@ -117,12 +109,6 @@ export function inlineOf(node: Node | Fragment): InlineItem[] {
   return out;
 }
 
-/**
- * The block a node stands for, and back. Nodes and blocks are immutable, so a node seen before
- * gives the same block object and a block read before gives the same node: a write skips the
- * blocks a transaction left alone, and a read keeps the editor's nodes for the blocks a batch left
- * alone, both by identity.
- */
 const blockOfNode = new WeakMap<Node, ShapeBlock>();
 const nodeOfBlock = new WeakMap<ShapeBlock, Node>();
 
@@ -165,7 +151,6 @@ function pair(node: Node, block: ShapeBlock) {
   nodeOfBlock.set(block, node);
 }
 
-/** The ProseMirror document the shape's blocks stand for, in `schema`. */
 export function docOf(schema: Schema, blocks: readonly ShapeBlock[]): Node {
   return schema.topNodeType.create(
     null,
@@ -200,23 +185,12 @@ export function inlineNodes(schema: Schema, items: readonly InlineItem[]): Fragm
   return Fragment.fromArray(nodes);
 }
 
-/**
- * What these docs read as before, for a read that re-reads only what changed: the editor's
- * document then, the comments it showed bodies of (`visibleComments` taken then), and every doc
- * key that changed since.
- */
 export interface ProseMirrorSince {
   doc: Node;
   comments: ReadonlySet<string>;
   changed: ReadonlySet<DocKey>;
 }
 
-/**
- * What the editor shows for these docs: the normalized read, as a ProseMirror document. With
- * `since`, only what changed is read again, and every block that reads as it did is the node
- * `since.doc` already holds. `kept` shows removed blocks the editor keeps for its caret
- * (`readDocument`).
- */
 export function readProseMirror(
   docs: RoomDocs,
   schema: Schema,
@@ -231,10 +205,6 @@ export function readProseMirror(
   return docOf(schema, blocks);
 }
 
-/**
- * Write a ProseMirror document into the docs: `writeDocument` on its blocks. With `previous` (the
- * document the docs read as now), the blocks `doc` shares with it are not compared again.
- */
 export function writeProseMirror(
   docs: RoomDocs,
   doc: Node,

@@ -1,5 +1,3 @@
-/** Completion: the headless half of every menu a writer types underneath. */
-
 export {
   createDomInputSuggestionTransport,
   type DomInputSelection,

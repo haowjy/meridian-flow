@@ -1,7 +1,3 @@
-/**
- * Owns a writer submission from admission through transport recovery. It follows no run: the chat's run state is the mounted subscriber's
- * (`useThreadSnapshotSync`), and this controller only tells that view what the writer admitted.
- */
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import { isBusy, type ThreadTransport } from "@meridian/thread-client";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -21,7 +17,6 @@ type RetireAdmissionFn = typeof retireUserMessageAdmission;
 
 export type SubmitOptions = {
   signal: AbortSignal;
-  /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId: string;
 };
 
@@ -47,7 +42,6 @@ export type SubmissionOutcome = {
 
 type SessionFence = () => boolean;
 
-/** A refusal proves rejection; transport, server errors and pending admissions do not. */
 export function classifyWriteFailure(error: unknown): "rejected" | "ambiguous" {
   if (error instanceof HttpResponseError || isMeridianApiError(error)) {
     if (error.status === 409 && error.message.includes("admission_pending")) return "ambiguous";
@@ -97,7 +91,6 @@ export class ThreadRunController {
     this.activationGeneration += 1;
   }
 
-  /** Re-admit a journal-recovered submission under its owning recovery session. */
   recoverSubmission(
     threadId: string,
     payload: SubmissionPayload,
@@ -116,7 +109,6 @@ export class ThreadRunController {
       this.recoverySessions.has(session);
   }
 
-  /** Register the mounted recovery owner for the current account/thread. */
   beginRecoverySession(session: object): void {
     this.recoverySessions.add(session);
   }
@@ -175,7 +167,6 @@ export class ThreadRunController {
     return outcome("accepted");
   }
 
-  /** Reconcile a durable journal entry. */
   lookupSubmission(
     threadId: string,
     submissionId: string,
@@ -243,11 +234,6 @@ export class ThreadRunController {
     return outcome("ambiguous");
   }
 
-  /**
-   * The lock-holding tab's admission. The chat owes the message until its record shows it
-   * answered, so the admission becomes a message intent at the version its answer carries (none
-   * for an older admission, whose record the subscriber already holds).
-   */
   private attachAcceptedRun(
     threadId: string,
     result: { userTurnId: string; runStateVersion: string | null },
@@ -263,7 +249,6 @@ export class ThreadRunController {
       });
   }
 
-  /** Release controller-lifetime registrations (provider unmount). */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

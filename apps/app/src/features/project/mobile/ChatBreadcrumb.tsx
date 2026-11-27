@@ -1,8 +1,3 @@
-/**
- * ChatBreadcrumb — the phone's title for main's chat: the chat switcher, so switching and New
- * chat stay one tap away, and renaming. A refused rename spans the width under the top bar (its
- * positioned ancestor), not the narrow trail.
- */
 import { t } from "@lingui/core/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
@@ -14,7 +9,6 @@ export function ChatBreadcrumb({
   display,
 }: {
   projectId: string;
-  /** Main's chat, a new chat, or Recent chats. */
   display: ChatDisplay;
 }) {
   if (display.kind === "chat-recents")

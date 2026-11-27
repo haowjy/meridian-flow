@@ -7,9 +7,7 @@ import { diffKeys, segmentText, wordDiff } from "../diff/tokens.js";
 import type { EditOp, EditorOf, FormatRange, TextSplice } from "../ports/model.js";
 import type { TextWindow } from "./find.js";
 
-/** A model change: base units [from, to) become the model's units [at, end). */
 interface Hunk {
-  /** A find insert, which the model put after its match. */
   anchored?: true;
   from: number;
   to: number;
@@ -17,45 +15,24 @@ interface Hunk {
   end: number;
 }
 
-/** A block's Markdown as it sits in the document, with its `open` (see `ParseOptions`). */
 export interface Where {
   body: string;
   open: string;
 }
 
-/**
- * What the model saw of the block: the codec that wrote it and where it sits. Its round trip
- * shows which attributes the model could have changed.
- */
 export interface ShownBy {
   codec: AgentEditCodec;
-  /** The block as the document writes it, and the containers it sits in. */
   place: () => Where;
 }
 
 interface Walk {
   shownBy?: ShownBy;
-  /** The editor of each unit of the textblock at `path`, in the model's view. */
   editors?: (path: readonly number[]) => EditorOf;
-  /** What the codec shows of the block: the attributes the model could have seen. */
   shown?: Block;
-  /** A find's windows as units, by the path of the textblock that holds them. */
   windows: Map<string, [TextWindow[], TextWindow[]]> | null;
   ops: EditOp[];
 }
 
-/**
- * Lower a block rewrite planned on the model's view into the smallest operations on the
- * nodes, units and attributes the model saw. Inside a text block only the words that changed are written.
- * Every node at any depth is lowered by the same code, and the room is never read; `editors`
- * says who typed the view's units, which picks the space a change that deletes words keeps. The two
- * blocks have one type; any other difference lowers: children that pair are edited in place,
- * the rest are deleted or inserted, and an inline atom may go into the middle of a run of text.
- * `placed` is a find's windows in the two blocks' text. With `shownBy`, an attribute counts as
- * changed only where the model's node differs from what the codec shows of the node it saw
- * (the model's node lacks what the codec does not write); without it, `after` is a stored
- * node and every differing attribute is a change.
- */
 export function lowerBlock(
   before: Block,
   after: Block,
@@ -87,11 +64,6 @@ function lowerNode(walk: Walk, before: Block, after: Block, path: readonly numbe
   lowerChildren(walk, before, after, path);
 }
 
-/**
- * A container's children pair by `correspond` (by id where nodes have ids, by guess where they
- * do not); a pair of one type is edited in place, a child with no pair is deleted, and a run of
- * new children with none goes in after the last pair before it.
- */
 function lowerChildren(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
   const olds = childrenOf(before);
   const news = childrenOf(after);
@@ -131,11 +103,6 @@ function childrenOf(node: Block): Block[] {
   return found;
 }
 
-/**
- * The attributes the model changed: those where its node differs from what the codec
- * shows of the node it saw. An attribute the codec does not write (an upload in flight)
- * comes back the same from both, so the model never overwrites what it was never shown.
- */
 function changedAttrs(
   before: Block,
   after: Block,
@@ -151,7 +118,6 @@ function changedAttrs(
     return changed;
   }
   if (candidates.length === 0) return changed;
-  // A node the codec's round trip has no counterpart of shows nothing: write no attribute.
   const shown = shownOf();
   if (!shown) return changed;
   for (const key of candidates)
@@ -174,7 +140,6 @@ function shownNode(walk: Walk, path: readonly number[]): Block | null {
   return node ?? null;
 }
 
-/** The `ordinal`th inline atom of the textblock at `path` in the codec's round trip. */
 function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block | null {
   const atoms: Block[] = [];
   shownNode(walk, path)?.forEach((child) => {
@@ -200,7 +165,6 @@ function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly 
 interface LoweredText {
   splices: TextSplice[];
   formats: FormatRange[];
-  /** Inline atoms the model kept, by unit in the view and in the model's text. */
   kept: Array<{ unit: number; modelUnit: number; ordinal: number }>;
 }
 
@@ -243,9 +207,6 @@ function lowerText(
 ): LoweredText {
   const { a, b, isAtom } = unitStrings(before, after);
 
-  // A find's window is placed by the model and word-diffed on its own, so a word outside the
-  // match anchors nothing and a word inside it that the model kept is not written. Without
-  // windows, the whole textblock is one window.
   const whole: [TextWindow[], TextWindow[]] = [
     [{ from: 0, to: a.length }],
     [{ from: 0, to: b.length }],
@@ -254,9 +215,6 @@ function lowerText(
     placed?.[0] && placed[1] && windowsDescribe(a, b, [placed[0], placed[1]])
       ? [placed[0], placed[1]]
       : whole;
-  // `changes` is the word diff, which says which old units each of the model's units stands for;
-  // `hunks` are what gets written: each word change kept to its insertions where it only gained
-  // characters, then the changes that delete text joined across spaces and given one space.
   const changes: Hunk[] = [];
   let hunks: Hunk[] = [];
   for (const [index, old] of olds.entries()) {
@@ -282,13 +240,6 @@ function lowerText(
   return textOps(before, after, hunks, changes, a, b);
 }
 
-/**
- * The splices that make `after` from `before` at `hunks`, and what the model left alone between
- * them: its formatting changes, compared only there since new text carries its own marks inside
- * its splice, and the inline atoms it kept. A unit of new text ends up with the model's marks and
- * those carried along `changes` (`carriedMarks`); a kept unit keeps what it has, and only a mark
- * the model changed is written. `a` and `b` are the two blocks' units (`unitStrings`).
- */
 function textOps(
   before: Block,
   after: Block,
@@ -325,7 +276,6 @@ function textOps(
       for (let unit = base; unit < hunk.from; unit += 1) {
         const mine = marksA[unit];
         const theirs = marksB[model + unit - base];
-        // An atom carries no marks.
         if (mine === null || theirs === null) {
           open = undefined;
           continue;
@@ -358,7 +308,6 @@ function textOps(
   return { splices, formats, kept };
 }
 
-/** The model's units [at, end) as a splice's content, each text unit with its carried marks. */
 function newText(after: Block, { at, end }: Hunk, carried: ReadonlyArray<readonly Mark[]>) {
   const nodes: Block[] = [];
   let unit = at;
@@ -453,7 +402,6 @@ function keepOneSpace(
     const floor = prev ? prev.to + (deletes(prev) ? 0 : 1) : window.from;
     const ceiling = next ? next.from - (deletes(next) ? 0 : 1) : window.to;
     let { from, to, at, end } = hunk;
-    // Take in the spaces on both sides, then give back the side that stays: the text is the same.
     while (from > floor && isSpace(a[from - 1])) [from, at] = [from - 1, at - 1];
     while (to < ceiling && isSpace(a[to])) [to, end] = [to + 1, end + 1];
     const keepsBefore = !isSpace(a[from]) || sameEditor(from - 1, from);
@@ -496,8 +444,6 @@ function carriedMarks(
     while (model < change.at) out[model++] = hidden(base++);
     const olds = wordsIn(a, change.from, change.to);
     const news = wordsIn(b, change.at, change.end);
-    // An old word goes to the new word at its middle, by position in the run; a new word no old
-    // word lands on takes the old word at its own middle.
     const sources: number[][] = news.map(() => []);
     if (news.length > 0)
       for (const i of olds.keys())
@@ -513,7 +459,6 @@ function carriedMarks(
           for (const mark of hidden(unit)) set = mark.addToSet(set);
       for (let unit = word.from; unit < word.to; unit += 1) out[unit] = set;
     }
-    // The gaps: before the first new word, between each two, after the last.
     for (let j = 0; j <= news.length; j += 1) {
       const gapFrom = j > 0 ? news[j - 1].to : change.at;
       const gapTo = j < news.length ? news[j].from : change.end;
@@ -523,7 +468,6 @@ function carriedMarks(
       let set = both(left, right);
       const l = j > 0 ? sources[j - 1].at(-1) : -1;
       const r = j < news.length ? sources[j][0] : olds.length;
-      // Between two new words that stand for one old word there is no old space.
       if (l === undefined || r === undefined || l < r) {
         const oldFrom = l === undefined || l < 0 ? change.from : olds[l].to;
         const oldTo = r === undefined || r >= olds.length ? change.to : olds[r].from;
@@ -537,7 +481,6 @@ function carriedMarks(
   return out;
 }
 
-/** The segments of `units` [from, to) that are not whitespace: words, punctuation, atoms. */
 function wordsIn(units: string, from: number, to: number): TextWindow[] {
   const found: TextWindow[] = [];
   let at = from;
@@ -548,7 +491,6 @@ function wordsIn(units: string, from: number, to: number): TextWindow[] {
   return found;
 }
 
-/** The word diff of two unit strings as hunks: base units [from, to) become the model's [at, end). */
 function wordHunks(a: string, b: string): Hunk[] {
   const hunks: Hunk[] = [];
   let base = 0;
@@ -628,7 +570,6 @@ function retainShared(
   return out;
 }
 
-/** The marks on each unit of a textblock; null for an inline atom, which carries none. */
 type Marks = Array<readonly Mark[] | null>;
 
 function unitMarks(block: Block): Marks {
@@ -641,11 +582,6 @@ function unitMarks(block: Block): Marks {
   return marks;
 }
 
-/**
- * A find's windows, given in each block's `textContent`, as unit windows per textblock, by
- * the path of the textblock in the block. Null when the two blocks do not hold the same
- * textblocks or a window crosses one.
- */
 function unitWindows(
   before: Block,
   after: Block,
@@ -676,9 +612,7 @@ function unitWindows(
 
 interface TextblockText {
   node: Block;
-  /** The textblock's path in the block, joined. */
   key: string;
-  /** Offset of its first character in the block's `textContent`. */
   start: number;
   length: number;
 }
@@ -700,7 +634,6 @@ function textblocksOf(block: Block): TextblockText[] {
   return found;
 }
 
-/** Text offsets to unit offsets: an inline atom is a unit but no character. */
 function unitWindow(textblock: TextblockText, window: TextWindow): TextWindow {
   const unitOf: number[] = [];
   let unit = 0;
@@ -716,7 +649,6 @@ function unitWindow(textblock: TextblockText, window: TextWindow): TextWindow {
     : { from: unitOf[from], to: after(to) };
 }
 
-/** Whether the text outside the windows is the same in both blocks, so they place the edit. */
 function windowsDescribe(
   a: string,
   b: string,

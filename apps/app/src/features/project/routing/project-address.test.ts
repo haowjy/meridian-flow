@@ -1,4 +1,3 @@
-/** Browser grammar contracts: kind-first paths, exact filenames, owners only where the path is not enough. */
 import { describe, expect, it } from "vitest";
 import {
   parseProjectAddress,
@@ -39,7 +38,6 @@ describe("readable project addresses", () => {
 
   it.each([
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
-    // A Scratch document is named by its owner: a Work, or a No Work chat's lineage.
     [
       `${P}/editor/scratch/notes.md?owner=lineage%3A${ROOT}`,
       { kind: "document", scheme: "scratch" },
@@ -58,7 +56,6 @@ describe("readable project addresses", () => {
     `${P}/editor/manuscript/a%2Fb.md`,
     `${P}/editor/manuscript/..`,
     `${P}/editor/scratch/notes.md?owner=lineage%3Afight-scene`,
-    // The Work page and the browse addresses are gone, and an old `?work=` names no Scratch owner.
     `${P}/works`,
     `${P}/works/${WORK}`,
     `${P}/editor/browse/scratch`,
@@ -79,7 +76,6 @@ describe("readable project addresses", () => {
       kind: "valid",
       address: { itemKey: "draft-one" },
     });
-    // An address from before drafts named themselves still opens its review.
     expect(
       parse(`${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}&item=draft-one`),
     ).toMatchObject({ kind: "valid", href: `${P}/editor/manuscript/chapter.md?item=draft-one` });

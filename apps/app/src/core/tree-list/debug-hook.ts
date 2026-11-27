@@ -1,9 +1,3 @@
-/**
- * Dev-only `window.__meridianTreeList`: opens a list and reads what the tree it holds replays to,
- * so a browser run can see the list before any screen shows it. Step 6's screens read the same
- * session; its write path replaces `append`.
- */
-
 import {
   LIVE,
   listRecords,
@@ -18,9 +12,7 @@ import type { TreeListHandle, TreeListRegistry } from "./tree-list-registry";
 type Api = {
   open(kind: "project" | "account", id: string): Promise<unknown>;
   read(kind: "project" | "account", id: string): unknown;
-  /** Appends a `create` of a document in a source, as the account. */
   append(kind: "project" | "account", id: string, sourceId: string, name: string): string;
-  /** Appends a record only the server writes (a `purge`): the guard closes a copy that holds one. */
   appendForged(kind: "project" | "account", id: string): void;
   close(): void;
 };
@@ -62,7 +54,6 @@ export function installTreeListDebugHook(
       status,
       peer: doc.peerIdStr,
       records: listRecords(doc).length,
-      /** The records the server dropped (their Work was closed), with its reason. */
       dropped: live.dropped.map(({ record, reason }) => ({
         type: record.type,
         node: record.node,

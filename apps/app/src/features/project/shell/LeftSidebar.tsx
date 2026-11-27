@@ -1,10 +1,3 @@
-/**
- * LeftSidebar — the desktop project sidebar. The header holds the project menu,
- * then the Work scope, then the Write | Chat switch (main's mode). Under it sit
- * the sources (`SourcesBody`). The phone drawer composes the same switch and
- * sources inside `WorkspaceNavBody`.
- */
-
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
@@ -29,10 +22,8 @@ type LeftSidebarProps = {
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
   editorWorkId: string | null;
-  /** The chat on screen: its row reads as current. */
   chatThreadId: string | null;
   contextLive: boolean;
-  /** The document whose row reads as current: main's, or beside a chat the side's. */
   activeDocument: OpenDocument | null;
 };
 

@@ -37,21 +37,8 @@ import type {
 import { listIdOf, readConnection } from "./tree-list-facts.js";
 import { claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
 
-/**
- * This process's copy of one list, brought to the stored snapshot under the list's lock and
- * changed in place by what the transaction admits. `pending` is the root transaction (its
- * `Ownership.token`, the same in every savepoint under it) that changed it and has not
- * committed: a copy found in any other transaction's hands is behind the stored list or ahead of
- * it, so it is set aside and the list loaded again. A rollback sets aside the copies the
- * transaction held. A copy set aside is freed when nothing holds it: no transaction that took it
- * under the list's key has ended and no read is between its awaits.
- */
 type Copy = { doc: LoroDoc; writer: TreeWriter; pending: object | null; retired: boolean };
 
-/**
- * What a root transaction holds in this store: its identity, and the lists whose keys it has
- * taken. A savepoint's state is a fork; one that rolls back leaves its keys out of the parent's.
- */
 type Ownership = { token: object; keys: Set<string> };
 
 const ownership: DrizzleTransactionParticipant<Ownership> = {
@@ -65,20 +52,16 @@ const ownership: DrizzleTransactionParticipant<Ownership> = {
   },
 };
 
-/** A list in a transaction that holds its key, with its copy at the stored list. */
 type Held = { list: TreeList; listId: string; copy: Copy };
 
-/** A list's row in `document_snapshots`: its room's key, and the one doc it holds. */
 const roomKeyOf = (listId: string) => `tree:${listId}`;
 const LIST_DOC = "s";
 
-/** Every instance hears this at the commit of a change to a list; the payload is the list's id. */
 const CHANNEL = "tree_list_advanced";
 
 const isCreate = (record: TreeRecord): record is Extract<TreeRecord, { type: "create" }> =>
   record.type === "create";
 
-/** Runs `make` inside one transaction on every list's doc, so each emits one update. */
 function inOneTransaction<T>(
   lists: readonly ListWriter[],
   at: number,
@@ -93,7 +76,6 @@ function inOneTransaction<T>(
   return result as T;
 }
 
-/** A copy only gains ops, so it is unchanged since `before` while `before` covers it. */
 const unchanged = (doc: LoroDoc, before: DocVersion) => docCovers(before, docVersion(doc));
 
 /**
@@ -108,20 +90,13 @@ function copyOf(snapshot: Uint8Array | null): Copy {
 }
 
 export type PgTreeListStore = TreeListStore & {
-  /** Starts hearing every instance's commits (this one's too) for `onListAdvanced`. */
   listen(): Promise<{ unlisten: () => Promise<void> }>;
 };
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
-  /**
-   * A Work's or lineage's review count follows its draft's rows, which a tree commit may change
-   * outside any Work lock: the Works boundary recounts them once the commit lands.
-   */
   recountAfterCommit?: (owners: OwnerLocks) => void;
-  /** Drafts with rows on nodes live changed: their owners' lists are read again after commit. */
   liveChangedUnder?: (draftIds: readonly string[]) => void;
-  /** Open document sockets of a document that changed source close, to be admitted again. */
   fileAccessChanges?: Pick<FileAccessChanges, "publish">;
 }): PgTreeListStore {
   const { db } = deps;
@@ -169,7 +144,6 @@ export function createDrizzleTreeListStore(deps: {
       copy = undefined;
     }
     if (copy) {
-      // Caught up from the stored list when another process changed it since.
       const row = await storedRow(tx, listId, false);
       if (row && !holdsFrontiers(copy.doc, row.frontiers)) {
         const snapshot = await storedSnapshot(tx, listId);
@@ -182,11 +156,6 @@ export function createDrizzleTreeListStore(deps: {
     return copy;
   }
 
-  /**
-   * A copy at the stored list for a read that holds no key. A copy this process has changed and
-   * not committed, or a copy of an uncommitted transaction's, is not read: the list is loaded
-   * afresh for this read alone, and the shared copy is left to its writer.
-   */
   async function viewCopy(tx: DrizzleDb, listId: string): Promise<Copy> {
     const shared = copies.get(listId);
     const owner = isInDrizzleTransaction()
@@ -270,11 +239,6 @@ export function createDrizzleTreeListStore(deps: {
     });
   }
 
-  /**
-   * Stores the copy (it has changed since `before`), writes the rows, and queues the hand-off.
-   * `created` are the creates whose documents get their `documents` rows; `claimed` are the
-   * creates whose node ids this list claims.
-   */
   async function commitChange(
     tx: DrizzleDb,
     list: TreeList,
@@ -356,14 +320,11 @@ export function createDrizzleTreeListStore(deps: {
       withLists([list], async (tx, [held], owner) => {
         const { copy, listId } = held as Held;
         const connection = await readConnection(tx, list, accountId);
-        // The project or account is gone or no longer the account's: nothing to admit to.
         if (!connection) throw new Error("The account cannot write this list");
         const before = docVersion(copy.doc);
         const admitted = admit(copy.writer, update, connection);
         if (unchanged(copy.doc, before)) return { committed: null };
         copy.pending = owner;
-        // A dropped record is in no view: no claim, no row change. A create whose node id is another's
-        // fails its claim alone, and the rest of the update stands.
         const dropped = new Set(admitted.dropped);
         const live = admitted.records.filter((record) => !dropped.has(record.id));
         const failed = await claimNodeIdsEach(tx, listId, live);
@@ -379,7 +340,6 @@ export function createDrizzleTreeListStore(deps: {
         }));
         const writers = held.map(({ copy, listId }) => ({ writer: copy.writer, list: listId }));
         const result = inOneTransaction(writers, 0, make);
-        // What each copy gained is the tail of its records, so no caller lists what it made.
         const gained = held.map((each, at) => {
           const mark = marks[at] as (typeof marks)[number];
           const all = listOf(each.copy.doc).records();

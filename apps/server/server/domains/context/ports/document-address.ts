@@ -1,4 +1,3 @@
-/** Browser document locations resolve separately from document links in prose. */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentAddressResult, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -13,7 +12,6 @@ export type DocumentAddressInput = {
 };
 
 export interface DocumentAddressStore {
-  /** A current folder or unavailable source suppresses history just like a current file. */
   candidate(
     input: DocumentAddressInput,
   ): Promise<{ kind: "current" | "alias"; documentId: DocumentId } | null>;

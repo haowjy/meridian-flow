@@ -1,35 +1,18 @@
-/**
- * How this browser tab shows each document: Live or a draft, and which draft. One
- * record per (account, project) in sessionStorage, keyed by document id, holding only views that
- * differ from the default. Whichever host holds the document paints it from here.
- *
- * A document opens on Live. A view shows a draft only when the writer chose it (the version menu,
- * a review launch) or arrived at an address naming it. The view outlives no browser-tab session:
- * a remembered draft would hide a later draft of the same owner, because an item names the
- * draft and the document, not one draft.
- */
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 import { writeTreeVersionChoice } from "./store";
 
-/** The draft a page shows, by its id and item. Whether Review changes is on is the address's. */
 export type DraftPin = { draftId: string; itemKey: string };
 
 export type DocumentView = {
-  /**
-   * `draft` with a pin paints that draft. `draft` without one paints Live but keeps an open
-   * review on screen: the writer who applied the last change keeps its editor ("No changes
-   * left", its Undo) until they choose Live.
-   */
   version: "draft" | "live";
   pin?: DraftPin;
 };
 
 export const DEFAULT_DOCUMENT_VIEW: DocumentView = { version: "live" };
 
-/** A pin replaces the draft shown; `null` drops it. Choosing Live drops the pin with it. */
 export type DocumentViewPatch = {
   version?: DocumentView["version"];
   pin?: DraftPin | null;
@@ -130,15 +113,6 @@ export function setDocumentView(
   write(accountId, projectId, isDefault(next) ? rest : { ...rest, [documentId]: next });
 }
 
-/**
- * The scope's draft owner became `draftId` (a Work pick, another chat on screen under No Work,
- * a new chat's composer): the toggle goes to Draft, so every page shows the new scope's draft
- * where it has one and Live where it has none (`shownDraft`). A view on one of the new owner's
- * drafts keeps its pin, and so does a view on a document only its draft holds (Live has no
- * version of it to return to); every other pin ends, so no page keeps a draft, or a change
- * focused in one, from the scope before. `keepVersion`: the owner moved to another draft of the
- * same Work, whose pick or delete has set the toggle already.
- */
 export function enterScope(
   queryClient: QueryClient,
   accountId: string,
@@ -164,11 +138,6 @@ export function enterScope(
   if (changed) write(accountId, projectId, next);
 }
 
-/**
- * A draft has ended (Applied, Discarded, or closed elsewhere): every view pinned to it drops the
- * pin. The version stays: an open
- * review of the ended draft keeps its editor until Live.
- */
 export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
   const views = read(accountId, projectId);
   const next: Record<string, DocumentView> = {};

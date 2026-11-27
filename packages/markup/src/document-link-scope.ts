@@ -1,4 +1,3 @@
-/** Link and source spelling for codec consumers that have no document tree. */
 import { type LinkHolder, spellStoredLink } from "@meridian/contracts";
 
 import type { DocumentLinkScope } from "./types.js";

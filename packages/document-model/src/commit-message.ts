@@ -3,7 +3,6 @@
  * written by `commitMessage` and read by `readCommitMessage`.
  */
 
-/** Who wrote a commit: a chat's turn, or a press. A commit with no author is the writer's own. */
 export type CommitAuthor = { turn: string } | { press: string };
 
 /** The message a commit by `by` is committed under; none for the writer's own. */

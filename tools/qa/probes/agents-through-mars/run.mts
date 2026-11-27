@@ -44,7 +44,6 @@ const THREAD = "00000000-0000-4000-8000-000000000a73";
 const MANIFEST = '[package]\nname = "probe"\nversion = "0.1.0"\nschema = 1\n';
 const OLD_READER = "mars-0.0.0+flow-0";
 
-// A probe Agent is primary unless its frontmatter says otherwise: only `mode: primary` starts a chat.
 const primary = (frontmatter: string) =>
   /^mode:/m.test(frontmatter) ? frontmatter : `mode: primary\n${frontmatter}`;
 const agent = (name: string, frontmatter = "") =>
@@ -100,7 +99,6 @@ const check = async (name: string, run: () => Promise<void>) => {
 };
 
 let cases = 0;
-/** Puts one package's files in the user level as an imported package; each case is its own package. */
 function publish(files: Record<string, string>) {
   const name = `case-${++cases}`;
   for (const [path, text] of Object.entries(files))
@@ -114,7 +112,6 @@ const savePackage = async (folder: string) => {
   assert.ok(outcome, "nothing to save");
   return outcome;
 };
-/** Publishes the files and Saves them; the Save must go through. */
 const publishSaved = async (files: Record<string, string>) => {
   const name = publish(files);
   const outcome = await savePackage(`packages/${name}/`);
@@ -294,11 +291,6 @@ try {
       }),
     },
   ];
-  /**
-   * Cases Mars grades below `error` (a warning or info) and Flow adds no error to save whole;
-   * `true` when the Save shows a finding. A manifest error fails the Save. Any other error leaves
-   * its Agent out of the saved version and the rest saves.
-   */
   const saves = new Map([
     ["misspelled harness-override (Mars info)", false],
     ["modelInvocable (Mars info)", false],
@@ -330,7 +322,6 @@ try {
       );
       if (saves.has(entry.name)) {
         assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
-        // Info is silent; a warning is on the result.
         assert.equal(outcome.findings.length > 0, saves.get(entry.name));
         assert.deepEqual(outcome.leftOut, []);
         assert.deepEqual(file?.unavailableReasons, []);
@@ -339,7 +330,6 @@ try {
         assert.equal((await catalog.resolvePrimary(USER, item.selection)).ok, true);
         return;
       }
-      // A file's Errors are its package's findings: its own, or a package-level one.
       assert.ok(file, "the files don't list it");
       assert.ok(
         status?.findings.some(
@@ -370,7 +360,6 @@ try {
       assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
       assert.ok(outcome.leftOut.includes(`agents/${slug}.md`), `not left out: ${outcome.leftOut}`);
       assert.equal(outcome.findings[0]?.severity, "error", "left-out errors come first");
-      // Left out of what runs: listed unavailable with its reason, and no chat binds it.
       const item = await listed(slug);
       assert.ok(item.unavailableReasons.length > 0, "listed with no reason");
       assert.ok(item.selection, "no selection");
@@ -526,12 +515,10 @@ try {
       true,
     );
     levels.write("user", "agents/keep1.md", agent("Keep", "model: second-model\n"));
-    // Edited, not saved: new chats still get the saved version.
     assert.equal((await resolved("keep1")).model, "first-model");
     assert.equal((await savePackage("")).outcome, "saved");
     assert.equal((await resolved("keep1")).model, "second-model");
     assert.equal((await store.readThreadBinding(THREAD))?.revision?.id, bound.revision.id);
-    // A new chat binds the newest saved version by name, whatever the picker showed.
     const again = await catalog.resolvePrimary(USER, item.selection);
     assert.ok(again.ok);
     assert.notEqual(again.revision.id, bound.revision.id);
@@ -553,7 +540,6 @@ try {
         (row) => row.slug === "b1",
       );
       assert.ok(old);
-      // The name is saved nowhere, so the picked revision binds: this account's Save holds it.
       await store.savePackage({ userId: USER }, "packages/old-reader/", old.packageRevisionId);
       levels.write("user", "packages/old-reader/agents/unrelated.md", agent("Unrelated"));
       const reached = await catalog.resolvePrimary(USER, {

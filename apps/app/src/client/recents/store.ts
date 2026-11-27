@@ -1,8 +1,3 @@
-/**
- * Device-local account recents. This record is the writer's own opening
- * history. A server list may add other devices and a newer openedAt. It does
- * not delete, overwrite a known locator, or clear a removal.
- */
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -16,7 +11,6 @@ export type RecentsStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
 export type RecentAddress = {
   kind: "document";
   scheme: ProjectContextTreeScheme;
-  /** Leading-slash locator. Empty paths are not a document address. */
   path: string;
 };
 
@@ -102,8 +96,6 @@ function parseItem(value: unknown): AccountRecentItem | null {
     return null;
   }
   const address = item.address as Partial<RecentAddress>;
-  // An item stored with a `local` address (a document known only by device handle) is dropped:
-  // a document's id is its address now, and the server's list brings it back.
   if (
     address.kind === "document" &&
     typeof address.scheme === "string" &&
@@ -148,7 +140,6 @@ function parsePersisted(raw: string | null): PersistedRecents | null {
 
 export class DeviceAccountRecentsStore {
   private state: PersistedRecents | null = null;
-  /** Session fence for a cached list. Not durable, and not an item revision. */
   private bindEpoch = 0;
 
   constructor(private readonly storage: RecentsStorage) {}
@@ -272,10 +263,6 @@ export class DeviceAccountRecentsStore {
     return true;
   }
 
-  /**
-   * A joined document's old id is an alias the server never saw: its row moves to
-   * the id the server knows, and the newer of two rows for one document stays.
-   */
   followIdentity(accountId: string, projectId: string, from: string, to: string): boolean {
     const state = this.bound(accountId);
     if (!state?.items.some((i) => i.projectId === projectId && i.documentId === from)) return false;

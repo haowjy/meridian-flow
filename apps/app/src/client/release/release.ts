@@ -1,15 +1,3 @@
-/**
- * What this tab knows about the app being deployed under it: one app-wide store behind the header
- * word, fed by the release headers on every API answer and the thread socket's `connected` frame.
- *
- * - `current`: nothing newer is known.
- * - `update-available`: the server's release differs from this bundle's. The writer reloads.
- * - `must-reload`: the server can no longer understand this tab (its protocol is below the
- *   server's minimum), or the tab learned it is stale some other way: a lazy chunk that is gone,
- *   a document room that needs a newer schema, a command the server cannot read. New sends are
- *   held in the driver's journal and the tab reloads by itself once the writer has paused. A gone
- *   chunk means the screen asked for cannot render, so it reloads without the pause.
- */
 import {
   PROTOCOL_HEADER,
   PROTOCOL_VERSION,
@@ -24,7 +12,6 @@ declare const __MERIDIAN_RELEASE__: string;
 export type ReleasePhase = "current" | "update-available" | "must-reload";
 
 const OWN_RELEASE = __MERIDIAN_RELEASE__;
-/** No keystroke or pointer press for this long before the tab reloads itself. */
 const IDLE_MS = 3_000;
 /** A hidden tab is not being typed in; this only lets the editors' local saves land first. */
 const HIDDEN_IDLE_MS = 1_500;
@@ -49,7 +36,6 @@ export const releaseStore = {
   getSnapshot: (): ReleasePhase => phase,
 };
 
-/** What an answer from the server says; a missing field says nothing. */
 export function observeServer(seen: {
   release: string | null | undefined;
   protocol: ServerProtocol | null | undefined;
@@ -60,12 +46,10 @@ export function observeServer(seen: {
   else if (release && release !== OWN_RELEASE && phase === "current") setPhase("update-available");
 }
 
-/** This tab's code is the problem and a reload is the only fix. */
 export function requireReload(): void {
   setPhase("must-reload");
 }
 
-/** The screen the writer asked for cannot render: nothing is being typed there, so reload without waiting for a pause. */
 function requireReloadAtOnce(): void {
   urgent = true;
   setPhase("must-reload");
@@ -88,7 +72,6 @@ function reloadGuardUsed(): boolean {
   }
 }
 
-/** New sends wait in the journal while a reload is on its way. */
 export function sendsHeld(): boolean {
   return phase === "must-reload" && !reloadGuardUsed();
 }
@@ -97,8 +80,6 @@ export function reloadNow(): void {
   window.location.reload();
 }
 
-// --- reloading by itself ---
-
 let watching = false;
 let lastActivity = Date.now();
 let composing = false;
@@ -106,7 +87,6 @@ let urgent = false;
 let busy: () => boolean = () => false;
 let checkTimer: ReturnType<typeof setInterval> | undefined;
 
-/** The driver says whether a request is mid-send. */
 export function watchDelivery(isBusy: () => boolean): void {
   busy = isBusy;
 }
@@ -130,7 +110,6 @@ function maybeReload(): void {
   reloadNow();
 }
 
-/** Browser only; once. Reads the release headers off every API answer. */
 export function installReleaseWatch(): void {
   if (watching) return;
   watching = true;

@@ -1,19 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The pending picture is a document fact.
- *
- * Every case here is a claim about the DOCUMENT while bytes are in flight — the
- * claim the old shell-level upload status could not make. The upload port is
- * held open deliberately: what the writer can see and do mid-upload is the
- * whole subject, so nothing may depend on it having finished.
- *
- * Most of that is one writer alone, so `mount` is one editor. `mountPair`
- * brings a real collaborator, and a case reaches for it only when its own claim
- * names one: the binding rebuilds the whole document and reports every
- * position deleted, which is the hazard the anchored hold exists for, and undo
- * on a shared document is the editor's own collaborative history
- * (`editor-history.ts`) rather than ProseMirror's.
- */
 import type { Editor, JSONContent } from "@tiptap/core";
 import { history, undo } from "@tiptap/pm/history";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -22,9 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { undoEditorHistory } from "@/core/editor/editor-history";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
 import { createStandaloneEditor, requireNode } from "@/test-support/standalone-editor";
-
-// A refused door says why (law 5), and the reason is a macro the test transform
-// does not compile. The lane's copy is not what these cases are about.
 
 // jsdom ships no `ClipboardEvent`, and ProseMirror's own `pasteHTML` builds one
 // when it is not handed an event. The browser has it; the harness does not.
@@ -49,19 +31,10 @@ import {
 } from "./image-uploads";
 import type { PendingImage } from "./pending-images";
 
-/**
- * Every picture this editor is waiting on.
- *
- * The record itself is the subject of this suite, so it is read directly — and
- * from here rather than from a production export, because no surface asks the
- * question this way: the app renders ingress from the document's decorations
- * and from `imageIngressStatus`.
- */
 function pendingImages(editor: Editor | null): readonly PendingImage[] {
   return Array.from(ingressState(editor).pending.values());
 }
 
-/** Each pending picture with how its upload stands, which the upload store holds. */
 function pendingUploads(editor: Editor | null) {
   return pendingImages(editor).map((entry) => ({
     filename: entry.filename,
@@ -78,7 +51,6 @@ type HeldUpload = {
   fail: (reason: Error) => void;
 };
 
-/** An upload that never finishes on its own: the test decides when it does. */
 function heldUploadPort(): { port: ImageUploadPort; held: HeldUpload[] } {
   const held: HeldUpload[] = [];
   const port: ImageUploadPort = ({ file, alt, signal, onProgress }) =>
@@ -104,7 +76,6 @@ function imageFile(name = "cover art.png"): File {
   return new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
 }
 
-/** Lets the plugin's end-of-task settling (orphan sweep, paste imports) run. */
 async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -146,7 +117,6 @@ afterEach(() => {
   close = null;
 });
 
-/** One writer, with both of the lane's ports held open. */
 function mount(document: string | JSONContent = "The gate opened."): Ingress {
   const standalone = createStandaloneEditor({
     content: typeof document === "string" ? documentSaying(document) : document,
@@ -155,7 +125,6 @@ function mount(document: string | JSONContent = "The gate opened."): Ingress {
   return withHeldPorts(standalone.editor);
 }
 
-/** The same document, with a collaborator bound to it. */
 function mountPair(document: string | JSONContent = "The gate opened."): Ingress & {
   peer: Editor;
   sync: () => void;
@@ -175,7 +144,6 @@ function mountPair(document: string | JSONContent = "The gate opened."): Ingress
   };
 }
 
-/** Both doors bytes travel through, answered by the test rather than a server. */
 function withHeldPorts(editor: Editor): Ingress {
   const { port, held } = heldUploadPort();
   const waiting = new Map<string, (file: File | null) => void>();
@@ -200,17 +168,11 @@ function withHeldPorts(editor: Editor): Ingress {
   };
 }
 
-/**
- * What this editor draws over the picture at `pos`, read off the manuscript
- * itself rather than off plugin state: `data-pending-image` is the decoration
- * attribute `ImageNodeView` branches on, so this is the peer's rendering.
- */
 function slotStatus(editor: Editor, pos: number): string | null {
   const dom = editor.view.nodeDOM(pos);
   return dom instanceof HTMLElement ? dom.getAttribute("data-pending-image") : null;
 }
 
-/** What this client is announcing on the ephemeral channel: tokens and shapes. */
 function announced(awareness: { getLocalState: () => Record<string, unknown> | null }) {
   return (awareness.getLocalState()?.uploads ?? []) as readonly {
     token: string;
@@ -316,8 +278,6 @@ describe("two pictures arriving together are two lifecycles", () => {
 describe("a peer sees an upload it does not own as an upload", () => {
   it("leaves an ownerless empty slot recoverable, not in flight", async () => {
     const { editor, peer, sync } = mountPair();
-    // No owner ever announced this one: a reload's leftover, or a redo that
-    // brought back an insert whose bytes are gone.
     editor.commands.insertContentAt(5, { type: "image", attrs: { src: "", alt: "gone" } });
     await settle();
     sync();
@@ -333,8 +293,6 @@ describe("a pending picture can be moved while its bytes travel", () => {
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
 
-    // One transaction, delete plus insert: the move the binding reconciles as
-    // a new identity, and the shape a drag inside the manuscript produces.
     const transaction = editor.state.tr;
     const picture = editor.state.doc.nodeAt(5);
     if (!picture) throw new Error("the pending picture is not at 5");
@@ -362,8 +320,6 @@ describe("closing the editor closes what it was carrying", () => {
     const { editor, awareness, held } = mountPair();
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
-    // The token this client owns, and nothing a peer could not act on: no
-    // filename, no percent, no bytes.
     expect(announced(awareness.local)).toEqual([
       { token: pendingImages(editor)[0].id, frame: null },
     ]);
@@ -375,13 +331,6 @@ describe("closing the editor closes what it was carrying", () => {
   });
 });
 
-/**
- * The chooser, held open the way the operating system holds it.
- *
- * `pickImageFile` creates an `<input type=file>` and clicks it, so the click is
- * where the writer leaves the editor: the test records the input, lets the
- * document move underneath, and hands a file back whenever it likes.
- */
 function openChooser(open: () => void): (file: File) => void {
   const opened: HTMLInputElement[] = [];
   const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (
@@ -399,7 +348,6 @@ function openChooser(open: () => void): (file: File) => void {
   };
 }
 
-/** A block a peer writes in above, carrying a picture of its own. */
 function peerPictureBlock(editor: Editor) {
   return editor.state.schema.nodes.paragraph.create(null, [
     editor.state.schema.text("abcd"),
@@ -407,7 +355,6 @@ function peerPictureBlock(editor: Editor) {
   ]);
 }
 
-/** A stat block, so the place a writer asks from is one cell of a table. */
 function documentWithTable(): JSONContent {
   const cell = (text: string): JSONContent => ({
     type: "table_cell",
@@ -423,7 +370,6 @@ function documentWithTable(): JSONContent {
   };
 }
 
-/** The paragraph this picture landed in, and the table role of whatever holds it. */
 function pictureHome(editor: Editor, alt: string): { text: string; role: unknown } {
   const at = imageNodes(editor).find((node) => node.alt === alt)?.pos;
   if (at === undefined) throw new Error(`no picture called ${alt} in the document`);
@@ -431,15 +377,6 @@ function pictureHome(editor: Editor, alt: string): { text: string; role: unknown
   return { text: $at.parent.textContent, role: $at.node(-1).type.spec.tableRole };
 }
 
-/**
- * A new picture goes where it was asked for, and the ask outlives the chooser.
- *
- * This is the seam a slash pick from a table cell rides: the writer types `/`
- * in a cell, picks Image, and is then in front of an operating-system dialog
- * while their own caret and everybody else's writes move the document. A picker
- * that read the selection when the file came back put the picture wherever the
- * writer happened to be standing — which for a cell meant past the whole table.
- */
 describe("a new picture lands where the writer asked for it", () => {
   it("lands in the cell it was asked from, after the caret moves and a peer writes", async () => {
     const { editor, peer, sync, held } = mountPair(documentWithTable());
@@ -449,9 +386,6 @@ describe("a new picture lands where the writer asked for it", () => {
 
     const chooseFile = openChooser(() => openImagePicker(editor, imageCaretTarget(editor)));
 
-    // The writer clicks back into the prose above while the dialog is up, and a
-    // collaborator writes a whole block in over the top of the document, so
-    // every raw number the pick was made against now means something else.
     editor.commands.setTextSelection(2);
     peer.view.dispatch(peer.state.tr.insert(0, peerPictureBlock(peer)));
     sync();
@@ -462,8 +396,6 @@ describe("a new picture lands where the writer asked for it", () => {
 
     expect(held).toHaveLength(1);
     expect(pictureHome(editor, "portrait")).toEqual({ text: "rank", role: "cell" });
-    // And the caret is after the picture, in the same cell: the writer is where
-    // the picture is, not where they clicked while they waited.
     expect(editor.state.selection.$from.node(-1).type.spec.tableRole).toBe("cell");
   });
 
@@ -475,10 +407,6 @@ describe("a new picture lands where the writer asked for it", () => {
 
     const chooseFile = openChooser(() => openImagePicker(editor, imageCaretTarget(editor)));
 
-    // The collaborator takes the whole table away, and the writer's caret leaves
-    // it, so it goes from this screen too (while the caret rests in it, the
-    // editor keeps it). There is no cell to land in, and landing anywhere else
-    // would be a picture the writer never asked for.
     peer.view.dispatch(peer.state.tr.delete(table.pos, table.pos + table.node.nodeSize));
     sync();
     editor.commands.setTextSelection(2);
@@ -494,7 +422,6 @@ describe("a new picture lands where the writer asked for it", () => {
   });
 });
 
-/** A 2x2 stat table alone in the document, so a whole-table sweep is cheap. */
 function tableDocument2x2(): JSONContent {
   const cell = (text: string): JSONContent => ({
     type: "table_cell",
@@ -516,7 +443,6 @@ function tableDocument2x2(): JSONContent {
   };
 }
 
-/** Sweep a `CellSelection` between two cells, by row-major index. */
 function sweepCells(editor: Editor, anchorIndex: number, headIndex: number): void {
   const cells: number[] = [];
   editor.state.doc.descendants((node, pos) => {
@@ -527,7 +453,6 @@ function sweepCells(editor: Editor, anchorIndex: number, headIndex: number): voi
   editor.view.dispatch(editor.state.tr.setSelection(selection));
 }
 
-/** A real paste of an image file, through the view's own paste pipeline. */
 function pasteFile(editor: Editor, file: File): void {
   const event = new ClipboardEvent("paste", { cancelable: true });
   Object.defineProperty(event, "clipboardData", {
@@ -539,12 +464,6 @@ function pasteFile(editor: Editor, file: File): void {
   editor.view.dom.dispatchEvent(event);
 }
 
-/**
- * A pasted file is still a paste: over a swept rectangle of cells it means what
- * every paste over a sweep means (`../table-sweep-paste.ts`) — the sweep is
- * replaced, the picture lands in the top-left cell — and at a caret it is the
- * picture landing inline, exactly as before.
- */
 describe("an image file pasted over a sweep replaces the sweep", () => {
   it("is one undo step: the swept cells and their text come back together", async () => {
     const { editor } = mount(tableDocument2x2());
@@ -563,14 +482,11 @@ describe("an image file pasted over a sweep replaces the sweep", () => {
 
 describe("Replace aims at the picture the writer pointed at", () => {
   it("takes the whole replacement back in one undo", async () => {
-    // Undo on a shared document is the editor's collaborative history, so the shared document
-    // is what these two cases are for — not a peer.
     const { editor, held } = mountPair();
     insertImageFile(editor, imageFile(), { kind: "inline", pos: 5 });
     await settle();
     held[0].settle(asset("old"));
     await settle();
-    // An earlier edit of the writer's, which one undo must not reach past.
     editor.commands.insertContentAt(1, "Then ");
     await settle();
 
@@ -613,7 +529,6 @@ describe("an announcement made while the writer is hidden is still true after", 
     const token = pendingImages(editor)[0].id;
     expect(announced(awareness.local)).toEqual([{ token, frame: null }]);
 
-    // Inline review opens over the document, and the bytes land behind it.
     presence.suspend();
     held[0].settle(asset("landed"));
     await settle();

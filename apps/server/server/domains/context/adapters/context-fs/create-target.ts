@@ -1,9 +1,3 @@
-/**
- * Where a create at a source-relative path lands: its folders and the name codec's
- * canonical name, extension and filetype. Live and draft creates share it, so a drafted
- * `characters/Kael` and a live `characters/Kael.md` name one canonical row.
- */
-
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   classifyFiletype,
@@ -23,11 +17,9 @@ export type CreateTarget = {
   name: string;
   extension: string;
   filetype: Filetype;
-  /** The leaf's `~id`, which picks the twin an ensure reuses; a create lands under `name`. */
   suffix?: string;
 };
 
-/** How the router already read the destination, or the source extension a bare name inherits. */
 export type CreateTargetInput = {
   parsedFilename?: ParsedDocumentFilename;
   sourceExtension?: string;
@@ -45,7 +37,6 @@ function parseTarget(
   return parsed.ok ? Ok({ dir, parsed: parsed.value }) : Err(parsed.error);
 }
 
-/** A tracked document's create target, or the fault a root, invalid or binary name is. */
 export function resolveCreateTarget(
   scheme: ContextUriScheme,
   path: string,
@@ -61,10 +52,6 @@ export function resolveCreateTarget(
   return Ok({ dir, ...parsed, ...(suffix ? { suffix } : {}) });
 }
 
-/**
- * A binary's target: the router's decided name parts as given, otherwise (a direct adapter
- * caller) a prose-shaped name takes its storage type's registered suffix.
- */
 export function resolveBinaryTarget(
   scheme: ContextUriScheme,
   path: string,

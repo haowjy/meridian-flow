@@ -1,21 +1,3 @@
-/**
- * The lightbox an object opens over the page (Q1, mockup 04).
- *
- * A popup, never a route and never a takeover: the chapter stays visible and
- * mounted behind the scrim, so the object's place in the document is seen
- * rather than stated, and X or Esc lands the writer back exactly where they
- * were reading.
- *
- * The viewer face is the dialog's whole job. Revision is not — writers revise
- * machine-authored diagrams through the normal chat (the ask-AI hook was ruled
- * out), so the only editing surface here is the demoted source escape hatch
- * behind ⋯, which opens the raw source beside the live preview.
- *
- * Which diagram language that source is written in is the provider's business,
- * never this file's: the row names itself in the verbs and brings the renderer
- * the preview uses (`core/editor/diagrams/diagram-providers.ts`).
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Code2, Copy, Download, Ellipsis } from "lucide-react";
@@ -39,7 +21,6 @@ import { DIAGRAM_EXPORT_FILENAME } from "./object-menu-items";
 import { ViewerCanvas } from "./ViewerCanvas";
 import { useVerbFeedback } from "./verb-feedback";
 
-/** Past the dialog's and the menu's focus restoration, under a blink. */
 const SOURCE_FOCUS_DELAY_MS = 120;
 
 export type ObjectLightboxProps = {
@@ -47,7 +28,6 @@ export type ObjectLightboxProps = {
   target: ObjectSurfaceTarget | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The source escape hatch — a layer of its own inside the dialog. */
   sourceOpen: boolean;
   onSourceOpenChange: (open: boolean) => void;
 };
@@ -73,8 +53,6 @@ export function ObjectLightbox({
       open={open}
       onOpenChange={onOpenChange}
       title={provider ? t`Diagram` : t`Image`}
-      // The canvas is the reason this dialog exists, so it takes the screen a
-      // viewer needs and the shell owns how much that is (`DIALOG_SIZES`).
       size="workspace"
       className="meridian-object-lightbox"
       // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog
@@ -98,8 +76,6 @@ export function ObjectLightbox({
     >
       {target && provider ? (
         <DiagramFace
-          // The render state below belongs to one provider; a language change is
-          // a document change, and the pane starts over on the new one.
           key={provider.language}
           editor={editor}
           target={target}
@@ -113,10 +89,6 @@ export function ObjectLightbox({
   );
 }
 
-/**
- * Right padding leaves the dialog's own close control its corner: two controls
- * sharing one corner is how a writer presses the other one.
- */
 function LightboxHeader({
   title,
   menu,
@@ -130,8 +102,6 @@ function LightboxHeader({
     <div className="meridian-lightbox-header">
       <span className="font-medium text-muted-foreground text-sm">{title}</span>
       <span className="flex-1" />
-      {/* Inside the dialog, because the page's own notices are behind the
-          scrim and a writer who just pressed something is looking here. */}
       {notice}
       {menu}
     </div>
@@ -153,28 +123,16 @@ function DiagramFace({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { notice, run } = useVerbFeedback();
-  // The pane's value and its change handler come from one place, because
-  // interpreting a textarea's string as an edit needs to know which version of
-  // the document it was typed against.
   const draft = useFenceDraft(editor, target);
   const source = draft.value;
-  // The pause between a keystroke and a reparse belongs to the render hook,
-  // which the page's own diagram shares: one answer to "when is this source
-  // settled enough to draw".
   const { svg, error, rendered } = useDiagramRender(provider, source);
 
-  // The pane is its own layer, which is what makes law 3's walk fall out of one
-  // rule: Esc closes the source, then the dialog, then leaves the diagram
-  // selected on the page.
   useChromeLayer(editor, {
     id: "diagram-source",
     open: sourceOpen,
     close: () => onSourceOpenChange(false),
   });
 
-  // Source that has never rendered has nothing for the viewer to show, which
-  // is law 2's reason for opening a brand-new diagram on its source as well.
-  // One-way: a writer who closes the pane over a broken diagram keeps it closed.
   const nothingToView = svg === null && error !== null;
   useEffect(() => {
     if (nothingToView) onSourceOpenChange(true);
@@ -207,8 +165,6 @@ function DiagramFace({
               <Copy aria-hidden />
               {t`Copy ${provider.name} source`}
             </EditorMenuItem>
-            {/* Absent rather than disabled while nothing has rendered: there is
-                no image to hand over yet, and law 5 prefers the gap. */}
             {svg ? (
               <EditorMenuItem
                 onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), "download")}
@@ -227,19 +183,12 @@ function DiagramFace({
             name={provider.name}
             value={source}
             onChange={draft.onChange}
-            // Only report a failure the writer can act on: a message about
-            // source they have already changed is noise.
             error={rendered === source ? error : null}
           />
         ) : null}
         <ViewerCanvas contentKey={svg ?? ""}>
           {svg ? (
-            <div
-              className="meridian-diagram"
-              // A `SanitizedSvg` from the shared render boundary, like the
-              // page's own face: this file names no renderer and trusts none.
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
+            <div className="meridian-diagram" dangerouslySetInnerHTML={{ __html: svg }} />
           ) : null}
         </ViewerCanvas>
       </div>
@@ -253,7 +202,6 @@ function SourcePane({
   onChange,
   error,
 }: {
-  /** The provider's name, which is what the pane is labelled with. */
   name: string;
   value: string;
   onChange: (next: string) => void;
@@ -300,8 +248,6 @@ function ImageFace({ target }: { target: ObjectSurfaceTarget }) {
     <>
       <LightboxHeader title={alt || t`Image`} />
       <div className="meridian-lightbox-body">
-        {/* A photograph opens at its own size at most: Fit that enlarges a small
-            raster to fill the frame just shows the writer bigger pixels. */}
         <ViewerCanvas contentKey={source} maxFitScale={1}>
           {source ? <img src={source} alt={alt} draggable={false} /> : null}
         </ViewerCanvas>

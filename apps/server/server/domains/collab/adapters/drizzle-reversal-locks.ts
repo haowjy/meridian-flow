@@ -1,5 +1,3 @@
-/** The locks a card reversal takes before its documents' (`TurnReversalServiceDeps.lockOwners`). */
-
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { lockWorkThreadTrees } from "../../../shared/thread-work-lock.js";

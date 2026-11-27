@@ -1,10 +1,3 @@
-/**
- * build-optimistic-user-turn — constructs an optimistic domain `Turn` for a
- * just-submitted user message (client UUID, timestamp from store `now`). Pure
- * factory used by the optimistic submit flow before the server reconciles.
- * Its blocks are the submitted message blocks as the server persists them, so
- * reference and skill occurrences keep their identity before admission.
- */
 import {
   blockPlainText,
   type Turn,
@@ -36,8 +29,6 @@ export function buildOptimisticUserTurn(input: {
     role: "user",
     origin: "writer",
     writeMode: null,
-    // Pending until the server admission/lookup renames this row to the
-    // canonical user turn. A user row must not look settled before ack.
     status: "pending",
     promptBakeId: null,
     finishReason: null,

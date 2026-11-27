@@ -34,13 +34,9 @@ import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 
 import { isDiagramFence, type ObjectSurfaceTarget, objectSurfaceAt } from "./object-anchors";
 
-/** What the pane is showing, where it lives, and what has happened since. */
 export type FenceRebase = {
-  /** The text the textarea was last given — the base the writer edited. */
   source: string;
-  /** Document position of the fence's first text position, at that moment. */
   start: number;
-  /** Every step applied since, so those offsets can be carried forward. */
   mapping: Mapping;
 };
 
@@ -50,20 +46,8 @@ export function fenceRebaseAfter(rebase: FenceRebase, transaction: Transaction):
   return { ...rebase, mapping };
 }
 
-/** The fence as the document has it now: what the pane is about to show. */
 export type FenceReading = { source: string; start: number };
 
-/**
- * The rebase after a peer's write, or null when the pane has no usable base
- * left and must refuse until the next render gives it one.
- *
- * Two outcomes, and the difference is whether the writer's base is still true.
- * A peer typing elsewhere in the manuscript moved the fence without changing a
- * character of it, so re-reading where it sits keeps a keystroke in the same
- * frame working. A peer typing INSIDE the fence left the writer holding text
- * that is already behind what the pane will show, and every diff against it
- * would read the peer's new line as a deletion.
- */
 export function fenceRebaseAfterRemote(
   rebase: FenceRebase,
   fence: FenceReading | null,
@@ -74,15 +58,6 @@ export function fenceRebaseAfterRemote(
 
 export type TextPatch = { from: number; to: number; text: string };
 
-/**
- * The smallest edit that turns `current` into `next`.
- *
- * A pane that replaced the whole fence on every keystroke would hand the room a
- * delete-and-reinsert of the entire diagram per character: peer carets inside
- * it would be flung to the end, and the edit would read as a rewrite.
- * Common prefix and suffix is all it takes to make the edit look like what the
- * writer actually did.
- */
 export function minimalTextPatch(current: string, next: string): TextPatch | null {
   if (current === next) return null;
 
@@ -105,15 +80,6 @@ export function minimalTextPatch(current: string, next: string): TextPatch | nul
   };
 }
 
-/**
- * The transaction that applies the writer's edit to the document as it stands
- * now, or null when there is nothing to apply or nowhere valid to apply it.
- *
- * Null is a real answer, not a failure: the fence may have been deleted or
- * turned into another language while the pane was open, and writing the
- * writer's Mermaid into a TypeScript block — or into whatever prose took its
- * place — is worse than doing nothing.
- */
 export function fenceSourceTransaction(
   state: EditorState,
   rebase: FenceRebase,
@@ -136,14 +102,6 @@ export function fenceSourceTransaction(
   return state.tr.insertText(patch.text, from, to);
 }
 
-/**
- * The source pane's controlled value and its change handler.
- *
- * The value is always the document's, so a remote edit shows up here like any
- * other. What the hook adds is the memory of which version the textarea is
- * currently showing, which is the only thing that makes the next keystroke safe
- * to interpret.
- */
 export function useFenceDraft(
   editor: Editor,
   target: ObjectSurfaceTarget | null,
@@ -196,7 +154,6 @@ export function useFenceDraft(
   return { value: source, onChange };
 }
 
-/** The fence under `element`, as the document has it right now. */
 function readFence(editor: Editor, element: HTMLElement | undefined): FenceReading | null {
   const found = element ? objectSurfaceAt(editor.view, element) : null;
   return found && { source: found.node.textContent, start: found.pos + 1 };

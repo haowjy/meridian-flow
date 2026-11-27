@@ -1,5 +1,3 @@
-/** Defines the editor chrome kernel interface and state. */
-
 import { type ChromeContext, DOCUMENT_CHROME_CONTEXT } from "./chrome-context";
 import type { ContextClaimHandler } from "./context-claims";
 import type { ChromeLayer, GesturePhase } from "./esc-chain";
@@ -12,40 +10,26 @@ import {
 } from "./hover-intent";
 import { assertKeymapContribution, type KeymapContribution } from "./keymap";
 
-/** Who takes Escape for a layer when the editor does not have focus. */
-export type ChromeLayerDismissal =
-  /** The surface has its own Escape listener — every Radix layer does. */
-  | "self"
-  /** Nothing else is listening, so the kernel must. The safe default. */
-  | "kernel";
+export type ChromeLayerDismissal = "self" | "kernel";
 
 export type ChromeLayerOptions = {
-  /** Unique while open; used in traces and by the Esc chain. */
   id: string;
-  /** Stable surface owner used to match host actions to this exact top layer. */
   ownerId?: string;
-  /** The layer this one opened INSIDE, when there is one. */
   parentId?: string | null;
-  /** Dismiss this layer. */
   close: () => void;
   dismissal?: ChromeLayerDismissal;
 };
 
 export type ChromeLayerHandle = {
-  /** This layer's identity, as `chrome.layers` holds it. */
   readonly layer: ChromeLayer;
-  /** Names it in a trace, and is what a layer opened inside it passes as `parentId`. */
   readonly id: string;
-  /** Leave the chain without dismissing: the surface already closed itself. */
   release: () => void;
 };
 
 type ChromeLayerRecord = {
-  /** The token this record hands out, stable for as long as the layer is open. */
   layer: ChromeLayer;
   parentId: string | null;
   dismissal: ChromeLayerDismissal;
-  /** Asked to close and hasn't released yet: out of the walk, still on screen. */
   closing: boolean;
   sequence: number;
   close: () => void;
@@ -58,71 +42,45 @@ export type ChromeLayerRetreat = {
 };
 
 export type EditorChrome = {
-  /** Identifies this editor's chrome. */
   readonly id: string;
-  /** Deepest context under the selection, recomputed per transaction. */
   readonly context: ChromeContext;
-  /** Open transient layers, shallowest first, so the last is topmost. */
   readonly layers: readonly ChromeLayer[];
-  /** How the topmost layer expects Escape to reach it. Null when none is open. */
   readonly topLayerDismissal: ChromeLayerDismissal | null;
   readonly gesture: GesturePhase;
-  /** A drag or sweep is in flight, so active surfaces stand down (BlockNote's rule,). */
   readonly suppressed: boolean;
-  /** Fires on every change above. React reads it with `useSyncExternalStore`. */
   subscribe: (listener: () => void) => () => void;
 
   openLayer: (layer: ChromeLayerOptions) => ChromeLayerHandle;
-  /** Ask the topmost layer to dismiss. */
   closeTopLayer: () => boolean;
-  /**
-   * Offer semantic retreat to the current top owner. Before its React layer
-   * exists, the newest registration is the pending owner for that first key.
-   */
   retreatTopLayer: () => boolean;
   registerLayerRetreat: (retreat: ChromeLayerRetreat) => () => void;
 
-  /** Take right-clicks at a rung of the claim ladder. Returns an unregister. */
   registerContextClaim: (handler: ContextClaimHandler) => () => void;
   claimHandlers: () => readonly ContextClaimHandler[];
 
-  /** Contribute keys at a named scope. Returns an unregister. */
   registerKeymap: (contribution: KeymapContribution) => () => void;
   keymapContributions: () => readonly KeymapContribution[];
-  /** Bumps whenever the contribution set changes, so callers can cache a merge. */
   readonly keymapRevision: number;
 
-  /** A surface-owned drag (block handle, column resize). */
   beginDrag: (onCancel?: () => void) => () => void;
 
-  /** Take part in the approach (`hover-anchor.ts`). */
   registerHoverAnchor: <T>(lane: HoverAnchorLane<T>) => () => void;
 
-  /** The writer's last input device was a finger or a pen. */
   readonly coarsePointer: boolean;
 };
 
-/** What `ChromeKernelExtension` drives. Surfaces never see this half. */
 export type EditorChromeController = {
-  /**
-   * The approach's DOM half: where the pointer is, and when to ask again.
-   * `ChromeKernelExtension` is the only thing that drives it.
-   */
   hoverAnchors: HoverAnchors;
   setCoarsePointer: (coarse: boolean) => void;
   setContext: (context: ChromeContext) => void;
   setGesture: (phase: GesturePhase) => void;
-  /** Esc's first step: tell the drag's owner to give up, then stop suppressing. */
   cancelGesture: () => void;
   destroy: () => void;
 };
 
 let chromeSequence = 0;
 
-export function createEditorChrome(
-  /** The approach's clock. Injected so the timing policy is testable. */
-  hoverTimers?: HoverIntentTimers,
-): {
+export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
   chrome: EditorChrome;
   controller: EditorChromeController;
 } {
@@ -139,12 +97,10 @@ export function createEditorChrome(
   let layers: ChromeLayer[] = [];
   let gesture: GesturePhase = "idle";
   let context: ChromeContext = DOCUMENT_CHROME_CONTEXT;
-  /** The drag that is actually running, if any. Identity, not a flag. */
   let activeDrag: { token: symbol; cancel?: () => void } | null = null;
   let keymapRevision = 0;
   let coarsePointer = false;
 
-  /** Hover intent the kernel can reach: a gesture cancels every one of them, so approach chrome cannot linger through a drag. */
   const trackHoverIntent = <T>(options: HoverIntentOptions<T>): HoverIntent<T> => {
     const intent = createHoverIntent({ timers: hoverTimers, ...options });
     hoverIntents.add(intent as HoverIntent<unknown>);
@@ -324,7 +280,6 @@ export function createEditorChrome(
     registerHoverAnchor: (lane) => hoverAnchors.register(lane),
   };
 
-  /** Active layers, shallowest first. */
   function reorderLayers(): void {
     const active = [...layerRecords.values()].filter((record) => !record.closing);
     const depths = new Map<string, number>();
@@ -347,7 +302,6 @@ export function createEditorChrome(
     notify();
   }
 
-  /** Ask every open top-level surface to close, and take its subtree out of the walk with it. */
   function replaceOpenTransients(): void {
     const roots = [...layerRecords.values()].filter(
       (record) => record.parentId === null && !record.closing,

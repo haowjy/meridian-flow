@@ -15,10 +15,6 @@ export class DeviceRefusedError extends Error {
   }
 }
 
-/**
- * Saves a command in the journal. The one place a device that cannot keep it is told to the
- * writer: nothing was saved, shown or sent, so the caller gets `null` and does nothing more.
- */
 export async function submitCommand(
   driver: CommandDriver,
   input: SubmitInput,

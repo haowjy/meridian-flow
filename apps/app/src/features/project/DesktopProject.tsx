@@ -1,15 +1,3 @@
-/**
- * DesktopProject — the desktop's three fixed slots (sidebar, main, side) and the hosts in them.
- *
- * `ItemHosts` is the one structural idea: a host per mounted item, keyed by that item, placed in
- * main or the side by grid-area. Opening the side's item in main moves its mounted editor or chat
- * instead of remounting it, so undo, caret, scroll and a running stream survive the swap. Besides
- * main's and the side's, one more document stays mounted, kept hidden so its undo survives a
- * return: the newest open tab shown that is on screen no longer. So at most three documents are
- * mounted (main, side, kept). One document is in at most one host. What the side shows is
- * `side/SideView`'s resolution.
- */
-
 import { t } from "@lingui/core/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { DismissableLayer } from "radix-ui/internal";
@@ -72,8 +60,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const narrowHold = useNarrowWindowHold();
   const panels = useDesktopPanels(narrowHold.held);
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
-  // The single writer-driven open/close entry for a panel. Opening a panel also releases the
-  // narrow-window hold on it, so the control can never write a pref that changes nothing.
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.openByHand(slot);
     setSlotOpen(slot, open);
@@ -83,14 +69,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideOpen = panels.side.open;
   const sidebarOver = narrowHold.narrow && panels["rail-l"].open;
   const { foldSidebar } = narrowHold;
-  // Any open goes to main, so a sidebar lying over main folds to show it, as the phone's drawer
-  // closes, and the focus follows to what opened.
   useOnOpen(() => {
     if (!sidebarOver) return;
     foldSidebar();
     focusMain();
   });
-  // An ask to show a sidebar pane (Manage Agents, the chat strip's "more") opens the sidebar.
   const asked = useSidebarTabs((state) => state.asked);
   const seenAsk = useRef(asked);
   useEffect(() => {
@@ -98,7 +81,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     seenAsk.current = asked;
     if (asked && !panels["rail-l"].open) setSlotOpenHere("rail-l", true);
   });
-  // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {
@@ -121,17 +103,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const trashedId = useTrashNavigation().shown;
   const trashed = useDocumentStanding(projectId, trashedId ?? null);
   const trashedName = trashed.kind === "in-trash" ? trashed.node.name : undefined;
-  // A masked address paints no document: a removed one shows its removed state in place.
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.document : null;
 
-  // Each mounted document at its host's current descriptor, newest on screen first.
   const shown = useShownDocuments(projectId);
   const side = useSideItem();
   const sideTab = side.item?.kind === "document" ? side.document : null;
-  // The newest open tab shown that is off screen stays mounted, hidden: closing a tab lets its
-  // editor go. A document moving
-  // between main and the side passes through here while main's address loads, so it never
-  // remounts. A tab the strip leaves out (its document is gone) keeps no host.
   const { tabs } = useLiveTabs().lanes.document;
   const keptTab =
     shown.find(
@@ -187,7 +163,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatThread = useHostChatId();
   const chatOnScreen = useChatOnScreen();
-  // Recent chats is the chat lane's page with no chat: main shows it in its own host.
   const chatRecents = mainChat?.kind === "chat-recents";
   const chatInMain = mainChat !== null && !chatRecents;
   const chatHost: SlotGridHost = {
@@ -268,8 +243,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ...documentHosts,
     chatHost,
   ];
-  // Main's own page when it holds no document or chat: its lane's recent page, a removed
-  // address, or the Trash.
   if (chatRecents || (!mainChat && !mainTab))
     hosts.push({
       key: "main",
@@ -356,7 +329,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-/** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
   const { pending, failed } = useSideItem();
   const place = usePlace();
@@ -365,7 +337,6 @@ function SideEmpty({ projectId }: { projectId: string }) {
       <SideEmptyHeader projectId={projectId} />
       <div className={cn(pageSheetClass(true), "flex min-h-0 flex-1")}>
         {pending || failed ? null : (
-          // The dropdown's inset, so the list reads the same in both places.
           <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
             <DocumentChoices
               projectId={projectId}
@@ -430,13 +401,6 @@ function SidebarOver({
   );
 }
 
-/**
- * A window too narrow for a panel holds it closed while it stays narrow, without writing prefs,
- * so the writer's own choice returns when the window widens. Opening a panel by hand releases
- * its hold until the window narrows again; in a window too narrow for both, it holds the other
- * one closed instead, so main keeps its room. A window too narrow for the sidebar beside main
- * (`narrow`) lays a sidebar opened by hand over main, and an open folds it again.
- */
 function useNarrowWindowHold() {
   const [held, setHeld] = useState<readonly PanelSlotId[]>(NO_HELD_PANELS);
   const [narrow, setNarrow] = useState(false);

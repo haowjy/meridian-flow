@@ -1,18 +1,3 @@
-/**
- * The handoff brief card: the first thing in a handed-off chat, and the card
- * each Retry adds at the leaf.
- *
- * A pending seed is a brief being written. While it is, the card says so and
- * offers Stop (the composer's Stop targets the same turn). A ready brief shows
- * the summary the new Agent starts from, clipped with Show more. A brief that
- * was stopped says so; a failed brief keeps its neutral title and reports failure only through
- * its anchored card. The newest brief offers Retry, which adds a new card at once.
- * Its failures (the brief's own, a failed Stop, a refused
- * or lost Retry) are `FailureCard`s from `chatCards`, drawn here by the brief's turn. Retry waits while the chat is
- * busy (a reply or a compaction): the server refuses a brief then. The
- * source's name links back to it. State changes are spoken by the global
- * announcer, never a live region here.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
@@ -29,14 +14,10 @@ import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 
 export type HandoffBriefCardProps = {
   turn: Turn;
-  /** The newest seed: only it can be retried. */
   latest: boolean;
   stopping: boolean;
-  /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
-  /** Absent in a read-only view (a fork's inherited brief) or before the server has the seed. */
   onStop?: (turnId: string) => void;
-  /** Absent in a read-only view. */
   onRetry?: (turn: Turn) => void;
 };
 
@@ -63,11 +44,9 @@ export function HandoffBriefCard({
   const seed = readHandoffSeed(turn);
   const view = briefCardView({ turn, latest, stopping });
   const retryWaitId = useId();
-  // The title frozen on S stands in until the current one is known, and names a trashed source.
   const source = useSourceThread(seed?.sourceThreadId ?? "", seed?.sourceTitle ?? null);
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
-  // The Stop flag outlives the seed: a stopped or finished brief says what it is.
   const title =
     stopping && view.state === "generating" ? t`Stopping the handoff brief` : stateTitle(view);
   const failures = useCardsAt({ turn: turn.id });
@@ -75,7 +54,6 @@ export function HandoffBriefCard({
     view.state === "stopped"
       ? view.canRetry
       : failures.some((card) => card.action === "retry_brief");
-  // For a source that was untitled when S was created: refs are never writer copy.
   const sourceFallbackName = t`the source chat`;
 
   return (
@@ -166,7 +144,6 @@ export function HandoffBriefCard({
   );
 }
 
-/** The brief, clipped to the card's height until the writer asks for all of it. */
 function BriefText({ brief }: { brief: string }) {
   return (
     <div className="mt-[var(--chat-space-inline)]" data-handoff-brief-text>

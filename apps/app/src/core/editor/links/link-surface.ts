@@ -1,18 +1,3 @@
-/**
- * The link lane's per-editor store: which link is being approached, and which
- * of its two summoned surfaces is open.
- *
- * Headless and editor-free, like the chrome kernel's own store. The extension
- * beside it turns pointers and keys into these calls; React reads the state
- * with `useSyncExternalStore` and renders. Nothing here touches the document,
- * so the whole surface policy is testable as data.
- *
- * The hint is approach chrome and the other two are summoned surfaces, so they
- * are separate fields rather than one "current surface": a hover that lands
- * while a menu is open must not close the menu, and a menu that opens must not
- * have to remember to clear a hint.
- */
-
 import type { Mark } from "@tiptap/pm/model";
 
 import type { LinkAnchor } from "./link-commands";
@@ -23,16 +8,12 @@ export type LinkPoint = { x: number; y: number };
 
 export type LinkRange = { from: number; to: number };
 
-/** The destination hint (§5.5): quiet, on approach, never in the way. */
 export type LinkHint = {
-  /** The rendered anchor, so the hint travels with it as the pane scrolls. */
   element: HTMLElement;
   target: LinkTarget;
-  /** The link's ref, read from its mark: what it names, for the hint's answer. */
   ref: string | null;
 };
 
-/** The Ctrl+K form. One field over a selection, two at a bare caret (law 5). */
 export type LinkFormRequest = {
   at: LinkPoint;
   /**
@@ -43,69 +24,31 @@ export type LinkFormRequest = {
   seq: number;
 };
 
-/**
- * The link a menu is aimed at, as it stands right now.
- *
- * Kept current by the document rather than captured once: the menu is open for
- * as long as the writer reads it, and every verb on it rewrites a range. A
- * range that stopped describing the writer's link is a verb aimed at someone
- * else's sentence.
- */
 export type LinkMenuTarget = {
-  /** Where the link is, pinned so it can be found again after a remote write. */
   anchor: LinkAnchor;
   href: string;
-  /** The mark's ref: with the href, the link's identity for its answer. */
   ref: string | null;
   target: LinkTarget | null;
-  /**
-   * The mark this menu opened on. Coordinates outlive the thing that was at
-   * them, so identity is what tells "the same link, moved" from "a different
-   * link now sitting where that one was".
-   */
   identity: Mark;
 };
 
-/** The right-click menu, on the link the pointer hit rather than the caret. */
 export type LinkMenuRequest = LinkMenuTarget & {
   at: LinkPoint;
   seq: number;
 };
 
-/** The range a menu verb rewrites. */
 export function linkMenuRange(menu: LinkMenuTarget): LinkRange {
   return { from: menu.anchor.from, to: menu.anchor.to };
 }
 
-/**
- * What following a link found, once it is worth interrupting the writer about.
- * A link already resolved never lands here: it just opens.
- *
- * The outcome sits in the store rather than in the component that asked,
- * because the two halves belong on opposite sides of the chrome host. The app
- * registers the navigator and does the asking; what the writer reads is a
- * surface the host mounts like every other one. Without this field the asking
- * half has to render its own dialog, and a dialog the kernel never hears about
- * is a second owner of Escape.
- */
 export type LinkFollowOutcome = {
   state: "checking" | "failed" | "missing";
   target: LinkTarget;
-  /**
-   * The canonical Context URI the link names (a relative path resolved
-   * against its holder), or null when it names none. `missing` means
-   * nothing is there.
-   */
   address: string | null;
 };
 
-/**
- * A folder link's menu: pressing a link that names a folder opens the drill-in
- * menu inside it rather than following. `seq` keys each open, as for the form.
- */
 export type LinkFolderRequest = { folderId: string; at: LinkPoint; seq: number };
 
-/** What the app's follower does when the writer acts on a follow's outcome. */
 export type FollowHandlers = { dismiss: () => void; retry: () => void };
 
 export type LinkSurfaceState = {
@@ -124,45 +67,21 @@ export type LinkSurface = {
   openForm: (at: LinkPoint) => void;
   closeForm: () => void;
   openMenu: (request: LinkMenuTarget & { at: LinkPoint }) => void;
-  /**
-   * Follow the open menu's link through a document change. `null` closes it:
-   * a menu whose link is gone has nothing left to be about, and re-aiming it
-   * at whatever occupies the old coordinates would be worse than closing.
-   */
   retargetMenu: (target: LinkMenuTarget | null) => void;
   closeMenu: () => void;
 
-  /** Open a folder link's menu; like the other summoned surfaces, it replaces them. */
   openFolder: (request: { folderId: string; at: LinkPoint }) => void;
   closeFolder: () => void;
 
-  /** A follow that has something to say. Reported by whoever answered it. */
   reportFollow: (outcome: LinkFollowOutcome) => void;
   clearFollow: () => void;
-  /**
-   * The writer closed what a follow said (Close, Cancel, Escape). The follower
-   * that answered decides what that means: a still-asking follow is stopped,
-   * so its answer can neither open the document nor bring the dialog back.
-   * Without a registered follower it only clears.
-   */
   dismissFollow: () => void;
-  /** Try again: the follower follows the shown link anew, as the dialog's owner. */
   retryFollow: () => void;
   registerFollowHandlers: (handlers: FollowHandlers) => () => void;
 
-  /**
-   * Where an internal link goes. Absent is a real state, not a bug: until the
-   * app registers one, internal links have no destination the editor can
-   * reach, so the Open verb is absent rather than dead (law 5).
-   */
   readonly navigator: InternalLinkNavigator | null;
   registerNavigator: (navigate: InternalLinkNavigator) => () => void;
 
-  /**
-   * Where a drag of a link's entry goes, once ProseMirror has started the link's text as an
-   * ordinary text drag. Absent where the app takes no drags: the link's text then drags as text,
-   * as it always did.
-   */
   readonly dragSource: LinkDragSource | null;
   registerDragSource: (source: LinkDragSource) => () => void;
 
@@ -177,11 +96,6 @@ const EMPTY_STATE: LinkSurfaceState = {
   follow: null,
 };
 
-/**
- * What the editor hands the app when the writer drags a selected internal link: the entry the link
- * names, by identity, and the label it shows. The app decides what a drag carries and where it can
- * land; the editor core knows no more than the identity.
- */
 export type LinkDragSource = (request: {
   entry: { kind: "file" | "folder"; id: string };
   name: string;

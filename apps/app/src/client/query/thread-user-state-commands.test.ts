@@ -1,11 +1,3 @@
-/**
- * Contract tests for the Project-chat favorite command owner (P1).
- *
- * The owner keeps the normalized projection, per-entity serialization, and the
- * stale-feed barrier. These tests pin the failure payload: a rejected command
- * must retain the exact failed intent so the shared row can retry it, and an
- * older write must not overwrite a newer intent or a newer admitted feed.
- */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,7 +71,6 @@ describe("runFavoriteCommand", () => {
 
     const firstRun = runFavoriteCommand(client, PROJECT_ID, "thread-1", true);
     const secondRun = runFavoriteCommand(client, PROJECT_ID, "thread-1", false);
-    // Serialized per entity: only the first request is in flight.
     expect(mocks.updateThreadUserState).toHaveBeenCalledTimes(1);
 
     first.resolve({ threadId: "thread-1", isFavorite: true });
@@ -90,9 +81,7 @@ describe("runFavoriteCommand", () => {
     const record = readRecord(client);
     expect(record.favorite).toBeUndefined();
     expect(record.favoriteError?.error).toBeInstanceOf(Error);
-    // The failed intent was `false`; the inverse derivation would yield `true`.
     expect(record.favoriteError?.desiredValue).toBe(false);
-    // The first write confirmed `true`, so the base is not reverted to `false`.
     expect(readRecord(client).base.isFavorite).toBe(true);
   });
 

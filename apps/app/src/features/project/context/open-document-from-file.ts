@@ -1,11 +1,3 @@
-/**
- * open-document-from-file — adapter from context-tree file metadata to OpenDocument.
- *
- * Keeps desktop and phone context navigation on the same tab construction path
- * so file classification, schema type, and viewer metadata cannot drift between
- * shells. Work-scoped tabs retain their owner row id, including No Work; a
- * chat's Scratch retains its lineage and the handle its URI spells.
- */
 import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileEntry,
@@ -15,10 +7,6 @@ import type {
 import type { OpenDocument, OpenDocumentOwner, ServerOpenDocument } from "@/client/stores";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 
-/**
- * The handle (`c15`) a chat's upload's URI spells. A New chat's first uploads were listed before the
- * chat's row existed, so their URI is the contextual form (`uploads://map.png`) and has none.
- */
 function chatRefOf(file: TreeFile): string | undefined {
   const parsed = parseContextUri(file.uri);
   if (parsed.ok && parsed.value.authority.kind === "contextual") return undefined;
@@ -27,7 +15,6 @@ function chatRefOf(file: TreeFile): string | undefined {
   return parsed.value.authority.chatRef;
 }
 
-/** The handle (`c12`) a chat's Scratch file's URI spells. */
 function lineageRefOf(file: TreeFile): string {
   const parsed = parseContextUri(file.uri);
   if (!parsed.ok || parsed.value.authority.kind !== "lineage")
@@ -78,7 +65,6 @@ export function openDocumentFromFile(
   };
 }
 
-/** The server's answer for a document the list does not show, in the shape the screens read. */
 export function treeFileFromCatalogEntry(entry: CatalogFileEntry): TreeFile {
   const base = {
     kind: "file" as const,
@@ -107,18 +93,11 @@ export function treeFileFromCatalogEntry(entry: CatalogFileEntry): TreeFile {
 
 export const serverDocumentFromFile = openDocumentFromFile;
 
-/** What a tab's document is in the list now: where it sits, or that it is gone. */
 export type TabPlacement =
   | { kind: "none" }
   | { kind: "removed" }
   | { kind: "projected"; document: OpenDocument };
 
-/**
- * A tab follows its document's node: a rename or a move shows here at once, and a node that
- * left the view (or a list that has synced without it) removes the tab. A draft-only document
- * is one live does not hold, so the list says nothing about it. While the list has not synced
- * a missing node is not a removal.
- */
 export function placeTab(
   found: { scheme: ProjectContextTreeScheme; file: TreeFile; owner: ContextOwner } | null,
   listSynced: boolean,

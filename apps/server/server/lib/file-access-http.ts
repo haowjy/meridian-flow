@@ -1,8 +1,3 @@
-/**
- * The file policy at HTTP routes (file-access §4, §9): a person's grant on a
- * route's target, the write run with its grants bound so each seam confirms
- * them, and refusals mapped to status codes.
- */
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -29,7 +24,6 @@ function personPrincipal(userId: string): Principal {
   return { accountId: userId as UserId };
 }
 
-/** 404 hides existence; an archived Work's files are 403 `work_archived`, a deleted Work's 404 `work_deleted`. */
 export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
   switch (denial.reason) {
     case "not_found":
@@ -52,16 +46,10 @@ export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">):
     case "agent_read_only":
     case "uploads_read_only":
     case "ai_access_denied":
-      // Agent terms; a person never meets them.
       throw createError({ statusCode: 403, message: denial.reason });
   }
 }
 
-/**
- * Whether a thrown error is one of the policy refusals `throwFileAccessDenied` raises (not
- * found, archived, read-only) rather than a fault. A replay boundary may re-look-up its
- * command before keeping such a refusal; no other exception qualifies.
- */
 export function isFileAccessRefusal(cause: unknown): boolean {
   if (typeof cause !== "object" || cause === null) return false;
   const { statusCode, message } = cause as { statusCode?: unknown; message?: unknown };
@@ -81,7 +69,6 @@ export function isFileAccessRefusal(cause: unknown): boolean {
   );
 }
 
-/** The person's grant on a target, or the route's refusal. */
 export async function requireFileGrant<N extends FileNeed>(
   fileAccess: Pick<FileAccess, "authorize">,
   userId: string,
@@ -93,7 +80,6 @@ export async function requireFileGrant<N extends FileNeed>(
   return grant;
 }
 
-/** Runs a write with its grants bound; a seam's refusal becomes the route's. */
 export async function withEditGrants<T>(
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">,
   grants: readonly FileGrant<"edit" | "command">[],

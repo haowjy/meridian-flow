@@ -1,6 +1,3 @@
-// Observation frontiers on Loro (design §5): what a result showed is the frontiers of every doc of
-// the room copy it rendered from, and a write plans on a view of the room at them.
-
 import {
   type CommitAuthor,
   type DocKey,
@@ -26,12 +23,10 @@ import type { FrontierLookup } from "./frontier.js";
 
 export type FrontierMap = ReadonlyMap<DocKey, Frontiers>;
 
-/** `observation_frontiers.snapshot` on Loro: an envelope of each shown doc's encoded frontiers. */
 export function encodeFrontierMap(frontiers: FrontierMap): Uint8Array {
   return encodeEnvelope(new Map([...frontiers].map(([key, at]) => [key, encodeFrontiers(at)])));
 }
 
-/** Null for bytes that are not a Loro frontier map (a frontier an older build recorded). */
 export function decodeFrontierMap(bytes: Uint8Array): Map<DocKey, Frontiers> | null {
   try {
     const map = new Map<DocKey, Frontiers>();
@@ -42,7 +37,6 @@ export function decodeFrontierMap(bytes: Uint8Array): Map<DocKey, Frontiers> | n
   }
 }
 
-/** The doc a reader of `docs` reads `key` from: its own, else Live's for a draft. */
 function shownDoc(docs: RoomDocs, key: DocKey): LoroDoc | undefined {
   return key === STRUCTURE_KEY ? docs.structure : docs.textOf(key);
 }
@@ -75,12 +69,6 @@ function usableIn(doc: LoroDoc, at: Frontiers): boolean {
   );
 }
 
-/**
- * The frontiers a write plans on: what the model read (`recorded`), plus the reply's own batches
- * since (`own`, the exact envelopes its writes committed), per doc. Null when some recorded doc is
- * no longer in `docs` or a frontier lies below its cutoff: the write then plans on the transcript.
- * A doc the model never saw (created since the read) is left out, so the view lacks it.
- */
 export function planningFrontiers(
   docs: RoomDocs,
   recorded: FrontierMap,
@@ -108,12 +96,6 @@ export function planningFrontiers(
   return out;
 }
 
-/**
- * The chat's latest read of `documentId`, in whichever of its rooms it was (design §5): null when
- * it never read the document. A write plans on it when its room can check it out
- * (`planningFrontiers`), and on the transcript when not: a later read is never passed over for an
- * earlier one, whose text the model no longer works from.
- */
 export async function latestRead(
   lookup: FrontierLookup,
   documentId: string,
@@ -122,7 +104,6 @@ export async function latestRead(
   return frontier ? decodeFrontierMap(frontier.snapshot) : null;
 }
 
-/** The doc keys whose frontiers differ between a recorded read and `docs` now. */
 export function changedSince(docs: RoomDocs, recorded: FrontierMap): Set<DocKey> {
   const now = docs.frontiers();
   const changed = new Set<DocKey>();
@@ -139,11 +120,6 @@ function sameFrontiers(a: Frontiers, b: Frontiers): boolean {
   return a.every((id) => b.some((other) => other.peer === id.peer && other.counter === id.counter));
 }
 
-/**
- * Who wrote each change in `doc` between `from` (a recorded frontier, or none for a doc the read
- * never saw) and now, by its commit message: a chat's turn, a press, or undefined for the writer
- * (design §5).
- */
 export function authorsSince(
   doc: LoroDoc,
   from: Frontiers | undefined,

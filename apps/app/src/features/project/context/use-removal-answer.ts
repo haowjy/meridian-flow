@@ -1,14 +1,9 @@
-/** React subscription to what the project's list says about one document's removal. */
 import { useCallback, useSyncExternalStore } from "react";
 import { useOptionalProjectStandings } from "./account-feature-context";
 import { type RemovalAnswer, removalAnswer } from "./removal-answer";
 
 const unwatched = () => undefined;
 
-/**
- * Whether and how a document was removed: undefined until the list is read, or when no document
- * is asked about.
- */
 export function useRemovalAnswer(
   projectId: string,
   documentId: string | null,

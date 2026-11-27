@@ -1,11 +1,3 @@
-/**
- * Document addresses on the server, one owner (L32): where a document lives now,
- * what a canonical address means in storage (project, scheme, Work, path), which
- * document occupies an exact address, and the browser's current-first lookup.
- * Addresses are spelled by the tree owner (`tree/tree-addresses.ts`); a caller asking
- * where a document lives now treats `deleted` as "no address".
- *
- */
 import { type DocumentId, isAheadFilename } from "@meridian/contracts";
 import {
   contextRootUri,
@@ -48,7 +40,6 @@ export const sameCoordinates = (a: CoordinateKey, b: CoordinateKey) =>
   a.chatThreadId === b.chatThreadId &&
   a.path === b.path;
 
-/** The address a content document holds now, or null when it is deleted there or unspellable. */
 export async function currentDocumentAddress(
   db: Database,
   documentId: DocumentId,
@@ -78,10 +69,6 @@ export async function documentAt(
   return rows.find((row) => !row.deleted && row.path === at.path)?.documentId ?? null;
 }
 
-/**
- * An address that can never name a document from this holder: not canonical, no file
- * extension, no Work authority where one is needed, or a Work or chat that doesn't exist. Asking again never helps.
- */
 export class UnresolvableAddressError extends RangeError {
   constructor(
     readonly address: string,
@@ -92,12 +79,6 @@ export class UnresolvableAddressError extends RangeError {
   }
 }
 
-/**
- * A decoded canonical address named from a holder in `holderProjectId`, resolved
- * to storage coordinates. Throws `UnresolvableAddressError` when the address is not
- * canonical, names no file, or names a Work or chat that does not exist;
- * a plain error when the holder's own project or No Work row is missing.
- */
 export async function resolveCanonicalAddress(
   db: DrizzleDb,
   input: AheadHolder & { address: string },
@@ -105,10 +86,6 @@ export async function resolveCanonicalAddress(
   return resolveAddressCoordinates(db, input, "document");
 }
 
-/**
- * A decoded canonical address resolved to storage coordinates without a filename rule: a folder
- * or a link's path that may leave its extension off.
- */
 export async function resolveCanonicalPath(
   db: DrizzleDb,
   input: AheadHolder & { address: string },
@@ -168,7 +145,6 @@ async function resolveAddressCoordinates(
     .from(projects)
     .where(and(eq(projects.id, input.holderProjectId), isNull(projects.deletedAt)));
   if (!holder) throw new Error(`Holder project ${input.holderProjectId} does not exist`);
-  // The home folder is the holder's account's, not any project's.
   const owner: TreeList =
     scheme === "user"
       ? { kind: "account", userId: holder.userId }

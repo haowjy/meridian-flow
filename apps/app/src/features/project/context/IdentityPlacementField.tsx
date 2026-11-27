@@ -1,12 +1,3 @@
-/**
- * Inline document identity editor for placement, rename, and move.
- *
- * Provisional documents open empty with a content-derived ghost name; settled
- * documents open with their current name selected. Picking folders builds a
- * read-only destination prefix. Enter or Save commits through one identity
- * seam; Esc, Cancel, focus leaving the field, or opening an existing file revert it.
- */
-
 import { t } from "@lingui/core/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -84,7 +75,6 @@ export function IdentityPlacementField({
   useEffect(() => {
     const input = inputRef.current;
     input?.focus();
-    // Only the part before a visible extension: `outline` in `outline.json`.
     if (input?.value)
       input.setSelectionRange(0, entryNameStemEnd(input.value, documentRow(location.leaf)));
   }, []);
@@ -109,8 +99,6 @@ export function IdentityPlacementField({
     };
   }, [binding.state, provisionalPlacement, document]);
 
-  // The document's own owner scopes its Scratch suggestions, collisions and "Open
-  // existing"; the Editor's selected Work does not (a chat's Scratch has none).
   const { workId: locationWorkId, rootThreadId, rootThreadRef } = location;
   const owner = useMemo<ContextOwner>(
     () =>
@@ -121,8 +109,6 @@ export function IdentityPlacementField({
   );
   const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
     isWorkScopedScheme(scheme) ? owner : { workId: null };
-  // Filing moves the document, so it offers the places in its own list: the project's files, or
-  // the account's Your files.
   const inAccount = location.scheme === "user";
   const destinations = useMemo(
     () => WRITABLE_IDENTITY_DESTINATIONS.filter((scheme) => (scheme === "user") === inAccount),
@@ -202,8 +188,6 @@ export function IdentityPlacementField({
     setCommitReason(null);
   };
 
-  // Focus moving among the input, Save, Cancel and the suggestions keeps the field open, so Tab
-  // reaches Save and Cancel; leaving all of them reverts.
   const exitOnLeave = (event: FocusEvent<HTMLElement>) => {
     if (saving) return;
     const next = event.relatedTarget as Node | null;
@@ -251,7 +235,6 @@ export function IdentityPlacementField({
                   return;
                 }
                 if (event.key === "Enter") void submit();
-                // Back out the way the writer came in: the prose, not the toolbar before the field.
                 if (event.key === "Tab" && event.shiftKey) {
                   event.preventDefault();
                   onExit("escape");
@@ -363,12 +346,10 @@ function suggestionForSession(
 ): string {
   const suggestion = suggestedNameFromDocument(session.docs);
   if (!suggestion || tab.kind === "new") return suggestion;
-  // The suggestion carries the file's visible extension (`.json`); a prose name has none.
   const extension = tab.name.slice(entryNameStemEnd(tab.name, documentRow(tab.name)));
   return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
 }
 
-/** "Manuscript/Arc 3", "~/.agents/agents": where a placed document goes, area first. */
 function placementPrefix(scheme: ProjectContextTreeScheme, folderPath: string): string {
   const { area, rest } = areaOf(scheme, folderPath);
   return [area, ...treeSegments(rest)].join("/");

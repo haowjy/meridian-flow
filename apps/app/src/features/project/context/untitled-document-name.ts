@@ -1,4 +1,3 @@
-/** Suggests a stable filename slug from an untitled document's first line. */
 import type { RoomDocs } from "@meridian/document-model";
 import type { JSONContent } from "@tiptap/core";
 import { roomContent } from "@/core/editor/room-content";
@@ -23,7 +22,6 @@ function collectText(content: JSONContent | undefined): string {
   return (content.content ?? []).map(collectText).join("");
 }
 
-/** Same suggestion, from a copy's first block. */
 export function suggestedNameFromDocument(docs: RoomDocs): string {
   const text = roomContent(docs).firstChild?.textContent.trim() ?? "";
   if (!text) return "";

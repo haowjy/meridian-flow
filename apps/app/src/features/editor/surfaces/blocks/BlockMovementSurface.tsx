@@ -1,31 +1,3 @@
-/**
- * Block movement (§5.8): the handle in the margin, the drag with its jade drop
- * line, the block menu, and Alt+↑/↓.
- *
- * One surface owns all four because they are one verb with four doors — the
- * writer moves a block by dragging it, by pressing a key, or by choosing a
- * menu row, and every door ends in the same transaction. What each half of that
- * changes for is its own module:
- *
- * - the document half is `block-targets.ts`, the measuring half `block-geometry.ts`;
- * - the drag, from either door to the one finalizer, is `block-gesture.ts`;
- * - where the handle and the drop line are drawn is `block-placement.ts`;
- * - Alt+↑/↓ and its place in the kernel's ladder is `block-keymap.ts`.
- *
- * What is left here is what the writer sees and which block it is about: the
- * approach that reveals the handle, the hold the menu stands on, and the
- * composition of the rest. It decides nothing about the document itself.
- *
- * **Every position held across a transaction goes through `followBlock`** (law
- * 9: nothing gates a write). A block a peer deleted must take its chrome with
- * it rather than handing Delete to the neighbour, and a peer's write moves
- * every position in the document at once.
- *
- * The kernel owns the timing and the standing-down. Hover comes from
- * `chrome.registerHoverAnchor`; suppression, the Esc chain, and the drag token
- * are all its.
- */
-
 import type { Editor } from "@tiptap/core";
 import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { GripVertical } from "lucide-react";
@@ -66,7 +38,6 @@ import {
 } from "./block-targets";
 import "./block-movement.css";
 
-/** Names this surface in `EDITOR_CHROME_SURFACES` and in probes. */
 export const BLOCK_MOVEMENT_SURFACE_ID = "block-movement";
 
 type BlockTransactionBuilder = (state: Editor["state"], source: BlockTarget) => Transaction | null;
@@ -86,12 +57,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   const editable = editor.isEditable;
   const targetPos = (menuHold ?? anchorHold)?.from ?? null;
-  /**
-   * The block the visible handle belongs to, for the door that fires outside
-   * React's own event flow. Fed by render rather than remembered per-element
-   * (the way an object's row has to be): there is only ever one handle, and it
-   * exists only once the approach has already settled on a block.
-   */
   const targetPosRef = useRef<number | null>(null);
   targetPosRef.current = targetPos;
 
@@ -102,17 +67,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   });
   useBlockMovementKeymap(editor, BLOCK_MOVEMENT_SURFACE_ID);
 
-  /**
-   * The approach (§5.8). The pointer spends most of it in the margin, where
-   * `posAtCoords` has nothing to say, so `blockUnderPointer` pulls x into the
-   * column before asking.
-   *
-   * The kernel decides WHEN the pointer is believed and WHICH block owns
-   * chrome; this only answers "which block is under this point". That is what
-   * keeps the handle and an object's own controls on one block rather than on
-   * two, and it is what re-aims the handle when the pane scrolls under a hand
-   * that never moved.
-   */
   useEffect(() => {
     if (!chrome || !editable) return;
     return chrome.registerHoverAnchor<number>({
@@ -131,10 +85,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     });
   }, [chrome, editable, editor, gesture.inFlight]);
 
-  // The handle fades rather than vanishing: the hover intent's grace lets the
-  // pointer travel onto it, and this keeps the element mounted one fade longer
-  // so the way out looks like the way in. On touch there is no leaving to
-  // handle — the handle belongs to the selected block until another is chosen.
   useEffect(() => {
     // A gesture keeps its anchor whatever the pointer is doing: the kernel
     // cancels the hover reveal the moment a drag begins, and letting the
@@ -146,14 +96,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     return () => window.clearTimeout(timer);
   }, [anchorHold, hovered, menuHold, gesture.active, coarse]);
 
-  /**
-   * Both holds travel with the document.
-   *
-   * A block a peer deleted takes its handle and its menu with it: `followBlock`
-   * answers null once the node is gone, and null is this surface's dismissal.
-   * The kernel re-asks what is under the pointer on the same transaction, so
-   * nothing here has to tell the approach that its target has changed.
-   */
   useEffect(() => {
     const onTransaction = ({ transaction }: { transaction: Transaction }) => {
       const follow = (hold: NodeHold) => followBlock(editor.state, hold, transaction.mapping);
@@ -166,11 +108,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     };
   }, [editor]);
 
-  /**
-   * The touch path (§5.8, law 8). A tap has no hover to settle, so on coarse
-   * input the handle belongs to whatever the tap landed on — the writer's own
-   * caret is the approach.
-   */
   useEffect(() => {
     if (!editable) return;
     const onSelection = () => {
@@ -184,20 +121,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
     };
   }, [editor, editable, coarse, gesture.inFlight]);
 
-  /**
-   * The handle's right-click (§5.1's claim ladder, `grip` rung).
-   *
-   * The grip is chrome drawn outside the frame, so a right-click on it is a
-   * question about the block, never about the page: it opens the same menu the
-   * click opens, through the same call. Not claiming would leave the browser's
-   * menu over a control the browser knows nothing about — and the kernel's
-   * default IS the native menu, so a surface that registers nothing gets it by
-   * saying nothing.
-   *
-   * The claim is registered once and reads the handle's block live: it answers
-   * whatever the handle is standing on when the writer presses, and a
-   * registration per hovered block would churn the kernel's list all day.
-   */
   useEffect(() => {
     if (!chrome || !editable) return;
     return chrome.registerContextClaim({
@@ -227,9 +150,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   const { handle, line } = useBlockChromePlacement(editor, targetPos, gesture.seamIndex);
   const overlay = manuscriptOverlay(editor);
-  // The menu hangs off the handle in the POINTER's space, which is the one
-  // Radix positions in. The handle's own placement is in the pane's, so the
-  // element is what carries the answer across the two.
   const [handleElement, setHandleElement] = useState<HTMLButtonElement | null>(null);
 
   if (!editable || !chrome || !overlay || typeof document === "undefined") return null;
@@ -263,11 +183,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
               }}
               onPointerDown={(event) => {
                 if (event.button !== 0 || targetPos === null || gesture.inFlight()) return;
-                // Keep the caret and the focus exactly where the writer left
-                // them: the press is about a block, not about where to type.
                 event.preventDefault();
-                // Capture makes the browser hand the whole gesture over rather
-                // than turning a touch drag into a page scroll halfway down.
                 gesture.pressHandle(event, targetPos, event.currentTarget);
               }}
             >
@@ -324,14 +240,6 @@ function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
   return { x: box.left, y: box.top };
 }
 
-/**
- * Open the menu for a block, standing the writer on it first.
- *
- * Law 1: pressing a block's handle READS that block — a caret in prose, a
- * selection on an object. The menu's verbs then run against the same selection
- * the toolbar's fence reads, which is what keeps one refusal rule behind both
- * surfaces.
- */
 function openBlockMenuAt(editor: Editor, pos: number, open: (hold: NodeHold) => void): void {
   const target = blockAt(editor.state.doc, pos);
   if (!target) return;

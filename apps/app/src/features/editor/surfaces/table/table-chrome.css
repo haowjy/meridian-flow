@@ -1,16 +1,3 @@
-/**
- * Table chrome (M6, §5.4 and Q6): grips, add tabs, and the resize affordance.
- *
- * Grips and tabs live OUTSIDE the frame and are portalled into the manuscript's
- * scroll pane, so the table reserves nothing for them; geometry they share with
- * `table-anchors.ts` is measured there, in the pane's own coordinates, and
- * arrives as inline style.
- */
-
-/* The fade, and nothing else: a zero-size box pinned to the pane's content
-   origin, so a child placed against it lands on exactly the coordinates
-   `table-anchors.ts` measured. One fade drives all four pieces, and the pane
-   below carries them through a scroll and clips them at its own edge. */
 .meridian-table-chrome {
   position: absolute;
   top: 0;
@@ -37,11 +24,6 @@
     pointer-events var(--default-transition-duration) step-end allow-discrete;
 }
 
-/* Absolute against the manuscript's pane: the pane scrolls each piece with the
-   row or edge it labels, at no cost and with no frame of lag, and clips it at
-   its own boundary rather than letting it ride up over the app's chrome. There
-   is deliberately no transition on `top` or `left` — hovering another row
-   re-anchors the grip there, it does not send it travelling. */
 .meridian-table-grip,
 .meridian-table-add-tab {
   position: absolute;
@@ -65,9 +47,6 @@
   border-color: var(--color-focus);
 }
 
-/* Sizes and positions are inline, measured together in `table-anchors.ts`:
-   the module that decides whether a grip still fits in the manuscript's pane
-   is the one that has to know how big it is. */
 .meridian-table-grip svg {
   width: 13px;
   height: 13px;
@@ -88,12 +67,9 @@
   margin-bottom: 0;
 }
 
-/* Q6's resize affordance: a hairline that appears under the pointer and takes
-   no space of its own, so hovering a boundary never nudges a column. */
 .meridian-editor .ProseMirror .column-resize-handle {
   position: absolute;
   top: 0;
-  /* Over the cell's own right and bottom strokes, so the line runs unbroken down the column. */
   right: -1px;
   bottom: -1px;
   z-index: 2;

@@ -1,9 +1,3 @@
-/**
- * Glob filter over addresses relative to a scheme root (`lore/**`, `*chapter-0*`).
- * A pattern with no slash matches the file name at any depth, as ripgrep's `--glob` does;
- * one with a slash matches the whole address. A twin's `~id` is matched with or without, so
- * `*.json` takes `data.json~b21c` too.
- */
 import { readSegment } from "@meridian/contracts/protocol";
 import picomatch from "picomatch";
 import { Err, Ok, type Result } from "../../../shared/result.js";

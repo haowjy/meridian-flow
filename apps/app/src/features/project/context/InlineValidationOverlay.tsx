@@ -1,10 +1,3 @@
-/**
- * Floating validation message for the context tree's inline create/rename
- * input. Rendered as a fixed-position portal anchored to the input's bottom
- * edge — NOT inline — so a message never shifts the tree rows beneath it and
- * never gets clipped by the tree's scroll container. Repositions on scroll
- * (capture phase, to catch the inner scroller) and resize.
- */
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ContextEntryNameSeverity } from "./context-entry-name";

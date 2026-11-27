@@ -1,4 +1,3 @@
-/** Upload failures preserve their structured API identity through the intake adapter. */
 import { afterEach, expect, it, vi } from "vitest";
 import { chatUploadPort } from "./context-upload-api";
 import { MeridianApiError } from "./meridian-error";

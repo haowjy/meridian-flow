@@ -1,5 +1,3 @@
-/** Resolves execution authority before asking collab for atomic document identities. */
-
 import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import { chatOwner } from "../../shared/draft-owner.js";
 import type { DocumentLinkScopes, EffectiveDocumentReader } from "../collab/index.js";
@@ -14,7 +12,6 @@ import type { DocumentRevisions } from "./ports/document-revisions.js";
 
 export function createDocumentRevisions(deps: {
   documents: Pick<EffectiveDocumentReader, "readEffectiveRevision">;
-  /** One snapshot serves every document asked about together. */
   links: Pick<DocumentLinkScopes, "within">;
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;

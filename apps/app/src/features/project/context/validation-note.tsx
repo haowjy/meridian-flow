@@ -1,10 +1,3 @@
-/**
- * ValidationNote — the one input-validation look: a bordered note in
- * destructive tones. Every input error in the context feature renders this,
- * so they all read the same: the tree's floating rename overlay
- * (`InlineValidationOverlay`) and inline hosts like the save bar's location
- * browser.
- */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { ContextEntryNameSeverity } from "./context-entry-name";

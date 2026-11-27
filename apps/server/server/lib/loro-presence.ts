@@ -1,9 +1,3 @@
-/**
- * Presence on `/ws/loro` (design §4): each room's `%EPH` channel, relayed between the sockets on
- * it. The server keeps one ephemeral store per room so a socket that joins hears who is there,
- * and clears what a socket wrote when it leaves, so its caret goes from the other screens at once
- * instead of when its entry times out.
- */
 import { freshBatchId } from "@meridian/contracts/protocol";
 import { EphemeralStore } from "loro-crdt";
 import { CrdtType, MessageType, type ProtocolMessage } from "loro-protocol";
@@ -15,9 +9,7 @@ type Send = (message: ProtocolMessage) => void;
 
 interface PresenceRoom {
   store: EphemeralStore;
-  /** Each member's send, and the keys it wrote. */
   members: Map<object, { send: Send; keys: Set<string> }>;
-  /** The member whose update is being applied, credited with the keys it touches. */
   applying: object | null;
   stop(): void;
 }
@@ -36,7 +28,6 @@ export function createPresenceRelay() {
       for (const key of [...event.added, ...event.updated]) keys?.add(key);
       for (const key of event.removed) keys?.delete(key);
     });
-    // The server writes only deletions: a leaving member's keys, which the others must drop.
     const offLocal = store.subscribeLocalUpdates((bytes) => {
       for (const member of room.members.values()) member.send(frame(roomId, bytes));
     });
@@ -50,7 +41,6 @@ export function createPresenceRelay() {
   }
 
   return {
-    /** A socket joins a room's presence: it hears the presence the room holds now. */
     join(member: object, roomId: string, send: Send) {
       const room = open(roomId);
       room.members.set(member, { send, keys: room.members.get(member)?.keys ?? new Set() });
@@ -58,7 +48,6 @@ export function createPresenceRelay() {
       if (all.byteLength > 0) send(frame(roomId, all));
     },
 
-    /** A member's update: kept, and sent to the room's other members. Not acknowledged. */
     update(member: object, roomId: string, updates: readonly Uint8Array[]) {
       const room = rooms.get(roomId);
       if (!room?.members.has(member)) return;
@@ -72,7 +61,6 @@ export function createPresenceRelay() {
         if (other !== member) for (const update of updates) send(frame(roomId, update));
     },
 
-    /** A socket leaves a room's presence: what it wrote is deleted for everyone else. */
     leave(member: object, roomId: string) {
       const room = rooms.get(roomId);
       const left = room?.members.get(member);
@@ -85,7 +73,6 @@ export function createPresenceRelay() {
       }
     },
 
-    /** Free every room's store: the server is stopping. */
     dispose() {
       for (const room of rooms.values()) room.stop();
       rooms.clear();

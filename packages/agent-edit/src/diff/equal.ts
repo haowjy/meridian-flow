@@ -1,4 +1,3 @@
-/** Block-sequence equality: whitespace and marks included, first difference wins. */
 import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 

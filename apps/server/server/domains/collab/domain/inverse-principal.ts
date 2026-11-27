@@ -1,5 +1,3 @@
-/** Carries only the caller identity into immediate inverse admission, never its content grant. */
-
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Principal } from "../../file-policy/index.js";
 

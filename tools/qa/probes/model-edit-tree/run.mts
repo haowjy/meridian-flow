@@ -27,7 +27,6 @@ type Harness = Parameters<typeof state>[0];
 
 const write = (id: string, args: Record<string, unknown>) => ({ id, name: "write", args });
 
-/** A tree command killed at `point` and recovered; `check` reads the tree afterwards. */
 function killed(
   name: string,
   expected: string,
@@ -117,7 +116,6 @@ const cases: ModelEditCase[] = [
       const tag = `t${Math.random().toString(36).slice(2, 8)}`;
       const { thread, documentId } = await seedCase(h, tag, "direct");
       const child = await start();
-      // Nothing stands at the source path, so the move is refused; a taken name never refuses.
       await child.script([
         {
           toolCalls: [
@@ -173,7 +171,6 @@ const cases: ModelEditCase[] = [
       const tag = `t${Math.random().toString(36).slice(2, 8)}`;
       const { thread, documentId, path } = await seedCase(h, tag, "direct");
       const first = await start();
-      // The first model edit is the 1st command commit; the undo is the 2nd.
       await first.arm("command.afterCommit", "kill", 2);
       await first.script([
         { toolCalls: [insertCall("call-1", path, "Added.")] },

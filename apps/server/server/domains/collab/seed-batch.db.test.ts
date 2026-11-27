@@ -1,5 +1,3 @@
-/** PostgreSQL proof that set-wise initial states are indistinguishable from singly seeded documents. */
-
 import { randomUUID } from "node:crypto";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
@@ -74,7 +72,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
           ids.map((id) => `live:${id}`),
         ),
       );
-    // A room's stored docs, by kind: the structure doc and one text doc per text block.
     const shape = (id: DocumentId) =>
       rows
         .filter((row) => row.roomKey === `live:${id}`)

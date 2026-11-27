@@ -1,25 +1,3 @@
-/**
- * The ref a link the writer puts in a document is assigned: the document it
- * names (`doc:`), the folder at a directory address (`folder:`), an address
- * nothing is at yet (`ahead:`), or none (an external or contextual link, or a
- * directory address with no folder, kept as written).
- *
- * Every client producer that turns written text into a link comes through
- * here (Ctrl+K and the link form, a Markdown or HTML paste, a rich paste from
- * another project), and so does a pasted picture whose source is a manuscript
- * address (`assignWrittenSource`). Both go through markup's `assignFreshLink`,
- * the pass 3 agent-edit assigns with, so there is one answer to "which
- * document did the writer mean". It is synchronous and reads only the editor's local document
- * index: assignment never waits on the network. An internal address the index
- * has no document at gets an ahead ref, which settles on whatever document
- * arrives there first; an index that is incomplete or missing is therefore
- * safe, since an ahead ref minted for an occupied address settles on its
- * occupant.
- *
- * The `@` menu and `[[…]]` paste know their document's id already and write
- * `doc:` directly; they never parse a path to find it.
- */
-
 import {
   type LinkRef,
   matchOmittedExtension,
@@ -30,36 +8,24 @@ import { assignFreshLink } from "@meridian/markup/links";
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 import type { TreeView } from "@/core/project-tree/tree-view";
 
-/** One document the editor's local index knows, by id and current address. */
 export type LinkAssignmentDocument = { documentId: string; uri: string };
 
-/** One folder the editor's local index knows, by id and current address. */
 type LinkAssignmentFolder = { folderId: string; uri: string };
 
-/** The editor's local document and folder index, as assignment reads it. */
 export type LinkAssignmentIndex = {
   readonly documents: readonly LinkAssignmentDocument[];
   readonly folders: readonly LinkAssignmentFolder[];
-  /** The project trees behind them: the walk that says which node an address reaches. */
   readonly trees: readonly TreeView[];
 };
 
-/** Everything an assignment is relative to: the holder's address, its project, its index. */
 export type LinkAssignmentScope = {
   holderUri: string | null;
   projectId: string | null;
   index: LinkAssignmentIndex | null;
 };
 
-/** What a link mark stores: a ref beside the href it is spelled with. */
 export type AssignedLink = { ref: LinkRef | null; href: string };
 
-/**
- * Assign one written href. Contextual and external links keep `ref: null`
- * and the href as written. An internal one is spelled as its canonical
- * absolute address (plus any `#`/`?` suffix) and gets the indexed document's
- * ref, or a fresh ahead ref when the index has none there.
- */
 export function assignWrittenHref(
   href: string,
   holderUri: string | null,
@@ -77,19 +43,12 @@ export function assignWrittenHref(
   return { ref: assigned.ref, href: assigned.href };
 }
 
-/**
- * Assign one written `image`/`figure` source, under the manuscript-root
- * grammar (a bare source is a manuscript path). A source that is not a
- * document address (a web URL, `data:`) keeps `ref: null` as written; the
- * image paste door imports it.
- */
 export function assignWrittenSource(src: string, index: LinkAssignmentIndex | null): AssignedLink {
   const assigned = assignFreshLink({
     href: src,
     grammar: "source",
     holderUri: null,
     documentFor: (uri) => (index ? indexedDocumentAt(index, uri) : null),
-    // A picture's source is never a folder.
     folderFor: () => null,
   });
   if (assigned.kind === "literal") return { ref: null, href: src };
@@ -97,7 +56,6 @@ export function assignWrittenSource(src: string, index: LinkAssignmentIndex | nu
   return { ref: assigned.ref, href: assigned.href };
 }
 
-/** The tree of the source an internal address is in, and the path in it. A contextual address means the scope's own Work, as for documents. */
 function treeAt(trees: readonly TreeView[], uri: string) {
   const requested = parseContextUri(uri);
   if (!requested.ok) return null;
@@ -114,13 +72,6 @@ function treeAt(trees: readonly TreeView[], uri: string) {
   return tree ? { tree, path } : null;
 }
 
-/**
- * The indexed document at an internal address, as the server's tree reads it: folders are
- * walked by segment, so a document `Kael` beside a folder `Kael~f051` leaves `Kael/Note` in the
- * folder; the leaf is the exact name or its alias, else the one document there that differs only
- * by an extension the link left off. A contextual address means the scope's own Work, which is
- * the only Work whose Scratch and Uploads the index holds.
- */
 export function indexedDocumentAt<T extends LinkAssignmentDocument>(
   index: { documents: readonly T[]; trees: readonly TreeView[] },
   uri: string,
@@ -142,10 +93,6 @@ export function indexedDocumentAt<T extends LinkAssignmentDocument>(
   return index.documents.find((document) => document.documentId === documentId) ?? null;
 }
 
-/**
- * The indexed folder at exactly a directory address, every segment read at folder level as
- * the server reads it. A contextual address means the scope's own Work, as for documents.
- */
 export function indexedFolderAt<T extends LinkAssignmentFolder>(
   index: { folders: readonly T[]; trees: readonly TreeView[] },
   uri: string,

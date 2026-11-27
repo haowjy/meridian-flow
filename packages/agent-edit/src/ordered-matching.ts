@@ -1,5 +1,3 @@
-// Bounded weighted ordered matching shared by block alignment and echo attribution.
-
 /**
  * The in-order pairs with the largest total weight (weight 0 never pairs).
  * Weights are nonnegative integers; ties prefer a match, then skipping old.
@@ -50,19 +48,8 @@ export function weightedOrderedMatches(
   return matches;
 }
 
-/** Most table cells an equality match may allocate (one cell is four bytes, twice over). */
 export const MAX_EQUAL_MATCH_CELLS = 250_000;
 
-/**
- * The in-order pairs of equal keys, `[indexInA, indexInB]`, ascending in both. Ties follow
- * `weightedOrderedMatches` (prefer a match, then skip `a`), so with unmatched runs between pairs the
- * `a` side's run comes first. Memory is bounded: keys absent from the other side can never match, so
- * they are dropped first. Ties are decided after that filtering, on the shortened sequences, so with
- * repeated words an ambiguous merge can land on a different (equally long) pairing than the same
- * inputs would give with the absent keys left in; callers must not rely on which one. If the rest still exceeds `MAX_EQUAL_MATCH_CELLS`, only keys occurring once on
- * each side are paired (longest increasing run). That fallback matches fewer pairs, never a wrong
- * one: callers keep everything unmatched.
- */
 export function equalOrderedMatches(
   a: readonly string[],
   b: readonly string[],
@@ -97,7 +84,6 @@ export function equalOrderedMatches(
     const j = countA.get(a[i]) === 1 ? positionInB.get(a[i]) : undefined;
     if (j !== undefined) candidates.push([i, j]);
   }
-  // Longest increasing subsequence of the B positions (patience sorting).
   const tails: number[] = [];
   const previous: number[] = [];
   for (let c = 0; c < candidates.length; c++) {

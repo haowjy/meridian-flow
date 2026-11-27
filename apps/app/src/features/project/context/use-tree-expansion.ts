@@ -1,4 +1,3 @@
-/** React owner for a tree's tab-local disclosure state; unloaded catalogs never prune. */
 import { type SetStateAction, useCallback, useEffect, useSyncExternalStore } from "react";
 import type { SectionFold } from "@/components/ui/list-section";
 import { useAccountId } from "./account-feature-context";
@@ -97,7 +96,6 @@ export function useTreeExpansion(
   };
 }
 
-/** A list section's fold, kept like a tree folder's: per tab, in the trees' store. */
 export function useSectionFold(
   projectId: string,
   scope: string,

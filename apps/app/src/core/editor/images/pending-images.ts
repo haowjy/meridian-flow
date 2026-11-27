@@ -1,5 +1,3 @@
-/** Tracks pending image insertions and their anchored upload state. */
-
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
@@ -10,47 +8,33 @@ import { type UploadFrame, type UploadState, uploads } from "@/core/uploads/uplo
 import { type AnchorRange, carryAnchor, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { pastedImageLinkRange } from "./image-workflow";
 
-/** The document attribute naming a slot some browser is filling right now. */
 export const UPLOAD_TOKEN_ATTR = "uploadToken";
 
-/** The attribute as the schema declares it, shared by `image` and `figure` (Replace aims an upload at a figure too). */
 export const UPLOAD_TOKEN_ATTRIBUTE = {
   default: null,
   rendered: false,
   parseHTML: () => null,
 };
 
-/** The upload filling this node's slot, or null for an ordinary picture. */
 export function uploadTokenOf(node: PMNode): string | null {
   const token = node.attrs[UPLOAD_TOKEN_ATTR];
   return typeof token === "string" && token.length > 0 ? token : null;
 }
 
-/** The picture's own size, measured locally so its slot is the right shape. */
 export type PendingImageFrame = UploadFrame;
 
-/**
- * A picture whose bytes are on their way to the project: what only this editor knows of it. How
- * the upload stands, its abort and its file are the upload store's, under the same id.
- */
 export type PendingImageUpload = {
   kind: "upload";
-  /** The upload's intake id, and the `uploadToken` written on its slot. */
   id: string;
   filename: string;
-  /** The pending node's `alt`, unchanged when the upload lands. */
   alt: string;
-  /** Null until the browser has decoded enough to say, or refuses to. */
   frame: PendingImageFrame | null;
-  /** How this upload got its slot, and therefore what the writer undoes when the bytes land (`image-uploads.ts`). */
   landing: "insert" | "replace";
 };
 
-/** A picture the clipboard only pointed at, being fetched into the project. */
 export type PendingImageImport = {
   kind: "import";
   id: string;
-  /** The link's range. */
   hold: EditorAnchor;
   url: string;
   filename: string;
@@ -59,15 +43,12 @@ export type PendingImageImport = {
 
 export type PendingImage = PendingImageUpload | PendingImageImport;
 
-/** Every picture this editor is waiting on. Empty is the ordinary state. */
 export type PendingImageState = ReadonlyMap<string, PendingImage>;
 
 export const NO_PENDING_IMAGES: PendingImageState = new Map();
 
-/** A pending node's source: the one `src` that names nothing. */
 export const PENDING_IMAGE_SRC = "";
 
-/** Carry what a transaction can move across its own mapping. */
 export function carryPendingImages(
   pending: PendingImageState,
   mapping: Mappable,
@@ -85,7 +66,6 @@ export function carryPendingImages(
   return next;
 }
 
-/** The slot this token is written on, or null once the document holds none. */
 export function slotForUploadToken(doc: PMNode, token: string): AnchorRange | null {
   let found: AnchorRange | null = null;
   doc.descendants((node, pos) => {
@@ -96,17 +76,12 @@ export function slotForUploadToken(doc: PMNode, token: string): AnchorRange | nu
   return found;
 }
 
-/**
- * Where this pending picture is now, or null once the writer's document no
- * longer holds it.
- */
 export function resolvePendingImage(state: EditorState, entry: PendingImage): AnchorRange | null {
   if (entry.kind === "upload") return slotForUploadToken(state.doc, entry.id);
   const at = resolveAnchorIn(state, entry.hold);
   return at && pastedImageLinkRange(state.doc, at, entry.url);
 }
 
-/** The pending picture standing at `pos`, or null. */
 export function pendingImageAt(
   pending: PendingImageState,
   state: EditorState,
@@ -136,7 +111,6 @@ export function finishedPendingImages(
   );
 }
 
-/** Every token this document currently carries, in one pass. */
 export function uploadTokensIn(doc: PMNode): ReadonlySet<string> {
   const tokens = new Set<string>();
   doc.descendants((node) => {
@@ -147,15 +121,10 @@ export function uploadTokensIn(doc: PMNode): ReadonlySet<string> {
   return tokens;
 }
 
-/** Who is filling a slot, as the node view is told it. */
 export type PendingUploadOwner =
   | { owner: "mine"; entry: PendingImageUpload; status: UploadState }
   | { owner: "elsewhere"; frame: PendingImageFrame | null };
 
-/**
- * What the manuscript shows for every picture in flight, mine and theirs. `slots` says whether
- * the text may hold a slot at all, so a document with none is never walked.
- */
 export function pendingImageDecorations(
   pending: PendingImageState,
   state: EditorState,
@@ -206,10 +175,8 @@ function uploadDecoration(from: number, to: number, pending: PendingUploadOwner)
   );
 }
 
-/** Marks a link whose picture is being fetched. The link stays a link. */
 export const IMPORTING_LINK_CLASS = "meridian-image-importing";
 
-/** Who is filling the slot a node view is rendering, read off the decorations ProseMirror handed it. */
 export function pendingUploadFromDecorations(
   decorations: readonly { spec?: unknown }[],
 ): PendingUploadOwner | null {
@@ -221,7 +188,6 @@ export function pendingUploadFromDecorations(
   return null;
 }
 
-/** What a node view has to repaint for. */
 export function pendingImageSignature(decorations: readonly { spec?: unknown }[]): string {
   const pending = pendingUploadFromDecorations(decorations);
   if (!pending) return "";

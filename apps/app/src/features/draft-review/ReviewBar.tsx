@@ -1,13 +1,3 @@
-/**
- * Review changes' controls, in the toolbar's place while the page reviews:
- * what it compares against (`ReviewTargetPicker`), Inline or Side by side where the pane fits two
- * columns, then the stepper and, against Live, the chapter's × and ✓; Close is where
- * `Review N changes` was (`ReviewChangesButton`). Against Live the stepper walks this chapter's
- * changes, then the draft's next changed chapter in the Changes list's order, wrapping at the
- * ends; ‹ into the previous chapter lands on its last change. Only the stepper crosses chapters,
- * and it replaces the review's history entry as it does. Against another draft or file it walks
- * this chapter's differences.
- */
 import "./review-line.css";
 import { t } from "@lingui/core/macro";
 import { Columns2 } from "lucide-react";
@@ -45,12 +35,9 @@ export function ReviewBar() {
   const focused = rows.findIndex((row) => row.id === mode.changeId);
   const locked = review.controller.dispositionLocked;
   const ref = { documentId: mode.documentId, itemKey: mode.itemKey };
-  // The draft deleted the chapter: its Discard brings it back.
   const deleted = files.find((file) => file.documentId === mode.documentId)?.item.tree?.deleted;
   const live = mode.target === "live";
   const changed = live ? files.filter((file) => file.item.pending && file.contextLocation) : [];
-  // Against Live the stepper counts the whole draft: this chapter's rows as read here, every other
-  // chapter's from the list (`changeCount`).
   const here = changed.findIndex((file) => file.documentId === mode.documentId);
   const counted = (files: typeof changed) =>
     files.reduce(
@@ -64,8 +51,6 @@ export function ReviewBar() {
   const step = (direction: 1 | -1) => {
     const next = focused + direction;
     if (next >= 0 && next < rows.length) return mode.focus(rows[next].id);
-    // Past this chapter's last change: the draft's next changed chapter, wrapping. A chapter not
-    // in the list (its last change just pressed) steps from either end of it.
     const from = here >= 0 ? here : direction === 1 ? -1 : changed.length;
     const file = changed.at((from + direction + changed.length) % changed.length);
     if (!file?.contextLocation || file.documentId === mode.documentId) {
@@ -146,11 +131,6 @@ export function ReviewBar() {
   );
 }
 
-/**
- * The review line gives up, in order, only while its controls don't fit its width: the
- * stepper's short count and tighter gaps, then no count, then (a finger only) the stepper
- * (review-line.css).
- */
 function fitReviewLine(line: HTMLDivElement | null) {
   if (!line) return;
   // The target picker's name shrinks before anything overflows, so a cut name gives the count's

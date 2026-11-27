@@ -1,8 +1,3 @@
-/**
- * The chat's draft above its composer: a summary line with the draft's Discard · Apply, and
- * under it, unfolded, the Changes tab's rows for the draft's files. A command's question asks in
- * the footer below the files.
- */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { useRef, useState } from "react";
@@ -29,7 +24,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
   const count = dock.files.length;
-  // A lone file's row says it deletes: only an Apply of several asks.
   const { question, start: startApply } = useApplyAllQuestion({
     deleting: count > 1 ? dock.deletingToApply : [],
     apply: dock.apply,
@@ -41,7 +35,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   if (!dock.mounted) return null;
 
   return (
-    // Its background runs on behind the composer's top edge, so dock and composer read as one.
     <div
       ref={root}
       className="@container/dock -mb-3 rounded-t-lg bg-review pb-3"

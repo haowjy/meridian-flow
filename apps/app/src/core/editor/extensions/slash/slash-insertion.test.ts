@@ -36,10 +36,6 @@ function item(id: SlashCommandId): SlashCommandItem {
   return { id, group: "text", label: id, aliases: [] };
 }
 
-/**
- * Mounts arbitrary structure and finds the `/x` a writer typed inside it, so a
- * nested case reads as the document it is rather than as position arithmetic.
- */
 const TRIGGER = "/x";
 
 function mountAround(content: JSONContent[]) {
@@ -72,7 +68,6 @@ const cell = (text: string): JSONContent => ({
 
 const row = (...cells: JSONContent[]): JSONContent => ({ type: "table_row", content: cells });
 
-/** The table role of the node holding the caret's paragraph, so "still in the cell" reads as itself. */
 function cellAroundCaret(instance: Editor): unknown {
   return instance.state.selection.$from.node(-1).type.spec.tableRole;
 }
@@ -81,14 +76,6 @@ function blockTypes(instance: Editor): string[] {
   return instance.state.doc.content.content.map((node) => node.type.name);
 }
 
-/**
- * §5.7 says the new block lands "after the current one", and inside a list or
- * a table that sentence needs a level. A list is a run of sibling items and a
- * cell exists only as part of its table, so "after" means after the whole
- * structure: a table wedged inside a bullet, or a command that silently does
- * nothing because the cell will not take it (law 5), is not what the writer
- * asked for.
- */
 describe("slash insertion out of nested structures", () => {
   it("keeps a multi-item list whole and lands after it", () => {
     const { editor: instance, range } = mountAround([
@@ -104,12 +91,6 @@ describe("slash insertion out of nested structures", () => {
     expect(instance.state.doc.child(2).textContent).toBe("third");
   });
 
-  /**
-   * Where the picture is asked for, rather than where the writer is standing
-   * when the file comes back. The host's chooser outlives the pick, so the lane
-   * hands over an anchored place and nothing else; a picker reading the
-   * selection then is what put a cell's picture past the whole table.
-   */
   it("asks the host for a picture at the place the trigger left, inside the cell", () => {
     const requestImageUpload = vi.fn();
     const { editor: instance, range } = mountAround([

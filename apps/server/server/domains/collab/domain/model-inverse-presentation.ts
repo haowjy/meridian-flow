@@ -1,5 +1,3 @@
-/** Model-facing inverse result copy. */
-
 import type { DocumentEditResult } from "@meridian/agent-edit/integration";
 
 type Direction = "undo" | "revert";

@@ -1,15 +1,3 @@
-/**
- * The `<br/>` tag a hard break escalates to where Markdown has no spelling.
- *
- * Between words a break is `\` and a newline. At the end of a paragraph that
- * `\` is a literal backslash, so the breaks ending a paragraph are written as
- * tags, the way a sized picture climbs to `<img>`. Pure Markdown hands the tag over
- * as `html` and MDX as a parsed JSX element; both read back as one break. A
- * paragraph holding only breaks is a lone line of `<br/>` tags, which both
- * dialects may read as blocks; the block chain wraps a lone break back into a
- * paragraph, and `joinBreakLines` regroups MDX's one element per tag.
- */
-
 import type { MdastRoot } from "../../ast.js";
 import type { BlockCodec, PMNode } from "../../types.js";
 import { parseHtml } from "../html-tag.js";
@@ -28,7 +16,6 @@ export const hardBreakCodec: BlockCodec = {
   },
 };
 
-/** One bare `<br>` tag: no attributes, no children, as `html` or as parsed JSX. */
 function isBreakTag(ast: unknown): boolean {
   const record = typeof ast === "object" && ast !== null ? (ast as Record<string, unknown>) : null;
   if (record?.type === "html" && typeof record.value === "string") {

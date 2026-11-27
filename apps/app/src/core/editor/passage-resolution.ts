@@ -1,39 +1,12 @@
-/**
- * Where a searched passage is in the document *now* — the honest half of a
- * search-match door.
- *
- * A search result names a block and the term that matched it. Between the
- * search and the click the writer may have edited, moved or deleted that
- * block, so arriving means re-deciding, against live text, whether the promise
- * can still be kept. Three outcomes, and no fourth: the passage is where it
- * said, the passage is somewhere unambiguous, or we say it changed. (An empty term
- * means the server had no text to give: the block alone is the landing.) Landing on
- * a nearby-but-wrong paragraph is the failure this module exists to refuse.
- *
- * Pure over a ProseMirror document: no editor, no CRDT, no timing.
- *
- * The searchable projection is the delicate part. It must find exactly what the
- * server's search would find, and nothing the writer did not write: text either
- * side of a line break or an image is not one word, and case folding is neither
- * length-preserving nor context-free in every language.
- */
 import type { Node as PMNode } from "@tiptap/pm/model";
 
 export type TextRange = { from: number; to: number };
 
 export type PassageResolution =
-  /** The block still holds the term. Its occurrences there are the landing. */
   | { kind: "block"; ranges: TextRange[] }
-  /** The block is gone or has changed, but the term occurs exactly once. */
   | { kind: "refound"; ranges: TextRange[] }
-  /** Nowhere, or several equally plausible somewheres. Say so instead of guessing. */
   | { kind: "stale" };
 
-/**
- * Resolve a searched passage against live text. `hashed` is
- * the span the block hash resolved to, or null when the hash no longer names a
- * live block.
- */
 export function resolvePassage(
   doc: PMNode,
   hashed: TextRange | null,
@@ -48,15 +21,9 @@ export function resolvePassage(
   // an answer, several are a coin flip about the writer's own prose.
   const everywhere = findTerm(doc, term, { from: 0, to: doc.content.size });
   if (everywhere.length === 1) return { kind: "refound", ranges: everywhere };
-  // The block is still there but the term isn't found in it: the server's term is the writer's
-  // text, which formatting marks can split across nodes. The block is the promise left to keep.
   return block ? { kind: "block", ranges: [block] } : { kind: "stale" };
 }
 
-/**
- * Every occurrence of `term` inside `range`, case-insensitively — the casing
- * the search itself matched with.
- */
 function findTerm(doc: PMNode, term: string, range: TextRange): TextRange[] {
   const needle = term.toLowerCase();
   if (needle.length === 0) return [];
@@ -76,16 +43,11 @@ function findTerm(doc: PMNode, term: string, range: TextRange): TextRange[] {
         index = run.folded.indexOf(needle, index + needle.length);
       }
     }
-    // A textblock's inline content is already flattened above.
     return false;
   });
   return found;
 }
 
-/**
- * One stretch of uninterrupted text, folded for matching, with the document
- * range of the source character behind every folded character.
- */
 type TextRun = { folded: string; source: TextRange[] };
 
 /**

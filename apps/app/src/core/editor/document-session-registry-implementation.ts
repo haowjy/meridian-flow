@@ -1,9 +1,3 @@
-/**
- * Account-scoped owner of document room sessions, keyed by `sessionRoomKey`: a document's Live
- * room, and each draft's fork room of it. Acquisition is lease-required. A fork room's session is
- * built over its document's Live session, so the Live room counts as retained while any fork
- * session of it lives, and is torn down after them.
- */
 import type { DraftId } from "@meridian/contracts";
 import type { AccountId, DocumentRoom } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
@@ -33,24 +27,16 @@ import { storedWordsBeyond } from "./unsent-words";
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-/** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
 
 type RoomState = {
   session: DocumentSession | null;
   lease: DocumentSessionLease;
-  /** The shared hold on the session's local copy, taken with the session and released with it. */
   hold: Promise<CopyHold> | null;
 };
 
-/**
- * Longest a released live session stays connected to the server without it acknowledging the
- * unsent edits. The clock runs only while connected and restarts on every drop, so being offline
- * never runs it down.
- */
 const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 
-/** `detached`: this owner does not want the socket open. The registry attaches when any owner does. */
 type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry {
@@ -60,24 +46,18 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     () => new Error("Live session teardown is unfinished"),
   );
-  /** By `sessionRoomKey`. */
   private readonly rooms = new Map<string, RoomState>();
-  /** Each owner's retained rooms, by `sessionRoomKey`. */
   private readonly retainedByOwner = new Map<string, Map<string, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
   >();
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
   private readonly holdCapStops = new Map<string, () => void>();
-  /** Sessions no host holds, kept while their history has something to undo or redo. */
   private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
   private undoClock = 0;
-  /** Names each press's wait, which retains its rooms under its own owner. */
   private pressWaits = 0;
   private liveDocCapWarningEmitted = false;
   private readonly droppedTypingObservers = new Set<() => void>();
-  /** Each session's copy: the room's key and the incarnation it opened. */
   private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
   private readonly replacing = new WeakSet<DocumentSession>();
   private readonly replacementObservers = new Map<
@@ -121,7 +101,6 @@ export class DocumentSessionRegistry {
     return keys.sort((a, b) => Number(a === documentId) - Number(b === documentId));
   }
 
-  /** The session closes without waiting for unsent edits: nothing can deliver them to this account. */
   async clearLocalCopy(documentId: DocumentId): Promise<void> {
     const keys = this.roomsOf(documentId);
     let retainedChanged = false;
@@ -142,11 +121,6 @@ export class DocumentSessionRegistry {
     await this.copies.clear(documentId, () => this.dropWords());
   }
 
-  /**
-   * Resolves true once no open session has unsent edits the server could still acknowledge, false
-   * if some are still unsent at the deadline. What a session cannot deliver (offline, refused) is
-   * not waited for.
-   */
   async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
     const sessions = [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : []));
     const pending = (session: DocumentSession) =>
@@ -170,7 +144,6 @@ export class DocumentSessionRegistry {
     return (await Promise.all(settled)).every(Boolean);
   }
 
-  /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
     return this.copies.observe(observer);
   }
@@ -184,12 +157,6 @@ export class DocumentSessionRegistry {
     return this.rooms.get(documentId)?.session?.roomVersion() ?? null;
   }
 
-  /**
-   * The press's rooms are the forks of its drafts (of its documents, when it names them) and
-   * those documents' Live rooms. One this tab has open is waited on; one it doesn't is opened
-   * when its copy here holds words beyond its mark (a reload, or another tab's typing), and the
-   * Join sends them. Each is retained while the press waits, so a detached one connects.
-   */
   async whenSentAcknowledged(
     projectId: ProjectId,
     { drafts, documents }: PressRooms,
@@ -448,10 +415,6 @@ export class DocumentSessionRegistry {
     );
   }
 
-  /**
-   * A fork room's session is made over its Live room's, which is open by then: the fork's
-   * room counts as retaining it (`isRetained`) from here until the fork's session is destroyed.
-   */
   private createSession(
     room: DocumentRoom,
     persistence: DocumentSessionOptions["persistence"],
@@ -538,7 +501,6 @@ export class DocumentSessionRegistry {
     );
   }
 
-  /** On the same copy: only the Live session under the fork changed. */
   private rebuildFork(state: RoomState): Promise<void> {
     const old = state.session;
     if (!old) return Promise.resolve();
@@ -565,7 +527,6 @@ export class DocumentSessionRegistry {
     this.scheduleTeardownIfUnretained(session.roomKey);
   }
 
-  /** Calls `observer` with the session that replaces a document's room. */
   observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void {
     const observers = this.replacementObservers.get(roomKey) ?? new Set();
     observers.add(observer);
@@ -591,7 +552,6 @@ export class DocumentSessionRegistry {
     session.attachTransport(this.transportFactory);
   }
 
-  /** Calls `observer` each time unsent typing with words in it is dropped: its room can't take it. */
   observeDroppedTyping(observer: () => void): () => void {
     this.droppedTypingObservers.add(observer);
     return () => {
@@ -609,7 +569,6 @@ export class DocumentSessionRegistry {
     if (await this.copies.wordsBeyondMark(name)) this.dropWords();
   }
 
-  /** Typing with words in it is lost: tell the observers, who show one "Couldn't save". */
   private dropWords(): void {
     for (const observer of this.droppedTypingObservers) observer();
   }
@@ -660,7 +619,6 @@ export class DocumentSessionRegistry {
     for (const retained of this.retainedByOwner.values())
       for (const [key, owner] of retained) {
         add(key, owner);
-        // A retained fork wants its Live room open on the same terms.
         if (owner.lease.room.kind === "fork") {
           const live = this.rooms.get(owner.lease.documentId);
           if (live) add(owner.lease.documentId, { lease: live.lease, detached: owner.detached });
@@ -682,16 +640,11 @@ export class DocumentSessionRegistry {
     }
   }
 
-  /**
-   * The one place a retained session's socket closes: no owner wants it open and it has no
-   * deliverable unsent edits. Attaching is `getOrCreateLiveSession`'s.
-   */
   private detachUnwantedTransport(session: DocumentSession): void {
     if (session.getSnapshot().status === "detached" || this.mustKeepForUnsentEdits(session)) return;
     void session.detachTransport().catch(reportError);
   }
 
-  /** A session whose unsent edits were acknowledged or became undeliverable no longer needs its socket. */
   private settleRetainedTransport(session: DocumentSession): void {
     const key = session.roomKey;
     if (this.rooms.get(key)?.session !== session) return;
@@ -721,14 +674,6 @@ export class DocumentSessionRegistry {
     this.pendingTeardownTimers.set(roomKey, timer);
   }
 
-  /**
-   * A session no host holds. One with unsent edits stays until they are
-   * acknowledged: `settleDrainedRoom` ends the hold when the room can no longer take them, and a
-   * room that stays connected without acknowledging ends it at the cap; offline time never counts.
-   * Then one whose room still takes writes and whose history has entries is kept for its undo,
-   * wherever it was shown; a room that can't take them (ended, read-only) retires. The other exits
-   * (removed document, revoked access, account close) go through `clearLocalCopy` and `invalidateAll`.
-   */
   private releaseUnheld(roomKey: string, state: RoomState, session: DocumentSession): void {
     if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
     else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
@@ -736,7 +681,6 @@ export class DocumentSessionRegistry {
     else this.retireLiveSession(roomKey, state);
   }
 
-  /** Off the socket; a host that takes it back reattaches it, and an emptied history ends it. */
   private keepForUndo(roomKey: string, state: RoomState, session: DocumentSession): void {
     const history = session.history;
     const kept = { changed: ++this.undoClock, stop: () => {} };
@@ -787,7 +731,6 @@ export class DocumentSessionRegistry {
       .retire(roomKey, session)
       .then(async () => {
         (await hold)?.release();
-        // Its Live room no longer reads for it.
         if (session.room.kind === "fork") this.scheduleTeardownIfUnretained(session.documentId);
       })
       .catch(() => undefined);
@@ -803,7 +746,6 @@ export class DocumentSessionRegistry {
     this.releaseUnheld(roomKey, state, session);
   }
 
-  // A restart cancels the pending teardown; a room no host retains still needs one.
   private scheduleTeardownIfUnretained(roomKey: string): void {
     if (this.rooms.get(roomKey)?.session && !this.isRetained(roomKey))
       this.scheduleTeardown(roomKey);
@@ -820,7 +762,6 @@ export class DocumentSessionRegistry {
     this.pendingTeardownTimers.delete(roomKey);
   }
 
-  /** An owner retains the room, or it is a Live room a fork session of it still reads through. */
   private isRetained(roomKey: string): boolean {
     for (const retained of this.retainedByOwner.values()) if (retained.has(roomKey)) return true;
     for (const { session } of this.rooms.values())

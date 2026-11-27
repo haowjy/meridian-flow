@@ -1,13 +1,3 @@
-/**
- * Align two block sequences by their correspondence: each pair, with its split and join pieces, is a
- * unit, and only a unit is token-diffed. Units are cached, so a new node re-diffs only its unit
- * while the paragraph pass relocates every cached result. A deterministic size cap guards an
- * oversized unit, never the chapter.
- *
- * Within a unit, words align before punctuation, and paragraph starts follow their first matched word.
- * That keeps a small split or join reading as one edit instead of unrelated paragraph replacements.
- * Blocks between units are a removed run and an added run.
- */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import { equalOrderedMatches } from "../ordered-matching.js";
 import { boundedDiff } from "./bounded-diff.js";
@@ -25,10 +15,9 @@ import {
 
 export interface Alignment {
   hunks: Hunk[];
-  baseToSide: Int32Array; // base block -> equal side block, else -1
-  /** Base block and side block of each block paired by id out of order: a removal and an addition that are one block. */
+  baseToSide: Int32Array;
   moves: Array<[number, number]>;
-  pos: Int32Array; // base token -> side token outside hunks, else -1
+  pos: Int32Array;
 }
 
 export function align(B: Side, S: Side, corr: Correspondence): Alignment {
@@ -59,7 +48,6 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   };
   for (let i = 0; i < B.blocks.length; i++) {
     const j = corr.partner[i];
-    // Unpaired or moved: left as removed and added.
     if (j >= 0 && corr.moved.has(i)) moves.push([i, j]);
     if (j < 0 || corr.moved.has(i) || j < ps || i < pb) continue;
     let [u0, u1, v0, v1] = [i, i + 1, j, j + 1];
@@ -75,7 +63,6 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
     ps = v1;
   }
   between(B.blocks.length, S.blocks.length);
-  // One side's insertions at one point are one insertion.
   for (let k = hunks.length - 1; k > 0; k--) {
     const [a, b] = [hunks[k - 1], hunks[k]];
     if (a.from === a.to && b.from === b.to && a.from === b.from && a.sto === b.sfrom)
@@ -134,10 +121,6 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
   for (const h of memo.hunks) out.push(relocate(h));
 }
 
-/**
- * An oversized unit's hunks: its token keys' diff, each deletion with the insertion beside it one
- * hunk. False when the diff ran out of its budget and the hunk is one coarse replacement.
- */
 function keyHunks(B: Side, S: Side, out: Hunk[]): void {
   let b = 0;
   let s = 0;
@@ -282,7 +265,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
     coreKey,
   ).filter(([b, s]) => !crossesPair(b, s));
   const matches: Array<[number, number]> = [];
-  // Punctuation indices once per side, then monotone cursors: each matched word's span is a slice.
   const weakB = bc.filter((k) => !strong(bt[k]));
   const weakS = sc.filter((k) => !strong(st[k]));
   let cb = 0;
@@ -306,7 +288,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
     if (pair[0] < b1) matches.push(pair);
     [pbx, psy] = pair;
   }
-  // Paragraph starts: pair with the side paragraph holding the block's first aligned content.
   const all: Array<[number, number]> = [];
   let mi = 0;
   let lastSide = s0 - 1;
@@ -329,7 +310,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
           lastSide = sp;
         }
       } else if (end === i + 1) {
-        // An empty paragraph pairs with the next unclaimed empty side paragraph before the next match.
         const limit = k < matches.length ? matches[k][1] : s1;
         for (let sp = lastSide + 1; sp < limit; sp++)
           if (
@@ -350,8 +330,6 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
       lastSide = matches[mi][1];
     }
   }
-  // Pairs whose tokens differ (a word that changed marks, a paragraph that became a heading) are
-  // one-token replacements of their own.
   let pb = b0;
   let ps = s0;
   for (const [mx, my] of [...all, [b1, s1] as [number, number]]) {
@@ -456,11 +434,6 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
   }
 }
 
-/**
- * Splits a replacement where some new tokens are old ones with other marks (or other whitespace):
- * those become one-token replacements and the rest plain insertions and deletions, so a bolded word
- * and the sentence typed after it are two changes, not one.
- */
 function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
   const out: Hunk[] = [];
   for (const h of hunks) {
@@ -479,7 +452,6 @@ function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
     }
     let i = 0;
     let j = 0;
-    // Everything between two matches is one plain replacement; a match whose marks differ is its own.
     const gap = (toI: number, toJ: number) => {
       if (toI > i || toJ > j)
         out.push({

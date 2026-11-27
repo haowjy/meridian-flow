@@ -1,13 +1,3 @@
-/**
- * DraftChip — the version chip, in its states: a document's, and the sidebar's Live/Draft for
- * its trees. Live: nothing drafted. Pending: "Live", neutral, with a small jade dot for the draft
- * that waits. Reviewing: "Draft", jade. Each is the trigger of the same version menu (`DraftSwitcher`), in the same
- * box, so the control the writer clicked to get in is still where they look to get out.
- *
- * Presentational: `DraftChipFace` is the pill; the caller wraps it in the
- * button or menu trigger that owns the click, focus ring and hit area (the
- * wrapper carries `group/chip` so the face can answer hover and open).
- */
 import type { ReactNode } from "react";
 import { Chip } from "@/components/ui/chip";
 import { ChooserMark } from "@/components/ui/marks";
@@ -25,7 +15,6 @@ const TONE = {
 const NEUTRAL_RESPONSE =
   "group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground";
 
-/** The chip answers its wrapper's hover and open menu. */
 const RESPONSE: Record<DraftChipState, string> = {
   live: NEUTRAL_RESPONSE,
   pending: NEUTRAL_RESPONSE,
@@ -33,7 +22,6 @@ const RESPONSE: Record<DraftChipState, string> = {
   failed: "",
 };
 
-/** The wrapper's hit area: the pill itself on desktop, a 44px target around it on a phone. */
 export function draftChipHitClass(touch: boolean): string {
   return cn(
     "focus-ring group/chip shrink-0 rounded-md",
@@ -48,9 +36,7 @@ export function DraftChipFace({
   children,
 }: {
   state: DraftChipState;
-  /** Shows the chevron of the draft menu. */
   menu?: boolean;
-  /** A phone's chip: taller and larger type than the identity bar's 22px box. */
   touch?: boolean;
   children: ReactNode;
 }) {

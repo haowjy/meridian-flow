@@ -1,5 +1,3 @@
-/** Lossy live fan-out of a project's hints over authenticated transports. */
-
 import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import type { ProjectHint, ProjectHintPort, ProjectWakePort } from "./ports/project-hints.js";
 
@@ -11,7 +9,6 @@ type Subscriber = {
 
 export type ProjectWakeHub = ProjectWakePort & {
   subscribe(input: Subscriber): () => void;
-  /** Wakes every project this user has open, with the hint each of those projects gets. */
   publishToUser(userId: string, hintFor: (projectId: string) => ProjectHint): void;
 };
 
@@ -42,7 +39,6 @@ export function createProjectWakeHub(): ProjectWakeHub {
   };
 }
 
-/** Hints go out after the writer's transaction commits; a lost one leaves a list stale until its next read. */
 export function createProjectHints(wake: ProjectWakePort): ProjectHintPort {
   function publishLossy(hints: readonly ProjectHint[]) {
     if (hints.length === 0) return;

@@ -1,4 +1,3 @@
-/** Authenticated-shell owner of the browser's shared connectivity hints. */
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { ConnectivityHints, type ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 

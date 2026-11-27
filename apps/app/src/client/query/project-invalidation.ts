@@ -1,7 +1,3 @@
-/**
- * project-invalidation — canonical convergence for project-level thread
- * projections. Query keys live in `project-query-keys`.
- */
 import type { QueryClient } from "@tanstack/react-query";
 
 import { projectQueryKeys } from "./project-query-keys";
@@ -17,10 +13,6 @@ export async function invalidateProjectThreadData(
   ]);
 }
 
-/**
- * A write-mode switch changed (queued, cancelled or withdrawn): the list rows carry its pending
- * mode and the Works read its default. The chat feed waits for the switch turn.
- */
 export async function invalidateWriteModeReads(
   client: QueryClient,
   projectId: string,
@@ -37,7 +29,6 @@ export function invalidateProjectChatFeed(client: QueryClient, projectId: string
   });
 }
 
-/** Invalidates the chats associated with one Work. */
 export function invalidateWorkThreads(
   client: QueryClient,
   projectId: string,

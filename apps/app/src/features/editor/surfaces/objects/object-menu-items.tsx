@@ -1,15 +1,3 @@
-/**
- * What a diagram or an image offers, in one place for its three doors: the row's
- * two chips, the row's ⋯, and the right-click menu.
- *
- * Every item here is a read of the object's registration
- * (`core/editor/objects/object-types.ts`) rather than a branch on its node type.
- * A diagram's verbs come from its provider row — the name its copy uses, the
- * source it can edit, the picture it exports — and an image's metadata verbs come
- * from the registration's `surfaceFields`, which is how ONE image surface serves
- * both the inline picture and the captioned figure.
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import {
@@ -55,7 +43,6 @@ import {
 } from "./object-commands";
 import type { RunVerb } from "./verb-feedback";
 
-/** The file a diagram export lands as: what it holds, not who drew it. */
 export const DIAGRAM_EXPORT_FILENAME = "diagram.png";
 
 export type ObjectVerbContext = {
@@ -63,11 +50,9 @@ export type ObjectVerbContext = {
   target: ObjectSurfaceTarget;
   run: RunVerb;
   openLightbox: (pos: number, withSource?: boolean) => boolean;
-  /** Opens the popover that edits one of the object's own fields (§5.6). */
   openField: (pos: number, field: ObjectSurfaceField) => void;
 };
 
-/** What each editable field is called, and how its control reads. */
 export function objectFieldLabel(field: ObjectSurfaceField): string {
   switch (field) {
     case "alt":
@@ -79,14 +64,6 @@ export function objectFieldLabel(field: ObjectSurfaceField): string {
   }
 }
 
-/**
- * The row: fullscreen, one copy, and the ⋯.
- *
- * A diagram's copy puts its **source** on the clipboard, not an image — revision
- * runs through the chat, so source is the bridge into that loop, and it works in
- * every browser where image-copy is the clipboard API's fussiest corner. The
- * image forms live in the ⋯.
- */
 export function objectRowItems({
   editor,
   target,
@@ -119,11 +96,6 @@ export function objectRowItems({
   ];
 }
 
-/**
- * The ⋯, shared by the row's overflow and the right-click menu — one menu with
- * two doors, per the kernel's rule that a surface has one entry point rather
- * than three.
- */
 export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
   const { editor, target, run, openLightbox, openField } = context;
   const provider = diagramProviderFor(target.node);
@@ -140,9 +112,6 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
         </EditorMenuItem>
       ) : null}
 
-      {/* The object's own words, each in its own small popover (§5.6). Which
-          fields exist is the registration's answer: an inline picture has alt
-          text, a figure adds the caption and label it shows. */}
       {fields.map((field) => (
         <EditorMenuItem key={field} onSelect={() => openField(target.pos, field)}>
           <Type aria-hidden />
@@ -168,8 +137,6 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
         </EditorMenuItem>
       ) : null}
 
-      {/* Absent, never dead: a diagram that has not rendered has no image to
-          hand over yet (law 5). */}
       {svg ? (
         <EditorMenuItem onSelect={() => run(copySvgImage(svg), "copy")}>
           <ImageDown aria-hidden />
@@ -189,11 +156,6 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
         </EditorMenuItem>
       ) : null}
 
-      {/* The way back down the escalation ladder, and the only one the writer
-          has once the drag has left their undo stack. Absent for a picture at
-          its own size — there is nothing to reset, and an item that greys on
-          most pictures teaches less than one that appears when it means
-          something (this lane's own rule). */}
       {imageWidthAttr(target.node.attrs) === null ? null : (
         <EditorMenuItem
           onSelect={() => {
@@ -219,11 +181,6 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
   );
 }
 
-/**
- * The address the picture is drawn from, which is where every image verb reads
- * its bytes: the rendered element already carries a resolved `src` (an `asset:`
- * ref became a signed URL on the way into the page).
- */
 function imageSource(target: ObjectSurfaceTarget): string {
   const image = renderedImage(target.element);
   return image?.currentSrc || image?.src || "";

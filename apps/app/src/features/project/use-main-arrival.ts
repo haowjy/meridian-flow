@@ -35,12 +35,9 @@ export function useMainArrival({
   accountId: string;
   projectId: string;
   main: MainForSide;
-  /** The document main shows once its address is proven, else null. */
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
-  // A chat deleted elsewhere goes as one deleted here does: its unsent words to New chat, its tab
-  // and slot, and main to a new chat.
   const navigation = useChatNavigation();
   const queryClient = useQueryClient();
   useDropGoneChatTabs(accountId, projectId, (chatId) => {

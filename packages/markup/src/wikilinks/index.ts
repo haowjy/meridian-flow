@@ -1,5 +1,3 @@
-/** Pure wiki-style Markdown findings over the codec's positioned, preprocessed Markdown source. */
-
 import type { Processor } from "unified";
 import { type Frontmatter, type SourceRange, splitFrontmatter } from "../frontmatter.js";
 import { normalizeGfmTableHardBreaks } from "../markdown/table-ingress.js";
@@ -30,17 +28,14 @@ export type WikilinkSyntaxFinding =
       kind: "markdownLink";
       url: string;
       image: boolean;
-      /** The written destination, angle brackets included; absent for `[x]()`. */
       destination: SourceRange | null;
     });
 
 export type WikilinkScanOptions = {
-  /** Prose projections use their host's node/mark semantics, not Markdown block or code syntax. */
   context?: "markdown" | "prose";
 };
 
 export type WikilinkScan = {
-  /** Offsets are UTF-16 indices into this source, not necessarily the input before preprocessing. */
   source: string;
   findings: WikilinkSyntaxFinding[];
 };
@@ -114,7 +109,6 @@ function mask(source: string, ranges: readonly SourceRange[]): string {
 
 type Comment = Extract<WikilinkSyntaxFinding, { kind: "comment" }>;
 
-/** Earlier opaque comments take precedence over any Markdown syntax in their contents. */
 function discoverComments(
   source: string,
   excluded: readonly SourceRange[],
@@ -152,7 +146,6 @@ function discoverComments(
   return comments;
 }
 
-/** Reports syntax only: it never resolves targets, validates YAML, or rewrites prose. */
 export function scanWikilinks(sourceText: string, options: WikilinkScanOptions = {}): WikilinkScan {
   // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const prose = options.context === "prose";

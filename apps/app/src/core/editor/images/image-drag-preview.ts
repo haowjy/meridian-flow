@@ -31,15 +31,12 @@
 
 import { Plugin } from "@tiptap/pm/state";
 
-/** The longest edge the ghost may have, so the drop target stays readable. */
 export const DRAG_PREVIEW_MAX_EDGE = 240;
 
-/** The picture's own body, which is also the drag handle TipTap requires. */
 const IMAGE_BODY_SELECTOR = '.meridian-image-node[data-type="image"]';
 
 export type PreviewBox = { width: number; height: number; scale: number };
 
-/** The ghost's box: the picture's own, shrunk until its long edge fits. */
 export function dragPreviewBox(width: number, height: number): PreviewBox {
   const longest = Math.max(width, height);
   const scale = longest > DRAG_PREVIEW_MAX_EDGE ? DRAG_PREVIEW_MAX_EDGE / longest : 1;

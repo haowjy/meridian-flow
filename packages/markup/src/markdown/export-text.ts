@@ -1,7 +1,3 @@
-/**
- * Export preserves literal wiki-style spans (wikilinks, embeds, callout
- * markers, footnotes), not other Markdown bracket syntax.
- */
 import { defaultHandlers, type Handle } from "mdast-util-to-markdown";
 import type { MdastText } from "../ast.js";
 

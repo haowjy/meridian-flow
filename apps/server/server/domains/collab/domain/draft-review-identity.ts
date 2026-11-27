@@ -1,13 +1,3 @@
-/**
- * The one module that maps a review item to its draft, document and draft (contract
- * §1.2). The cut, the commands and the address route all resolve through it; none takes a
- * bare string that may be a draft id or an item key.
- *
- * Addressability is not listing: it answers for every document a draft has a view of (a pending
- * create, or a change row), and says whether the list shows it. The
- * item is the metadata-only tree observation for every such document, listed or not.
- * Receipt membership enriches listed items downstream, never address resolution.
- */
 import type { DraftId } from "@meridian/contracts";
 import { type DraftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -35,7 +25,6 @@ export function createDraftReviewIdentity(deps: {
   drafts: Pick<Drafts, "ownerOf">;
   reviewItems: Pick<DraftReviewItems, "resolve">;
 }): DraftReviewIdentity {
-  /** One document of a draft. */
   async function inDraft(draftId: DraftId, documentId: DocumentId) {
     const resolved = await deps.reviewItems.resolve(draftId, documentId);
     return resolved

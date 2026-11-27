@@ -1,5 +1,3 @@
-// Shared setup for the press-whole probes (`README.md`): run each with
-//   pnpm --filter @meridian/loro-prosemirror exec tsx .context/qa/press-whole/<probe>.mts
 const W = new URL("../../../../../", import.meta.url).pathname;
 const PM = W + "node_modules/.pnpm/@tiptap+pm@3.34.0/node_modules/@tiptap/pm/dist";
 const dm = await import(W + "packages/document-model/src/index.ts");

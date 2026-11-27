@@ -1,10 +1,3 @@
-/**
- * __root route — Meridian app document shell.
- *
- * Renders the global CSS link, the link chip's icon rules, head/meta, i18n
- * provider, tooltip provider, AuthKit client provider, global announcement
- * region, and router Outlet.
- */
 import { I18nProvider } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { createRootRoute, HeadContent, Outlet, Scripts, useMatches } from "@tanstack/react-router";
@@ -111,8 +104,6 @@ function RootDocument({
         <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <HeadContent />
-        {/* Generated from the family icon data, so the link chip's images and
-            the scheme icons share one source. */}
         <style dangerouslySetInnerHTML={{ __html: LINK_CHIP_ICON_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: IOS_FOCUS_ZOOM_BOOT_SCRIPT }} />
       </head>

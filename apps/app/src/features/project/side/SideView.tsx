@@ -1,12 +1,3 @@
-/**
- * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
- * and the placement command. Both shells read it: the phone's side is its sheet.
- *
- * The side shows the slot of the kind main is not (`resolveSide`, `side-item.ts`). A pick or a link
- * into the side writes its kind's slot, stored per browser tab (`client/project-shell/store.ts`),
- * never in history; main's arrival writes the other (`useMainArrival`).
- */
-
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -55,27 +46,19 @@ import {
 
 export type SideItem = {
   item: Item | null;
-  /** A document item's descriptor. */
   document: OpenDocument | null;
-  /** A document's descriptor has not answered: the side keeps what it showed. */
   pending: boolean;
-  /** A read the side waits on failed: the side keeps what it showed and offers a retry. */
   failed: SideFailure | null;
 };
 
 type SideView = {
   side: SideItem;
   main: MainForSide;
-  /** The chat on screen, in main or beside: the draft scope under None reads it. */
   chatOnScreen: string | null;
-  /** A new chat's composer is on screen, in main or beside: a chat that has no drafts yet. */
   newChatOnScreen: boolean;
-  /** The chat host's thread: the chat on screen, else the one it last showed (kept warm, hidden). */
   hostChatId: string | null;
-  /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by an item placed in the side: the desktop opens the side, the phone its sheet, so it is seen. */
   revealed: number;
   place: Place;
   descriptions: Descriptions;
@@ -86,23 +69,17 @@ const SideViewContext = createContext<SideView | null>(null);
 const describeKey = ({ documentId, workId }: Describing) => `${documentId}|${workId ?? ""}`;
 
 type Descriptions = {
-  /** A mounted host's descriptor, else the one resolved by identity; pending until asked for. */
   read: (document: Describing) => Described;
-  /** Resolves the descriptors not yet known. */
   request: (documents: readonly Describing[]) => void;
 };
 
-/** A document's node in the lists: shown, left the view, or not known while a list has not synced. */
 type NodeState = "shown" | "gone" | "waiting";
 const SYNCED = new Set<string>(["synced", "offline", "broken"]);
 
-/** Descriptors of documents that may sit beside, resolved once each, for the rule and the picker. */
 function useDescriptions(projectId: string): Descriptions {
   const describeLive = useDescribeProjectDocument(projectId);
   const accountId = useAccountId();
   const queryClient = useQueryClient();
-  // A page only a draft holds has no live entry: the draft its view shows describes it, as it
-  // does for main's address.
   const describeDocument = useCallback(
     async (documentId: string, workId?: string) => {
       const pin = readDocumentView(accountId, projectId, documentId).pin;
@@ -203,7 +180,6 @@ function useDescriptions(projectId: string): Descriptions {
     () => ({
       read: (document) => {
         const mounted = shown.find((tab) => tab.documentId === document.documentId);
-        // A document deleted or removed while it sits here no longer opens: the side is empty.
         const opens = (tab: OpenDocument | null): Described => {
           if (!tab) return { status: "ready", document: null };
           const gone = stateOf(tab.documentId) === "gone";
@@ -255,8 +231,6 @@ export function SideViewProvider({
     // `describing` is read through its key.
   }, [describingKey, descriptions.request]);
 
-  // Storing what the side last settled on, so a pending read keeps it (React's pattern for
-  // information from earlier renders).
   const [kept, setKept] = useState<SettledSide | null>(null);
   if (resolution.kind === "settled" && JSON.stringify(resolution.side) !== JSON.stringify(kept))
     setKept(resolution.side);
@@ -284,8 +258,6 @@ export function SideViewProvider({
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatOnScreen = mainChat ?? (main.kind === "new-chat" ? null : (sideChat?.chatId ?? null));
-  // The thread the one chat host renders. It keeps the last chat it showed while no chat is on
-  // screen, so a stream and the transcript stay warm behind the document the side shows.
   const showing: string | null | undefined =
     mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
   const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastShownChatId);
@@ -345,7 +317,6 @@ export function SideViewProvider({
   return <SideViewContext.Provider value={value}>{children}</SideViewContext.Provider>;
 }
 
-/** A document shown beside counts as recently opened, once. */
 function useRecordBesideDocument(projectId: string, beside: OpenDocument | null) {
   const record = useRecordOpenedDocument();
   const recorded = useRef<string | null>(null);
@@ -362,7 +333,6 @@ function useRecordBesideDocument(projectId: string, beside: OpenDocument | null)
   }, [beside, projectId, record]);
 }
 
-/** A kept new-chat composer is about main's document, not the one it was settled beside. */
 function reaimComposer(kept: SettledSide, main: MainForSide): SettledSide {
   const item = kept.item;
   if (item?.kind !== "chat" || item.chatId !== null || !item.about) return kept;
@@ -377,37 +347,30 @@ function useSideView(): SideView {
   return view;
 }
 
-/** What the side shows beside main, and why. */
 export function useSideItem(): SideItem {
   return useSideView().side;
 }
 
-/** Main as the side's rule reads it. */
 export function useMainForSide(): MainForSide {
   return useSideView().main;
 }
 
-/** The chat on screen, in main or beside; null on the new-chat composer. */
 export function useChatOnScreen(): string | null {
   return useSideView().chatOnScreen;
 }
 
-/** A new chat's composer is on screen, in main or beside. */
 export function useNewChatOnScreen(): boolean {
   return useSideView().newChatOnScreen;
 }
 
-/** Outside the project view (a document menu mounted elsewhere), there is no chat on screen. */
 export function useOptionalChatOnScreen(): string | null {
   return useContext(SideViewContext)?.chatOnScreen ?? null;
 }
 
-/** The thread the one chat host renders. */
 export function useHostChatId(): string | null {
   return useSideView().hostChatId;
 }
 
-/** What the side's new chat is about, and the composer's report of it. */
 export function useNewChatAbout(): {
   about: NewChatAbout;
   report: (about: NewChatAbout) => void;
@@ -416,41 +379,25 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-/** What `place` opens: a link's target, with the Work a document link names; a null chat is the side's new chat. */
 export type PlacedItem =
   | { kind: "document"; documentId: string; workId?: string }
   | { kind: "chat"; chatId: string | null };
 
-/**
- * The one placement command: where `item` opens (`placeIn`). It returns the pane. For the side it
- * has already written the slot (and the draft the document shows) and had the side seen; for main
- * the caller opens the item, since only it knows how (a live page, a draft, a chat).
- */
 export type Place = (
   item: PlacedItem,
-  /** With a document, the draft it shows, and Review changes on it when `review` is set. */
   draft?: DraftPin & { review?: ReviewTarget; changeId?: string },
 ) => PanePlace;
 
-/** The placement command; the side's picker and empty list choose through it too. */
 export function usePlace(): Place {
   return useSideView().place;
 }
 
-/**
- * `place` for a surface that follows links: outside a pane (the left sidebar) there is nothing to
- * place beside, so an open goes to main. Null outside the project view.
- */
 export function useOptionalPlaceHere(): Place | null {
   const place = useContext(SideViewContext)?.place;
   const inPane = useOptionalPanePlace() !== null;
   return place ? (inPane ? place : () => "main") : null;
 }
 
-/**
- * Opens a chat from a pane (a link, a door, a reveal): in the side or in main. The one entrance for
- * `ChatThreadNavigation` and the conversation reveal. `from` is null outside a pane (the sidebar).
- */
 export function usePlaceChat(): (threadId: string, from: PanePlace | undefined) => void {
   const place = useSideView().place;
   const { openChat } = useChatNavigation();
@@ -463,7 +410,6 @@ export function usePlaceChat(): (threadId: string, from: PanePlace | undefined) 
   );
 }
 
-/** Counts items placed in the side: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }

@@ -3,12 +3,10 @@ const FNV_64_OFFSET = 0xcbf29ce484222325n;
 const FNV_64_PRIME = 0x100000001b3n;
 const HEX_FIELD_WIDTH = 16;
 
-/** A Loro block's full hash: a hash of its `id`, which is its identity on every peer (design §5). */
 export function fullHashForBlockId(id: string): string {
   return `${fnv1a64Hex(id)}${fnv1a64Hex(`${id}\u0000`)}`;
 }
 
-/** Each full hash's shortest prefix, at least the default width, unique among `fullHashes`. */
 export function uniqueHashPrefixes(fullHashes: readonly string[]): string[] {
   if (fullHashes.length === 0) return [];
   const byFullHash = fullHashes

@@ -1,9 +1,3 @@
-/**
- * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
- * for addresses with no document yet, settled by the first live document the tree's
- * walk reaches at the address (or at registration, if one is already there). Binding
- * is global and once; drafts store nothing about ahead refs.
- */
 import type { ContextSourceId } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
@@ -47,11 +41,9 @@ import {
   UnresolvableAddressError,
 } from "./document-address.js";
 
-/** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
 export type LinkAheadRegistryDeps = { eventSink?: EventSink };
 
-/** Registry rows at exactly this address. */
 function atAddress(address: Address) {
   return and(
     address.owner.kind === "project"
@@ -257,7 +249,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     page: AheadRecoveryPage,
   ): Promise<AheadRecoveryProgress> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
-    // Any view's document: a link typed in a document only a Work has registers as well.
     const pending = await this.db
       .selectDistinctOn([documentLinks.aheadId], {
         aheadId: documentLinks.aheadId,
@@ -313,7 +304,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return found.kind === "found" && found.node.kind === "document" ? found.node.document.id : null;
   }
 
-  /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */
   private async settle(address: Address, documentId: string, aheadId?: string): Promise<number> {
     const rows = await currentDrizzleDb(this.db)
       .update(linkAheadRefs)

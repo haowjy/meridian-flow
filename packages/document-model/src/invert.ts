@@ -13,19 +13,16 @@ import {
 } from "./version.js";
 import type { DocChange } from "./write.js";
 
-/** The version `doc` holds at `frontiers`. */
 export function versionOf(doc: LoroDoc, frontiers: Frontiers): DocVersion {
   return plainVersion(doc.frontiersToVV(frontiers));
 }
 
-/** The frontiers of `version` in `doc`, which must hold every op of it. */
 export function frontiersOf(doc: LoroDoc, version: DocVersion): Frontiers {
   return withVector(version, (vector) => doc.vvToFrontiers(vector));
 }
 
 type VersionJson = Record<string, number>;
 
-/** An `Edit` as a press or an AI write stores it for its Undo: JSON, with versions for frontiers. */
 export interface StoredEdit {
   values: [string, [string, SetValue][]][];
   texts: [DocKey, { before: VersionJson; after: VersionJson }][];
@@ -33,7 +30,6 @@ export interface StoredEdit {
   read?: [DocKey, VersionJson][];
 }
 
-/** `edit`, made on `docs`, as stored. */
 export function storeEdit(docs: RoomDocs, edit: Edit): StoredEdit {
   const json = (version: DocVersion): VersionJson => Object.fromEntries(version);
   const texts: StoredEdit["texts"] = [];
@@ -52,7 +48,6 @@ export function storeEdit(docs: RoomDocs, edit: Edit): StoredEdit {
   };
 }
 
-/** A stored edit back on `docs`, which hold every op it names (`holdsEdit`). */
 export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
   const version = (json: VersionJson): DocVersion => new Map(Object.entries(json)) as DocVersion;
   const texts: Edit["texts"] = new Map();

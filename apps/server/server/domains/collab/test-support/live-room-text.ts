@@ -1,8 +1,3 @@
-/**
- * A document's Live text in its Loro room, for tests of the model's tools: what the writer types
- * (a client's batch, no commit message, so the model reads it as the user's) and what the room
- * reads now.
- */
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { encodeEnvelope, freshPeerId, readDocument, writeDocument } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
@@ -15,7 +10,6 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const live = (documentId: string): DocumentRoom => ({ kind: "live", documentId });
 
-/** The document's blocks in its Live room now, with ids. */
 export async function liveBlocks(
   rooms: DocumentRooms<unknown>,
   documentId: string,
@@ -28,7 +22,6 @@ export async function liveBlocks(
   }
 }
 
-/** The document's Live text as Markdown. */
 export async function liveMarkdown(
   rooms: DocumentRooms<unknown>,
   documentId: string,
@@ -36,10 +29,6 @@ export async function liveMarkdown(
   return codec.serialize(await liveBlocks(rooms, documentId), UNSCOPED_DOCUMENT_LINKS);
 }
 
-/**
- * The writer changes the document to `want(current)`, as a client's batch. Blocks `want` returns
- * without an id are new.
- */
 export async function writerEdit(
   rooms: DocumentRooms<unknown>,
   documentId: string,
@@ -59,10 +48,6 @@ export async function writerEdit(
   }
 }
 
-/**
- * The writer changes the document's text to `markdown`. A paragraph whose text is unchanged keeps
- * its block, as it would under the writer's typing; the rest are new.
- */
 export function writeLiveMarkdown(
   rooms: DocumentRooms<unknown>,
   documentId: string,

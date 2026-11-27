@@ -1,14 +1,3 @@
-/**
- * What main and the side show, and what a document paints in whichever of them holds it.
- *
- * Main is the address: `resolveMainDocument` is the one order in which an address finds its
- * document, on the desktop and the phone. What sits beside it is `side/side-item.ts`.
- *
- * What a document paints, in whichever host holds it, is the one version rule (`shownDraft`) over
- * its view on this device (`document-views`) and the sidebar's Live/Draft choice: Live, or a
- * draft. A draft page binds the draft's fork room of the document whether or not the draft has
- * changed it: no list decides it.
- */
 import { type DocumentId, draftItemKey } from "@meridian/contracts";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -37,11 +26,8 @@ import { useOptionalChatOnScreen } from "./side/SideView";
 import { useScopeDraftOwner } from "./use-work-scope";
 
 export type DocumentPaint = {
-  /** The draft painted; null on Live. */
   draft: DraftPin | null;
-  /** The painted draft's owner is not the scope's. */
   outOfScope: boolean;
-  /** The Work scope's draft owner, whose draft the chip offers; null under No Work. */
   scopeDraftId: string | null;
   view: DocumentView;
 };
@@ -49,7 +35,6 @@ export type DocumentPaint = {
 type Rows = { status: "loading" | "ready" | "failed"; rows: readonly DraftItem[] };
 const NO_ROWS: readonly DraftItem[] = [];
 
-/** One owner's draft rows; a null owner has none. */
 export function useOwnerDraftRows(projectId: string, draftId: string | null): Rows {
   const query = useOwnerDraftList(projectId, draftId ?? "", draftId !== null);
   const list = unwrapListQuery({ ...query, data: query.data?.items });
@@ -66,19 +51,6 @@ export function useOwnerDraftRows(projectId: string, draftId: string | null): Ro
   );
 }
 
-/**
- * The one rule for which version of a document this tab shows, for its paint and for every way
- * of opening it (a tab, a launch, the address):
- *
- * ```text
- * pinned to another owner's draft (a pick in the version menu)      → that draft
- * the toggle on Draft and the scope has a draft                     → the scope's draft
- * otherwise                                                         → Live
- * ```
- *
- * The toggle is the shell's choice (`TreeVersionChoice`). A draft shows whether or not it has
- * changed the document: its page is the plain draft, which forks at the first write.
- */
 export function shownDraft(input: {
   pin: DraftPin | undefined;
   scopeDraftId: string | null;
@@ -92,10 +64,6 @@ export function shownDraft(input: {
   return { draftId: scopeDraftId, itemKey };
 }
 
-/**
- * `shownDraft` as this tab reads it now, for code that opens a document: what the document's
- * view would paint.
- */
 export function useShownDraft(
   projectId: string,
   chatThreadId: string | null,
@@ -127,7 +95,6 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     ? shownDraft({ pin: stored.pin, scopeDraftId, documentId, choice })
     : undefined;
   const foreign = pin !== undefined && pin.draftId !== scopeDraftId;
-  // A page the scope's version doesn't govern shows Live.
   const view = useMemo<DocumentView>(
     () => (foreign || choice === "draft" ? stored : { ...stored, version: "live" }),
     [stored, foreign, choice],
@@ -146,32 +113,24 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   }, [scopeDraftId, view, pinOwner, pinItem]);
 }
 
-/** What a view holds. A chat with no id is a new chat's composer; `about` is the document it attaches. */
 export type Item =
   | { kind: "document"; documentId: string }
   | { kind: "chat"; chatId: string | null; about?: string };
 
 export type AddressState = "pending" | "failed" | "settled";
 
-/** The address verdict a route issue states: only loading is pending and only error failed. */
 export function addressStateOf(issue: ProjectRouteIssue | undefined): AddressState {
   return issue === "loading" ? "pending" : issue === "error" ? "failed" : "settled";
 }
 
-/** The document main's address names, as its host paints and binds it. */
 export type MainDocument = Readonly<{
-  /** The address names a document. */
   requested: boolean;
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
-  /** A Work's Scratch route names its owning Work here. */
   workId?: string | null;
-  /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
   document: OpenDocument | null;
-  /** Live lacks the document: the descriptor is built from the address's draft row. */
   draftOnly: boolean;
-  /** The list has synced: a document its tree lacks is not there. */
   catalogResolved: boolean;
   /**
    * The readable address's own verdict on its document. It is the only evidence for or
@@ -195,7 +154,6 @@ export function resolveMainDocument(input: {
    * same path.
    */
   boundDocumentId?: string | null;
-  /** The document the answered address names (`addressedDocument`). */
   addressed?: AddressedDocument | null;
   addressState?: AddressState;
   tree: TreeViewResult;
@@ -218,7 +176,6 @@ export function resolveMainDocument(input: {
       isError: false,
     };
   }
-  // Identity before path: a bound document is found wherever its path went.
   const rootThreadId = input.rootThreadId ?? undefined;
   const owner = resolveRouteDocumentOwner({
     locator: contextRouteRequest({
@@ -255,7 +212,6 @@ export function useMainDocument(input: {
   path: string | null;
   workId: string | null;
   rootThreadId?: string | null;
-  /** The document the route is: where the replay puts it, whatever path the address spells. */
   boundDocumentId: string | null;
   addressed?: AddressedDocument | null;
   addressState?: AddressState;
@@ -294,23 +250,19 @@ export function useMainDocument(input: {
 }
 
 export type MainView = {
-  /** What main holds; null while its document is still opening or the address names nothing. */
   item: Item | null;
-  /** Main's document as its address resolves it; `requested` is false off a document address. */
   document: MainDocument;
 };
 
 const MainViewContext = createContext<MainView | null>(null);
 export const MainViewProvider = MainViewContext.Provider;
 
-/** What main shows, inside the project view. */
 export function useMainItem(): MainView {
   const main = useContext(MainViewContext);
   if (!main) throw new Error("useMainItem requires the project view");
   return main;
 }
 
-/** Main's item outside the project view's own tree (the provider may not be mounted). */
 export function useOptionalMainItem(): MainView | null {
   return useContext(MainViewContext);
 }

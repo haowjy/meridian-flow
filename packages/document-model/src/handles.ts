@@ -15,12 +15,10 @@ export function scoped<H extends { free(): void }, T>(handle: H, use: (handle: H
   }
 }
 
-/** `use` on a text doc's text. */
 export function inText<T>(doc: LoroDoc, use: (text: LoroText) => T): T {
   return scoped(doc.getText(TEXT_KEY), use);
 }
 
-/** `use` on one of a structure doc's maps. */
 export function inMap<T>(doc: LoroDoc, name: string, use: (map: LoroMap) => T): T {
   return scoped(doc.getMap(name), use);
 }

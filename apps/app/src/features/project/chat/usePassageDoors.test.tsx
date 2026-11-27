@@ -1,4 +1,3 @@
-/** Every door owns the navigation: the last one clicked is the one that speaks. */
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,7 +14,6 @@ vi.mock("@/core/editor/passage-navigation", () => ({
 const OPEN = () => Promise.resolve({ kind: "committed" as const, documentId: "doc-2" });
 const ANCHOR = { blockHash: "79b9", term: "elara" };
 
-/** Mounts the hook and hands its callback plus a live read of the notice. */
 async function withDoors(
   run: (open: PassageDoors, noticeFor: () => boolean) => Promise<void>,
 ): Promise<void> {
@@ -52,13 +50,11 @@ describe("passage doors", () => {
       open.land(ANCHOR, "doc-2", OPEN);
       expect(navigateToPassage).toHaveBeenCalledTimes(1);
 
-      // The writer changes their mind and follows another link.
       open.retire();
       await act(async () => {
         finish({ kind: "stale" });
       });
 
-      // The verdict belongs to a door the writer already left.
       expect(noticeFor()).toBe(false);
     });
   });

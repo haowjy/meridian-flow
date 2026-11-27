@@ -1,5 +1,3 @@
-/** Drizzle readers of where a project holds its documents and folders now. */
-
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
@@ -59,7 +57,6 @@ const WORK_SCHEMES = new Set<ContextUriScheme>(["scratch", "uploads"]);
 
 type IdentityFolder = FolderLink;
 
-/** Requested parent folders and the ancestors needed to spell them, in the view. */
 async function loadIdentityFolderClosure(
   db: Database,
   view: TreeView,
@@ -98,7 +95,6 @@ function classifySourceIdentity(input: {
   const { node, source, sourceProject, work } = input.row;
   const rawProjectIsRequested = source?.projectId === input.requestProjectId;
   const rawWorkIsRequested = work?.projectId === input.requestProjectId;
-  // The home folder is its account's: visible only to that account, from any of its projects.
   const isActorUserSource = source?.scope === "account" && source.userId === input.actorUserId;
   if (!rawProjectIsRequested && !rawWorkIsRequested && !isActorUserSource) {
     return { kind: "not-visible" };
@@ -211,7 +207,6 @@ type SourceFacts = {
   ownerThreadRef: string | null;
 };
 
-/** The sources, their owners and the thread whose ref spells them, by source id. */
 async function loadSourceFacts(
   tx: Database,
   sourceIds: readonly string[],
@@ -250,7 +245,6 @@ type PlacedRow = {
   deleted: boolean;
 };
 
-/** The nodes among `ids` the view places (deleted ones too), with the facts of their sources. */
 async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string[]) {
   const wanted = [...new Set(ids)].filter(isUuid);
   const placed =
@@ -336,13 +330,6 @@ async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string
   return { documents, folders };
 }
 
-/**
- * The documents and folders among the requested ids that the view shows and this project (with
- * the writer's own User area) holds, each with the address its source gives it. A node in
- * Trash, in a hidden or deleted source or project, or in another project's source is absent (a
- * deleted Work's files stay until its purge); one whose source identity is inconsistent is named
- * in `inconsistent`.
- */
 async function readPlacedNodes(
   db: Database,
   eventSink: EventSink | undefined,
@@ -516,10 +503,6 @@ export function createDrizzleProjectContextAvailability(
   };
 }
 
-/**
- * The address a folder identity holds now, followed by id: where it moved to, or the last
- * address it held in Trash, in a closed Work too. Null once the project no longer holds it.
- */
 export async function resolveHeldFolderUri(
   db: Database,
   projectId: string,
@@ -538,20 +521,12 @@ export async function resolveHeldFolderUri(
   return held?.kind === "held" ? held.address.uri : null;
 }
 
-/**
- * The address this project holds `id` at in live, in Trash included, read from the node and its
- * source rather than through a Work authority. Null when the project holds no such node (a node
- * in no live view is held by no one); `unreachable` when it holds one no live address can name
- * (in Trash, or an inconsistent identity). A deleted Work's files are held until its purge.
- */
 async function resolveHeldContextNode(input: {
   db: Database;
   projectId: ProjectId;
   userId: string;
   node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
-  /** A node in Trash answers its last address (`inTrash`) instead of `unreachable`. */
   inTrash?: boolean;
-  /** The tree the node is placed in: live, or a Work's draft tree. */
   view?: TreeView;
 }): Promise<HeldContextNode | null> {
   const view = input.view ?? LIVE_TREE;

@@ -1,5 +1,3 @@
-// Hand-run probe of how `lowerBlock` lowers real AI paragraph rewrites to Loro text ops.
-// Run: pnpm --filter @meridian/agent-edit exec tsx .context/qa/lowering.probe.ts [--examples]
 import { readFileSync } from "node:fs";
 import {
   configureDoc,
@@ -20,7 +18,6 @@ import { lowerBlock } from "../../src/resolver/lower-block.js";
 type E1 =
   | { kind: "insert"; at: number; text: string }
   | { kind: "retype"; from: number; to: number; text: string };
-/** A paragraph `base0`, the writer's edit `e1` making `base1`, and the model's rewrite `ai` of it. */
 type Case = { id: string; base0: string; e1: E1; base1: string; ai: string };
 type Typing = "lead" | "trail";
 
@@ -36,19 +33,13 @@ const configured = (doc: LoroDoc) => configureDoc(doc, shape);
 const text = <T>(doc: LoroDoc, use: (t: LoroText) => T) => inText(doc, use);
 const plain = (doc: LoroDoc) => text(doc, (t) => t.toString());
 
-// ---------- the write, as agent-edit plans and applies it ----------
 
-/** The paragraph the model's view holds: its text and its comments, as readers read them. */
 const viewNode = (view: LoroDoc) =>
   schema.nodes.paragraph.create(
     null,
     inlineNodes(schema, readInline(view, rules.rule, shape, rules.visibleComment)),
   );
 
-/**
- * The model's copy at the view, its write planned there (editors read from the view) and applied
- * through the one text write; returns the update and its op count.
- */
 function aiWrite(view: LoroDoc, ai: string) {
   const editors = unitEditors(view, rules.rule, shape);
   const ops = lowerBlock(viewNode(view), schema.nodes.paragraph.create(null, schema.text(ai)), {
@@ -69,7 +60,6 @@ function aiWrite(view: LoroDoc, ai: string) {
   return { update, ops: json.changes.reduce((n, ch) => n + ch.ops.length, 0) };
 }
 
-// ---------- the writer ----------
 
 function writerDoc(c: Case) {
   const origin = configured(new LoroDoc());
@@ -83,7 +73,6 @@ function writerDoc(c: Case) {
   return writer;
 }
 
-/** The writer's edit before the read: ` phrase` typed after a word (`lead`) or `phrase ` before the next. */
 function writerE1(writer: LoroDoc, e1: E1, typing: Typing) {
   text(writer, (t) => {
     if (e1.kind === "insert")
@@ -96,7 +85,6 @@ function writerE1(writer: LoroDoc, e1: E1, typing: Typing) {
   writer.commit();
 }
 
-/** The model's view: a copy checked out at the read, as `RoomDocs.at` makes it. */
 function viewOf(writer: LoroDoc) {
   const view = configured(writer.fork());
   view.checkout(writer.frontiers());
@@ -104,7 +92,6 @@ function viewOf(writer: LoroDoc) {
   return view;
 }
 
-// ---------- word helpers ----------
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean);
 type Tok = { w: string; start: number; end: number };
@@ -116,7 +103,6 @@ const tokens = (s: string): Tok[] =>
   }));
 const isLetter = (ch: string | undefined) => !!ch && /[\p{L}’']/u.test(ch);
 
-/** Each token of `a`: the token of `b` it equals (-1 if none), and the replacement span it sits in. */
 function align(a: string, b: string) {
   const ta = tokens(a);
   const tb = tokens(b);
@@ -149,7 +135,6 @@ function align(a: string, b: string) {
   return { ta, tb, map, repl };
 }
 
-/** Words of `x` that `y` lacks, counted. */
 function missing(x: string, y: string) {
   const bag = new Map<string, number>();
   const wx = words(x);
@@ -162,7 +147,6 @@ function missing(x: string, y: string) {
   return bag;
 }
 
-/** AI words that lose some characters but not all in `final`, or get letters inside. */
 function cutWords(ai: string, final: string) {
   const dead = new Uint8Array(ai.length);
   const insertedAt = new Set<number>();
@@ -182,9 +166,7 @@ function cutWords(ai: string, final: string) {
   return cut;
 }
 
-// ---------- scenarios ----------
 
-/** What Ctrl+Z should give: the AI's text with E1 taken out only where the AI kept it word for word. */
 function idealUndo(c: Case): string {
   const { ta, map, tb } = align(c.base1, c.ai);
   const start = c.e1.kind === "insert" ? c.e1.at + 1 : c.e1.from;
@@ -198,7 +180,6 @@ function idealUndo(c: Case): string {
   return c.ai.slice(0, start + delta) + c.base0.slice(c.e1.from, c.e1.to) + c.ai.slice(end + delta);
 }
 
-/** The writer's E1, the AI's write, then Ctrl+Z (Loro's `UndoManager`, no gate). */
 function holes(c: Case, typing: Typing) {
   const writer = writerDoc(c);
   const undo = new UndoManager(writer, { mergeInterval: 0, maxUndoSteps: 100 });
@@ -228,7 +209,6 @@ const rand = () => {
   return seed / 0x7fffffff;
 };
 
-/** Up to 6 words the AI keeps and 6 it changes (to a non-empty replacement), with where each should end up. */
 function commentPlan(c: Case) {
   const { ta, map, repl, tb } = align(c.base1, c.ai);
   const core = (t: Tok) => {
@@ -273,11 +253,6 @@ function markRanges(t: LoroText, key: string): Array<[number, number]> {
   return out;
 }
 
-/**
- * Comments on the planned words before the read, then the AI's write. A kept-word comment is
- * right when it covers exactly that word; a changed-word comment is `whole` when it covers whole
- * words inside that word's replacement, `fragment` when it covers part of a word or leaks out.
- */
 function comments(c: Case, typing: Typing, plan: ReturnType<typeof commentPlan>) {
   const writer = writerDoc(c);
   writerE1(writer, c.e1, typing);
@@ -333,7 +308,6 @@ function concurrentPlan(c: Case) {
   return { at: t.end, anchor: i, word };
 }
 
-/** The writer types one word after the read and before the write lands. */
 function concurrent(c: Case, typing: Typing, plan: ReturnType<typeof concurrentPlan>) {
   const writer = writerDoc(c);
   writerE1(writer, c.e1, typing);
@@ -376,7 +350,6 @@ function concurrent(c: Case, typing: Typing, plan: ReturnType<typeof concurrentP
     : withoutWord === c.ai && inPlace(at)
       ? "in place"
       : "displaced";
-  // Review changes paints `wordDiff(reference, draft)`: compare its words with the ideal's.
   const highlight = (s: string) => {
     const bag = new Map<string, number>();
     for (const part of wordDiff(c.base1, s))
@@ -393,10 +366,6 @@ function concurrent(c: Case, typing: Typing, plan: ReturnType<typeof concurrentP
   return { landed, reviewOff, merged, ideal };
 }
 
-/**
- * The writer types a letter inside a word the AI only grows (`cat` → `cats`) after the read; the
- * letter should stay inside the AI's copy of the word. Null when the AI grows no word at its end.
- */
 function grownWord(c: Case, typing: Typing) {
   const { ta, repl } = align(c.base1, c.ai);
   const grown = ta.findIndex((t, i) => {
@@ -421,9 +390,7 @@ function grownWord(c: Case, typing: Typing) {
   return { inPlace: merged === ideal, merged, ideal };
 }
 
-// ---------- repros ----------
 
-/** A paragraph with comments on [start, end) ranges, rewritten by the AI after the read. */
 function commentRepro(base: string, ai: string, marks: Array<[number, number]>) {
   const writer = writerDoc({ id: "", base0: base, base1: base, ai, e1: { kind: "insert", at: 0, text: "" } });
   text(writer, (t) => {
@@ -441,7 +408,6 @@ function commentRepro(base: string, ai: string, marks: Array<[number, number]>) 
   return got;
 }
 
-/** The base, the AI's text, then a letter the writer types at `at` before the write lands. */
 function typingRepro(base: string, ai: string, at: number, letter: string) {
   const writer = writerDoc({ id: "", base0: base, base1: base, ai, e1: { kind: "insert", at: 0, text: "" } });
   const view = viewOf(writer);
@@ -455,19 +421,14 @@ function typingRepro(base: string, ai: string, at: number, letter: string) {
   return merged;
 }
 
-/** Cases review found, each with what it must give. */
 const repros: Array<[string, () => unknown, unknown]> = [
-  // Joining `cat`→`cats` with `dog`→`hound` rewrote `cat` and glued the writer's `r` to `hound`.
   ["a letter typed inside a grown word", () => typingRepro("the cat dog ran", "the cats hound ran", 6, "r"), "the carts hound ran"],
-  // A comment per old word, in one change with no space to split it.
   ["two comments in one change", () => commentRepro("one, two", "three—four", [[0, 3], [5, 8]]), [["three"], ["four"]]],
   ["two comments on adjacent CJK", () => commentRepro("你好", "他们", [[0, 1], [1, 2]]), [["他"], ["们"]]],
-  // A comment over a space the AI's change takes in keeps the space.
   ["a comment over a merged space", () => commentRepro("one two three four", "one 2 3 four", [[4, 13]]), [["2 3"]]],
   ["a comment on a word that grows", () => commentRepro("the dog ran", "the dogs ran", [[4, 7]]), [["dogs"]]],
 ];
 
-// ---------- run ----------
 
 const cases: Case[] = JSON.parse(
   readFileSync(new URL("./lowering-cases.json", import.meta.url), "utf8"),

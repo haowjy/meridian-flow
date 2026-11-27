@@ -16,43 +16,21 @@ import {
 } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
-/**
- * The rule every Undo follows (design §2, "An Undo always runs"): the editor's Ctrl+Z and Redo, a
- * press's Undo, a turn's restore press and agent-edit's undo. An Undo takes its edit back whatever was
- * written since. Text goes back by its inverse, which deletes the characters the edit put in that
- * still stand and puts back the ones it deleted (Loro's `UndoManager` in the editor,
- * `textInverse` here). Structure goes back key by key, each to the value it held before the edit,
- * last writer wins. A block the Undo takes away is removed with a record that counts as read only
- * what the edit's copy showed of the text under the blocks it touched (`Edit.read`), and rule 1
- * (`answerRemovals`) runs over the Undo's own write, so a block anyone typed into since comes
- * back: no one's words leave the screen. Rarely the text then shows twice, which the writer
- * deletes.
- */
-
-/** A structure value an edit set: what the key held before the edit, and what the edit left. */
 export interface SetValue {
   before: unknown;
   left: unknown;
 }
 
-/** An edit's structure values, by stored map name (`order`, a draft's `d.order`) then key. */
 export type EditValues = Map<string, Map<string, SetValue>>;
 
-/** What an edit, or its last run, wrote in one text doc: the frontiers either side. */
 export interface TextSpan {
   before: Frontiers;
   after: Frontiers;
 }
 
-/** An edit an Undo takes back: a Ctrl+Z step, one change of a press, or an AI write. */
 export interface Edit {
   values: EditValues;
   texts: Map<DocKey, TextSpan>;
-  /**
-   * What the edit's copy showed, just after it, of every text doc under a block it touched and of
-   * every doc it wrote (`readOf`). A removal its Undo writes counts these as read; a doc outside
-   * them counts as unread.
-   */
   read: Map<DocKey, DocVersion>;
 }
 
@@ -81,10 +59,6 @@ export function readOf(
   return into;
 }
 
-/**
- * Add to `into` the structure keys the commits from `before` to `after` set: for a key not in it
- * yet the value before them, and for every key the value they left.
- */
 export function valuesOf(
   doc: LoroDoc,
   before: Frontiers,
@@ -109,26 +83,11 @@ export function valuesOf(
   return into;
 }
 
-/** What an Undo's put-back of structure knows of the text. */
 export interface PutBackText {
-  /** What the edit's copy showed (`Edit.read`). */
   read: ReadonlyMap<DocKey, DocVersion>;
-  /** The text docs the Undo put text into, just before. */
   inserted: ReadonlySet<DocKey>;
 }
 
-/**
- * Write every structure value of an edit back, in one commit by `by`: each key gets the value it
- * held before the edit. A block the edit made goes as a removal through `StructureWriter.remove`,
- * and keeps its other keys to come back with; a removal record the edit replaced is written anew
- * the same way. Each removal counts as read what the edit's copy showed (`text.read`), what its
- * record had read, what a removal under it read, and the Undo's own ops; any other op is unread.
- * Then rule 1 runs over the commit, the text the Undo put in, the shown blocks it moved and the
- * blocks it brought back (`answerRemovals`): a removed block someone else typed into since comes
- * back, and so does a container a peer removed around a block the Undo puts back. Returns the
- * changes, the restores included, and the values of the way back. `view`, if given, reads the
- * structure as it is.
- */
 export function putBackValues(
   docs: RoomDocs,
   values: EditValues,
@@ -182,15 +141,6 @@ export function putBackValues(
   };
 }
 
-/**
- * What the removal of `id` an Undo writes counts as read of each text doc under it. Of a block the
- * edit made (no `record`), a doc where no character shows that the edit's copy did not (`read`)
- * and the undoing side did not put in counts as read whole: no one's words leave with it, ops
- * whose text an Undo since took out included. A record put back keeps what it did not read.
- * Otherwise it counts what the edit's copy showed, what the record put back had read
- * (`record`), what a removal on the doc's path below `id` read (a block that stays removed shows
- * none of its text) and the Undo's own ops, so rule 1 brings `id` back with those words.
- */
 function sawOf(
   docs: RoomDocs,
   view: StructureView,
@@ -212,7 +162,6 @@ function sawOf(
     add(record?.get(key));
     for (let at: BlockId | null | undefined = key; at && at !== id; at = view.parent(at))
       add(view.removal(at)?.seen.get(key));
-    // The Undo's own ops: this copy's, and in a draft its Live copy's (a press Undo's Live side).
     for (const peer of own) {
       const counter = docVersion(doc).get(peer as PeerId);
       if (counter) seen.set(peer, counter);
@@ -221,11 +170,6 @@ function sawOf(
   };
 }
 
-/**
- * Whether `doc` shows a character put in since `read` by a peer not in `own`, past text the
- * undoing side put back where it stood (`unchanged`). A doc cut at its history cutoff since `read`
- * can't say, and counts as showing one.
- */
 function showsUnread(
   docs: RoomDocs,
   doc: LoroDoc,
@@ -254,10 +198,6 @@ function showsUnread(
   });
 }
 
-/**
- * A write of a put-back: `at` set makes it a removal of block `key` (null: at its key now), which
- * counts `seen`, what the removal put back had read, besides the Undo's own reading.
- */
 interface Put {
   name: string;
   key: string;
@@ -266,13 +206,8 @@ interface Put {
   seen?: ReadonlyMap<DocKey, DocVersion>;
 }
 
-/**
- * What putting `values` back writes, key by key: the value each held before the edit, except a
- * removal, which is written anew (`Put.at`).
- */
 function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] {
   const order = docs.draft ? overrideMap("order") : "order";
-  // A block the edit made had no `order` before it; in a draft, none in Live either.
   const made = new Set<BlockId>();
   for (const [id, { before, left }] of values.get(order) ?? [])
     if (
@@ -345,11 +280,6 @@ export type TextOp = Delta<string>;
 
 const length = (op: TextOp) => op.retain ?? op.delete ?? (op.insert as string).length;
 
-/**
- * The text Undo of a write (`span`) in `doc`, for the text as it is now: the inverse
- * `diff(after, before)` moved through what happened since, so it deletes only the write's
- * characters that still stand, puts back what it deleted, and keeps whatever anyone wrote since.
- */
 function textInverse(docs: RoomDocs, doc: LoroDoc, { before, after }: TextSpan): TextOp[] {
   const inverse = textDiff(doc, after, before);
   if (inverse.length === 0) return [];
@@ -403,7 +333,6 @@ function textInverse(docs: RoomDocs, doc: LoroDoc, { before, after }: TextSpan):
   return out;
 }
 
-/** The peers of the ops from `before` to `after` in `doc`. */
 function spanPeers(doc: LoroDoc, before: Frontiers, after: Frontiers): Set<string> {
   const was = plainVersion(doc.frontiersToVV(before));
   const peers = new Set<string>();
@@ -412,11 +341,6 @@ function spanPeers(doc: LoroDoc, before: Frontiers, after: Frontiers): Set<strin
   return peers;
 }
 
-/**
- * Whether the characters now at `[from, to)` of `doc`'s text were put in by the undoing side:
- * `peers` (a write's own), this copy, or a peer whose commits name an author (`by`: a chat's turn
- * or a press, such as an earlier Undo's copy). A writer's typing names none, so it never counts.
- */
 function putBackBy(
   docs: RoomDocs,
   doc: LoroDoc,
@@ -498,7 +422,6 @@ function unchanged(
   return out;
 }
 
-/** The delta of `doc`'s text from `from` to `to`. */
 function textDiff(doc: LoroDoc, from: Frontiers, to: Frontiers): TextOp[] {
   const hit = doc.diff(from, to, false).find(([, diff]) => diff.type === "text");
   return hit ? ((hit[1] as { diff?: TextOp[] }).diff ?? []) : [];
@@ -513,5 +436,4 @@ function keysOf(values: EditValues, name: string): Map<string, SetValue> {
   return keys;
 }
 
-/** The structure doc holds root maps only: `cid:root-<name>:Map`. */
 const mapName = (container: string) => container.slice("cid:root-".length, -":Map".length);

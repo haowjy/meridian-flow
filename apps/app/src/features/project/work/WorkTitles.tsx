@@ -1,11 +1,3 @@
-/**
- * A Work's page heading, renamed in place through `TitleEditSlot`, without moving the text: a
- * rename shows at once, and a refused one reopens the field with the writer's text. An archived
- * Work shows its name as plain text, and a Work with no server identity yet shows only its name
- * (`PlainWorkHeading`). The heading is one line: a long name truncates, with the full name on
- * hover and as the accessible name; the rename field scrolls within that line.
- */
-
 import { t } from "@lingui/core/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useWorkMutations, WorkReturnedError } from "@/client/query/work-mutations";
@@ -23,7 +15,6 @@ const renameFailure = (cause: unknown) => workUpdateFailure(cause, t`Couldn’t 
 const closedSentence = (cause: unknown) =>
   cause instanceof WorkReturnedError ? workClosedSentence(cause.why) : null;
 
-/** Renames the Work; rejects when the server refused it. */
 export function useWorkRename(projectId: string, work: Work) {
   const { update } = useWorkMutations(projectId);
   return async (name: string) => {
@@ -32,7 +23,6 @@ export function useWorkRename(projectId: string, work: Work) {
   };
 }
 
-/** The Work page's heading, renamed in place. */
 export function WorkHeading({ projectId, work }: { projectId: string; work: Work }) {
   const rename = useWorkRename(projectId, work);
   const archived = isWorkArchived(work);
@@ -47,8 +37,6 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
         fieldClassName="flex min-w-0"
       >
         {({ start, triggerRef }) =>
-          // The heading's accessible name stays the Work's name, and the
-          // tooltip shows it whole when it truncates.
           archived ? (
             <span title={work.name} className="min-w-0 truncate">
               {work.name}
@@ -70,7 +58,6 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
   );
 }
 
-/** A Work's heading as plain text; outside this module, only for a Work still being created. */
 export function PlainWorkHeading({ name }: { name: string }) {
   return (
     <h1 className={headingClass}>

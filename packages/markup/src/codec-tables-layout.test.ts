@@ -102,7 +102,6 @@ describe("tables and Layout round-trip corpus", () => {
       schema.node("table_row", null, [
         cell("table_header", "Status", { colspan: 2, colwidth: [0, 266] }),
       ]),
-      // The resize wrote the new width into every row of that grid column.
       schema.node("table_row", null, [
         cell("table_cell", "Class"),
         cell("table_cell", "Warden", { colwidth: [266] }),
@@ -591,10 +590,8 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /** Hard-break cells and every container a writer can nest their table inside. */
   type BrokenCellMarks = readonly (readonly ReturnType<typeof m>[])[];
 
-  /** Marks on the broken cell text; one entry breaks the body row alone. */
   const BROKEN_CELL_SHAPES: readonly { shape: string; rowMarks: BrokenCellMarks }[] = [
     { shape: "plain cell text", rowMarks: [[]] },
     { shape: "marked cell text", rowMarks: [[m("strong")]] },
@@ -650,7 +647,6 @@ describe("tables and Layout round-trip corpus", () => {
     }
   });
 
-  /** A spanned table is HTML, where `<br />` IS the spelling and stays one. */
   it("round-trips a hard break in a spanned cell inside a Layout wrapper", () => {
     const html = [
       "<table>",
@@ -692,16 +688,12 @@ describe("tables and Layout round-trip corpus", () => {
       ]);
     };
 
-    // One entry per spanned column, non-negative: a slot count that cannot
-    // describe the cell, a negative width, and a fraction are all lies.
     for (const colwidth of [[120, 80], [], [-1], ["120"], [Number.NaN]]) {
       expect(() => codec.serializeBlock(withColwidth(colwidth), UNSCOPED_DOCUMENT_LINKS)).toThrow(
         "colwidth must be null or one non-negative width per spanned column",
       );
     }
 
-    // Sizing a spanned column divides the cell's box by its colspan, so a
-    // fraction is what a real drag leaves behind. The wire rounds it.
     expect(codec.serializeBlock(withColwidth([173.5]), UNSCOPED_DOCUMENT_LINKS)).toContain(
       'widths="174"',
     );

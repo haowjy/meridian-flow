@@ -1,8 +1,6 @@
-/** Port for durable ahead-ref identities (contract §9.2). */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
 export type AheadRegistration = AheadHolder & {
-  /** The bare UUID of the `ahead:<uuid>` ref; the table key. */
   aheadId: string;
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
@@ -26,13 +24,6 @@ export type AheadRecoveryPage = { after?: string; limit: number };
  */
 export type AheadRecoveryProgress = { registered: number; next: string | null };
 
-/**
- * The registry refuses a ref for good (F20): its id is malformed, its address can never
- * name a document (`UnresolvableAddressError`), or the id is already registered for
- * another address. Retrying never helps; anything else a registration throws
- * (connection, timeout, lock) may. Extends `RangeError`: the input is outside what the
- * registry accepts.
- */
 export class UnregistrableAheadRefError extends RangeError {
   constructor(
     readonly aheadId: string,
@@ -45,7 +36,6 @@ export class UnregistrableAheadRefError extends RangeError {
   }
 }
 
-/** Raised when registration would open a root transaction under a caller's transaction (§6.1). */
 export class RegistrationInsideTransactionError extends Error {
   constructor() {
     super("Ahead-ref registration must run outside an existing Drizzle transaction");
@@ -64,7 +54,6 @@ export interface LinkAheadRegistry {
    * there, whether or not the id was registered before.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
-  /** `register` inside the caller's transaction: it takes the namespace keys on that connection. */
   registerInCommand(registrations: readonly AheadRegistration[]): Promise<void>;
   /** Caller transaction already holds every canonical target namespace key. */
   registerWithinTransaction(registrations: readonly AheadRegistration[]): Promise<void>;

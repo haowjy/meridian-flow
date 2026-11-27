@@ -1,4 +1,3 @@
-/** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
@@ -74,14 +73,12 @@ function ProjectRoute() {
   const { user } = AuthenticatedRoute.useLoaderData();
   const creation = useProjectCreationState(projectId);
   useSettleConfirmedCreation(projectId, loaderData.data !== null);
-  // The server could not find this project; the client's loader knows whether it is an unsent create.
   const router = useRouter();
   const unresolved = loaderData.unresolved;
   useEffect(() => {
     if (unresolved) void router.invalidate({ filter: (match) => match.routeId === Route.id });
   }, [unresolved, router]);
   const project = useProject(projectId, loaderData.project ?? creation.project);
-  // A project being created has no route data yet; the creation stands in.
   if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;
 
   return (
@@ -89,7 +86,6 @@ function ProjectRoute() {
       <div className="flex h-full min-h-0 flex-col">
         <ProjectCreationNotice creation={creation} />
         <div className="min-h-0 flex-1">
-          {/* Project-scoped state (navigation, admission, seeding) never carries across projects. */}
           <ProjectRouteBootstrap
             key={project.id}
             project={project}
@@ -103,7 +99,6 @@ function ProjectRoute() {
   );
 }
 
-/** Fence the previous live project synchronously, before the next loader settles. */
 export function ProjectIdentityBoundary({
   projectId,
   children,

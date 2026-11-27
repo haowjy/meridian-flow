@@ -26,7 +26,6 @@ import {
 
 export type DropAction = "move" | "copy";
 
-/** One choice in the menu, as data. A disabled item says why. */
 export type DropChoiceItem = {
   action: DropAction;
   label: string;
@@ -41,13 +40,10 @@ export type DropChoiceItem = {
 export type PendingChoice = {
   drag: EntryDrag;
   target: TreeDropTarget;
-  /** Where the pointer let go, in client coordinates; the menu hangs here. */
   point: { x: number; y: number };
-  /** Puts focus back in the list when the menu closes. */
   returnFocus: () => void;
 };
 
-/** The label a Move would carry on the hover hint and as a menu item. */
 export function moveLabel({ destinationName, beside }: ReadyMove): string {
   const sibling = beside?.name ?? "";
   if (!beside) return t`Move to ${destinationName}`;
@@ -60,7 +56,6 @@ export function copyLabel({ destinationName, beside }: ReadyCopy): string {
   return beside.kind === "before" ? t`Copy before ${sibling}` : t`Copy after ${sibling}`;
 }
 
-/** The hover hint for a drop that asks: an ellipsis says a choice follows the drop. */
 export function askLabel(label: string): string {
   return t`${label}…`;
 }
@@ -68,7 +63,6 @@ export function askLabel(label: string): string {
 export const noLongerThere = () => t`Some of these items are no longer there`;
 export const insideItself = () => t`Can't go inside itself`;
 
-/** Why an action can't run, for a drop that was acceptable when it was made. */
 function reason(
   action: DropAction,
   resolved: ResolvedDrop | null,
@@ -83,10 +77,6 @@ function reason(
   return t`Can't copy these`;
 }
 
-/**
- * The menu for a pending drop and what each enabled item would do, both read
- * from the trees now.
- */
 export function dropChoices(
   resolved: ResolvedDrop | null,
   target: TreeDropTarget,
@@ -114,7 +104,6 @@ export function dropChoices(
           reason: reason("copy", resolved, copy),
         };
   return {
-    // Between two lists, and into the writer's own files, the action is Copy: the original stays.
     items: target.scheme === "user" || resolved?.crossesLists ? [copyItem] : [moveItem, copyItem],
     plans: {
       ...(move.kind === "ready" ? { move } : {}),

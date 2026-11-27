@@ -1,5 +1,3 @@
-/** MDX ingress escaping for prose that contains JSX-significant characters. */
-
 import { fromMarkdown } from "mdast-util-from-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";

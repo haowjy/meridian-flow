@@ -1,11 +1,3 @@
-/**
- * The link system's public seam.
- *
- * Everything here is headless: classification, commands, the click decision,
- * and the per-editor store. React lives in `features/editor/surfaces/link/`,
- * which is where a link surface actually renders.
- */
-
 export { followLinkFrom, LinkSurfaceExtension, openLinkForm } from "./LinkSurfaceExtension";
 export {
   addressDocumentName,

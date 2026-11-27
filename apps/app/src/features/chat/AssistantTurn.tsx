@@ -1,5 +1,3 @@
-/** AssistantTurn — single render path for assistant turns. */
-
 import { Trans } from "@lingui/react/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import type { AssistantView, ViewItem, ViewRow, ViewRun } from "@meridian/thread-client";
@@ -26,9 +24,7 @@ import { thinkingDigest } from "./thinking-digest";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
-  /** What the turn shows: its items, decided by the view model. */
   view: AssistantView;
-  /** The response this turn belongs to: its parts and usage numbers. */
   response: NonNullable<ViewRow["response"]>;
   threadUsage?: {
     inputTokens: number;
@@ -41,18 +37,8 @@ export type AssistantTurnProps = {
   } | null;
   deliveries?: ViewRow["deliveries"];
   isLatestAssistant?: boolean;
-  /**
-   * A closing turn follows this one. A failed reply the chat moved past draws only what it said, so a
-   * row kept for a card alone (nothing to read) offers no actions.
-   */
   movedPast?: boolean;
-  /**
-   * The next visible turn continues this response (a subagent notification
-   * woke the model, with no writer message between), so this part has no
-   * settled action row of its own.
-   */
   continuesResponse?: boolean;
-  /** A Retry's new reply before the server has it: nothing to read or act on yet. */
   standIn?: boolean;
 };
 
@@ -71,7 +57,6 @@ function AssistantTurnComponent({
   const isSettled = isTerminalTurnStatus(turn.status);
   const { items } = view;
   const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(view), [view]);
-  // A failed reply the chat moved past, kept for a card alone: nothing to copy or fork.
   const showsOnlyCards =
     turn.status === "error" && movedPast && items.length === 0 && deliveries.length === 0;
   const stoppedEmpty = turn.status === "cancelled" && items.length === 0 && deliveries.length === 0;
@@ -93,7 +78,6 @@ function AssistantTurnComponent({
         {items.map((item) => (
           <TurnItemView key={itemRenderKey(item)} item={item} threadId={resolvedThreadId} />
         ))}
-        {/* Deliveries under an asking reply arrived after its question, so they follow its receipt. */}
         <AskReceipt threadId={resolvedThreadId} turnId={turn.id} />
         {deliveries.length ? (
           <div data-turn-item-kind="delivery">
@@ -110,7 +94,6 @@ function AssistantTurnComponent({
           isLive={isLive}
           standIn={standIn}
         />
-        {/* A record of a finished turn, as the edits receipt is: mid-stream it would offer Undo early. */}
         {isLive || standIn ? null : <AgentSavesReceipt outcomes={view.agentsSaved} />}
 
         <AnchoredCards anchor={{ turn: turn.id }} />
@@ -195,7 +178,6 @@ function InkDrop() {
   );
 }
 
-/** One entry per document, preferring its committed (`live`) lineage. */
 function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft" }>(
   documents: readonly T[],
 ): T[] {
@@ -260,8 +242,6 @@ const TurnItemView = memo(function TurnItemView({
   }
 
   if (item.kind === "text") {
-    // Text is the assistant's voice: full prose, no icon, no rail — and it is
-    // only ever rendered here, outside the Thinking fold.
     return (
       <div className="space-y-[var(--chat-space-inline)]" data-turn-item-kind="text">
         <StreamingText
@@ -299,9 +279,6 @@ const FoldRun = memo(function FoldRun({ run }: { run: ViewRun }) {
     );
   }
 
-  // Claude-style timeline: adjacent tools stack as siblings instead of
-  // collapsing into a grouping disclosure. With text-altitude rows the
-  // visual weight is low enough that grouping reads as extra chrome.
   return (
     <div className="space-y-[var(--chat-space-inline)]" data-activity-block data-fold-activity-run>
       {run.tools.map((tool) => (
@@ -328,7 +305,6 @@ function runRenderKey(run: ViewRun): string {
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
-// A card or unknown block the writer sees outside the Thinking fold.
 function ArtifactItem({
   item,
   threadId,

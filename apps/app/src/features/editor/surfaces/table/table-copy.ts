@@ -1,12 +1,3 @@
-/**
- * Writer-facing copy for the table verbs and, more importantly, for the
- * reasons they grey out.
- *
- * Law 5 is only satisfied when the reason reads as an answer ("the header row
- * stays first"), so the whole matrix lives here where it can be read at once
- * and a missing reason is visible as a hole rather than as a silently dead
- * control.
- */
 import { t } from "@lingui/core/macro";
 
 import type { TableBlockedReason, TableVerbId } from "./table-commands";

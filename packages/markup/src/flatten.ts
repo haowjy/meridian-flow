@@ -1,8 +1,3 @@
-/**
- * Quotes and lists on the way in: a tree of quotes, lists and items becomes a flat sequence of
- * blocks, each carrying the nesting attributes `nest` reads (`@meridian/prosemirror-schema`).
- * Generic over the leaf so Markdown (mdast) and table-cell HTML share one walk.
- */
 import type { Node as PMNode } from "prosemirror-model";
 
 export type ListSource<T> = {
@@ -15,7 +10,6 @@ export type ListSource<T> = {
 export type QuoteSource<T> = { type: "quote"; children: Array<Source<T>> };
 export type Source<T> = { type: "leaf"; value: T } | ListSource<T> | QuoteSource<T>;
 
-/** `value` is null for the empty paragraph that carries an item or a quote no block starts. */
 export type FlatBlock<T> = {
   value: T | null;
   path: string | null;
@@ -36,7 +30,6 @@ export function flattenSources<T>(sources: ReadonlyArray<Source<T>>): Array<Flat
     loose: null,
   });
 
-  // `|` goes before the step that starts a container, on the container's first block.
   const markFresh = (block: FlatBlock<T>, depth: number) => {
     const path = block.path ?? "";
     block.path = `${path.slice(0, depth)}|${path.slice(depth)}`;
@@ -76,9 +69,6 @@ export function flattenSources<T>(sources: ReadonlyArray<Source<T>>): Array<Flat
       };
       const at = out.length;
       walk(item.children, step);
-      // A block's marker speaks for its innermost list, so an item with no block of its
-      // own (empty, or whose first block sits in a deeper list, through any quotes) gets an
-      // empty paragraph.
       const first = out[at]?.path?.replaceAll("|", "").slice(step.length) ?? "-";
       if (first.includes("-")) {
         out.splice(at, 0, { ...own(step), ...item0 } as FlatBlock<T>);
@@ -92,7 +82,6 @@ export function flattenSources<T>(sources: ReadonlyArray<Source<T>>): Array<Flat
   return out;
 }
 
-/** Stamps nesting onto a parsed block: the same node with the five attributes set. */
 export function withNesting(node: PMNode, block: FlatBlock<unknown>): PMNode {
   return node.type.create(
     {

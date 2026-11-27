@@ -1,10 +1,3 @@
-/**
- * JsxNodeViews — minimal React NodeViews for MDX JSX blocks.
- *
- * Keeps `jsx_leaf` and `jsx_container` editable in TipTap while Session 3 owns
- * product-specific component rendering. Markdown/MDX serialization remains in
- * the shared codec; these views are only the in-editor presentation.
- */
 import type { NodeViewProps } from "@tiptap/core";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 

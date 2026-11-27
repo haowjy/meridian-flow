@@ -1,8 +1,3 @@
-/**
- * The Import button in a section header. It opens the popup, or the sheet on a phone: with nothing
- * running that is the Folder… / Files… choice. While the area has an import running or waiting on
- * the writer the button shows that and stays visible without hover.
- */
 import type { ImportScheme } from "@meridian/contracts";
 import { ImportIcon, LoaderCircle } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
@@ -22,7 +17,6 @@ export function ImportHeaderAction({
   const { items, status, open, setOpen } = useImportPanel(scheme);
   const phone = usePhoneShell();
   const label = importLabel(status);
-  // With nothing listed the popup is only the choice, so the choice closes it.
   const pick = (kind: PickKind) => {
     if (items.length === 0) setOpen(false);
     onPick(kind);

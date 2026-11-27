@@ -1,11 +1,3 @@
-/**
- * The document's Undo (design §6, "Ctrl+Z is Loro's, grouped by us"): the binding's
- * `UndoHistory`, which keeps one Loro `UndoManager` per text doc the tab changes and the
- * structure values each step set, and groups one editor step across them, so Ctrl+Z takes back
- * the writer's change and leaves a peer's or the model's alone. Every step runs, whatever was
- * written since (design §2, "An Undo always runs"). The history belongs to the `DocumentSession`, so it outlives an editor: each mounted
- * editor attaches while it shows the document.
- */
 import type { DocChange, RoomDocs } from "@meridian/document-model";
 import {
   type HistoryRun,
@@ -24,7 +16,6 @@ const histories = new WeakMap<Editor, DocumentHistory>();
 const byDocs = new WeakMap<RoomDocs, DocumentHistory>();
 
 export class DocumentHistory {
-  /** What the binding records the editor's writes into. */
   readonly steps: UndoHistory;
   private active = true;
   private readonly editors = new Set<Editor>();
@@ -32,14 +23,12 @@ export class DocumentHistory {
 
   constructor(
     private readonly docs: RoomDocs,
-    /** Sends an Undo's or Redo's changes as one local batch. */
     private readonly publish: (changes: readonly DocChange[]) => void,
   ) {
     this.steps = new UndoHistory(docs);
     byDocs.set(docs, this);
   }
 
-  /** Follow an editor while it is mounted. Returns the detach. */
   attach(editor: Editor): () => void {
     histories.set(editor, this);
     this.editors.add(editor);
@@ -50,7 +39,6 @@ export class DocumentHistory {
     };
   }
 
-  /** The next write starts its own step. */
   endStep(): void {
     this.steps.endStep();
   }
@@ -62,15 +50,10 @@ export class DocumentHistory {
     this.listeners.clear();
   }
 
-  /** Whether an editor shows the document now: a press made then goes on its Ctrl+Z. */
   get open(): boolean {
     return this.editors.size > 0;
   }
 
-  /**
-   * A press goes on the Ctrl+Z (design §6, "Ctrl+Z is Loro's") as it is made: Undo sends the
-   * press's Undo, Redo presses again.
-   */
   pushOutside(step: OutsideStep): void {
     this.steps.pushOutside(step);
     this.changed();
@@ -103,7 +86,6 @@ export class DocumentHistory {
     return this.steps.canRedo();
   }
 
-  /** Undo or Redo the newest step, synchronously. Returns the run, or null when the history had no step. */
   run(direction: "undo" | "redo", editor: Editor): HistoryRun | null {
     if (this.docs.isFreed) return null;
     const ran =
@@ -135,10 +117,6 @@ export class DocumentHistory {
 
   private shown = "";
 
-  /**
-   * Tells listeners and editors when Undo or Redo becomes available or not: not per keystroke.
-   * `source` is the editor whose write this is: its own transaction shows the change.
-   */
   changed(source?: Editor): void {
     if (!this.active) return;
     const shown = `${this.canUndo()}|${this.canRedo()}`;
@@ -152,10 +130,6 @@ export class DocumentHistory {
   }
 }
 
-/**
- * Ends the Undo step now open, so the next edit starts its own. A site whose edit must be its own
- * step (an upload landing, a link action, an `@` reference, a block drop) calls this first.
- */
 export function endUndoStep(state: EditorState): void {
   const docs = loroSyncKey.getState(state)?.docs;
   if (docs) byDocs.get(docs)?.endStep();

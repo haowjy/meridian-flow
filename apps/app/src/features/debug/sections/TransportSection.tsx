@@ -1,14 +1,3 @@
-/**
- * TransportSection — surfaces the WS singleton's `ConnectionState` union.
- *
- * Key decisions:
- * - Subscribes via `useThreadTransport().onConnectionState(cb)`. The transport
- *   emits the current state synchronously on subscribe, so initial render gets
- *   real data without a manual probe.
- * - Read-only: never calls `connect`/`disconnect`/`reconnect`.
- * - i18n exception: DEV-only debug surface; bypasses Lingui.
- */
-
 import type { ConnectionState } from "@meridian/thread-client";
 import { useEffect, useState } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";

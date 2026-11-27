@@ -120,13 +120,6 @@ export function CodeBlockNodeView(props: NodeViewProps) {
   );
 }
 
-/**
- * One provider's render of one fence, and the door back to its source.
- *
- * Its own component so the render hook belongs to the provider that owns it (see
- * the key above) and so the node view above stays the single choice between the
- * two faces.
- */
 function DiagramRenderLayer({
   editor,
   getPos,

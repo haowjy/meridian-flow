@@ -1,23 +1,3 @@
-/**
- * LinkSurfaceExtension — the one place the link lane touches the editor.
- *
- * It owns the click (follow or caret, `link-navigation.ts` decides), the hover
- * that reveals the destination, Ctrl+K, Alt+Enter, the right-click claim, and
- * how an internal link keeps its document across the clipboard. Whether a
- * link has landed anywhere is drawn by the link mark's own view
- * (`link-mark-view.ts`), which asks through the requester stored here.
- * Everything it decides is decided by the pure modules beside it; this file
- * reads the document, watches the pointer, and calls the stores.
- *
- * It also owns link clicks outright: the link mark used to cancel navigation
- * from its own plugin, which would now be a second opinion about the same
- * event. The schema says what a link IS; this says what pressing one DOES.
- *
- * Priority is left at the default — the kernel (1050) and object physics
- * (1040) both sit above, which is right: an object under the pointer is a
- * deeper owner than a mark on its text.
- */
-
 import { parseLinkRef } from "@meridian/contracts";
 import { type Editor, Extension } from "@tiptap/core";
 import {
@@ -67,13 +47,6 @@ import { classifyLinkTarget } from "./link-target";
 
 const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
 
-/**
- * Open the link form over the current selection (§5.5, law 5). No
- * preconditions: a selection asks for a URL, a bare caret asks for text and a
- * URL, and a caret inside a link arrives pre-filled. Ctrl+K, the toolbar's
- * Link button, and the menu's Edit link all end here, so the surface has one
- * entry point rather than three.
- */
 export function openLinkForm(editor: Editor | null): boolean {
   const surface = getLinkSurface(editor);
   if (!editor || !surface || !editor.isEditable) return false;
@@ -81,17 +54,7 @@ export function openLinkForm(editor: Editor | null): boolean {
   return true;
 }
 
-/**
- * Follow a link, unless it is already known to be gone. A gone link is not
- * followable (it draws a text cursor), so its press is the editor's: the caret
- * lands, and Enter means Enter. A press before the answer arrives still
- * follows, and the follow then does nothing. A link that names a folder opens
- * the folder's menu at `at` instead, once the app can follow anything at all.
- * Every follow in the lane (click, Enter, Alt+Enter, the menu's Open link)
- * comes through here.
- */
 export function followLinkFrom(editor: Editor, key: LinkKey, at: LinkPoint): LinkFollowResult {
-  // A chip whose file is still on its way up has nothing to open; a failed one is sent again.
   const pending = parseLinkRef(key.ref);
   if (pending?.kind === "doc") {
     const upload = uploads.of(pending.documentId);
@@ -114,12 +77,9 @@ export function followLinkFrom(editor: Editor, key: LinkKey, at: LinkPoint): Lin
   return followLink({ target: classifyLinkTarget(key.href), ref: key.ref }, surface.navigator);
 }
 
-/** Follow the link at the selection (Alt+Enter, and the menu's Open link). */
 function followLinkAtSelection(editor: Editor | null): boolean {
   const link = editor && linkAtSelection(editor);
   if (!editor || !link) return false;
-  // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
-  // place a plain click would.
   return (
     followLinkFrom(editor, linkKeyOfMark(link.attributes), caretPoint(editor.view)) !==
     "unavailable"
@@ -152,14 +112,8 @@ export const LinkSurfaceExtension = Extension.create({
     // an anchor rather than two numbers — a press and its click are two events,
     // and a peer's write can land between them.
     let press: { origin: LinkPoint; selection: EditorAnchor } | null = null;
-    // Registered in `view()`, because the kernel owns the approach: its timing,
-    // its pointer, and which block owns hover chrome at all.
     let releaseHover: (() => void) | null = null;
 
-    /**
-     * One answer for both buttons: cancel the browser, decide what the gesture
-     * meant, and either follow or hand the press back for a caret.
-     */
     const handleLinkPress = (view: EditorView, event: MouseEvent, button: number): boolean => {
       const anchor = anchorIn(view, event.target);
       if (!anchor) return false;
@@ -180,14 +134,8 @@ export const LinkSurfaceExtension = Extension.create({
       if (intent.action === "place-caret") return false;
 
       const followed = followLinkFrom(editor, linkKeyOf(view, anchor), belowAnchor(anchor));
-      // Nothing to follow — an unrecognized href, a link known to be gone, or
-      // an internal link with no navigator registered yet. A primary click
-      // falls through so the caret still lands; a middle click has no caret to
-      // fall through to, and the cancel above is the whole answer.
       if (followed === "unavailable") return button === MIDDLE_BUTTON;
 
-      // The follow read the link. It did not also move the writer's place: they
-      // come back from that tab to the sentence they left.
       restoreSelection(view, started?.selection);
       return true;
     };
@@ -206,11 +154,6 @@ export const LinkSurfaceExtension = Extension.create({
         view(view) {
           const chrome = getEditorChrome(editor);
 
-          // One question, answered from the pointer's last known place rather
-          // than only from a mouse event: a hint left over a link the writer
-          // scrolled away from names a destination that is not under their
-          // hand. Moving between two elements inside one link changes nothing,
-          // because the answer is the anchor either way.
           releaseHover =
             chrome?.registerHoverAnchor<HTMLElement>({
               id: "link-hint",
@@ -322,11 +265,6 @@ export const LinkSurfaceExtension = Extension.create({
 
         props: {
           handleDOMEvents: {
-            /**
-             * The press is where the gesture starts, and where the writer's
-             * place in the manuscript is still theirs. ProseMirror moves the
-             * caret from here, so a follow has to know what it moved off.
-             */
             mousedown(view, event) {
               const { from, to } = view.state.selection;
               press = {
@@ -365,10 +303,6 @@ export const LinkSurfaceExtension = Extension.create({
   },
 });
 
-/**
- * The entry a drag names when the pointer starts it inside a selection that lies within one
- * internal link: a document or folder link, never an address with nothing behind it yet.
- */
 function selectedLinkEntry(
   view: EditorView,
   event: DragEvent,
@@ -386,14 +320,12 @@ function selectedLinkEntry(
   return null;
 }
 
-/** The anchor element under a DOM node, when it belongs to this editor. */
 function anchorIn(view: EditorView, node: EventTarget | null): HTMLElement | null {
   if (!(node instanceof Element)) return null;
   const anchor = node.closest("a");
   return anchor instanceof HTMLElement && view.dom.contains(anchor) ? anchor : null;
 }
 
-/** What the menu shows and acts on, derived from the link as it stands now. */
 function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
   const { ref, href } = linkKeyOfMark(link.attributes);
   return {
@@ -435,8 +367,6 @@ function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
  */
 function restoreSelection(view: EditorView, selection: EditorAnchor | undefined): void {
   const at = selection && resolveAnchorIn(view.state, selection);
-  // Nothing to go back to: the writer's place was deleted while they pressed,
-  // and the caret the click already placed is the honest answer.
   if (!at) return;
   const { doc, selection: current } = view.state;
   if (current.from === at.from && current.to === at.to) return;
@@ -449,13 +379,11 @@ function restoreSelection(view: EditorView, selection: EditorAnchor | undefined)
   view.dispatch(view.state.tr.setSelection(TextSelection.between($from, $to)));
 }
 
-/** Where a surface summoned from a link hangs: under the link's start. */
 function belowAnchor(anchor: HTMLElement): LinkPoint {
   const rect = anchor.getBoundingClientRect();
   return { x: rect.left, y: rect.bottom };
 }
 
-/** Where a summoned surface hangs: the near edge of the selection, on screen. */
 function caretPoint(view: EditorView): LinkPoint {
   const coords = view.coordsAtPos(view.state.selection.from);
   return { x: coords.left, y: coords.bottom };

@@ -1,27 +1,10 @@
 import { t } from "@lingui/core/macro";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
-import type {
-  DocumentSessionLease,
-  LiveDocumentSessionRegistry,
-} from "@/core/editor/document-session-registry";
-import { contextRouteRequest } from "../routing/project-route";
-import type { ProjectStandings } from "./project-standings";
-/**
- * Opening a project document by id — the app's one answer to "take me there".
- *
- * Doors that already render a tree row carry its identity; id-only doors read it from the replay
- * of the project's list, waiting for the list only while it has not been read. Both commit main's
- * address before the destination acquires its live session. Every door opens the document in main,
- * except a chat's upload, which opens in the upload viewer. An open that finds nothing to show says
- * so in a failure toast, so no door handles a refusal itself.
- */
-
 import {
   type ContextOwner,
   isProjectContextTreeScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import {
   createContext,
   createElement,
@@ -36,22 +19,27 @@ import {
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { isEditorScheme, type OpenDocument, type ServerOpenDocument } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
+import { type DocumentSession, sessionRoomKey } from "@/core/editor/document-session";
+import type {
+  DocumentSessionLease,
+  LiveDocumentSessionRegistry,
+} from "@/core/editor/document-session-registry";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
   useTrashNavigation,
 } from "../routing/ProjectNavigationContext";
+import { contextRouteRequest } from "../routing/project-route";
 import { useProjectStandings } from "./account-feature-context";
 import { openDocumentFromFile } from "./open-document-from-file";
+import type { ProjectStandings } from "./project-standings";
 import { UploadViewerDialog } from "./UploadViewerDialog";
 
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
   readonly documentId: DocumentId;
-  /** The room's session now: a read-only room replaces its session once (`observeReplacement`). */
   readonly session: DocumentSession;
-  /** Calls `listener` with the session that replaces this binding's. Ends with `release`. */
   subscribeSession(listener: (session: DocumentSession) => void): () => void;
   readonly local?: true;
   release(): void;
@@ -75,16 +63,12 @@ export type ProjectDocumentLiveOpenResult =
 export type ProjectDocumentLiveOpenRequest = {
   projectId: ProjectId;
   documentId: DocumentId;
-  /** Also admits a document in Trash: its Trash view shows the text the session holds. */
   trashed?: true;
-  /** A document only a Work holds, which the project's list doesn't show yet. */
   workOnly?: true;
-  /** The draft whose fork room of the document opens, in place of its Live room. */
   draftId?: string;
   signal?: AbortSignal;
 };
 
-/** Admits a document's live session once the list shows it in the tree. */
 export class ProjectDocumentLiveOpener {
   constructor(
     private readonly dependencies: {
@@ -97,11 +81,6 @@ export class ProjectDocumentLiveOpener {
     },
   ) {}
 
-  /**
-   * Admits the document the project's list has in its tree. The list says whether it is there, so
-   * a document made here opens at once, before the server has heard of it: its session paints
-   * from the local copy and its room connects when the server has the create.
-   */
   async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
     const { projectId, documentId, signal } = input;
     const cancelled = () => signal?.aborted || this.dependencies.epochSignal.aborted;
@@ -204,17 +183,10 @@ export type KnownDocumentIdentity = ContextOwner & {
 export type OpenProjectDocumentRequest = {
   documentId: string;
   known?: KnownDocumentIdentity;
-  /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   focus?: true;
-  /** Takes the place of the current history entry (main leaving a document the writer removed). */
   replace?: true;
-  /**
-   * Offers a document that opens in a pane to the side, once this open knows what it is: true when
-   * the side took it. A chat's upload never reaches it, since no pane holds one.
-   */
   placeBeside?: () => boolean;
-  /** The caller goes elsewhere when this open is refused, so the opener says nothing of it. */
   fallsBack?: true;
   signal?: AbortSignal;
 };
@@ -233,19 +205,14 @@ type NavigationAdapterDependencies = {
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
-  /** Where the replay of the list shows a document, or null while it shows none. */
   locate(documentId: string): KnownDocumentIdentity | null;
-  /** Resolves once `locate` can place what the list shows; rejects only when `signal` aborts. */
   whenLocatable(signal: AbortSignal): Promise<void>;
-  /** Shows a chat's upload, which belongs to no main address, in its viewer. */
   viewUpload(tab: ServerOpenDocument): void;
-  /** Says that an open found nothing to show, with what tries it again. */
   refused(outcome: Extract<OpenDocumentOutcome, { kind: "refused" }>, retry: () => void): void;
 };
 
 type CommitResult = { kind: "applied" } | { kind: "cancelled" } | { kind: "failed" };
 
-/** Turns a document identity into a committed destination; the destination owns content. */
 export class ProjectDocumentNavigationAdapter {
   private attempt = 0;
   private current: AbortController | null = null;
@@ -260,7 +227,6 @@ export class ProjectDocumentNavigationAdapter {
     this.current = null;
   }
 
-  /** Every refusal is said here, so no door that opens through this has to. */
   async open(projectId: string, request: OpenProjectDocumentRequest): Promise<OpenDocumentOutcome> {
     let outcome: OpenDocumentOutcome;
     try {
@@ -342,12 +308,6 @@ export class ProjectDocumentNavigationAdapter {
     }
   }
 
-  /**
-   * Where a document lives now: the caller's known row, or the replay of the list. It waits while
-   * the list has not been read, and while the list shows the document but the server's answer of
-   * the sources that place it has not come (a list read from this browser's copy, offline or
-   * reconnecting): a lookup then waits for the connection instead of failing.
-   */
   private async identify(
     projectId: string,
     {
@@ -394,18 +354,12 @@ export class ProjectDocumentNavigationAdapter {
       case "in-trash":
         return { kind: "trashed" };
       case "in-tree":
-        // The list shows it in a source the server did not list.
         return { kind: "refused", reason: "lookup-failed" };
       default:
         return { kind: "refused", reason: "gone" };
     }
   }
 
-  /**
-   * The descriptor a view paints a document from, resolved like an open but navigating nowhere:
-   * the side's document. Null when the document no longer opens in the editor (removed, or an
-   * upload); throws when the lookup failed.
-   */
   async describe(
     projectId: string,
     documentId: string,
@@ -492,7 +446,6 @@ type ProjectDocumentNavigationOwner = {
 
 const ProjectDocumentNavigationContext = createContext<ProjectDocumentNavigationOwner | null>(null);
 
-/** Project-route composition owner for every document-opening door in the route. */
 export function ProjectDocumentNavigationProvider({
   projectId,
   children,
@@ -586,7 +539,6 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
   );
 }
 
-/** Resolves a document's descriptor without opening it (`describe`). */
 export function useDescribeProjectDocument(
   projectId: string,
 ): (documentId: string, workId?: string) => Promise<OpenDocument | null> {
@@ -598,7 +550,6 @@ export function useDescribeProjectDocument(
   );
 }
 
-/** Current project-route identity for authorization-only projections. */
 export function useProjectDocumentNavigationProjectId(): string | null {
   return useContext(ProjectDocumentNavigationContext)?.projectId ?? null;
 }

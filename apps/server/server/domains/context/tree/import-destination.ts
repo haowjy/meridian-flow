@@ -1,4 +1,3 @@
-/** Live folder identity lookup for import upload admission. */
 import type { Database } from "@meridian/database";
 import { contextSources } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";

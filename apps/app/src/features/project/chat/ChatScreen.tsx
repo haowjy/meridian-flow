@@ -1,11 +1,3 @@
-/**
- * ChatScreen — renders the resolved thread in whichever pane hosts the chat
- * (main, side, phone), or the empty New chat when there is none. It never
- * owns thread routing itself; it reads `useChatNavigation()` for the commands
- * a chat surface needs (opening the parent of a subagent, focusing a freshly
- * requested New chat composer). A chat whose Work is archived keeps its live
- * composer, with the archived notice as a strip on the composer's top edge.
- */
 import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
@@ -39,20 +31,15 @@ import { SubagentPathRow } from "./SubagentPathRow";
 
 export type ChatScreenProps = {
   projectId: string;
-  /** ProjectView's resolved thread. */
   threadId: string | null;
-  /** With no thread: the document the new chat's composer attaches. */
   about?: string | null;
-  /** The side's composer reports what its new chat is about. */
   onAboutChange?: (about: NewChatAbout) => void;
   activeWork: Work | null;
   availableWorks: readonly Work[];
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
-  /** False while the host keeps the chat mounted but hidden. */
   visible?: boolean;
 };
 
-/** Renders the resolved thread, with parent context when it is a subagent. */
 export function ChatScreen({
   projectId,
   threadId,
@@ -66,11 +53,8 @@ export function ChatScreen({
   const { threads: projectThreads } = useProjectThreads(projectId);
   const { openChat, newChatFocusRequestId, consumeNewChatFocusRequest } = useChatNavigation();
   const derivationDeps = useDerivationDeps();
-  // A fork or handoff reloaded mid-creation re-issues its request first.
   const resumingDerivation = useDerivationResume(threadId, derivationDeps);
 
-  // New chat: the same frame a live chat uses, with nothing above the composer
-  // yet, so the first Send grows a transcript without moving the composer.
   if (threadId === null) {
     return (
       <ChatFrame

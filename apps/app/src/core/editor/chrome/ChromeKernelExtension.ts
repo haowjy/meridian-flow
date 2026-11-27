@@ -1,5 +1,3 @@
-/** Implements the editor chrome kernel and its scoped interactions. */
-
 import { type Editor, Extension } from "@tiptap/core";
 import { keydownHandler } from "@tiptap/pm/keymap";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -27,7 +25,6 @@ export const chromeKernelPluginKey = new PluginKey("meridianChromeKernel");
 
 type ChromeStorage = {
   chrome: EditorChrome;
-  /** @internal driven by this extension only. */
   controller: EditorChromeController;
 };
 
@@ -37,21 +34,17 @@ declare module "@tiptap/core" {
   }
 }
 
-/** The kernel for this editor, or null on an editor that never mounted it (standalone code surfaces). */
 export function getEditorChrome(editor: Editor | null | undefined): EditorChrome | null {
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[CHROME_EXTENSION_NAME]?.chrome ?? null;
 }
 
-/** Marks chrome that lives outside the editor's DOM — a portalled object row, a table grip — as still belonging to one editor, so a right-click on it goes through that editor's claim ladder instead of straight to the browser. */
 const EDITOR_CHROME_ATTRIBUTE = "data-editor-chrome";
 
-/** Spread onto portalled chrome so the kernel's router can still see it. */
 export function editorChromeAttributes(chrome: EditorChrome): Record<string, string> {
   return { [EDITOR_CHROME_ATTRIBUTE]: chrome.id };
 }
 
-/** Is this element part of THIS editor's portalled chrome? */
 export function isEditorChromeElement(chrome: EditorChrome, element: Element): boolean {
   return element.closest(`[${EDITOR_CHROME_ATTRIBUTE}="${chrome.id}"]`) !== null;
 }
@@ -72,9 +65,6 @@ export const ChromeKernelExtension = Extension.create({
     const { chrome, controller } = this.storage;
     const editor = this.editor;
 
-    // Rebuilt only when a surface registers or unregisters, so an ordinary
-    // keystroke costs one map lookup rather than a merge of every lane's keys.
-    // Routes separate editor commands, portalled layers and native preparation.
     let cachedBindings: Record<KeymapRoute, Record<string, KeymapBinding>> = {
       prose: {},
       chrome: {},
@@ -98,8 +88,6 @@ export const ChromeKernelExtension = Extension.create({
       return merged[route];
     };
 
-    // Tab writes in the prose, so the way out is Escape at home, then Tab or
-    // Shift-Tab: that next key is the browser's focus move.
     let leaveArmed = false;
 
     let sweepOrigin: { x: number; y: number } | null = null;
@@ -142,16 +130,12 @@ export const ChromeKernelExtension = Extension.create({
           });
 
           const readPointer = (event: PointerEvent) => {
-            // A finger does not hover. Remember the hand and let the lanes that
-            // follow the selection place their chrome instead ().
             const coarse = event.pointerType !== "mouse";
             controller.setCoarsePointer(coarse);
             if (coarse) {
               controller.hoverAnchors.pointerGone();
               return;
             }
-            // Mid-drag or mid-sweep every surface stands down, and the approach
-            // re-earns itself on release rather than reappearing where it was.
             if (chrome.suppressed) return;
             controller.hoverAnchors.pointerAt(event.clientX, event.clientY);
           };
@@ -294,7 +278,6 @@ export const ChromeKernelExtension = Extension.create({
           },
 
           handleDOMEvents: {
-            /** A non-primary press is the claim ladder's, and ProseMirror never hears it. */
             mousedown(_view, event) {
               if (event.button !== 0) return true;
               sweepOrigin = { x: event.clientX, y: event.clientY };
@@ -343,7 +326,6 @@ function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEv
   return true;
 }
 
-/** One step of the walk home, from wherever the key was pressed. */
 function performEscStep(
   view: EditorView,
   chrome: EditorChrome,

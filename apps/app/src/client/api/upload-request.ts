@@ -1,4 +1,3 @@
-/** The two server calls around a direct upload (start and finish), and their errors in the writer's words. */
 import { t } from "@lingui/core/macro";
 
 import { fileTooLargeMessage } from "@/lib/upload-limit";

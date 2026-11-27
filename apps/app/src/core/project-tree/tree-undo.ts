@@ -1,22 +1,3 @@
-/**
- * Sidebar Undo: the writer's tree changes made in this browser, newest last, one stack per list
- * copy, read a source at a time. A step is the record ids one gesture appended and the view it
- * was made in, or a review's Apply or Discard, which the server takes back whole by its command
- * id; nothing else is stored. Whether a tree step can still be taken is read from the list at the press (`takeBackAll`:
- * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply's
- * or Discard's Undo is asked of the server, and its press is spent once the server answers, whatever it took back. A
- * tree step that waits for a closed owner (an archived or deleted Work, a chat in Trash) keeps its
- * place, and a press passes over it until the owner reopens (`waitsForClosed`). So does a delete that hides
- * nothing now (`rests`: what it took shows again, kept standing by an Apply or a create), until it
- * hides something again. A notice's Undo
- * (`undoStep`) takes back the same step a press would. There is no Redo: an Undo's own records go
- * on no stack.
- *
- * Each list also holds the notice its rows show (`treeNotice`): the writer's latest gesture with
- * its Undo. It ends at the next gesture or press, or when its step leaves the stack. Beside it, the writer's changes the server bounced since
- * (`treeBounces`: their Work was closed), each said on the row it was made on; they end at the
- * writer's next gesture, press or action elsewhere in the list, as the notice does.
- */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   type DroppedRecord,
@@ -34,97 +15,55 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
 export type UndoStep = TreeStep | PressStep;
 
-/** What the writer did; a create shows no notice (the new row says it). */
 export type TreeGesture = "create" | "rename" | "move" | "delete" | "restore";
 
 export type Was = {
   name: string;
   kind: "folder" | "document";
-  /** The folder's name, null at the top of a source. */
   folder: string | null;
-  /** The folder's or the source's id: the parent the tree's rows are listed under. */
   parent: string;
-  /** The siblings listed before it, nearest first. */
   after: readonly string[];
 };
 
 export type TreeStep = {
   kind: "tree";
   gesture: TreeGesture;
-  /** Each node as it was before the gesture: what its notice says, and where a gone row stays. */
   was: ReadonlyMap<string, Was>;
-  /** The records the gesture appended, in order. */
   records: readonly string[];
-  /** The view it was made in: a press takes back only steps of the view on screen. */
   draft: string | null;
-  /** The sources the gesture's nodes showed in after it: each source's stack holds it. */
   sources: readonly string[];
-  /** The nodes it acted on, for the notice. */
   nodes: readonly string[];
-  /**
-   * The closed sources its last press found every record waiting for: it keeps its place, and a
-   * press passes over it while they are all closed.
-   */
   waits?: readonly string[];
-  /** Hears the step leave the stack, taken back or skipped: a notice holding its Undo ends. */
   ended?: () => void;
-  /**
-   * Hears a delete's step start to rest: a notice away from its rows, which can't hide its Undo
-   * for now, ends; the rows and a press keep it.
-   */
   rested?: () => void;
 };
 
-/** An archived or deleted Work, or a chat in Trash, named when the tab knows its name. */
 export type ClosedOwner = { why: ClosedOwnerWhy; owner?: string };
 
-/**
- * Which owners this tab reads as closed now, from the Works and chats it holds. A tree step some of
- * whose records are in them waits: a press passes over it while they are all closed.
- */
 export type ClosedOwners = {
-  /** The closed owner of a source's notes; null when it is open or the tab can't tell. */
   source(sourceId: string): ClosedOwner | null;
 };
 
 export const NOTHING_CLOSED: ClosedOwners = { source: () => null };
 
-/**
- * An Apply or a Discard in a Work's review (its press command), one step whichever view is on
- * screen. Ctrl+Z on it sends the command's own Undo (`undo`: false when the request didn't reach
- * the server, which the writer is told; the step stays). Whoever pushed it takes it off the stack
- * once the command is taken back in this tab (a notice, an editor's Ctrl+Z, the sidebar), and a
- * Redo that lands puts it back on top. Taken back in another tab, the step stays: its Ctrl+Z is
- * answered with nothing taken.
- */
 export type PressStep = {
   kind: "press";
-  /** The sources its nodes show in; none known, every source's stack holds it. */
   sources: readonly string[];
-  /** The nodes it took, where the focus goes after an Undo. */
   nodes: readonly string[];
   undo(): Promise<boolean>;
 };
 
-/** What a list's rows say: the latest gesture, whose rows offer its Undo. */
 export type TreeNotice = { kind: "step"; step: TreeStep };
 
-/**
- * A change of the writer's that the server bounced (it changed a Work that was closed): the row
- * stands as it was before it, and says so.
- */
 export type Bounce = {
   record: DroppedRecord["record"];
-  /** What Copy takes: a rename's name; null for any other change. */
   typed: string | null;
-  /** A create's row as the writer made it, which stays struck through where it was. */
   made?: Was;
 };
 
 export type UndoOutcome =
   | {
       kind: "undone";
-      /** What the step taken back acted on: where the focus follows it. */
       nodes: readonly string[];
     }
   | { kind: "nothing" };
@@ -135,10 +74,8 @@ const bounces = new WeakMap<TreeListSession, readonly Bounce[]>();
 const listeners = new Set<() => void>();
 let revision = 0;
 
-/** Changes whenever any list's notice does. */
 export const treeNoticeRevision = () => revision;
 
-/** The list's notice; a delete's step that rests shows none until it hides something again. */
 export function treeNotice(session: TreeListSession | null): TreeNotice | null {
   const notice = (session && notices.get(session)) ?? null;
   return session && notice?.kind === "step" && rests(session, notice.step) ? null : notice;
@@ -163,30 +100,25 @@ function show(session: TreeListSession, notice: TreeNotice | null) {
   changed();
 }
 
-/** The writer's changes the server bounced since their last action in the list, oldest first. */
 export function treeBounces(session: TreeListSession | null): readonly Bounce[] {
   return (session && bounces.get(session)) ?? [];
 }
 
-/** The server bounced these changes of the writer's: their rows say so until the writer acts. */
 export function addBounces(session: TreeListSession, added: readonly Bounce[]): void {
   if (added.length === 0) return;
   bounces.set(session, [...treeBounces(session), ...added]);
   changed();
 }
 
-/** The writer acted in the list: what its rows said of bounced changes ends. */
 function actedIn(session: TreeListSession) {
   if (bounces.delete(session)) changed();
 }
 
-/** The writer acted elsewhere in the list (opened a document): its notice ends. */
 export function endTreeNotice(session: TreeListSession): void {
   actedIn(session);
   show(session, null);
 }
 
-/** Ends the notice when it is `step`'s: the step left the stack. */
 function endStepNotice(session: TreeListSession, step: UndoStep) {
   const notice = notices.get(session);
   if (notice?.kind === "step" && notice.step === step) show(session, null);
@@ -201,7 +133,6 @@ function stackOf(session: TreeListSession): UndoStep[] {
   return stack;
 }
 
-/** The source a node shows in: the top of its parent chain. */
 export function shownSourceOf(projection: TreeProjection, node: string): string | null {
   let at = projection.nodes.get(node);
   for (let hops = 0; at && hops < 10_000; hops += 1) {
@@ -211,7 +142,6 @@ export function shownSourceOf(projection: TreeProjection, node: string): string 
   return null;
 }
 
-/** Takes `step` off the stack, if it is there: an Apply or Discard taken back. */
 export function dropUndoStep(session: TreeListSession, step: UndoStep): void {
   const stack = stackOf(session);
   const at = stack.indexOf(step);
@@ -222,21 +152,15 @@ export function pushUndoStep(session: TreeListSession, step: UndoStep): void {
   if (step.kind === "tree" && step.records.length === 0) return;
   stackOf(session).push(step);
   actedIn(session);
-  // A gesture in the list is the writer's next action there; an Apply or Discard is made in a review.
   if (step.kind === "tree")
     show(session, step.gesture === "create" ? null : { kind: "step", step });
 }
 
-/**
- * Something of the tree step waits for closed owners, every one of which the tab reads as closed still:
- * a press passes over it. Its place is kept, and the press after the owners reopen takes it.
- */
 function waitsForClosed(step: TreeStep, closed: ClosedOwners): boolean {
   const waits = step.waits ?? [];
   return waits.length > 0 && waits.every((source) => closed.source(source) !== null);
 }
 
-/** The step is one a press in `view` on `source` (null: any) would take, waiting or not. */
 const fits = (step: UndoStep, source: string | null, view: View) =>
   (step.kind === "press" || step.draft === view.draft) &&
   (source === null || step.sources.length === 0 || step.sources.includes(source));
@@ -292,10 +216,6 @@ async function takeLatest(
   return { kind: "nothing" };
 }
 
-/**
- * A row's Undo: takes back `step` if it is still on the stack, as a press would, and says so as a
- * press does. False when a press took it first or nothing of it can be taken back any more.
- */
 export async function undoStep(
   session: TreeListSession,
   step: UndoStep,
@@ -325,11 +245,6 @@ export async function undoStep(
   return false;
 }
 
-/**
- * A delete's step whose records are in force but hide nothing now: what it took shows again,
- * kept standing by an Apply or a create in its folder. A press passes over it, and its rows offer
- * no Undo, until one of them hides something again.
- */
 function rests(session: TreeListSession, step: TreeStep): boolean {
   if (step.gesture !== "delete") return false;
   const view: View = step.draft === null ? LIVE : { draft: step.draft };
@@ -340,12 +255,6 @@ function rests(session: TreeListSession, step: TreeStep): boolean {
   );
 }
 
-/**
- * Ends the delete `step` when none of its records is in force any more (lifted by anyone's
- * restore or Undo, or purged): a notice offers an Undo that no longer applies. While it stands, a
- * change in whether it rests shows on its rows, and its start ends a notice away from them
- * (`rested`). Returns the stop for the watch.
- */
 export function endWhenRestored(session: TreeListSession, step: TreeStep): () => void {
   const view: View = step.draft === null ? LIVE : { draft: step.draft };
   let resting = rests(session, step);
@@ -380,10 +289,6 @@ function writerOf(session: TreeListSession, view: View) {
   );
 }
 
-/**
- * Writes the step's opposite records that land: `undone` when any did, else the closed sources the
- * records wait for (none: nothing of it can be taken back any more).
- */
 function takeBack(
   session: TreeListSession,
   step: TreeStep,

@@ -1,4 +1,3 @@
-/** Which values show as chips and which as empty. */
 import { describe, expect, it } from "vitest";
 import { isChipList, isEmptyValue } from "./property-shapes";
 

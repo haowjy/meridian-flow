@@ -1,4 +1,3 @@
-// Block snapshots, and the echo a write shows of what it changed.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
@@ -7,9 +6,7 @@ import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
   hash: string;
-  /** The block's identity in its document (`ProjectedBlock.key`). */
   key: string;
-  /** Canonical hashless block body. */
   body: string;
   serialized: string;
   node: Block;
@@ -22,7 +19,6 @@ export interface EchoInput {
   agentDeletedBlocks: readonly string[];
 }
 
-/** The agent-visible block lines used by echo and concurrent diffing, over a projection the caller holds. */
 export function snapshotProjected(
   projected: readonly ProjectedBlock[],
   codec: AgentEditCodec,
@@ -40,7 +36,6 @@ export function snapshotProjected(
   }));
 }
 
-/** Build adaptive echo hunks from the post-merge document snapshot. */
 export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   const echoIndexes = uniqueEchoIndexes(input);
   if (echoIndexes.length === 0) return [];
@@ -61,11 +56,6 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   return mergeEchoHunks(hunks);
 }
 
-/**
- * The blocks around `targets`: each target index widened by one neighbour on each side, clamped
- * to the document, merged, in order. The echo's window.
- * A target of -1 (an insert at the start) widens to the first block.
- */
 function windowOf(targets: Iterable<number>, blockCount: number): number[] {
   const indexes = new Set<number>();
   for (const target of targets) {

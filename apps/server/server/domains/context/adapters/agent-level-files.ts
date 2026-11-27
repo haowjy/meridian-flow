@@ -1,9 +1,3 @@
-/**
- * One Agents level's package files, in the documents that hold them. A read is one snapshot of
- * the tree; it reads the level's folder only, and the text only of documents whose saved content
- * moved since the last read.
- */
-
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { documents } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
@@ -18,7 +12,6 @@ import type { ContextDocument } from "../ports/context-document-store.js";
 import { type ApplyLevelFilesDeps, prepareLevelFiles } from "./apply-level-files.js";
 import { type Candidate, candidatesOf } from "./level-file-candidates.js";
 
-/** A bound on retained texts across all levels this adapter reads. */
 const CACHED_TEXTS = 2000;
 
 export function createAgentLevelFiles(
@@ -28,7 +21,6 @@ export function createAgentLevelFiles(
 
   async function versionsOf(ids: string[]): Promise<Map<string, string>> {
     if (ids.length === 0) return new Map();
-    // Every save of the document's Live room moves its `content_seq`.
     const rows = await currentDrizzleDb(deps.db)
       .select({ id: documents.id, seq: documents.contentSeq })
       .from(documents)
@@ -36,7 +28,6 @@ export function createAgentLevelFiles(
     return new Map(rows.map((row) => [row.id, String(row.seq)]));
   }
 
-  /** The document's text, read again only when a save moved it since the cached read. */
   async function storedText(document: ContextDocument, version: string | undefined) {
     const cached = texts.get(document.id);
     if (cached && version !== undefined && cached.version === version) return cached.text;
@@ -79,7 +70,6 @@ export function createAgentLevelFiles(
             else files[path] = text;
           }
         };
-        // A home document has no project of its own: its links read in the project asking.
         if (input.projectId)
           await deps.links.within(
             { projectId: input.projectId, viewer: { accountId: input.userId } },

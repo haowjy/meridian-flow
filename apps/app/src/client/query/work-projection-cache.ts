@@ -1,4 +1,3 @@
-/** Canonical cache convergence for committed Work entity and thread-binding facts. */
 import type { Query, QueryClient } from "@tanstack/react-query";
 import { invalidateProjectChatFeed } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";

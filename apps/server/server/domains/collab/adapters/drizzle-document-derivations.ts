@@ -1,4 +1,3 @@
-/** Lock-scoped cuts of the Live room and compare-and-set writes of document derived outputs. */
 import type { LoroDocument } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -29,7 +28,6 @@ import {
 } from "../domain/ports/document-derivations.js";
 import { liveLocationVersion, staleForSweep } from "./drizzle-block-text.js";
 
-/** Reads a copy of the document's Live room inside the caller's transaction. */
 export type ReadLiveCopy = (documentId: DocumentId) => Promise<LoroDocument>;
 
 /**
@@ -53,12 +51,10 @@ export async function captureDocumentDerivation(
     .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
     .where(eq(documents.id, documentId))
     .limit(1);
-  // A derive scheduled before the document was purged settles with nothing to do.
   if (!row) return null;
   const address = await lastAddress(documentId);
   if (row.inLive && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
-  // Under the deleted-ancestor rule a document in a deleted folder or Work holds no address.
   const holderUri = address && !address.deleted ? address.uri : null;
   return {
     documentId,
@@ -121,8 +117,6 @@ export async function certifyDocumentDerivation(
     room.extractorVersion === w.extractorVersion
   )
     return true;
-  // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
-  // `ls` shows `updatedAt` to the model and the writer.
   const edited = !(room?.documentHash ?? EMPTY_DOCUMENT_HASH).equals(outputs.documentHash);
   const [updated] = await tx
     .update(documents)
@@ -145,7 +139,6 @@ export async function certifyDocumentDerivation(
   let roomId: number;
   if (room) {
     roomId = room.roomId;
-    // The order array is rewritten only when the order moved: an edit inside a block leaves it.
     const orderMoved =
       room.blockOrder.length !== blockOrder.length ||
       room.blockOrder.some((id, index) => id !== blockOrder[index]);
@@ -246,7 +239,6 @@ export function createDrizzleDocumentDerivationStore(
       return { registered: 0, next: null };
     }
   };
-  /** Every page in scope; each page starts after the last key attempted, so it terminates. */
   const drain = async (scope: Parameters<typeof page>[0]) => {
     let registered = 0;
     let after: string | undefined;
@@ -282,7 +274,6 @@ export function createDrizzleDocumentDerivationStore(
       });
     },
     async stale(page) {
-      // LIMIT bounds returned stale rows, not the cross-table freshness scan.
       const rows = await currentDrizzleDb(db)
         .select({ id: documents.id })
         .from(documents)

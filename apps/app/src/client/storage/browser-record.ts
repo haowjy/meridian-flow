@@ -1,4 +1,3 @@
-/** Best-effort browser records with one version and ownership envelope. */
 export type RecordStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type StorageSource = "session" | "local" | (() => RecordStorage | null);
 

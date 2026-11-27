@@ -1,5 +1,3 @@
-/** Live project removal host; mounted only after Work/bootstrap readiness. */
-
 import { t } from "@lingui/core/macro";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useEndedSources } from "@/client/query/useContextSources";
@@ -22,7 +20,6 @@ const SIGN_IN_EXPIRED = "sign-in-expired";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
-  /** The Work scope: the project's active Work. */
   editorWorkId: string;
   route: Omit<ContextRemovalRoutePort, "goBack">;
 };
@@ -103,11 +100,6 @@ export function ProjectContextRemovalController({
   return null;
 }
 
-/**
- * Recently opened is main's opening history, newest first: the document main showed before
- * `documentId` is the next entry after it that stays. One main never recorded (a draft-only
- * page) was shown after them all, so the first entry that stays is the one before it.
- */
 function shownBefore(
   recent: readonly AccountRecentItem[],
   documentId: string,

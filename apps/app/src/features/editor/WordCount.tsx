@@ -3,7 +3,6 @@ import { countWords } from "@meridian/agent-edit/diff";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useState } from "react";
 
-/** A full-document walk, so it waits for a pause in typing. */
 const COUNT_DELAY_MS = 300;
 
 /** A newline between blocks, or the last word of one and the first of the next would count as one. */
@@ -41,7 +40,6 @@ export function WordCount({ editor }: { editor: Editor }) {
     };
   }, [editor]);
 
-  // Nothing before the room's text arrives: a loading document isn't an empty one.
   if (!words) return null;
   const total = plural(words, { one: "# word", other: "# words" });
   return (

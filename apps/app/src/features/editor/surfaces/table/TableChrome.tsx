@@ -1,5 +1,3 @@
-/** Renders table selection chrome and actions. */
-
 import type { Editor } from "@tiptap/core";
 import type { Command } from "@tiptap/pm/state";
 import { GripHorizontal, GripVertical, Plus } from "lucide-react";
@@ -57,7 +55,6 @@ import { tableChromeCopy } from "./table-copy";
 import "./table-chrome.css";
 
 type Axis = "row" | "column";
-/** The four shapes a table menu takes, each a different thing to act on. */
 type TableMenuShape = Axis | "cells" | "table";
 
 export function TableChrome({ editor }: { editor: Editor }) {
@@ -69,15 +66,12 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const [hovering, setHovering] = useState(false);
   const [openMenu, setOpenMenu] = useState<Axis | null>(null);
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
-  // Where a swept rectangle's menu hangs. Geometry only: which cells it acts on
-  // is the pair of holds beside it, and a screen point cannot say that.
   const [cellMenuAt, setCellMenuAt] = useState<{ x: number; y: number } | null>(null);
   const [sweptCells, holdSweptCells] = useSweptCells(editor);
 
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
 
-  /** The hovered cell has left the manuscript's pane — scrolled out, or taken away by a peer's write. */
   const releaseAnchor = useCallback(() => {
     setOpenMenu(null);
     holdAnchorCell(null);
@@ -95,9 +89,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
     releaseAnchor,
   );
 
-  // A cell a peer took away takes the menu aimed at it with it. The hold is
-  // already gone by the time this runs; what it cannot know is that this
-  // surface had a menu open on it.
   useEffect(() => {
     if (anchorCell === null) {
       setOpenMenu(null);
@@ -105,15 +96,12 @@ export function TableChrome({ editor }: { editor: Editor }) {
     }
   }, [anchorCell]);
 
-  // Either swept cell taken away is a rectangle nobody can name any more, so
-  // the menu aimed at it goes with it rather than re-aiming at what is left.
   useEffect(() => {
     if (sweptCells !== null) return;
     setCellMenuAt(null);
     holdSweptCells(null);
   }, [sweptCells, holdSweptCells]);
 
-  /** The approach. */
   useEffect(() => {
     if (!chrome || !editable) return;
     return chrome.registerHoverAnchor<NodeHold>({
@@ -131,12 +119,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
         const cell = at === null ? null : cellElementAt(editor.view, at.from);
         return cell !== null && pointerHoldsTableChrome(cell, x, y);
       },
-      // A nested table's gap is `holds` territory that also HITS: the pixels
-      // beside the inner frame are on the OUTER table's cell, so the probe
-      // answers fresh and `holds` alone never gets a vote. Both holds resolve
-      // to the cells drawing them now — a held cell a peer took away resolves
-      // to nothing and concedes — and the nesting judgment is the same zone
-      // `holds` reads (`table-anchors.ts`).
       reconcile: (held, hit, { x, y }) => {
         const heldAt = resolveNodeHold(editor.state, held);
         const heldCell = heldAt === null ? null : cellElementAt(editor.view, heldAt.from);
@@ -148,9 +130,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
       onSettle: (hold) => {
         const at = hold === null ? null : resolveNodeHold(editor.state, hold);
         const pos = at?.from ?? null;
-        // Whether the pointer is still on this table is true of the pointer
-        // whatever a menu is doing, and it is what fades the grips out the
-        // moment a menu that was holding them closes.
         setHovering(pos !== null);
         // An open menu owns the anchor: letting a stray hover move the grips out
         // from under the menu would leave it pointing at another row. The
@@ -168,14 +147,11 @@ export function TableChrome({ editor }: { editor: Editor }) {
     [anchorPos, editor],
   );
 
-  /** An open grip menu re-arms its axis whenever the held cell moves. */
   useEffect(() => {
     if (openMenu === null || anchorPos === null) return;
     selectAxis(openMenu);
   }, [anchorPos, openMenu, selectAxis]);
 
-  // A right-click on a grip is the same door as a left-click: one entry point,
-  // so the menu cannot behave differently depending on which button opened it.
   useEffect(() => {
     if (!chrome || !editable) return;
     return chrome.registerContextClaim({
@@ -197,10 +173,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
     });
   }, [chrome, editable, selectAxis]);
 
-  // A rectangle the writer swept by hand is the one table selection no grip
-  // can make, and the only path to merging two arbitrary cells. Nothing above
-  // this rung wants it — the formatting menu admits text selections only — so
-  // without this the right-click lands on silence.
   useEffect(() => {
     if (!chrome) return;
     return chrome.registerContextClaim({
@@ -221,10 +193,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
 
   useTableKeymap(chrome, editable);
 
-  // The kernel's resolved context, not a per-transaction re-render: this
-  // surface's only reading of the document is "is a table selected", and the
-  // context store answers it, notifying when that answer changes rather than
-  // on every keystroke of the chapter.
   const context = useChromeContext(editor);
   const selectedTablePos =
     context.owner === "object" && context.nodeType === "table" ? context.pos : null;
@@ -313,8 +281,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
           )
         : null}
 
-      {/* What a swept rectangle of cells opens, hung off the pointer. The point
-          is where it hangs; the two holds are what it acts on. */}
       <EditorMenu
         editor={editor}
         id="table-cell-menu"
@@ -358,9 +324,6 @@ export function TableChrome({ editor }: { editor: Editor }) {
             align="end"
             trigger={chip}
           >
-            {/* The table's own verbs act on the selected table, and the
-                selection is what keeps this menu mounted at all: it unmounts
-                with the selection rather than outliving it. */}
             <TableMenuContent editor={editor} shape="table" target={{ kind: "selection" }} />
           </EditorMenu>
         )}
@@ -382,7 +345,6 @@ function GripButton({
   axis: Axis;
   label: string;
   piece: TableChromePiece;
-  /** Selects the row or column before the menu opens; the press means both. */
   onArm: () => void;
   children: ReactNode;
 }) {
@@ -432,12 +394,10 @@ function AddTab({
   );
 }
 
-/** Geometry is inline: it is measurement, not theme. */
 function pieceStyle(piece: TableChromePiece): CSSProperties {
   return { left: piece.left, top: piece.top, width: piece.width, height: piece.height };
 }
 
-/** Menu contents, mounted only while the menu is open (Radix keeps its content unmounted otherwise), which is what makes `tableMenuProps` free to read the whole verb matrix — and to read it against the menu's own target rather than against the selection, which a peer's write has already turned into a caret. */
 function TableMenuContent({
   editor,
   shape,
@@ -448,9 +408,6 @@ function TableMenuContent({
   target: TableMenuTarget;
 }) {
   const props = tableMenuProps(editor, target);
-  // The target went away between the click that opened this and this render.
-  // The surface closes the menu on the same fact; an empty list for that frame
-  // is the honest picture, and offering the selection's verbs is not.
   if (!props) return null;
 
   if (shape === "row") return <TableRowMenuItems {...props} />;
@@ -459,10 +416,8 @@ function TableMenuContent({
   return <TableMenuItems {...props} />;
 }
 
-/** The cell positions a claim reports, or null to let the rectangle go. */
 type SweptCellPositions = { anchor: number; head: number } | null;
 
-/** The two cells a swept rectangle is described by, held. */
 function useSweptCells(
   editor: Editor,
 ): [{ anchor: NodeHold; head: NodeHold } | null, (cells: SweptCellPositions) => void] {
@@ -483,7 +438,6 @@ function useSweptCells(
   return [cells, take];
 }
 
-/** Alt+Arrows move the row or the column. */
 function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: boolean) {
   useEffect(() => {
     if (!chrome || !editable) return;
@@ -511,7 +465,6 @@ function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: bo
   }, [chrome, editable]);
 }
 
-/** The hovered cell's geometry, in the overlay's coordinates, followed while the chrome is up. */
 function useTableChromeRects(
   editor: Editor,
   cell: HTMLElement | null,

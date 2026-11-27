@@ -1,4 +1,3 @@
-/** One bounded, fenced lifecycle for first and subsequent writer messages. */
 import type { Thread } from "@meridian/contracts/protocol";
 import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
 import { nextOccurrence } from "@meridian/thread-client";
@@ -28,7 +27,6 @@ export type SubmissionDriverOptions = {
   whenDerived(threadId: string, signal: AbortSignal): Promise<boolean>;
   create(entry: ChatSubmission, signal: AbortSignal): Promise<Thread>;
   created(thread: Thread): void;
-  /** Post a control record (a write-mode switch) to the chat's controls route. */
   postControl(entry: ChatSubmission, signal: AbortSignal): Promise<EnqueueThreadControlResponse>;
   row(entry: ChatSubmission): string;
   status(
@@ -58,12 +56,6 @@ export class ChatSubmissionDriver {
     return this.options.journal.entries().find((entry) => entry.recordId === recordId);
   }
 
-  /**
-   * A switch the server refused stays in the journal with its Retry and Withdraw,
-   * and everything the writer did after it waits: a message would otherwise be
-   * answered in the mode the writer already left. Withdraw releases them at once,
-   * Retry once the switch is admitted.
-   */
   private behindRejectedSwitch(record: ChatSubmission): boolean {
     return this.options.journal
       .entries()
@@ -77,7 +69,6 @@ export class ChatSubmissionDriver {
       );
   }
 
-  /** Each request gets a new deadline. Ownership cancellation is never presented as failure. */
   private async request<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const timeout = new AbortController();
     const timer = setTimeout(
@@ -420,11 +411,6 @@ export class ChatSubmissionDriver {
     );
   }
 
-  /**
-   * A switch is one idempotent POST under its own id, so a repeat after a lost answer
-   * is the original request. A refusal is stored; anything else leaves the record
-   * unresolved and holds the records after it.
-   */
   private async postControl(original: ChatSubmission) {
     // The mark is durable before the request leaves: from here the server may hold the
     // switch, so only its own Withdraw may remove it. A mark that cannot be written means
@@ -443,7 +429,6 @@ export class ChatSubmissionDriver {
       return;
     }
     if (!this.current()) return;
-    // The creation inputs are spent: the thread exists once the server answers a control.
     if (
       !this.write({
         ...entry,
@@ -563,8 +548,6 @@ export class ChatSubmissionDriver {
           return;
         const received = this.options.transferReceived(entry);
         if (this.localFailures.has(entry.recordId) && !received) return;
-        // Only the missing durable mark proves across tabs that the server cannot hold
-        // this send. Keep its destination and derivation intent when returning it.
         if (entry.posted && !entry.creation && !received) {
           const outcome = await this.admissionRequest((signal) =>
             this.options.controller.retireSubmission(

@@ -17,7 +17,6 @@
 import { type LinkAnswerCache, type LinkKey, linkCacheKey } from "./link-resolution";
 
 export type LinkRequester = {
-  /** Ask about this link while it is shown; the return stops watching it. */
   watch(link: LinkKey): () => void;
 };
 

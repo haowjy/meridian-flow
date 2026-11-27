@@ -1,4 +1,3 @@
-/** What a list row needs to be selectable and draggable. */
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { startEntryDrag } from "./drag-session";
 import type { DragEntry, DragSource } from "./entry";
@@ -12,7 +11,6 @@ export function useEntryRow(
     source = "list-row",
   }: {
     active: boolean;
-    /** False for a row that names nothing a drag could act on (a navigation-only folder). */
     draggable?: boolean;
     source?: DragSource;
   },
@@ -20,7 +18,6 @@ export function useEntryRow(
   const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
   return {
     selected,
-    /** Spread on the row's control. */
     rowProps: {
       ...rowProps,
       draggable: Boolean(selection?.draggable && draggable),

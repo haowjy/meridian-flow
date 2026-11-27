@@ -1,9 +1,3 @@
-/**
- * The model-edit crash harness: a scratch database seeded by the parent, a composed server in a
- * child process the parent can kill at a named test hook point, and a second child that recovers.
- * The probes in `../model-edit-*` drive it; each asserts on rows, never on the child's memory.
- */
-
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
@@ -21,11 +15,6 @@ const CHILD_SOURCE = join(dirname(fileURLToPath(import.meta.url)), "child.mts");
 
 let bundled: Promise<string> | undefined;
 
-/**
- * The child as one bundled file. Starting it through tsx transpiles the server's whole import
- * graph on each boot (about 8 s); the bundle starts in about 1 s, which is what lets a probe
- * kill a process per case. The workspace's own source is inlined, other packages stay external.
- */
 function childBundle(): Promise<string> {
   bundled ??= (async () => {
     const outdir = join(tmpdir(), `model-edit-child-${process.pid}`);
@@ -72,14 +61,12 @@ export type Message = {
   [k: string]: unknown;
 };
 
-/** A composed server process. `exited` resolves with its signal or exit code. */
 export class Child {
   readonly exited: Promise<string>;
   private readonly lines: Message[] = [];
   private readonly waiters: (() => void)[] = [];
   private nextId = 1;
   private readonly proc: ChildProcess;
-  /** The application name of this process's connections. */
   readonly name = `mec-${randomUUID()}`;
 
   private constructor(url: string, bundle: string, pool: number) {
@@ -100,14 +87,12 @@ export class Child {
     );
   }
 
-  /** `pool` is the child's connection count: 2 unless a case runs two commands in one process. */
   static async start(url: string, pool = 2): Promise<Child> {
     const child = new Child(url, await childBundle(), pool);
     await child.waitFor((m) => m.event === "ready", 60_000);
     return child;
   }
 
-  /** The first message matching `match` not yet taken; waits for it. */
   async waitFor(match: (m: Message) => boolean, timeoutMs = 30_000): Promise<Message> {
     const until = Date.now() + timeoutMs;
     for (;;) {
@@ -121,7 +106,6 @@ export class Child {
     }
   }
 
-  /** Sends an op without waiting for it to settle; returns its id. */
   post(op: Record<string, unknown>): number {
     const id = this.nextId++;
     this.proc.stdin?.write(`${JSON.stringify({ ...op, id })}\n`);
@@ -135,7 +119,6 @@ export class Child {
     return answer.result;
   }
 
-  /** Waits for the child to reach the armed `point`. */
   at(point: string, timeoutMs?: number): Promise<Message> {
     return this.waitFor((m) => m.event === "at" && m.point === point, timeoutMs);
   }
@@ -152,7 +135,6 @@ export class Child {
     return this.call({ op: "release", point });
   }
 
-  /** Waits for the child to die, as the case's kill point should make it; fails if it does not. */
   async died(timeoutMs = 15_000): Promise<string> {
     const outcome = await Promise.race([
       this.exited,
@@ -161,12 +143,10 @@ export class Child {
     return outcome;
   }
 
-  /** Shortens a tool's registered timeout in this process. */
   timeout(tool: string, ms: number) {
     return this.call({ op: "timeout", tool, ms });
   }
 
-  /** SIGKILL, from outside: a death no handler sees. */
   kill(): Promise<string> {
     this.proc.kill("SIGKILL");
     return this.exited;
@@ -181,10 +161,6 @@ export class Child {
   }
 }
 
-/**
- * A Work with its draft and `n` chats in it, none with a turn yet (a chat the writer just
- * opened). `mode` is the chats' write mode.
- */
 export async function seedWorkWithChats(
   h: Awaited<ReturnType<typeof openHarness>>,
   label: string,
@@ -193,7 +169,6 @@ export async function seedWorkWithChats(
 ) {
   const seeded = await h.seedWork(label);
   await h.raw`insert into context_sources(work_id,slug,scope) values (${seeded.workId},'scratch','work')`;
-  // seedWork's own chat already has a finished turn; drop it so the chat starts empty.
   await h.raw`delete from thread_works where thread_id=${seeded.threadId}`;
   await h.raw`delete from turns where thread_id=${seeded.threadId}`;
   await h.raw`delete from threads where id=${seeded.threadId}`;
@@ -209,11 +184,6 @@ export async function seedWorkWithChats(
   return { ...seeded, threadIds };
 }
 
-/**
- * The scratch harness over `url`, shaped like a project the app made: the source is named
- * `manuscript` so a model's `manuscript://` paths resolve, and the project has its "no Work" row
- * (a model's `undo` reads it).
- */
 export async function openModelEditHarness(url: string) {
   const h = await openHarness(url);
   await h.raw`update context_sources set slug='manuscript' where id=${h.ids.source}`;
@@ -225,10 +195,6 @@ export async function openModelEditHarness(url: string) {
 
 type Harness = Awaited<ReturnType<typeof openModelEditHarness>>;
 
-/**
- * Waits until the chat has `count` assistant turns, the latest complete, errored or interrupted.
- * A takeover adds a turn, so a case that expects the old run's turn and the new one passes 2.
- */
 export async function waitForAssistantTurn(
   h: Harness,
   threadId: string,
@@ -247,7 +213,6 @@ export async function waitForAssistantTurn(
   }
 }
 
-/** One result block's outcome in a word: what the model was shown the call did. */
 function resultLabel(content: { result?: Record<string, unknown>; content?: unknown }): string {
   const result = content.result ?? {};
   const message = String(result.message ?? "");
@@ -256,12 +221,6 @@ function resultLabel(content: { result?: Record<string, unknown>; content?: unkn
   return String(result.status ?? result.code ?? "unknown");
 }
 
-/**
- * What the model was shown, from collab's evidence rows: the source block id of each of the
- * chat's document observation frontiers (the `tree` room holds the names a result showed, not a
- * document), oldest first. This one function reads them, so a change to
- * where the evidence lives changes it alone; `model-edit-evidence` asserts on it.
- */
 export async function frontierSources(h: Harness, threadId: string) {
   const found = await h.raw<{ source: string }[]>`
     select source_block_id as source from observation_frontiers
@@ -269,7 +228,6 @@ export async function frontierSources(h: Harness, threadId: string) {
   return found.map((row) => row.source);
 }
 
-/** The ids of the chat's `tool_result` blocks, in order. */
 export async function resultBlockIds(h: Harness, threadId: string) {
   const found = await h.raw<{ id: string }[]>`
     select b.id from turn_blocks b join turns t on t.id=b.turn_id
@@ -277,10 +235,6 @@ export async function resultBlockIds(h: Harness, threadId: string) {
   return found.map((row) => row.id);
 }
 
-/**
- * The statuses of the model-edit command rows of this chat's calls, in call order. A command's id
- * comes from the stored response's id and the call id.
- */
 async function commandStatuses(h: Harness, threadId: string) {
   const uses = await h.raw<{ response: string; call: string }[]>`
     select b.model_response_id as response, b.content->>'toolCallId' as call
@@ -297,11 +251,6 @@ async function commandStatuses(h: Harness, threadId: string) {
   return statuses;
 }
 
-/**
- * What a case asserts on, from stored rows only: the live document's paragraphs, the assistant
- * turns' statuses, each result block's outcome in call order, the edit receipts' call ids and
- * the model-edit command rows' statuses.
- */
 export async function state(h: Harness, threadId: string, documentId: string) {
   const results = await h.raw<{ call: string; content: Parameters<typeof resultLabel>[0] }[]>`
     select b.content->>'toolCallId' as call, b.content as content
@@ -314,7 +263,6 @@ export async function state(h: Harness, threadId: string, documentId: string) {
         select status from turns where thread_id=${threadId} and role='assistant' order by position`
     ).map((turn) => turn.status),
     results: results.map((r) => `${r.call}:${resultLabel(r.content)}`),
-    // The receipts of this chat's calls: another chat on the document has its own.
     edits: (
       await h.raw<{ call: string }[]>`
         select e.tool_call_id as call from document_edits e
@@ -327,7 +275,6 @@ export async function state(h: Harness, threadId: string, documentId: string) {
   };
 }
 
-/** The probe's source's documents whose name starts with `prefix`: by name, and whether each is in Trash. */
 export async function documentsNamed(h: Harness, prefix: string) {
   return h.raw<{ id: string; name: string; deleted: boolean }[]>`
     select id, name, trashed_at is not null as deleted from tree_nodes
@@ -335,10 +282,6 @@ export async function documentsNamed(h: Harness, prefix: string) {
     order by name`;
 }
 
-/**
- * Cuts a child's session claim on its chats' runs, as a dropped connection does: its advisory
- * locks go, so another process can take the runs over while this one is alive and held.
- */
 export async function dropRunClaim(h: Harness, child: Child) {
   const dropped = await h.raw`
     select pg_terminate_backend(a.pid) from pg_locks l join pg_stat_activity a on a.pid=l.pid
@@ -346,7 +289,6 @@ export async function dropRunClaim(h: Harness, child: Child) {
   if (dropped.length === 0) throw new Error("the child holds no run claim");
 }
 
-/** Waits for a connection blocked on a `commands` insert: a resolve waiting on a key. */
 export async function waitForKeyWaiter(h: Harness, timeoutMs = 10_000) {
   const until = Date.now() + timeoutMs;
   for (;;) {
@@ -359,7 +301,6 @@ export async function waitForKeyWaiter(h: Harness, timeoutMs = 10_000) {
   }
 }
 
-/** The arguments a scripted model uses to insert `content` into the document at `path`. */
 export const insertCall = (id: string, path: string, content: string) => ({
   id,
   name: "write",
@@ -369,21 +310,15 @@ export const insertCall = (id: string, path: string, content: string) => ({
 export type CaseContext = {
   h: Harness;
   url: string;
-  /** Starts a child; every child a case starts is stopped when it ends. */
   start(pool?: number): Promise<Child>;
 };
 
 export type ModelEditCase = {
   name: string;
-  /** What a passing run shows, in one sentence. */
   expected: string;
   run(ctx: CaseContext): Promise<void>;
 };
 
-/**
- * Runs each case against one scratch database (a case seeds its own Work, so cases do not
- * disturb each other) and exits nonzero if any fails. A case's children are stopped afterwards.
- */
 export async function runCases(probe: string, cases: readonly ModelEditCase[]): Promise<void> {
   const started = Date.now();
   const scratch = await createScratchDatabase();
@@ -424,14 +359,12 @@ export async function runCases(probe: string, cases: readonly ModelEditCase[]): 
   process.exit(failed);
 }
 
-/** The document's `manuscript://` path: its name without the extension, as the model is shown it. */
 export async function namePath(h: Harness, documentId: string) {
   const [{ stem }] = await h.raw<{ stem: string }[]>`
     select stem from tree_nodes where id=${documentId}`;
   return `manuscript://${stem}`;
 }
 
-/** A Work with one chat and a live document holding `text`, for one case. */
 export async function seedCase(
   h: Harness,
   label: string,
@@ -444,7 +377,6 @@ export async function seedCase(
   return { work, thread: work.threadIds[0] as string, documentId: doc.documentId as string, path };
 }
 
-/** Sends the chat a message as the writer; the run starts behind it. */
 export function send(
   child: Child,
   h: Harness,

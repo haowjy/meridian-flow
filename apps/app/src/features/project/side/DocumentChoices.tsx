@@ -16,19 +16,10 @@ const RECENT_LIMIT = 6;
 const FIND_LIMIT = 12;
 const FIND_SCHEMES: readonly ProjectContextTreeScheme[] = ["manuscript", "kb", "user"];
 
-/** The folder that holds a document, as a row's meta: it tells two chapters of one name apart. */
 function parentFolder(path: string | undefined): string | undefined {
   return path?.split("/").filter(Boolean).slice(0, -1).at(-1);
 }
 
-/**
- * The documents to pick from, as one list: search, the documents open in main's tabs, recently
- * opened ones, then the file explorer. Beside a chat it picks what sits beside; Review changes
- * picks another file to compare against, with its other choices as `lead`. A document that can't open in the editor
- * can't sit beside: search, tabs and recents leave it out and the explorer lists it
- * disabled; each source says whether its document is editable. It renders in the side's dropdown and in the side's empty pane alike. Recents are only
- * offered here; nothing derives the side from them. `choose` writes the current document.
- */
 export function DocumentChoices({
   projectId,
   current,
@@ -37,10 +28,8 @@ export function DocumentChoices({
   searchRef,
 }: {
   projectId: string;
-  /** The document the list marks as picked. */
   current: string | null;
   choose: (documentId: string) => void;
-  /** Sections above the documents, which a search hides. */
   lead?: ReactNode;
   searchRef?: Ref<HTMLInputElement>;
 }) {

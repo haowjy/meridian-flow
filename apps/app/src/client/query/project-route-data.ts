@@ -1,10 +1,3 @@
-/**
- * project-route-data — server-side loader helper that fetches a project's
- * threads + works (forwarding cookies) and seeds them into the
- * React Query cache before the workspace renders. Owns the project route's
- * SSR data priming so project data is ready on a cold refresh.
- */
-
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
@@ -70,7 +63,6 @@ export async function loadProjectRouteData(projectId: string): Promise<ProjectRo
   };
 }
 
-/** When the route's read of each project's threads began, by the clock. */
 const threadsReadAt = new WeakMap<QueryClient, Map<string, number>>();
 
 export function seedProjectRouteData(

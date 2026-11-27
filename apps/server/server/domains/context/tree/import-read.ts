@@ -1,4 +1,3 @@
-/** Import snapshots over Context's live tree authority. */
 import {
   canonicalContextUri,
   contextRootUri,

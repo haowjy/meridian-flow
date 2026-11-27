@@ -1,5 +1,3 @@
-/** Markdown-syntax block codec registrations. */
-
 export { codeBlockCodec } from "./code-block.js";
 export { hardBreakCodec } from "./hard-break.js";
 export { horizontalRuleCodec } from "./horizontal-rule.js";

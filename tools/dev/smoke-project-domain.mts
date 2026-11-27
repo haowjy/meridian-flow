@@ -1,11 +1,3 @@
-/**
- * Manual/runtime smoke for Meridian project, work, and thread repositories
- * against the local Postgres database.
- *
- * Run after `pnpm dev:infra` and `pnpm bootstrap` (schema):
- *   pnpm smoke:project-domain
- */
-
 import { resolve } from "node:path";
 import { devAuthIdentity } from "@meridian/contracts/dev-auth";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";

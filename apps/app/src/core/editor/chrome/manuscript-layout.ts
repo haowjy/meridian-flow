@@ -22,10 +22,6 @@
 
 import type { Editor } from "@tiptap/core";
 
-/**
- * Re-run `schedule` whenever the manuscript may have moved under `observed`,
- * coalesced to one call per frame. Returns the teardown.
- */
 export function watchManuscriptLayout(
   editor: Editor | null,
   observed: readonly (Element | null | undefined)[],

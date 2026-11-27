@@ -1,15 +1,3 @@
-/**
- * The paste policy for `[[Name]]`: which pastes convert, and the
- * catalog they convert against. The conversion itself is `wikilink-paste.ts`.
- *
- * It hooks `transformPasted`, the one prop every paste kind (Markdown through
- * the paste door, plain prose, HTML) reaches once, after parsing, so it sees
- * nodes and can leave code alone. Only the Editor mounts it, with a catalog
- * read at paste time; while that catalog is null (the link index still
- * loading) nothing links, rather than every link turning dashed, though
- * escapes are still spelled out.
- */
-
 import { type Editor, Extension } from "@tiptap/core";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -22,7 +10,6 @@ import { remarkKeepWikilinkEscapes } from "./wikilink-escape";
 import { linkPastedWikilinks, type WikilinkPasteCatalog } from "./wikilink-paste";
 
 export type WikilinkPasteOptions = {
-  /** Read at paste time; null converts nothing. */
   catalog: () => WikilinkPasteCatalog | null;
 };
 
@@ -88,9 +75,6 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
               return false;
             },
           },
-          // Paste without formatting (Ctrl/Cmd+Shift+V) is the flag the
-          // Markdown door reads as `plain`: the writer asked for the
-          // characters, and it is how they paste literal brackets.
           transformPastedText: (text, plain) => {
             plainOrCode = plain;
             return text;
@@ -98,15 +82,8 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
           transformPasted: (slice, view) => {
             const keep = plainOrCode;
             plainOrCode = false;
-            // The destination as every paste path resolves it (a keyed paste,
-            // the menu's pasteHTML and pasteText): the drop's pointer, or the
-            // selection. Code is literal characters; a link mark cannot live
-            // there, so converting would keep only the label. A drag inside
-            // the editor moves text it already holds, as written.
             const destination = pendingDrop ?? view.state.selection.$from;
             if (keep || view.dragging || isCode(destination)) return slice;
-            // A catalog still loading links nothing, but the escapes the door
-            // kept are spelled out all the same.
             return linkPastedWikilinks(slice, view.state.schema, read());
           },
         },

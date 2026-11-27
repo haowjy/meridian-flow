@@ -1,4 +1,3 @@
-/** Retains retired sessions and quarantines their room keys until destruction succeeds. */
 import type { DocumentSession } from "./document-session";
 
 type Entry = {

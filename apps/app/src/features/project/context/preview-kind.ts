@@ -1,4 +1,3 @@
-/** Chooses the read-only preview surface from stored tab classification and read data. */
 import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import type { ServerOpenDocument } from "@/client/stores";
 

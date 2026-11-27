@@ -1,24 +1,3 @@
-/**
- * FormattingMenu — the menu a writer asks for in the prose (§5.1).
- *
- * Selection alone raises nothing (law 7): highlighting is how a
- * writer reads and how they point a passage out to the AI, so formatting is
- * asked for by right-click, Menu key, or long press. `useFormattingMenuDoors`
- * owns those three; this file owns what the menu says and what each item does.
- *
- * A right-click over a selection and a right-click at a bare caret both arrive
- * here: the ladder's floor moves the caret to where
- * the writer pointed, so the same items answer for the same block either way.
- * In a table cell the menu carries the row and column lists as well, straight
- * from the grips' own surface.
- *
- * Every item works or greys with a reason, and never disappears (law 5). The
- * marks row reflects and reverses (law 6), Turn into checks the type the block
- * already is and converts back to a paragraph when it is chosen again, and the
- * clipboard staples are here so taking the browser's menu costs the writer
- * nothing they used daily.
- */
-
 import type { Editor } from "@tiptap/core";
 import {
   Bold,
@@ -140,8 +119,6 @@ function MarkButton({
   const Icon = MARK_ICONS[id];
 
   return (
-    // Icon-only, so the row's own tooltip names it — from `aria-label`, whether
-    // or not it can run.
     <EditorMenuItem
       aria-label={label}
       aria-pressed={state.active || undefined}
@@ -161,8 +138,6 @@ function TurnInto({ model, editor }: { model: FormattingMenuModel; editor: Edito
   const label = turnIntoLabel();
   const blockedReason = formattingBlockedMessage("block-type", model.turnIntoBlockedBy);
 
-  // Every type refuses for one reason, so the list is not worth opening: the
-  // trigger greys in the list's place and answers for all of them.
   if (blockedReason) {
     return (
       <EditorMenuItem blockedReason={blockedReason}>

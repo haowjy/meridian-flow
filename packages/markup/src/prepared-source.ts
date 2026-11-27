@@ -1,8 +1,5 @@
-/** Source text after ingress preparation, with boundaries mapped to the caller's text. */
-
 export interface PreparedSource {
   value: string;
-  /** Present only when preparation changed coordinates. */
   originalOffsets?: readonly number[];
 }
 

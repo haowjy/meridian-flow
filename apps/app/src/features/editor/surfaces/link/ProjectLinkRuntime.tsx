@@ -1,27 +1,3 @@
-/**
- * The Editor's adapter over the app's link follower: where an internal link in
- * this editor actually goes.
- *
- * The editor core knows a link is internal and nothing else; the project, the
- * Work, and the router are the app's, and resolving and
- * following belong to [`features/links`](../../../links/AGENTS.md). This
- * supplies the Editor's three parts (its scope, its destination, and the store
- * its outcome is reported into), registers the follower as the navigator a
- * click is handed to and as the store's follow handlers, and renders nothing.
- * Registering the navigator is also what makes the link menu's Open link verb
- * appear at all: absent until something can follow, never dead (law 5).
- *
- * What a follow FOUND is reported into the link store, and the surface that
- * says it out loud mounts through the chrome host
- * ([`FollowOutcomeDialog`](FollowOutcomeDialog.tsx)). A dialog opened from here
- * would be a transient surface the kernel never heard about — and this one can
- * open a quarter second late, long after the writer summoned something else.
- *
- * A holder location change, a base URI arriving, and a rename are all scope
- * changes the follower re-registers on, so nothing here remounts the
- * collaborative editor.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo } from "react";
 
@@ -44,9 +20,6 @@ import { useLinkPlacement } from "@/features/project/review-launch";
 
 import { useEditorScope } from "../../editor-scope";
 
-/**
- * The Editor's destination: the document opens in main, using the holder's link scope.
- */
 export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
@@ -68,7 +41,6 @@ export function useEditorLinkDestination(): LinkDestination {
   );
 }
 
-/** Runtime over the scope's document index and the holder address supplied by its surface. */
 export function ProjectLinkRuntime({
   editor,
   documentId,
@@ -77,13 +49,7 @@ export function ProjectLinkRuntime({
   active,
 }: {
   editor: Editor | null;
-  /** The document holding the links: the scope is one document's text. */
   documentId: string;
-  /**
-   * The document's own address: what its relative links are relative to.
-   * Null until the tree carrying it arrives, which is a link with no answer
-   * yet rather than a missing document.
-   */
   baseUri: string | null;
   index: LinkableDocumentIndex;
   active: boolean;
@@ -94,8 +60,6 @@ export function ProjectLinkRuntime({
   const open = useEditorLinkDestination();
   const startDrag = useReferenceDragStart();
 
-  // The holder's Work arrives with its resource record. Until then the scope is
-  // pending, so a click waits for the real scope instead of being dropped.
   const scope = useMemo<LinkResolutionScope | "pending" | null>(
     () =>
       !active || !projectId
@@ -118,8 +82,6 @@ export function ProjectLinkRuntime({
     }),
     [surface],
   );
-  // Inactive or project-less is scope null: the follower aborts and dismisses on its own.
-  // `active` also clears a follow still pending when its editor goes to the back.
   const follower = useLinkFollower({ scope, index, resolution, open, reporter, active });
 
   useEffect(() => {
@@ -128,14 +90,11 @@ export function ProjectLinkRuntime({
       follower.follow(target, ref);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
-    // A selected link drags as the entry it names, whatever draft the holder shows.
     const unregisterDragSource = startDrag
       ? surface.registerDragSource(({ entry, name, event }) =>
           startDrag(event, { ref: entry, name }),
         )
       : () => {};
-    // What the outcome dialog's Close, Cancel, and Try again mean is the
-    // follower's: it knows which follow owns what is shown.
     const unregisterHandlers = surface.registerFollowHandlers({
       dismiss: follower.dismiss,
       retry: follower.retry,

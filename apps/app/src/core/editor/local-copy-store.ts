@@ -1,19 +1,10 @@
-/**
- * The local copy of one room in IndexedDB (design §6, "The local copy"): a `snapshot` record per
- * doc key and an `updates` log of envelope batches, appended from local commits and remote imports
- * alike. Opening reads both; the session imports them, writes fresh snapshots and clears the log
- * (`compact`). The `meta` store keeps what the server is known to hold (`server`, a room
- * version) and the content-initialization marker.
- */
 import type { DocKey } from "@meridian/document-model";
 
 const VERSION = 1;
 const SNAPSHOTS = "snapshots";
 const UPDATES = "updates";
 const META = "meta";
-/** The room version the server is known to hold. */
 export const SERVER_META = "server";
-/** Set once the copy has held the server's content: its first sync. */
 export const INITIALIZED_META = "content-initialization";
 
 export type LoadedCopy = {
@@ -73,10 +64,6 @@ export async function readCopy(db: IDBDatabase): Promise<LoadedCopy> {
   };
 }
 
-/**
- * One copy's store, open for a session. Writes are queued in order; `flushed()` settles once every
- * write issued so far is durable.
- */
 export class LocalCopyStore {
   private chain: Promise<void> = Promise.resolve();
   private closed = false;
@@ -95,7 +82,6 @@ export class LocalCopyStore {
     return readCopy(this.db);
   }
 
-  /** Append one envelope batch to the log. */
   append(batch: Uint8Array): Promise<void> {
     return this.queue(async () => {
       const transaction = this.db.transaction(UPDATES, "readwrite");
@@ -104,10 +90,6 @@ export class LocalCopyStore {
     });
   }
 
-  /**
-   * Replace the log with snapshots taken now. Writes run in order, so every batch appended before
-   * this call is in the snapshots, and every one after is appended after the log is cleared.
-   */
   compact(snapshots: ReadonlyMap<DocKey, Uint8Array>): Promise<void> {
     return this.queue(async () => {
       const transaction = this.db.transaction([SNAPSHOTS, UPDATES], "readwrite");

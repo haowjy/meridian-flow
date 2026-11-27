@@ -1,14 +1,3 @@
-/**
- * The one component that interprets an owner spelling: who a handle or near-miss name stands for
- * in the caller's project, and what to tell the model about it (deleted Works, name and handle
- * collisions, dropped sigils, handle-shaped names, subagent handles). The router, the receipt
- * notice, the thread tools and the `work` tool all consume its answers, so they name only
- * addresses that resolve and show each handle beside its label.
- *
- * Storage questions are narrow: a handle is one indexed `(project_id, handle)` read and a name is
- * one bounded read. Only discovery (`ls scratch://@`) lists every Work. Policy authorization is a
- * separate concern and never lives here.
- */
 import {
   formatParsedContextUri,
   type OwnedContextUriScheme,
@@ -20,9 +9,7 @@ import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ScratchLineages } from "./scratch-owner.js";
 
 export interface ChatFileAddresses {
-  /** The chat's uploads, `uploads://@c15/`. */
   uploads: string;
-  /** Its Work's Scratch (`scratch://@w3/`), or in No Work its lineage's (`scratch://@c12/`). */
   scratch: string;
 }
 
@@ -32,52 +19,37 @@ export interface WorkOwner {
   handle: WorkHandle;
   name: string;
   state: WorkOwnerState;
-  /** Days left to restore a deleted Work; null while it is not deleted or the window has passed. */
   restorableDays: number | null;
 }
 
-/** A row of `ls scratch://@` or `ls uploads://@`: the owner's address and the label beside it. */
 export interface OwnerRow {
   uri: string;
   label: string;
 }
 
-/** An address note for a receipt: a sentence to print on its own line, or the owner's label. */
 export type OwnerReceiptNote = { notice: string } | { owner: string };
 
-/** The one error for a Work handle that names no Work. It names no Work and lists none. */
 export function unknownWorkMessage(handle: string): string {
   return `Unknown Work ${handle}.`;
 }
 
-/** The owner the caller's own port supplies for a concrete no-handle repair. */
 export interface ContextualOwner {
   kind: "work" | "chat";
   handle: string;
 }
 
-/** A Work handle or name the `work` tool copied: the Work it reaches, or what to say instead. */
 export type WorkReference = { ok: true; work: WorkOwner } | { ok: false; message: string };
 
 export interface OwnerLookup {
-  /** A live chat of `projectId` by its `c` handle: where its files are. Null for anything else. */
   chat(projectId: string, ref: string): Promise<ChatFileAddresses | null>;
-  /** Why a Work handle reaches nothing: unknown, or deleted and perhaps still restorable. */
   unknownWork(projectId: string, handle: string): Promise<string>;
-  /** A near-miss owner spelling answered with the real owner; `fallback` is the lookup-free answer. */
   slipReason(
     projectId: string,
     slip: OwnerSlip,
     fallback: string,
     own: ContextualOwner | null,
   ): Promise<string>;
-  /** The Work a handle names (deleted ones included), or the handle its name answers to. */
   workReference(projectId: string, ref: string): Promise<WorkReference>;
-  /**
-   * What a read or write result says about its address: a collision or dropped-sigil `notice` (its
-   * own line), else, for an explicit owner address, the owner's current `owner` label (the receipt
-   * puts it in parentheses after the path). Null for bare addresses.
-   */
   notice(
     projectId: string,
     requestedPath: string,
@@ -90,21 +62,14 @@ export interface OwnerLookup {
 export interface OwnerLookupDeps {
   chats: ChatUploadsOwners;
   lineages: ScratchLineages;
-  /** The handle of the named Work the chat is bound to; null in No Work. */
   namedWorkHandle(threadId: string): Promise<string | null>;
-  /** The `c` handle of the chat a `p` handle belongs to; null when there is no such subagent. */
   subagentChatRef(projectId: string, ref: string): Promise<string | null>;
-  /** One Work by handle, deleted ones included: the indexed `(project_id, handle)` read. */
   workByHandle(projectId: string, handle: string): Promise<WorkOwner | null>;
-  /** The few non-deleted Works whose name equals or collapses to `name`; a bounded read. */
   worksNamed(projectId: string, name: string): Promise<WorkOwner[]>;
-  /** Every non-deleted Work of the project: discovery only. */
   listWorks(projectId: string): Promise<WorkOwner[]>;
-  /** Chats of the project that have uploaded files, with their titles. */
   chatsWithFiles(projectId: string): Promise<{ chatRef: string; title: string | null }[]>;
 }
 
-/** Two spellings of one name compare equal: `Tea Notes` and `tea-notes`. */
 export function workNameKey(name: string): string {
   return name
     .normalize("NFKD")
@@ -114,10 +79,8 @@ export function workNameKey(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** How many Works `worksNamed` returns at most. */
 export const NAMED_WORK_CANDIDATES = 5;
 
-/** The non-deleted Works a name stands for: the exact matches first, else the look-alikes. */
 export function worksNamedLike<T extends { name: string; state?: WorkOwnerState }>(
   works: readonly T[],
   name: string,
@@ -156,19 +119,16 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
     return chatRef && files ? { ...files, chatRef } : null;
   }
 
-  /** The Work a name stands for when it stands for exactly one. */
   async function workNamed(projectId: string, name: string): Promise<WorkOwner | null> {
     const matches = worksNamedLike(await deps.worksNamed(projectId, name), name);
     return matches.length === 1 ? (matches[0] ?? null) : null;
   }
 
-  /** Names may repeat: a name shared by Works answers with every handle, and picks none. */
   async function sharedName(projectId: string, name: string): Promise<string | null> {
     const candidates = await deps.worksNamed(projectId, name);
     const matches = worksNamedLike(candidates, name);
     if (matches.length < 2) return null;
     const handles = matches.map((work) => `${work.handle} "${work.name}"`).join(", ");
-    // The lookup stops at its cap, so a full page may hide more Works.
     const count =
       candidates.length >= NAMED_WORK_CANDIDATES
         ? `${NAMED_WORK_CANDIDATES} or more`
@@ -257,7 +217,6 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
     if (authority.kind === "work" || authority.kind === "lineage") {
       const handle = authority.kind === "work" ? authority.workHandle : authority.rootThreadRef;
       const named = await workNamed(projectId, handle);
-      // No collision: the receipt still names the owner beside the path.
       if (!named || named.handle === handle) {
         if (authority.kind === "work") {
           const work = await deps.workByHandle(projectId, handle);
@@ -338,7 +297,6 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
   };
 }
 
-/** The lookup answering for one project, which is how a port's router asks. */
 export interface ProjectOwners {
   chat(ref: string): Promise<ChatFileAddresses | null>;
   unknownWork(handle: string): Promise<string>;
@@ -357,7 +315,6 @@ export function bindOwners(lookup: OwnerLookup, projectId: string): ProjectOwner
   };
 }
 
-/** A lookup that knows no owners, for ports built without a database. */
 export const emptyOwnerLookup: OwnerLookup = {
   chat: async () => null,
   unknownWork: async (_projectId, handle) => unknownWorkMessage(handle),

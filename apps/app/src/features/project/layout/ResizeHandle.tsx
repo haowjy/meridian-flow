@@ -1,16 +1,3 @@
-/**
- * ResizeHandle provides imperative pointer resizing for stable slot grids.
- *
- * Purpose: resize a CSS-grid track without routing every pointermove through
- * React. Key decision: the handle is absolutely positioned so its transparent
- * hit target can straddle a zero-width grid seam while the narrow visible pill
- * remains centered; pointer capture plus a drag-time full-viewport shield keeps
- * drags reliable over editors and other rich surfaces, and the assignment map
- * receives the committed width only on pointerup or keyboard commit.
- *
- * `measure` re-reads the pane's live size and bounds when an interaction
- * starts, for panes whose default size is content-driven.
- */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -22,17 +9,14 @@ function clamp(value: number, min: number, max: number): number {
 export type ResizeHandleProps = {
   gridRef: React.RefObject<HTMLElement | null>;
   cssVariableName: `--${string}`;
-  /** `null` leaves the variable unset: the pane keeps its default size. */
   widthPx: number | null;
   minWidthPx: number;
   maxWidthPx: number;
   onCommit: (widthPx: number) => void;
-  /** The pane's live size and bounds, read when a drag or key press begins. */
   measure?: () => { value: number; min: number; max: number };
   ariaLabel: string;
   className?: string;
   keyboardStepPx?: number;
-  /** Use -1 for handles on a right-side panel's left edge. */
   dragDirection?: 1 | -1;
 };
 
@@ -70,7 +54,6 @@ export function ResizeHandle({
     gridRef.current?.style.setProperty(cssVariableName, `${widthPx}px`);
   }, [cssVariableName, gridRef, widthPx]);
 
-  /** Re-read a content-sized pane's live size and bounds as an interaction starts. */
   const beginMeasured = useCallback(() => {
     boundsRef.current = { min: minWidthPx, max: maxWidthPx };
     if (!measure) return;
@@ -109,7 +92,6 @@ export function ResizeHandle({
     activePointerIdRef.current = null;
     dragOriginRef.current = null;
     setDragging(false);
-    // A click that moved nothing (the first half of a double-click) commits nothing.
     if (liveWidthRef.current !== startWidth) onCommit(liveWidthRef.current);
   }, [onCommit]);
 
@@ -177,12 +159,7 @@ export function ResizeHandle({
           className,
         )}
         style={{ touchAction: "none" }}
-      >
-        {/* No visible grip — region separation is tonal, and any colored pill
-            reads as debris on the shelf edge. The col-resize cursor is the
-            hover affordance; keyboard focus shows via the container's
-            focus-ring; drag feedback is the moving seam itself. */}
-      </div>
+      ></div>
       {dragging ? (
         <div
           data-stable-layout-resize-shield

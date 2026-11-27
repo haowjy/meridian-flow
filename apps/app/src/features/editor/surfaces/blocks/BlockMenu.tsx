@@ -1,20 +1,3 @@
-/**
- * The block menu: what the handle opens (§5.8).
- *
- * Five verbs about one block — move up, move down, duplicate, turn into,
- * delete — anchored at the handle so the manuscript stays readable beside it.
- *
- * Two law-5 shapes, and the difference is deliberate. A move that has nowhere
- * to go is ABSENT: a block already at the top of the document has no "up", and
- * saying so would be a row that exists to be dead. A conversion that the
- * schema refuses is PRESENT and greyed, because the writer asked for something
- * real and is owed the answer — a code fence keeps its language, an embedded
- * component keeps its props. The answer arrives when they reach the row, from
- * the shared row's tooltip, so every refused row here wears `blockedReason`
- * rather than Radix's `disabled`, which would take hover and focus away and
- * the reason with them.
- */
-
 import type { Editor } from "@tiptap/core";
 import { ArrowDown, ArrowUp, CopyPlus, Trash2, Type } from "lucide-react";
 
@@ -42,9 +25,7 @@ import type { BlockTarget } from "./block-targets";
 
 export type BlockMenuProps = {
   editor: Editor;
-  /** The block the handle points at, re-resolved on every render. */
   target: BlockTarget;
-  /** The handle's own position: the menu hangs off it, not off the pointer. */
   at: { x: number; y: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,8 +53,6 @@ export function BlockMenu({
       open={open}
       onOpenChange={onOpenChange}
       at={at}
-      // Left of the margin the handle already lives in, so the menu never
-      // covers the sentence the writer is deciding about.
       side="left"
       align="start"
       className="min-w-56"
@@ -104,11 +83,6 @@ export function BlockMenu({
   );
 }
 
-/**
- * Turn into is for text blocks (§5.8). A figure, a table, a rule, or a rendered
- * diagram has no block type to change, so the row is absent rather than
- * present and refusing — the deepest form of law 5.
- */
 function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarget }) {
   if (!target.node.isTextblock || isEditorObject(target.node)) return null;
 
@@ -117,8 +91,6 @@ function TurnIntoSection({ editor, target }: { editor: Editor; target: BlockTarg
   const refused = targets.filter((option) => option.blockedBy);
   const reason = refused[0]?.blockedBy ? blockTypeReasonMessage(refused[0].blockedBy) : null;
 
-  // Nothing here can run: one row carrying the answer beats a submenu of dead
-  // ones.
   if (refused.length === targets.length) {
     return (
       <EditorMenuItem blockedReason={reason}>

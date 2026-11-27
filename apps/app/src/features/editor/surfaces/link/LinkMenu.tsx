@@ -1,33 +1,3 @@
-/**
- * The link's context menu — the primary link surface (§5.5, ruled).
- *
- * Every right-click in the editor opens an editor menu and the deepest context
- * wins, so a link takes the claim from the selection or the caret it sits in
- * (`core/editor/chrome/context-claims.ts` is the table; Shift+right-click is
- * the writer's way back to the browser's own menu). The claim already happened
- * in the kernel's ladder by the time this renders; what it owns is the verbs.
- *
- * Every verb here acts on the range the pointer hit, never on the selection.
- * A writer right-clicks a link three paragraphs from the caret constantly, and
- * a menu that quietly edited the caret's link instead would be the worst kind
- * of correct.
- *
- * The clipboard block at the bottom is the formatting menu's, mounted rather
- * than copied: mockup 06 state C ends with Cut, Copy, and Paste, and a writer
- * must meet the same three rows, the same wording, and the same reason for a
- * refusal in whichever menu they opened.
- *
- * Open link is absent, not greyed, when nothing can follow the target (law 5:
- * absent beats disabled). That is the honest state for an internal link while
- * no navigator is registered, and for an href the classifier does not
- * recognize.
- *
- * Copy link address is the one verb here that greys instead of vanishing, and
- * for the reason the Cut/Copy/Paste rows below grey: a withheld clipboard is
- * the browser's answer rather than the link's, it can arrive while the menu is
- * open, and a writer who pressed Copy has to hear that nothing was copied.
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Copy, ExternalLink, Pencil, Unlink } from "lucide-react";
@@ -81,7 +51,6 @@ export function LinkMenu({
         : menu.target
           ? linkTargetLabel(menu.target)
           : menu.href;
-  // A gone link goes nowhere, so the menu has no Open verb for it (law 5).
   const followable =
     canFollowLink(menu.target, surface.navigator) &&
     (resolution?.state !== "gone" || Boolean(goneLinkDocumentId(resolution, { ref: menu.ref })));
@@ -175,10 +144,6 @@ export function LinkMenu({
         {t`Remove link`}
       </EditorMenuItem>
       <EditorMenuSeparator />
-      {/* The same block the formatting menu carries, so the writer meets one
-          Cut wherever they ask for it. What differs is the subject: this menu
-          is aimed at a link, so the verbs take the link — unless the writer
-          had already swept a passage around it, in which case they chose. */}
       <ClipboardMenuItems
         editor={editor}
         closeMenu={close}

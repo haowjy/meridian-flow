@@ -1,4 +1,3 @@
-/** HTTP reads for exact saved child execution reports. */
 import { apiThreadExecutionReportPath } from "@meridian/contracts/protocol";
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import { getJson } from "./http-client";

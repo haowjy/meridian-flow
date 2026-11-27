@@ -1,52 +1,3 @@
-/**
- * What an internal link points at, right now.
- *
- * Resolution is per-request and never persisted (law 9): the mark stores what
- * the link names (a `ref` beside the href it was written with) and whether that
- * document is reachable, and where it lives now, is a question about the
- * project this minute. So the document holds the link and this holds the
- * answer, keyed by the link's whole identity: its ref and the classifier's
- * spelling of its href (`LinkKey`). Two links sharing an href but naming
- * different documents never share an answer, and a second normalizer never
- * appears.
- *
- * Gone is an answer too: a ref whose document was deleted, discarded, or is
- * no longer readable. It is not "nothing at this address yet", and it never
- * falls back to the address.
- *
- * Missing is a normal, rendered state, not an error: serial writers link
- * chapters and characters before they exist. A FAILED request is a different thing
- * entirely and caches nothing, because a link the editor could not ask about
- * must never be drawn as a link that does not exist.
- *
- * The port is the app's: only it knows the project, the work, the URI of the
- * document holding the link, and which documents the project holds. Until one
- * registers, every read is null and the manuscript renders exactly as it did
- * before this module existed.
- *
- * **A registration is a generation, and a generation owns everything true of
- * it** — its answers, the questions it has out, and the counter admitting them.
- * The app re-registers whenever any of those inputs change, so a scope change
- * landing mid-flight is ordinary rather than exotic; a promise already out
- * cannot be recalled, so the generation it was asked in is what it settles
- * against. That is the whole invalidation mechanism: there is no second verb
- * that drops answers, and no caller has to know one.
- *
- * **Local answers never wait on the network.** The port's `local` half runs
- * when a question is asked, so what the scope's own index can say is cached
- * before any request goes out, and a failed request fails only the questions
- * it carried. A local answer may also be provisional: shown at once while the
- * server is still asked, and replaced only by a server answer that names a
- * different document or says the ref is gone.
- *
- * A click outlives a generation. A question someone is waiting on through
- * `resolve()` is asked again in the generation that replaced its own, because
- * the writer asked to go somewhere and a catalog moving underneath them is not
- * an answer. Questions only a shown link or picture asked are dropped with
- * their generation; the editor's requester asks them again when the new one
- * publishes.
- */
-
 import {
   classifyWrittenSource,
   parseLinkRef,
@@ -65,28 +16,12 @@ import {
   linkTargetHref,
 } from "./link-target";
 
-/** A stored link as resolution sees it: what it names and how it is spelled. */
 export type LinkKey = { ref: string | null; href: string };
 
-/**
- * The stored link a link mark's attributes name. The only reading of a mark's
- * `ref` and `href`, so no two surfaces can disagree about which answer a link
- * has (an empty ref is no ref; a malformed one stays, and resolves gone).
- */
 export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }): LinkKey {
   return { ref: storedLinkRef(attrs.ref), href: String(attrs.href ?? "") };
 }
 
-/**
- * The stored link an `image` or `figure` names, or null for a source that is
- * no document address (an `asset:` upload, a web or `data:` URL), which
- * renders as it always has. A picture is answered by the same cache as a
- * link: its source is the href, read under the manuscript-root grammar, so a
- * bare source names the same address a producer stores in full. A picture
- * with no ref resolves by its address, as a ref-less link does; a contextual
- * source (`uploads://seal.png`) is keyed as written with its stored ref,
- * exactly as a contextual link mark is.
- */
 export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown }): LinkKey | null {
   const src = String(attrs.src ?? "");
   const written = classifyWrittenSource(src);
@@ -96,18 +31,12 @@ export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown 
   return { ref, href: storedHref({ kind: written.target, uri: written.uri }, written.suffix) };
 }
 
-/** The one string a `LinkKey` is cached and deduplicated under. */
 export function linkCacheKey(key: LinkKey): string {
   return `${key.ref ?? ""}\u0000${key.href}`;
 }
 
-/** A folder a link names, where it is now. */
 type ResolvedFolderLink = { folderId: string; title: string; uri: string };
 
-/**
- * The folder a link names, or null: its ref's identity, else the folder its
- * answer found at its address. A folder link opens the folder's menu.
- */
 export function linkFolderId(
   entry: LinkResolutionEntry | null,
   link: Pick<LinkKey, "ref">,
@@ -117,23 +46,17 @@ export function linkFolderId(
   return ref?.kind === "folder" ? ref.folderId : null;
 }
 
-/** The draft a hidden document lives in: what the server says a link to it opens in review. */
 export type LinkDraftDestination = { draftId: string };
 
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
-  /** `draft` is present iff the document is hidden ("in a draft"); only its review opens it. */
   | { state: "document"; document: ResolvedDocumentLink; draft?: LinkDraftDestination }
-  /** A folder: drawn with the folder icon, and a click opens its menu instead of following. */
   | { state: "folder"; document: null; folder: ResolvedFolderLink }
   | { state: "missing"; document: null }
-  /** A document the reader cannot read live. A retained Trash identity remains followable. */
   | { state: "gone"; document: null; trashedDocumentId?: string };
 
-/** A settled answer: every entry but pending. */
 export type LinkAnswer = Exclude<LinkResolutionEntry, { state: "pending" }>;
 
-/** The stable document named by a followable gone link, if its ref names one directly. */
 export function goneLinkDocumentId(
   entry: LinkResolutionEntry | null,
   link: Pick<LinkKey, "ref">,
@@ -144,19 +67,8 @@ export function goneLinkDocumentId(
   return ref?.kind === "doc" ? ref.documentId : null;
 }
 
-/** One question for the port: the link's ref and its classified internal target. */
 export type LinkQuestion = { ref: string | null; target: LinkTarget };
 
-/**
- * What the scope knows about one question without the network.
- *
- * - `answered`: the scope's own answer, final for the generation; the server
- *   is not asked.
- * - `unasked`: the question cannot be asked here (a relative path with no
- *   base, say). Cached like a failure: no answer, never drawn as missing.
- * - `ask`: the server answers. A `provisional` answer is shown at once and
- *   stands unless the server answers `gone` or a different document.
- */
 export type LocalLinkAnswer =
   | { kind: "answered"; answer: LinkAnswer }
   | { kind: "unasked" }
@@ -164,76 +76,21 @@ export type LocalLinkAnswer =
 
 export type DocumentAnswer = Extract<LinkAnswer, { state: "document" }>;
 
-/**
- * The port. `local` runs synchronously when a question is asked, so local
- * answers are cached before any network call and no server failure can touch
- * them. `remote` gets only the questions `local` sent on, at most `MAX_BATCH`
- * at a time, and answers in question order; null for one question is a
- * failure of that question. Throwing fails that batch and nothing else.
- * Without `local`, every question goes to `remote`.
- */
 export type InternalLinkResolver = {
-  /**
-   * The local document index the port answers from, which is also what a
-   * link written into the holder is assigned against. Absent for a port with none.
-   */
   index?: LinkAssignmentIndex | null;
   local?: (question: LinkQuestion) => LocalLinkAnswer;
   remote: (questions: readonly LinkQuestion[]) => Promise<readonly (LinkAnswer | null)[]>;
 };
 
 export type LinkAnswerCache = {
-  /**
-   * Calls back on every change. An upload's change passes the ids it touched, so a chip that
-   * stands for one upload can ignore the others' progress; any other change passes nothing.
-   */
   subscribe: (listener: (uploadsChanged?: ReadonlySet<string>) => void) => () => void;
-  /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
-  /**
-   * The URI of the document holding the links, as the live registration
-   * stated it: what a relative link's family is drawn from before it
-   * resolves. Null with no registration, or before the holder is known.
-   */
   readonly baseUri: string | null;
-  /**
-   * What a link written into the holder is assigned against (`link-assignment.ts`):
-   * its address, its project, and the local document index the live
-   * registration was made with. Null with no registration.
-   */
   readonly assignment: LinkAssignmentScope | null;
-  /**
-   * The answer for this link as it stands, or null when there is nothing to
-   * say: an external link, an unclassifiable one, a failed request, no port
-   * yet, or a file still on its way up, which the server calls gone until it
-   * lands. Pure — a renderer may call it as often as it likes.
-   */
   read: (link: LinkKey) => LinkResolutionEntry | null;
-  /**
-   * True when this generation's last question about the link failed (or
-   * could not be asked). A link nobody has asked about yet is not failed: a
-   * renderer that reads null for one is waiting on the scan, not on a retry.
-   */
   failed: (link: LinkKey) => boolean;
-  /** Ask about every internal link here that has no answer yet. */
   request: (links: Iterable<LinkKey>) => void;
-  /**
-   * The answer, waited for — what a click needs, because the writer is already
-   * asking to go there. Null carries the same "nothing to say" meaning, and a
-   * previous failure is retried rather than remembered. A provisional answer
-   * waits for the server, which may still say gone or name another document. A registration landing
-   * while this waits asks the question again in the new generation rather than
-   * answering null; only unregistering (or destroying) the port does that.
-   */
   resolve: (link: LinkKey) => Promise<LinkResolutionEntry | null>;
-  /**
-   * Registers the port and starts a generation with it. Every answer and every
-   * failure the previous one produced is gone at that moment, which is what
-   * makes this the app's only invalidation: register again and the last
-   * generation's answers are unreachable. `baseUri` is part of what the
-   * generation is true of, so a base arriving is a new registration; so is
-   * the assignment context (project, and the port's own index).
-   */
   registerResolver: (
     resolve: InternalLinkResolver,
     options?: { baseUri?: string | null; projectId?: string | null },
@@ -244,12 +101,6 @@ export type LinkAnswerCache = {
 const PENDING: LinkResolutionEntry = Object.freeze({ state: "pending", document: null });
 const ASK: LocalLinkAnswer = Object.freeze({ kind: "ask", provisional: null });
 
-/**
- * The server's answer, measured against the provisional one shown meanwhile:
- * the server wins only when it says something different about identity (gone,
- * or another document). Anything else, a failure included, keeps the local
- * answer the writer is already looking at.
- */
 function settledOver(
   provisional: DocumentAnswer | null,
   entry: LinkResolutionEntry | null,
@@ -258,7 +109,6 @@ function settledOver(
   if (entry?.state === "gone") return entry;
   if (entry?.state === "document") {
     if (entry.document.documentId !== provisional.document.documentId) return entry;
-    // The same document: the local index's location stays, and the server adds what it alone knows.
     return entry.document.file
       ? { ...provisional, document: { ...provisional.document, file: entry.document.file } }
       : provisional;
@@ -266,12 +116,6 @@ function settledOver(
   return provisional;
 }
 
-/**
- * How many batches are in flight at once, and how many links one batch asks
- * about. A chapter can carry hundreds of links; they go to the port in
- * batches the resolve endpoint accepts, and the cache makes it one question
- * per distinct link for as long as the generation lasts.
- */
 const MAX_IN_FLIGHT = 4;
 const MAX_BATCH = 200;
 
@@ -287,41 +131,29 @@ type Request = {
   readonly generation: Generation;
   readonly promise: Promise<LinkResolutionEntry | null>;
   readonly settle: (entry: LinkResolutionEntry | null) => void;
-  /** The local answer shown while the server is asked; see `settledOver`. */
   readonly provisional: DocumentAnswer | null;
-  /** Someone is waiting through `resolve()`, so retirement carries it forward. */
   awaited: boolean;
 };
 
-/** Everything true of one registration of the port. */
 type Generation = {
   readonly resolver: InternalLinkResolver;
   readonly baseUri: string | null;
   readonly assignment: LinkAssignmentScope;
-  /** Answers, keyed by the link's ref and the classifier's spelling of its href. */
   readonly answers: Map<string, LinkResolutionEntry>;
-  /**
-   * Keys whose last question failed. Usually no answer stands beside one; a
-   * kept provisional answer may, and a click asks again about it.
-   */
   readonly failed: Set<string>;
-  /** The one question out for a key, queued or in flight. */
   readonly asking: Map<string, Request>;
   readonly queue: Request[];
-  /** How many of THIS generation's questions the port is holding. */
   running: number;
 };
 
 export function createLinkAnswerCache(): LinkAnswerCache {
   const listeners = new Set<() => void>();
-  /** The only generation anyone can read. Null until a port registers. */
   let current: Generation | null = null;
 
   const publish = () => {
     for (const listener of listeners) listener();
   };
 
-  /** The cache key of an internal link, or null for anything else. */
   const internalLink = (link: LinkKey): { key: string; question: LinkQuestion } | null => {
     const target = classifyLinkTarget(link.href);
     if (!target || !isInternalLinkTarget(target)) return null;
@@ -420,7 +252,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     return promise;
   };
 
-  /** Ask on behalf of a `resolve()` caller, so retirement knows to carry it. */
   const askAwaited = (
     generation: Generation,
     key: string,
@@ -433,14 +264,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     return promise;
   };
 
-  /**
-   * Nothing this generation was asked can be answered any more. Queued
-   * questions are dropped, and the ones already out are abandoned. A waiter
-   * from `resolve()` is asked again in the live generation, if there is one;
-   * every other waiter hears null now rather than a fact about a project state
-   * that moved. Its answers go with the generation itself, which nothing can
-   * reach again.
-   */
   const retire = (generation: Generation) => {
     generation.queue.length = 0;
     const next = current !== generation ? current : null;
@@ -455,7 +278,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
   return {
     subscribe(listener) {
       listeners.add(listener);
-      // What `read` says of a link also turns on whether its file is still sending.
       const unsubscribeUploads = uploads.subscribe((changed) => listener(changed));
       return () => {
         listeners.delete(listener);
@@ -502,8 +324,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
         asked = true;
       }
       pump(generation);
-      // Pending and local answers are states a renderer may show, so say them
-      // once rather than per link — and never when nothing actually changed.
       if (asked) publish();
     },
 
@@ -518,7 +338,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       // (whose gone or other document wins), or asks again if it failed.
       const settled = !generation.asking.has(key) && !generation.failed.has(key);
       if (known && known.state !== "pending" && settled) return known;
-      // A click is the writer asking again, so a failure is worth retrying.
       generation.failed.delete(key);
       const answer = askAwaited(generation, key, question);
       if (generation.answers.get(key) !== known) publish();

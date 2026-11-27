@@ -21,7 +21,6 @@ export function openDocumentMatchesRoute(tab: OpenDocument, target: RouteLocator
     : tab.rootThreadId === undefined && tab.workId === target.workId;
 }
 
-/** The locator a tab is shown at. */
 export function routeTargetForTab(tab: OpenDocument): ContextRouteRequest {
   if (tab.kind === "new") return { scheme: "unfiled", path: "", documentId: tab.documentId };
   if (isWorkScopedScheme(tab.scheme) && !tab.rootThreadId && !tab.workId)

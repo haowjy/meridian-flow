@@ -1,5 +1,3 @@
-// Receipts project accepted evidence. Reporting failure never changes acceptance.
-
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { isEmptyDocument } from "@meridian/prosemirror-schema";
@@ -14,12 +12,10 @@ interface AcceptedEdit {
   commandName: DocumentCommandName;
   writeId: string;
   durableWriteId: string;
-  /** Keys (`BlockSnapshot.key`) of the blocks the edit changed and removed. */
   touchedBlocks: readonly string[];
   deletedBlocks: readonly string[];
   copied?: CopySummary;
 }
-/** Pure rendering over the owner's accepted cuts; no documents or admission operations. */
 export function renderReceipt(
   edit: AcceptedEdit,
   before: readonly BlockSnapshot[],
@@ -52,11 +48,6 @@ export function renderReceipt(
   });
 }
 
-/**
- * An edit that did not land because what it named changed, as the model reads it: nothing was
- * kept anywhere, and the text it was planned against is no longer what stands. The host adds
- * the document as it now stands after the message; none of this asks for a retry.
- */
 export function returnedWriteResult(
   why: ReturnedWhy,
   detail: { removal?: DocumentRemovalRecord | null; work?: string; thisChat?: string } = {},

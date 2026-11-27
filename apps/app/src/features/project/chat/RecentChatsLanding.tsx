@@ -1,8 +1,3 @@
-/**
- * RecentChatsLanding — the chat lane's Recent chats page: the project's chats, newest activity
- * first, grouped as Recently opened groups documents, each with its Work. Picking one opens it in
- * main. The list is the server's chat feed, paged, and its search is the feed's title search.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
@@ -27,7 +22,6 @@ import { relativeTime } from "../relative-time";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { projectAddressHref } from "../routing/project-address";
 
-/** Main's recent chats: main's surface, so the focus main gives lands on its first row. */
 export function RecentChatsLanding({ projectId }: { projectId: string }) {
   return (
     <MainSurface joined className="flex min-h-0 flex-1 flex-col">
@@ -43,8 +37,6 @@ function ChatsLanding({ projectId }: { projectId: string }) {
   const now = useMinuteClock();
   const startChat = () => void chat.openNewChat();
 
-  // No chats at all: the heading and search promise a list that does not exist. A cleared
-  // search's empty results, kept while the full list loads, don't say that.
   if (
     !search &&
     !feed.isPending &&
@@ -85,7 +77,6 @@ function ChatsLanding({ projectId }: { projectId: string }) {
             search={search}
             now={now}
             onOpen={(chatId) => {
-              // The landing gives way to the chat: main's focus follows to its composer.
               focusMain();
               void chat.openChat(chatId);
             }}
@@ -184,7 +175,6 @@ function RecentChatRow({
   onOpen: (chatId: string) => void;
 }) {
   return (
-    // The row's inset hangs outside the column, so names stay on the heading's edge.
     <div className="-mx-1.5">
       <ListRow
         href={projectAddressHref({ projectId, destination: { kind: "chat", chatId: item.id } })}
@@ -194,7 +184,6 @@ function RecentChatRow({
         detail={
           item.work ? <WorkName work={{ ...item.work, name: item.work.title, projectId }} /> : null
         }
-        // The age is for the eye; the row's name is the chat and its Work.
         meta={<span aria-hidden>{relativeTime(item.lastActivityAt, now)}</span>}
       />
     </div>

@@ -1,5 +1,3 @@
-// Resolves agent-visible block hashes to document positions with structured ambiguity.
-
 import type { BlockRef } from "../handles.js";
 import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 
@@ -11,7 +9,6 @@ import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 export interface HashLocateContext {
   model: DocumentModel;
   projected: readonly ProjectedBlock[];
-  /** `projected`'s refs, in order. */
   blocks: readonly BlockRef[];
 }
 
@@ -70,10 +67,6 @@ function ambiguousHashMessage(
   return `Block hash "${hash}" is ambiguous (matches: ${candidateHashes}).`;
 }
 
-/**
- * An explicit `version: "live"` read can name a block absent from the diverged
- * draft the write changes. Seeded drafts retain their live block addresses.
- */
 function hashNotFoundMessage(hash: string): string {
   return `Block hash "${hash}" was not found in the version your writes change. Hashes from \`version: "live"\` can't target it.`;
 }

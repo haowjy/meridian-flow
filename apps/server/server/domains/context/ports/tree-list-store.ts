@@ -1,10 +1,3 @@
-/**
- * The project tree's list as the server stores it (`@meridian/project-tree`): the one function
- * that admits records, whoever made them, and writes the tree's rows in the same transaction.
- * The rows are never the truth and never trail the list: a failure anywhere before the commit
- * leaves no record and no row.
- */
-
 import type { TreeWriter } from "@meridian/project-tree";
 
 /**
@@ -13,7 +6,6 @@ import type { TreeWriter } from "@meridian/project-tree";
  */
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
-/** One list's copy handed to a change or a read: the writer on it, and the list's id. */
 export type ListWriter = { writer: TreeWriter; list: string };
 
 /**
@@ -37,7 +29,6 @@ export class TreeRefusal<R = unknown> extends Error {
   }
 }
 
-/** What a commit added to the list: the update every other copy of it needs. */
 export type CommittedTreeUpdate = {
   listId: string;
   /** The Loro update of the client's new records, with the stamps the server appended after them. */

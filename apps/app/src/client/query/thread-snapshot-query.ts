@@ -19,21 +19,16 @@ export type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnap
 
 export class StaleThreadSnapshot extends Error {}
 
-/** What the live host adds: the account's abort signal, and the checks on a response. */
 export type SnapshotGuard = {
   accountSignal: AbortSignal;
-  /** Throws for a snapshot this tab must not publish (wrong identity, older than live changes). */
   accept(snapshot: ReturnType<typeof deserializeThreadSnapshot>): void;
 };
 
-/** The live host's options. Passive readers use `useThreadSnapshotCache` instead. */
 export function threadSnapshotQueryOptions(threadId: string, guard?: SnapshotGuard) {
   return queryOptions({
     queryKey: threadQueryKeys.snapshot(threadId),
     queryFn: async ({ signal }): Promise<DeserializedThreadSnapshot> => {
       const requestSignal = guard ? AbortSignal.any([guard.accountSignal, signal]) : signal;
-      // A response the guard rejects throws here, so Query never publishes it: an obsolete
-      // HTTP success cannot become history or handoff authority.
       const snapshot = deserializeThreadSnapshot(
         await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
       );
@@ -44,11 +39,6 @@ export function threadSnapshotQueryOptions(threadId: string, guard?: SnapshotGua
   });
 }
 
-/**
- * The cached snapshot query state for a thread (data, error, timestamps), or undefined before
- * the key exists. Observer-free: a cache subscription filtered to this key, over stable
- * `getQueryState` reads.
- */
 export function useThreadSnapshotCache(
   threadId: string | null,
 ): QueryState<DeserializedThreadSnapshot, Error> | undefined {

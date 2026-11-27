@@ -1,5 +1,3 @@
-/** Canonical MDX plugin and convenience codec preset. */
-
 import type { Schema } from "prosemirror-model";
 import { createMarkupCodec } from "../codec.js";
 import type { ComponentRegistry } from "../components.js";

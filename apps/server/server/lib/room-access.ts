@@ -1,13 +1,5 @@
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 
-/**
- * Joined rooms by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
- * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
- * of its own files, its scratch and the documents only it has, and no manuscript, kb or user
- * room. A room is named by document, not by owner, so room names can't answer this.
- */
-
-/** One admitted room of a socket; `revoke` ends it so the client rejoins. */
 export type RoomRegistration = { revoke(why?: ClosedOwnerWhy): void };
 
 export function createRoomAccessIndex() {
@@ -34,7 +26,6 @@ export function createRoomAccessIndex() {
       }
     },
     unregister,
-    /** Closes every connection whose access this owner decides. */
     revokeOwner(ownerKey: string, why?: ClosedOwnerWhy): void {
       for (const registration of [...(byOwner.get(ownerKey) ?? [])]) {
         unregister(registration);

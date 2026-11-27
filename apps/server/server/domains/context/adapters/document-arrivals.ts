@@ -1,4 +1,3 @@
-/** Drizzle arrival hooks: namespace-only locks plus the ahead registry's settlement. */
 import type { Database } from "@meridian/database";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { LinkAheadRegistry } from "../ports/link-ahead-registry.js";

@@ -32,7 +32,6 @@ function cell(type: "table_header" | "table_cell", text: string): JSONContent {
   return { type, attrs: {}, content: [paragraph(text)] };
 }
 
-/** Header H1 H2 over body rows A and B: the shape every case starts from. */
 function mount(
   rows: string[][] = [
     ["A1", "A2"],
@@ -90,7 +89,6 @@ function selectCells(current: Editor, anchor: string | number, head: string | nu
   );
 }
 
-/** The position before the cell at a grid coordinate, spans aside. */
 function cellPositionAt(current: Editor, row: number, column: number) {
   const table = tableNode(current);
   let pos = 1;
@@ -131,7 +129,6 @@ const bullets = (...items: string[]): JSONContent[] =>
     content: [{ type: "text", text }],
   }));
 
-/** One body row of two block-capable cells under the standard header. */
 function mountCellBlocks(left: JSONContent[], right: JSONContent[]) {
   editor = new Editor({
     extensions: createStandaloneEditorExtensions(),
@@ -161,7 +158,6 @@ function mountCellBlocks(left: JSONContent[], right: JSONContent[]) {
   return editor;
 }
 
-/** The merged body cell's blocks as `[type, text]` pairs, in reading order. */
 function mergedCellBlocks(current: Editor): [string, string][] {
   const merged = tableNode(current).child(1).child(0);
   const blocks: [string, string][] = [];
@@ -171,13 +167,11 @@ function mergedCellBlocks(current: Editor): [string, string][] {
   return blocks;
 }
 
-/** The document survives the wire: serialize, reparse, same blocks. */
 function expectWireFixpoint(current: Editor) {
   const codec = mdxCodec({
     schema: current.schema,
     components: {},
   });
-  // Markdown carries no ids.
   const blocks = [...current.state.doc.content.content].map(withoutBlockIds);
   const reparsed = codec.parse(codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS)).blocks;
   expect(reparsed.map((block) => block.toJSON())).toEqual(blocks.map((block) => block.toJSON()));
@@ -186,9 +180,6 @@ function expectWireFixpoint(current: Editor) {
 describe("merge and split", () => {
   it("keeps a hard break and an inline image, which carry no text at all", () => {
     const current = mount();
-    // A cell whose only content is a hard break reads as empty to
-    // `textContent` and as FILLED to prosemirror-tables: its paragraph merges
-    // in whole rather than being skipped as an empty cell.
     const breakCell = cellPositionAt(current, 1, 1);
     current.view.dispatch(
       current.state.tr.replaceWith(
@@ -202,16 +193,13 @@ describe("merge and split", () => {
 
     const merged = tableNode(current).child(1).child(0);
     expect(merged.attrs.colspan).toBe(2);
-    // The break's paragraph lands whole after "A1".
     expect(merged.child(0).textContent).toBe("A1");
     expect(merged.child(1).lastChild?.type.name).toBe("hard_break");
-    // Nothing was pushed out of the table on the way.
     expect(current.state.doc.childCount).toBe(2);
   });
 });
 
 describe("merging block-capable cells", () => {
-  /** Merge the two body cells, then assert the document is legal and survives the wire. */
   function mergeBodyRow(current: Editor) {
     current.view.dispatch(
       current.state.tr.setSelection(

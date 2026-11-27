@@ -1,7 +1,3 @@
-/* Review changes (ReviewChangesExtension): Live's text of a changed paragraph above the draft's
-   (Inline) or beside every paragraph (Side by side), in muted ink, with separated word highlights
-   on main's alpha ladder: tint 12%, emphasis 22%, line 40%. No strike-through, no mixed sentences.
-   The reference is read-only DOM, never document text. */
 .meridian-editor .ProseMirror.meridian-review {
   --review-add-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
   --review-add-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
@@ -11,8 +7,6 @@
   --review-del-line: color-mix(in oklab, var(--color-destructive) 40%, transparent);
 }
 
-/* Room in the right margin for each change's pair: the trailing inset is at least its width, and
-   the prose keeps its reading measure (editor-column.ts). */
 .meridian-editor .ProseMirror.meridian-review {
   --prose-trail: 4rem;
 }
@@ -25,7 +19,6 @@
   scroll-margin: 64px 0 96px;
 }
 
-/* Softer than the draft's ink, and still easy to read beside it. */
 .meridian-editor .ProseMirror .meridian-review-ref {
   margin: 0 0 0.375em;
   color: color-mix(in oklab, var(--color-paper-ink) 35%, var(--color-muted-foreground));
@@ -33,7 +26,6 @@
   white-space: pre-wrap;
 }
 
-/* Inline, a change (Live's text, then the draft's) stands apart from the prose around it. */
 .meridian-editor .ProseMirror.meridian-review-inline > .meridian-review-chg {
   margin-top: 1.25em;
 }
@@ -77,7 +69,6 @@
   box-shadow: inset 0 -2px 0 0 var(--review-add-line);
 }
 
-/* The change's pair in the right margin, level with its first line. */
 .meridian-editor .ProseMirror .meridian-review-pair {
   position: absolute;
   top: 0;
@@ -115,7 +106,6 @@
   --review-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 
-/* Against another draft: a quiet word, not a glyph. */
 .meridian-editor .ProseMirror .meridian-review-take {
   width: auto;
   padding: 0 6px;
@@ -153,7 +143,6 @@
   color: var(--color-primary-foreground);
 }
 
-/* A change that left the text alone: a one-word tag (Moved, Style, Comment), then a comment's body. */
 .meridian-editor .ProseMirror .meridian-review-note {
   display: flex;
   align-items: baseline;
@@ -172,8 +161,6 @@
   color: var(--color-foreground);
 }
 
-/* A block with no text of its own (a rule, an image): Live's rule muted, or struck in its tint;
-   the draft's, added whole, ringed in the added tint. */
 .meridian-editor .ProseMirror hr.meridian-review-ref {
   margin-block: 0.75em;
   border: 0;
@@ -203,13 +190,8 @@
   -webkit-user-select: none;
 }
 
-/* Side by side: the reference in the left column, the draft in the right. Every paragraph puts one
-   cell in each column, in DOM order (an empty one where a side lacks it), so the grid's rows pair
-   them; margins move to the row gap, so both cells of a row start level. */
 .meridian-editor .ProseMirror.meridian-review-side {
   --review-gutter: 1.25rem;
-  /* Two columns want the pane's width, not one reading measure: a narrow margin either side,
-     the trailing one holding the pairs, centred once the pane is wider than both columns. */
   --review-centring: max(0px, (100% - 76rem) / 2);
   padding-left: calc(var(--review-centring) + 3rem);
   padding-right: calc(var(--review-centring) + 3.5rem);
@@ -234,7 +216,6 @@
   grid-column: 1;
 }
 
-/* A comment's change has no paragraph of its own to pair: it reads across both columns. */
 .meridian-editor .ProseMirror.meridian-review-side > .meridian-review-chg.meridian-review-across {
   grid-column: 1 / -1;
 }
@@ -247,7 +228,6 @@
   left: calc(100% + 6px);
 }
 
-/* A paragraph deleted under the caret, kept while it stays (KeptExtension, design §1). */
 .meridian-editor .ProseMirror .meridian-kept {
   color: var(--color-muted-foreground);
 }

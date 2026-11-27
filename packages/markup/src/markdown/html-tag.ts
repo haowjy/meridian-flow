@@ -20,7 +20,6 @@ export interface HtmlElement {
   name: string;
   attributes: ReadonlyMap<string, string | null>;
   children: HtmlNode[];
-  /** Exact body of an element the caller asked the HTML reader not to interpret. */
   rawContent?: string;
 }
 
@@ -69,7 +68,6 @@ export function decodeHtmlAttribute(value: string): string {
   return parseEntities(value, { attribute: true });
 }
 
-/** The one element `source` holds, or null for anything else at all. */
 export function parseHtml(
   source: string,
   options?: { opaqueElements?: ReadonlySet<string> },
@@ -153,11 +151,6 @@ function opaqueElementClosing(
   return null;
 }
 
-/**
- * `element`'s element children, or null when text the document can see stands
- * between them. Whitespace is layout and passes; anything else means the source
- * is not the shape the caller thought it was.
- */
 export function elementChildren(element: HtmlElement): HtmlElement[] | null {
   const children: HtmlElement[] = [];
   for (const child of element.children) {

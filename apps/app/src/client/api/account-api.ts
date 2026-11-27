@@ -1,4 +1,3 @@
-/** Typed client for authenticated account-level settings. */
 import { type AccountSettings, API_ACCOUNT_SETTINGS_PATH } from "@meridian/contracts/protocol";
 import { getJson, patchJson } from "./http-client";
 

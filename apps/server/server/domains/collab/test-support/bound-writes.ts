@@ -1,7 +1,3 @@
-/**
- * Test helper for whole-document writes: bind the Markdown first (outside any
- * transaction, as production doors do), then write the bound content.
- */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentWriteOrigin, MarkdownDocumentStore } from "../contracts.js";
 import type { BindMarkdownInput, BoundWrite } from "../domain/link-binding.js";
@@ -29,11 +25,6 @@ export async function writeMarkdown(
   });
 }
 
-/**
- * A fake binder's bound write, for ContextFS tests whose document sync is
- * a fake: it certifies the holder as the real one does and carries only the
- * source Markdown, which such fakes store.
- */
 export function fakeBoundWrite({ holder, markdown }: BindMarkdownInput): BoundWrite {
   return {
     holder:

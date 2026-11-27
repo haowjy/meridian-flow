@@ -1,5 +1,3 @@
-/** One history policy for project destinations, secondary choices, and delayed address repair. */
-
 import { type ProjectAddress, parseProjectAddress, projectAddressHref } from "./project-address";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
@@ -41,7 +39,6 @@ export type ProjectLeaveGuard = {
   cancel(): void;
 };
 
-/** Whether the entry already holds exactly this address. */
 function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
   return entry.href === projectAddressHref(address);
 }
@@ -152,9 +149,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
             current.kind === "valid" && !address.settings
               ? { ...address, settings: current.address.settings }
               : address;
-          // A replacement of the entry by itself: another writer (address admission following a
-          // rename) already put this address there. Writing it again only repeats the history
-          // write, so the destination is reached without one.
           if (options.replace && !options.state && sameEntryAddress(port.read(), next)) {
             try {
               prepared?.commit();
@@ -264,7 +258,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
         afterCommit: options.afterCommit,
       });
     },
-    /** Rewrites the current entry in place to its canonical address (bare project → `/chats`). */
     repairAddress(ticket: ProjectNavigationTicket): void {
       if (!isCurrent(ticket)) return;
       const entry = port.read();
@@ -280,7 +273,6 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
-      /** Marks the replaced entry, for what reads its history state. */
       mark?: Record<string, unknown>,
     ): Promise<ProjectAddressReplacement> {
       // Address ownership effects may race a writer's destination command. A

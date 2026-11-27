@@ -91,22 +91,11 @@ export function ImageNodeView(props: NodeViewProps) {
     actions.imageDisplayed();
   };
 
-  // The frame is held for a picture still on its way, and let go by a slot that
-  // is asking something instead: an upload that failed, one nobody can finish,
-  // a picture whose address would not resolve. Those say what happened and offer
-  // a verb, and neither fits inside a measured 32px square (law 5 wants both
-  // read and pressed). Nothing lands out of them either, so there is no line
-  // left to keep still. A stored width goes with it: that size is the picture's,
-  // and a card or a note would be crushed into it.
   const asking =
     mine?.status.kind === "failed" || (!pending && !state.url && state.kind !== "loading");
   const frame = asking ? null : shape;
   const drawnWidth = asking ? null : width;
 
-  // The grips live on the selected state and nowhere else (§5.2's jade ring),
-  // and only over something with a box to drag: a picture, or the measured slot
-  // one is arriving into. A frame that is asking a question instead has given
-  // its box back, and there is nothing there to be a size.
   const box = useRef<HTMLElement | null>(null);
   const resizable =
     objectSelectedInDecorations(props.decorations) &&
@@ -190,14 +179,6 @@ export function ImageNodeView(props: NodeViewProps) {
   );
 }
 
-/**
- * The picture's slot while its bytes travel, and after they failed to.
- *
- * Quiet by design (§5.6): the manuscript is being written around this, so the
- * frame states its name and its progress and nothing else. Failure is the one
- * time it asks for something, because law 5 says a picture that did not arrive
- * may not disappear without saying so.
- */
 function PendingImage({
   entry,
   status,
@@ -264,18 +245,6 @@ function PendingImage({
   );
 }
 
-/**
- * Somebody else's upload, in the slot they put it in.
- *
- * The same quiet frame as an upload of the writer's own, minus everything only
- * the uploading browser can know: no percent (it never leaves that browser), no
- * Retry (these are not our bytes), no Remove (the picture is on its way, and
- * removing the slot would cancel a collaborator's upload by accident).
- *
- * The shape is the uploading client's measurement, announced beside its token,
- * so this slot is already the picture's box (the wrapper wears it, as it does
- * for an upload of the writer's own) and the landing moves no line here either.
- */
 function UploadingElsewhere() {
   return (
     <span
@@ -293,16 +262,6 @@ function UploadingElsewhere() {
   );
 }
 
-/**
- * A slot nobody is filling: the upload was still running when its tab closed, or
- * a redo brought the insert back after its abort.
- *
- * It cannot be retried, because the bytes were one browser's and are gone. So it
- * says that plainly and offers the one thing left to do, rather than a Retry
- * that would do nothing (law 5). A slot whose owner is still live is never
- * drawn this way — that is what the upload token and the owner signal are for
- * (`pending-images.ts`).
- */
 function AbandonedImage({
   editor,
   getPos,
@@ -341,24 +300,6 @@ function AbandonedImage({
   );
 }
 
-/**
- * The box the picture stands in, from the two things that can decide it.
- *
- * A measured FRAME is the file's own size, held by the wrapper so the `<img>`
- * inside can change without the box changing; it is the same size wherever the
- * slot stands, mid-sentence or alone in its paragraph, because a picture is one
- * object at one size. A stored WIDTH is what the writer dragged the picture to,
- * and it wins over the frame — including while the bytes are still travelling,
- * so a slot resized mid-upload lands at the size the writer chose rather than
- * jumping back to the file's. The frame's ratio survives either way, which is
- * what keeps the landing from moving a line.
- *
- * `max-width` still belongs to the CSS: a picture wider than the prose column
- * is the column's business, at any size and from any source. Height is the
- * pane's business, and the box narrows to meet it so the ratio holds. Nothing
- * here reaches the document: the cap depends on the writer's pane, and the
- * stored width does not.
- */
 function imageBoxStyle(
   frame: PendingImageFrame | null,
   width: number | null,

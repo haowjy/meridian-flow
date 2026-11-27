@@ -1,4 +1,3 @@
-/** Disjoint sets of 0..n-1: elements joined by `union` share a `find` root. */
 export class Dsu {
   private parent: number[];
   constructor(n: number) {

@@ -1,14 +1,3 @@
-/**
- * The shell's version: the sidebar's one Live/Draft state, which its version chip shows. On Draft the shell shows the picked
- * Work's tree (live, then the Work's pending records, replayed in the browser), and every tree
- * action, click and Ctrl+Z in the sidebar acts there; on Live it is the live tree. The toggle is
- * offered while the Work has pending changes, and with none the shell is live. Every page shows
- * the version it says (`shownDraft` in `views.ts`): the Work's draft where it has one, else Live,
- * and a page live doesn't have stays on its draft. The page's version chip is the same state:
- * picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
- * (`review-launch`, a review address), sets the toggle; a change of the scope's draft owner puts
- * it on Draft.
- */
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,37 +34,20 @@ import { useScopeDraftOwner } from "./use-work-scope";
 
 export type ShellTreeVersion = {
   version: TreeVersion;
-  /** The Work's tree whichever way the toggle stands, for review; null with no draft. */
   draftVersion: TreeVersion | null;
   showing: "live" | "draft";
-  /** The toggle is offered: a picked Work has drafts to show, or the chat's draft has changes. */
   offered: boolean;
-  /** The draft the toggle shows. */
   draftId: string;
-  /** The picked Work's drafts, which the version chip lists and makes; null for a chat's own. */
   workDrafts: WorkDraftsState | null;
-  /** Shows one of the picked Work's drafts: the toggle goes to Draft on it. */
   pick: (draftId: string) => void;
-  /** The shown draft is deleted: the toggle goes to Live, and Draft is the Work's default again. */
   leave: () => void;
-  /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
   work: Work | null;
-  /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
   name: string | null;
-  /** The documents and folders the Work changes: marked in the tree on Live. Never a count. */
   changed: ReadonlySet<string>;
-  /**
-   * What the Work's review count says: its changed documents and folders, the Changes list's
-   * items, less those a press has in flight.
-   */
   changeCount: number;
-  /** The Work's drafts a press takes whole while it is in flight: they count none. */
   pressedDrafts: ReadonlySet<string>;
-  /** The Work's tree changes, when its list is open; null with no draft. */
   tree: WorkTreeChanges | null;
-  /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
-  /** Sets the toggle: every page that has the Work's draft shows it, or Live. */
   show: (next: "live" | "draft") => void;
 };
 
@@ -85,11 +57,6 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
   return useContext(ShellTreeVersionContext);
 }
 
-/**
- * A Work's review count, the one every surface shows: summed over its drafts, the shown draft's
- * open list (a change made offline or in flight is in it already) and the others' stored counts;
- * else the stored count the Works list carries, which the open list agrees with once it syncs.
- */
 export function reviewCount(shell: ShellTreeVersion | null, work: Work): number {
   const drafts = shell?.work?.id === work.id ? shell.workDrafts?.drafts : null;
   if (shell && drafts)
@@ -119,14 +86,8 @@ export function useDraftTreeVersion(
   return draftId ? draftTreeVersion(draftId, lifecycle) : null;
 }
 
-/** The owner key of a new chat on screen: a scope whose drafts nobody holds yet. */
 const NO_OWNER = "new-chat";
 
-/**
- * Drafts' tree changes by draft, from the browser's replay of each draft's view in each list it
- * spans: what the Changes list builds its folder groups from, including a change not yet admitted
- * (made offline or in flight).
- */
 export function useDraftsTreeChanges(
   projectId: string,
   versions: readonly TreeVersion[],
@@ -168,7 +129,6 @@ export function TreeVersionProvider({
 }: {
   projectId: string;
   chatThreadId: string | null;
-  /** A new chat's composer is on screen: under None, a scope with no drafts. */
   newChat: boolean;
   children: ReactNode;
 }) {
@@ -219,19 +179,15 @@ export function TreeVersionProvider({
     () => new Set(pressedKey ? pressedKey.split(",") : []),
     [pressedKey],
   );
-  // The nodes the tree marks on Live.
   const changed = useMemo(
     () => new Set([...(rows ?? []).map((row) => row.documentId), ...(tree?.folders ?? [])]),
     [rows, tree],
   );
-  // A picked Work's chip stays, so `+ New draft` is always one pick away; a chat's own draft is
-  // offered while it holds changes.
   const offered = listedDraft !== null && (changeCount > 0 || workDrafts.drafts !== null);
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
 
-  // Every page follows the choice (`shownDraft`): writing it is the whole flip.
   const show = useCallback(
     (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
     [accountId, projectId],

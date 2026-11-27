@@ -1,8 +1,3 @@
-/**
- * Heading sections without a document model: the `#slug` rule documents use,
- * and the same sections over plain markdown text, for `skills://` files.
- */
-
 function slugForHeadingText(text: string): string {
   return (
     text
@@ -15,15 +10,10 @@ function slugForHeadingText(text: string): string {
   );
 }
 
-/**
- * A requested `#slug` in the form slugs are made: lowercase, single hyphens.
- * A GitHub-style `#bridge--connective-tissue` then finds `bridge-connective-tissue`.
- */
 export function normalizeRequestedSlug(slug: string): string {
   return slug.toLowerCase().replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
-/** Each heading's `#slug`, in order: its text's slug, numbered from the second repeat on. */
 export function headingSlugs(texts: readonly string[]): string[] {
   const counts = new Map<string, number>();
   return texts.map((text) => {
@@ -34,10 +24,6 @@ export function headingSlugs(texts: readonly string[]): string[] {
   });
 }
 
-/**
- * The last index of the section a heading opens: everything up to the next
- * heading at its level or above. `levelAt` is undefined for a non-heading.
- */
 export function sectionEndIndex(
   count: number,
   headingIndex: number,
@@ -55,9 +41,7 @@ export function sectionNotFoundMessage(slug: string): string {
   return `Section "#${slug}" was not found.`;
 }
 
-/** A markdown heading line and the lines its section spans (`end` exclusive). */
 interface MarkdownSection {
-  /** The heading line as written, e.g. `## Action`. */
   heading: string;
   slug: string;
   start: number;
@@ -67,7 +51,6 @@ interface MarkdownSection {
 const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
-/** The ATX headings of a markdown text, outside fenced code, with their sections. */
 export function markdownSections(markdown: string): {
   lines: string[];
   sections: MarkdownSection[];

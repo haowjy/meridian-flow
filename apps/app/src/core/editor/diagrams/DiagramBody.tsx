@@ -1,25 +1,3 @@
-/**
- * The render layer's three faces (interaction model §5.2).
- *
- * "The page never shows a diagram's syntax" is that section's rule, so a diagram
- * standing in for its own source has three ways to look and none of them is a
- * code block:
- *
- * 1. the render, whenever there is one;
- * 2. the LAST GOOD render plus the parse error, once an edit stops parsing;
- * 3. an error card naming the problem, for source that has never rendered at
- *    all — with Edit source as its one door, the same door Enter and a
- *    double-click open.
- *
- * Provider-neutral: every diagram kind wears the same three faces, and only the
- * markup inside them and the provider's name differ. Everything here changes on
- * the parser's clock, never the selection's; the node view keeps it behind a
- * stable host for exactly that reason.
- *
- * Presentation only. The door out is a callback rather than an engagement this
- * file resolves, so the diagrams module stays free of object physics and the
- * surface that owns the source pane stays the one that opens it.
- */
 import { t } from "@lingui/core/macro";
 import { Code2 } from "lucide-react";
 
@@ -27,12 +5,6 @@ import { Button } from "@/components/ui/button";
 
 import { type DiagramRender, diagramFace } from "./diagram-render-state";
 
-/**
- * Finds the element holding the rendered markup, for the verbs that export the
- * picture the writer is looking at (`surfaces/objects/object-commands.ts`).
- * Every provider's render lands inside `data-diagram-preview` below, so nothing
- * downstream needs to know which provider drew it.
- */
 export const DIAGRAM_PREVIEW_SELECTOR = "[data-diagram-preview]";
 
 export function DiagramBody({
@@ -42,15 +14,8 @@ export function DiagramBody({
   sourceActionLabel = t`Edit source`,
 }: {
   render: DiagramRender;
-  /**
-   * False once the writer has changed the source the render describes. A note
-   * about text they have already replaced is noise: the next render is moments
-   * away and will speak for what is on screen.
-   */
   describesSource: boolean;
-  /** Opens the source the writer has to fix. The one door on the error card. */
   onEditSource: () => void;
-  /** Transcript previews open read-only source; the Editor opens an editable source pane. */
   sourceActionLabel?: string;
 }) {
   const face = diagramFace(render);
@@ -75,9 +40,6 @@ export function DiagramBody({
 
   return (
     <>
-      {/* A render that no longer matches its source. The picture stays — it is
-          still the truest thing on the page about this diagram — but a failure
-          the writer cannot see is one they cannot fix (law 5). */}
       {face === "stale" && describesSource ? (
         <p className="meridian-diagram-parse-note mb-2" role="status">
           {t`Syntax error`}
@@ -87,24 +49,12 @@ export function DiagramBody({
       <div
         className="meridian-diagram"
         data-diagram-preview=""
-        // `render.svg` is a `SanitizedSvg`, which is the only markup this face
-        // can be given: no provider's raw string satisfies the type.
         dangerouslySetInnerHTML={{ __html: render.svg ?? "" }}
       />
     </>
   );
 }
 
-/**
- * Source that has never parsed, said plainly, with its one way out.
- *
- * There is no picture to keep here, and §5.2's "the page never shows a diagram's
- * syntax" holds even when the syntax is the problem: a fence spilled into the
- * chapter as raw code reads as the manuscript itself having broken, and it wears
- * a diagram's hover controls over a wall of text. The card says what the
- * renderer said, verbatim, and hands the writer the same source pane Enter and a
- * double-click open.
- */
 function DiagramErrorCard({
   message,
   onEditSource,

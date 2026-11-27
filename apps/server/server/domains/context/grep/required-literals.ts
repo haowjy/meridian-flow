@@ -1,22 +1,8 @@
-/**
- * The literal text every match of a pattern must contain, read from the pattern
- * source, so a case-insensitive grep can skip a document with a plain substring
- * test before the regex engine reads it. Conservative: any construct it can't
- * place ends the literal run, and a pattern it can't reason about (a flag group,
- * `\Q`) yields nothing.
- */
-
-/** Shortest literal worth a prefilter: one character is in nearly every document. */
 const MIN_LENGTH = 2;
 
-/** `(?i)`, `(?-m)`, `(?s:`: flags change what every later literal means. */
 const FLAG_GROUP = /\(\?(?!:|P?<[A-Za-z_])/u;
 const REPEAT = /^\{\d+(?:,\d*)?\}/u;
 
-/**
- * One required literal per top-level alternative, or undefined when any
- * alternative has none (it could match without any of the others).
- */
 export function requiredLiterals(pattern: string): string[] | undefined {
   if (FLAG_GROUP.test(pattern) || pattern.includes("\\Q")) return undefined;
   const chars = Array.from(pattern);
@@ -39,7 +25,6 @@ export function requiredLiterals(pattern: string): string[] | undefined {
     const char = chars[i] as string;
     if (char === "\\") {
       const next = chars[++i] ?? "";
-      // Escapes that take operands (`\pL`, `\x41`, octal, `\cX`) are not worth parsing.
       if (/[pPxXcC0-9]/u.test(next)) return undefined;
       if (depth > 0) continue;
       if (/[A-Za-z]/u.test(next)) endRun();

@@ -1,12 +1,3 @@
-/**
- * A folder link's menu in the Editor: the drill-in menu inside the folder,
- * hung under the link the writer pressed. A document picked there opens the
- * way this editor's links open documents.
- *
- * It registers as a chrome layer like `EditorMenu`, so the Esc chain knows its
- * place and closing hands the caret back to the prose.
- */
-
 import type { Editor } from "@tiptap/core";
 import { useMemo } from "react";
 
@@ -43,7 +34,6 @@ export function FolderLinkMenu({
   });
   if (!host) return null;
   return (
-    // A menu summoned at a new point is a new menu (see `EditorMenu`).
     <DropdownMenu
       key={folder.seq}
       open

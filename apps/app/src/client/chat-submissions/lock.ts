@@ -1,4 +1,3 @@
-/** Per-thread submission ownership; cancellation releases queued owners. */
 export interface SubmissionLock {
   run<T>(
     accountId: string,
@@ -8,7 +7,6 @@ export interface SubmissionLock {
   ): Promise<T>;
 }
 
-/** Bound even adapters that do not themselves honour cancellation. Late results are ignored. */
 export function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const cleanup = () => signal.removeEventListener("abort", abort);

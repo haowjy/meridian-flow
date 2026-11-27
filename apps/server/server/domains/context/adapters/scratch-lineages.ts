@@ -1,4 +1,3 @@
-/** First-chat identity lookup is independent of discovery of available lineage notes. */
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, exists, isNull, type SQL } from "drizzle-orm";

@@ -1,14 +1,3 @@
-/**
- * ContextDocumentHost — one editable document in a view: its session, its
- * editor, and the review the controller asks for.
- *
- * Main's document, the side's document, the kept one and the phone render
- * through this, each inside its own review (`DocumentReviewProvider`), and differ only in
- * what they pass: whether the surface is on screen (`active`, which stands down chrome that
- * portals to the body), and whether the document is frozen (`readOnly`). The host fills its
- * `relative` parent.
- */
-
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -38,15 +27,9 @@ export type EditableOpenDocument = Extract<OpenDocument, { kind: "tracked" | "ne
 export type ContextDocumentHostProps = {
   projectId: string;
   document: EditableOpenDocument;
-  /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
-  /**
-   * The document as shown is frozen (an archived Work, or a trashed chat's draft under
-   * review); the room's access must agree.
-   */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
-  /** Main's document: the focus main gives goes to its editor or its failure (`joinMain`). */
   inMain?: boolean;
 };
 
@@ -69,7 +52,6 @@ export function ContextDocumentHost({
   const draftRow = draftRows.rows.find((row) => row.documentId === document.documentId);
   const roomKnown = shownDraftId === null || draftRows.status !== "loading";
   const forkDraftId = shownDraftId !== null && !draftRow?.isNew ? shownDraftId : undefined;
-  // The draft's list could not be read: say so here rather than open a room that may be wrong.
   const queryClient = useQueryClient();
   const pinnedOwner = draftRows.status === "failed" ? shownDraftId : null;
   const retryDraftList = pinnedOwner
@@ -131,8 +113,6 @@ export function ContextDocumentHost({
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-          {/* Filename chrome is host-owned: the title chip names the
-                  file, so EditorView renders no redundant header bar. */}
           {failed || !hosted ? null : (
             <>
               {active ? (
@@ -170,8 +150,6 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      // A document only a Work has is plain text in its Live room, open while the Work has it: a
-      // Discard closes the room, and its Undo opens it again.
       workOnly={
         draftRow?.isNew === true || fileForDocument(document.documentId)?.item.isNew === true
       }

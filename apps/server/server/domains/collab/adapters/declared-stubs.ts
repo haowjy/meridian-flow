@@ -1,5 +1,3 @@
-/** Explicit behavior-preserving stubs for compositions without optional integrations. */
-
 import type { TurnReversalAccess } from "../contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type {

@@ -8,7 +8,6 @@ import type { BlockScope } from "./scope.js";
 
 export interface FindContext {
   codec: AgentEditCodec;
-  /** The one projection of the document being resolved against. */
   projected: readonly ProjectedBlock[];
 }
 
@@ -37,7 +36,6 @@ interface SerializedBlockEntry {
   block: BlockRef;
   index: number;
   body: string;
-  /** What separates this body from the previous entry's, as the document writes it. */
   gap: string;
   start: number;
   end: number;
@@ -103,7 +101,6 @@ export function documentEntries(ctx: FindContext): readonly SerializedBlock[] {
   return entries;
 }
 
-/** The blocks `from` to `to` (inclusive) as the document writes them, the first with no gap. */
 export function documentBodies(ctx: FindContext, from: number, to: number): SerializedBlock[] {
   return documentEntries(ctx)
     .slice(from, to + 1)
@@ -111,7 +108,6 @@ export function documentBodies(ctx: FindContext, from: number, to: number): Seri
 }
 
 function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
-  // A scope is a contiguous run of top-level blocks starting at `startIndex`.
   const selected = ctx.projected.slice(scope.startIndex, scope.startIndex + scope.blocks.length);
   const bodies = documentBodies(ctx, scope.startIndex, scope.startIndex + scope.blocks.length - 1);
   let cursor = 0;
@@ -123,7 +119,6 @@ function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBl
   });
 }
 
-/** The entries' Markdown as the document writes it, blank lines and prefixes between blocks included. */
 export function joinEntries(entries: ReadonlyArray<{ body: string; gap: string }>): string {
   return entries.map((entry) => entry.gap + entry.body).join("");
 }
@@ -193,11 +188,9 @@ function invalid(message: string): FindResult {
   return { ok: false, code: "invalid_write", message };
 }
 
-/** The spliced group text and the one span covering every splice in it. */
 export interface SplicedGroup {
   text: string;
   splice: FindSplice;
-  /** Each match's splice in order: where it sits in the old group text and in `text`. */
   cuts: SpliceCut[];
 }
 
@@ -206,11 +199,6 @@ export interface SpliceCut {
   new: { start: number; end: number };
 }
 
-/**
- * Splice the written content into a serialized group at every match: the
- * pre-splice text is `source`, and `splice` gives the offsets ref assignment
- * restores around (§5.4).
- */
 export function spliceFindMatches(
   source: string,
   matches: readonly TextFindMatch[],
@@ -256,13 +244,6 @@ export interface TextWindow {
 const CUT_OPEN = "";
 const CUT_CLOSE = "";
 
-/**
- * Where each cut of `markdown` lands in the text of the blocks it parses to:
- * per block, the text windows the cuts cover. Found by parsing the markdown with
- * a private-use mark at each cut edge, so syntax never has to be mapped by hand.
- * Null when the marks changed the parse or landed outside text (a link target),
- * so the windows can't be trusted.
- */
 export function cutTextWindows(
   ctx: Pick<FindContext, "codec">,
   markdown: string,

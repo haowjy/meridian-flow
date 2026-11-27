@@ -1,20 +1,9 @@
-/**
- * Writer-facing copy for the formatting menu: every item's label, and the
- * reasons an item greys.
- *
- * The reasons are the toolbar's — same codes, same wording, because a writer
- * who learned why Bold is grey on the toolbar should not have to learn it
- * again in the menu. Only one reason is the menu's own: no toolbar control
- * pastes, so no toolbar copy explains a browser that keeps the clipboard from
- * the page.
- */
 import { t } from "@lingui/core/macro";
 
 import { shortcutLabel } from "../../chrome/shortcut-label";
 import { type BlockedSubject, blockedReasonMessage, type ToolbarBlockedReason } from "../toolbar";
 import type { FormattingClipboardId, FormattingMarkId } from "./formatting-menu-items";
 
-/** The toolbar's reasons plus the two only a clipboard control can hit. */
 export type FormattingBlockedReason =
   | ToolbarBlockedReason
   | "clipboard-read-blocked"
@@ -52,7 +41,6 @@ export function clipboardLabel(id: FormattingClipboardId): string {
   }
 }
 
-/** The clipboard staples keep their shortcuts: the menu is not the fast path. */
 export function clipboardShortcut(id: FormattingClipboardId): string {
   switch (id) {
     case "cut":

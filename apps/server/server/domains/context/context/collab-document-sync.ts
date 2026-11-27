@@ -1,12 +1,3 @@
-/**
- * Collab-backed whole-document writes for ContextFS. The adapter keeps ContextFS
- * provenance vocabulary out of the collab domain while routing agent/human
- * writes through the richer write APIs that return attribution metadata.
- *
- * Content arrives bound (`BoundWrite`): ContextFS binds it before
- * opening its command transaction, and this runs inside that transaction. A
- * fresh write that finds the document already holds content is `stale_target`.
- */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { DocumentSyncError } from "../../collab/domain/markdown-document.js";
 import type {

@@ -1,4 +1,3 @@
-/** Postgres `ModelEvidence` over `observation_frontiers` and `thread_shown_links`. */
 import { createHash } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import { loroRoomName } from "@meridian/contracts/protocol";
@@ -45,10 +44,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
   const amongBlocks = (blockIds: readonly string[]) =>
     sql`${frontiers.sourceBlockId}::text = ANY(string_to_array(${blockIds.join(",")}, ','))`;
 
-  /**
-   * The rows of every room of the documents: Live's, and their fork in any draft, matched by the
-   * document id a room key ends with. No index serves it: a caller bounds it by blocks or project.
-   */
   const ofDocuments = (documentIds: readonly string[]) => {
     const ids = documentIds.join(",");
     const lives = documentIds.map((documentId) => loroRoomName({ kind: "live", documentId }));
@@ -56,7 +51,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       OR (${frontiers.roomKey} LIKE 'fork:%'
         AND split_part(${frontiers.roomKey}, ':', 3) = ANY(string_to_array(${ids}, ','))))`;
   };
-  /** The rows of one room, or of every room of a document. */
   const inRooms = (rooms: FrontierRooms) =>
     "room" in rooms ? eq(frontiers.roomKey, rooms.room) : ofDocuments([rooms.documentId]);
 
@@ -68,7 +62,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       };
       if (evidence.frontiers.length > 0) {
         const blockIds = evidence.frontiers.map(({ blockId }) => blockId as never);
-        // A block shown again holds its new frontier only: the old row goes first.
         await db_().delete(frontiers).where(inArray(frontiers.sourceBlockId, blockIds));
         await db_()
           .insert(frontiers)
@@ -214,7 +207,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
   };
 }
 
-/** SHA-256 of the exact showing tuple: the bounded key for unbounded addresses and holders. */
 function showingDigest(ref: string, address: string, holderUri: string, view: string): string {
   return createHash("sha256")
     .update(JSON.stringify([ref, address, holderUri, view]))

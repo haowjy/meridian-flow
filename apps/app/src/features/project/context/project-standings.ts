@@ -1,20 +1,12 @@
-/**
- * Where each document stands in its project's list, shared by everything that asks "is it still
- * there": the removal observer, the notice and the editor's own banner. A project's list is held
- * open while anything watches it; its replay is the session's, computed once per change however
- * many ask.
- */
 import { type DocumentStanding, listIsReadable, standingAcross } from "@/core/tree-list/standing";
 import type { TreeListHandle, TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import type { TreeListSnapshot } from "@/core/tree-list/tree-list-session";
 
 type Watched = {
   handle: TreeListHandle;
-  /** The account's own list (`user://`): a document moved there is still the writer's. */
   account: TreeListHandle;
   holds: number;
   listeners: Set<() => void>;
-  /** Answers handed out since the last change: identical while nothing changed. */
   answers: Map<string, DocumentStanding>;
   stop(): void;
 };
@@ -29,7 +21,6 @@ export class ProjectStandings {
     private readonly accountId: string,
   ) {}
 
-  /** Holds the project's list and calls `listener` when any standing in it may have changed. */
   watch(projectId: string, listener: () => void): () => void {
     let watched = this.projects.get(projectId);
     if (!watched) {
@@ -73,7 +64,6 @@ export class ProjectStandings {
     };
   }
 
-  /** Resolves once the project's list has been read: from then on an absence is an answer. */
   whenReadable(projectId: string, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
       let stop = () => {};
@@ -90,7 +80,6 @@ export class ProjectStandings {
     });
   }
 
-  /** "waiting" while nothing watches the project or its list has not been read. */
   standing(projectId: string, documentId: string): DocumentStanding {
     const watched = this.projects.get(projectId);
     if (!watched) return WAITING;
@@ -106,12 +95,10 @@ export class ProjectStandings {
     return answer;
   }
 
-  /** Whether the project's own list (not the account's) has a node for the document. */
   inProjectList(projectId: string, documentId: string): boolean {
     return this.projects.get(projectId)?.handle.session.replay().nodes.has(documentId) ?? false;
   }
 
-  /** The list's own status: `denied` means the account has no access to the project. */
   status(projectId: string): TreeListSnapshot["status"] {
     return this.projects.get(projectId)?.handle.session.getSnapshot().status ?? "waiting";
   }

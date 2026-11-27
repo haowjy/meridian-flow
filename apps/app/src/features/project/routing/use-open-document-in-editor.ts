@@ -1,5 +1,3 @@
-/** The shared Editor open path for a document locator or an already-resolved view. */
-
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
@@ -26,19 +24,14 @@ export function openDocumentInEditor(
       { scheme: "unfiled", path: "", documentId: target.documentId },
       { replace: false, document: tab, ...routeOptions },
     );
-  return open(
-    // The owner is a Scratch note's alone; a draft's item key names its draft.
-    contextRouteRequest({ ...target, documentId: tab?.documentId }),
-    {
-      replace: false,
-      ...routeOptions,
-      ...(tab ? { document: tab } : {}),
-      ...reviewRouteOptions(review),
-    },
-  );
+  return open(contextRouteRequest({ ...target, documentId: tab?.documentId }), {
+    replace: false,
+    ...routeOptions,
+    ...(tab ? { document: tab } : {}),
+    ...reviewRouteOptions(review),
+  });
 }
 
-/** The route options that open a document on its view's draft; none for Live. */
 export function reviewRouteOptions(review: DraftPin | null | undefined) {
   return review ? { itemKey: review.itemKey } : {};
 }
@@ -53,7 +46,6 @@ export function useOpenDocumentInEditor() {
   );
 }
 
-/** Opens a document in main on what it shows (`shownDraft`): the draft it shows travels with it. */
 export function useOpenInMain(
   projectId: string,
   open: OpenContextRoute,

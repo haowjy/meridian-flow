@@ -1,4 +1,3 @@
-/** Canonical convergence and causal-read boundary for a thread's Work binding. */
 import type {
   ListWorksResponse,
   ThreadListItem,
@@ -31,7 +30,6 @@ export type ThreadWorkConvergence =
       projectId: string;
       threadId: string;
       previousWorkId: string | null;
-      /** The thread's `workId` on a list read just made, which also refreshed the list and Works. */
       workId: string | null;
     };
 
@@ -39,7 +37,6 @@ export type ThreadProjectionInvalidation = {
   threadId: string;
   projectId: string;
   refreshLists: boolean;
-  /** The thread's own snapshot is refreshed by whoever asked, so this leaves it alone. */
   skipSnapshot?: boolean;
 };
 
@@ -49,7 +46,6 @@ const compareSeq = (left: string, right: string) => {
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
-/** Every cache rooted at the thread, optionally except its snapshot. */
 export function invalidateThreadKeys(
   client: QueryClient,
   threadId: string,
@@ -144,9 +140,6 @@ export function convergeThreadWorkBinding(
     }
 
     const workId = transition.workId;
-    // The acknowledgment reads the binding on every chat switch, and nearly always finds it
-    // unchanged. A caller that knows the binding it started from names it; otherwise the snapshot is the
-    // record, and a chat without one yet has nothing cached to correct.
     const snapshotWorkId = client.getQueryData<ThreadSnapshotResponse>(
       threadQueryKeys.snapshot(threadId),
     )?.thread.workId;
@@ -191,7 +184,6 @@ export async function readStableThreadWorkBinding(
         queryKey: projectQueryKeys.threads(input.projectId),
         exact: true,
       });
-      // Both reads land in their caches, so the common unchanged case leaves them fresh.
       const [threads, catalog] = await Promise.all([
         client.fetchQuery({ ...projectThreadsQueryOptions(client, input.projectId), staleTime: 0 }),
         refreshWorksSnapshot(client, input.projectId),

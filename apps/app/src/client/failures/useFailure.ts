@@ -1,4 +1,3 @@
-/** A non-chat action owns one failure, including its copy and retirement. */
 import {
   classifyCommandFailure,
   type FailureEnd,

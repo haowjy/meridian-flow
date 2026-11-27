@@ -1,7 +1,3 @@
-/**
- * FigureAssetService: mints the signed read URLs a picture in a document draws from. Pictures
- * arrive by the same direct upload as every other dropped file (`context/uploads`).
- */
 import type { GetFigureSignedUrlResponse } from "@meridian/contracts/protocol";
 import { drawObjectKey, objectStoreKeyFromStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort, ObjectStoreResult } from "../../storage/ports/object-store.js";
@@ -90,7 +86,6 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       let drawUrl: string | undefined;
       if (drawKey === key) drawUrl = signedUrl.value;
       else if (drawKey) {
-        // Without its preview the picture shows as a file card: still a usable answer.
         const preview = await options.objectStore.getSignedUrl(drawKey);
         if (preview.ok) drawUrl = preview.value;
       }

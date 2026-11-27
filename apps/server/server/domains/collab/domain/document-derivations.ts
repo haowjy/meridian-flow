@@ -1,5 +1,3 @@
-/** Derives live outputs from durable cuts; timers are hints, database staleness is authority. */
-
 import { createHash } from "node:crypto";
 import { countWords } from "@meridian/agent-edit/diff";
 import {
@@ -26,10 +24,8 @@ import type {
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
 
-/** What the derivation reads a cut with: the model that projects it, the codec that spells it. */
 export type ReadCut = (documentId: DocumentId, doc: LoroDocument) => Promise<CutRead>;
 
-/** A cut as Live reads it: its blocks and links. */
 export type CutRead = {
   blocks: DerivedBlock[];
   links: StoredLinkOccurrence[];
@@ -55,7 +51,6 @@ export function createDocumentDerivationService(input: {
     debounceMs: 2000,
     maxMs: 10000,
     outsideTransaction: input.outsideTransaction,
-    // A direct write derives inline, so most notices find the document already certified.
     run: async (documentId) => {
       if ((await input.store.stale({ only: documentId, limit: 1 })).length)
         await derive(documentId);
@@ -81,7 +76,6 @@ export function createDocumentDerivationService(input: {
         const ids = await input.store.stale({ after: sweepCursor, limit: 100 });
         sweepCursor = ids.length === 100 ? ids.at(-1) : undefined;
         await recover(ids);
-        // Bounded and fair: resumes after the last ref attempted, so failing refs rotate through.
         aheadCursor = (await input.store.recoverAheads(aheadCursor)).next ?? undefined;
         return ids.length;
       });
@@ -117,7 +111,6 @@ export async function deriveDocument(
   return { status: "deferred" };
 }
 
-/** The blocks and link rows of the cut's document. */
 export async function deriveDocumentOutputs(
   cut: DocumentDerivationCut,
   readCut: ReadCut,
@@ -169,7 +162,6 @@ function sha256(text: string): Buffer {
   return createHash("sha256").update(text, "utf8").digest();
 }
 
-/** A hash over what an edit changes: the blocks in order, and the certified links they hold. */
 export function documentHash(
   blocks: readonly { contentHash: Buffer }[],
   links: readonly DocumentLinkRow[],

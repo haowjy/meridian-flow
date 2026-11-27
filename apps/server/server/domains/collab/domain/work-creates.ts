@@ -1,8 +1,3 @@
-/**
- * A document a Work creates is plain text in Live: its create is pending in the Work's tree, which
- * is its whole pending state, and the document opens in the Work's view as soon as the create is
- * admitted.
- */
 import type { EffectiveDocumentReader } from "../contracts.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 

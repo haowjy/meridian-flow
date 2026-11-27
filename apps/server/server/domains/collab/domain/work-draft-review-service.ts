@@ -1,4 +1,3 @@
-/** A draft's review list, its counts and the commands it is read under. */
 import type { DraftId } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DraftItem, TreeSaw } from "@meridian/contracts/drafts";

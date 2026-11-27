@@ -1,17 +1,3 @@
-/**
- * useRenameThread — direct TanStack P1 command for the thread title.
- *
- * The request lifecycle runs through `useMutation` (serialized per thread with
- * `scope`); the optimistic projection, revision fence, and classified failure
- * live in `thread-rename-command`'s QueryClient-scoped record. The returned
- * `rename` rejects only when the server refused it, so a `TitleEditSlot` can
- * reopen the field. Success is only announced by the caller after the server
- * confirms the write.
- *
- * The account epoch is stamped onto the mutation context and forwarded to
- * `fetch`, so a result that arrives after an A→B→A replacement cannot confirm,
- * announce, or write into the new account lifetime.
- */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 

@@ -58,7 +58,6 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
       { work: theirWork, slug: "scratch", held: theirs, key: "workDoc" },
     ] as const;
     for (const { slug, held, key, ...ownership } of sources) {
-      // The account's home folder is made with the account; the others are inserted here.
       const source =
         "account" in ownership ? await accountUserSource(db, ownership.account as never) : id();
       if (!("account" in ownership))
@@ -95,12 +94,10 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
 
     const own = await ask(myProject, me);
     expect([...own.documents.keys()].sort()).toEqual([mine.doc, mine.userDoc, mine.workDoc].sort());
-    // Absent and silent: a node of another writer's must not even surface as inconsistent.
     expect([...own.inconsistent]).toEqual([]);
     expect(own.documents.get(mine.userDoc)?.authority).toEqual({ kind: "user", userId: me });
     expect([...own.folders.keys()]).toEqual([mine.folder]);
 
-    // The other writer, asking from their own project, gets theirs and none of mine.
     const theirOwn = await ask(theirProject, other);
     expect([...theirOwn.documents.keys()].sort()).toEqual(
       [theirs.doc, theirs.userDoc, theirs.workDoc].sort(),
@@ -108,7 +105,6 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
     expect([...theirOwn.folders.keys()]).toEqual([theirs.folder]);
     expect([...theirOwn.inconsistent]).toEqual([]);
 
-    // The same fence through the by-id lookup and the destination-folder resolver.
     const held = (documentId: string) =>
       availability.held(
         { projectId: myProject as never, node: { kind: "document", id: documentId as never } },
@@ -124,7 +120,6 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
       expect.any(String),
     );
 
-    // Another writer's project is refused outright, whatever ids come with it.
     await expect(ask(theirProject, me)).rejects.toThrow("Project not found");
     await expect(ask(myProject, other)).rejects.toThrow("Project not found");
   });

@@ -1,10 +1,3 @@
-/**
- * The reference door: what dropping project-tree rows on a writing surface
- * does. Rows become the same chips `@` writes, at the landing: in a paragraph
- * of their own at a seam, beside (never inside) a word, a chip or a code span
- * in text, and nowhere in a code block.
- */
-
 import { Fragment, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
@@ -22,12 +15,10 @@ export type ReferenceDropRefusalReason = "unavailable" | "code";
 
 export type ReferenceDropOptions = {
   activeDrag: () => readonly ReferenceDropEntry[] | null;
-  /** Resolves identities through the host's live `@` catalog and builds its exact node shape. */
   content: (schema: Schema, entries: readonly ReferenceDropEntry[]) => readonly PMNode[] | null;
   label: (kind: "accept" | ReferenceDropRefusalReason) => string;
 };
 
-/** The door for project-tree rows. */
 export function referenceDropDoor(options: ReferenceDropOptions): DropDoor {
   return {
     plan: ({ view }, landing) => {
@@ -53,14 +44,8 @@ export function referenceDropDoor(options: ReferenceDropOptions): DropDoor {
   };
 }
 
-/** Where inline nodes land at a landing, and how: one undo step, the caret after them. */
 export type NodePlacement = { pos: number; commit(view: EditorView): void };
 
-/**
- * Inline nodes at a landing: in a paragraph of their own at a seam, beside (never inside) a
- * word, a chip or a code span in text. Null where this content cannot stand there. The one
- * placement for everything dropped as chips: rows, and files.
- */
 export function placeNodes(
   view: EditorView,
   landing: Exclude<Landing, { kind: "source" }>,
@@ -87,7 +72,6 @@ function separated(view: EditorView, nodes: readonly PMNode[]): PMNode[] {
   return nodes.flatMap((node, index) => (index > 0 ? [view.state.schema.text(" "), node] : [node]));
 }
 
-/** The chips at `pos`, with a space on a side that touches a non-space. */
 function spaced(view: EditorView, pos: number, nodes: readonly PMNode[]): Fragment | null {
   if (nodes.some((node) => !node.isInline)) return null;
   const { doc, schema } = view.state;
@@ -105,7 +89,6 @@ function spaced(view: EditorView, pos: number, nodes: readonly PMNode[]): Fragme
   return parent.canReplace($pos.index(), $pos.index(), fragment) ? fragment : null;
 }
 
-/** One undo step for the drop, the caret after it. */
 function insert(
   view: EditorView,
   pos: number,

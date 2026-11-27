@@ -1,15 +1,7 @@
-import type { TreeFile } from "@/core/project-tree/tree-view";
-/**
- * Maps canonical context file metadata to a monochrome kind glyph (rendered at
- * `text-muted-foreground` by the call site). Deliberately mono — tinted
- * per-kind icons were tried in the tree redesign and dropped: the tint was
- * indistinguishable at icon size and read as generic-IDE noise. The glyph
- * *shape* carries the kind; color stays calm.
- */
-
 import { classifyFiletype, filetypeForKnownPath } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { FileCode, FileImage, FileText, FileType } from "lucide-react";
+import type { TreeFile } from "@/core/project-tree/tree-view";
 
 export function fileKindIcon(file: TreeFile | string): LucideIcon {
   if (typeof file !== "string") {
@@ -19,8 +11,6 @@ export function fileKindIcon(file: TreeFile | string): LucideIcon {
     return FileText;
   }
 
-  // Unsaved create/rename suggestions have no server metadata yet, so preview
-  // them through the same contracts registry that the server will persist.
   const filetype = filetypeForKnownPath(file);
   if (!filetype) return FileText;
   const classification = classifyFiletype(filetype);

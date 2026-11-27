@@ -1,8 +1,3 @@
-/**
- * useOwnerDrafts — one draft's review items (one per document).
- *
- * Projects one tree-labelled file per document the draft changes, in stable order.
- */
 import { type DraftId, draftItemKey } from "@meridian/contracts";
 import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import type { WorksSnapshot } from "@meridian/contracts/works";
@@ -29,13 +24,10 @@ const zeroSnapshot = () => 0;
 export type OwnerDraftListStatus = ListQueryStatus<DraftItem> & {
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  /** The owner's active draft: the `draft` of its tree records. */
   draftId: string | null;
-  /** The changed folders left after journal holds are subtracted. */
   folderIds: readonly string[] | null;
 };
 
-/** The tree owner whose Scratch names this draft's documents: the Work or root chat naming it. */
 function useDraftTreeOwner(
   projectId: string,
   draft: string | null,
@@ -53,7 +45,6 @@ function useDraftTreeOwner(
   }, [draft, works, deleted, threads]);
 }
 
-/** The one owner draft-list query, shared by every reader so the list is fetched once. */
 export function ownerDraftsQueryOptions(projectId: string, owner: string) {
   return {
     queryKey: projectQueryKeys.drafts(projectId, owner),
@@ -89,14 +80,12 @@ export function refreshDraftReads(
     reads.push(refreshWorksSnapshotSince(queryClient, projectId, since));
   reads.push(
     queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentDraftHintsOf(projectId) }),
-    // A Work's drafts carry their counts.
     queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDraftsOf(projectId) }),
   );
   bumpLinkResolutionEpoch(projectId);
   return Promise.allSettled(reads);
 }
 
-/** The owner's cached draft rows, without fetching. */
 export function cachedOwnerDrafts(
   queryClient: QueryClient,
   projectId: string,
@@ -106,7 +95,6 @@ export function cachedOwnerDrafts(
     ?.items;
 }
 
-/** One draft's list as `useOwnerDraftLists` reads it: the list query with its rows completed. */
 export type OwnerDraftListQuery = {
   data: DraftItemsResponse | undefined;
   isPending: boolean;
@@ -115,11 +103,6 @@ export type OwnerDraftListQuery = {
   refetch: () => unknown;
 };
 
-/**
- * Drafts' lists as this browser knows them, read together, by draft: the server's rows, then the
- * drafts its pending creates make that the server has not listed yet (`useCreatedDrafts`). A
- * document's row follows the server's `pending`, which a fork room's save sets after the typing.
- */
 export function useOwnerDraftLists(
   projectId: string,
   owners: readonly string[],
@@ -137,7 +120,6 @@ export function useOwnerDraftLists(
       enabled: projectReadEnabled(enabled),
     })),
   });
-  // What the lists' reads say now: the memos below rebuild only when it changes.
   const read = queries
     .map((query) => `${query.dataUpdatedAt}:${query.isPending}${query.isFetching}${query.isError}`)
     .join();
@@ -184,7 +166,6 @@ export function useOwnerDraftLists(
   }, [owners, read, created, commands, commandRevision]);
 }
 
-/** One draft's list (`useOwnerDraftLists`). */
 export function useOwnerDraftList(
   projectId: string,
   owner: string,
@@ -206,10 +187,6 @@ const DISABLED = {
   folderIds: null,
 } as const satisfies OwnerDraftListStatus;
 
-/**
- * Drafts' review items, one file per document each, by draft. The drafts are one owner's (a
- * Work's, or a chat's one): its Scratch names their documents.
- */
 export function useDraftLists(
   projectId: string | null,
   owners: readonly string[],

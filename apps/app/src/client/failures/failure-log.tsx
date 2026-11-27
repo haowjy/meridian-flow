@@ -1,4 +1,3 @@
-/** Account-bound client diagnostics: bounded local trace and best-effort authenticated batches. */
 import { type FailureLog, noFailureLog } from "@meridian/contracts/failures";
 import { createBatchedFailureLog } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";

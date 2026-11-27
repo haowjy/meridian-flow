@@ -1,4 +1,3 @@
-/** Compile-negative proof that live sessions cannot bypass leases or reveal the implementation. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { LiveDocumentSessionRegistry } from "./document-session-registry";
 

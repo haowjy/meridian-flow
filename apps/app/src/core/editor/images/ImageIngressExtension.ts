@@ -1,21 +1,3 @@
-/**
- * ImageIngressExtension — the one place a picture enters a document.
- *
- * Four doors (the toolbar and slash picker, a drop, a pasted file, a pasted
- * address), one lifecycle, and this file is only the wiring: the storage the
- * app registers its ports into, the plugin that holds what is in flight, the
- * clipboard prop (a drop lands through `file-drop/file-drop-door.ts`), and the decorations the manuscript draws from.
- *
- * The lifecycle itself is next door — [`image-uploads.ts`](image-uploads.ts) for
- * a picture from this machine, [`image-imports.ts`](image-imports.ts) for one the
- * clipboard pointed at — and what the document knows about a picture in flight
- * is [`pending-images.ts`](pending-images.ts).
- *
- * The rule the whole lane rests on: the `image` node stands in its FINAL slot
- * before any byte leaves, so the writer can move it, delete it, type around it
- * and undo it like any other node, and completion never reflows the manuscript.
- */
-
 import { type Editor, Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
@@ -54,10 +36,6 @@ import {
   uploadTokensIn,
 } from "./pending-images";
 
-/**
- * What every settled document state has to answer for the pictures in flight:
- * which of them are over, and which paste is ready to have its links read.
- */
 function settlePendingImages(editor: Editor): void {
   if (editor.isDestroyed) return;
   const state = ingressState(editor);
@@ -118,7 +96,6 @@ export const ImageIngressExtension = Extension.create({
 
   addProseMirrorPlugins() {
     const editor = this.editor;
-    /** Imports a paste asked for, between the transform and its transaction. */
     let pasted: readonly PastedImageImport[] | null = null;
     let settleScheduled = false;
 
@@ -220,7 +197,6 @@ export const ImageIngressExtension = Extension.create({
               sendIngressMessage(editor, { redraw: true });
             });
           };
-          // A slot's status is the upload store's: when it moves, the slot is drawn again.
           const unsubscribe = uploads.subscribe((changed) => {
             if (editor.isDestroyed) return;
             const { pending } = ingressState(editor);

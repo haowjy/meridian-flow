@@ -1,13 +1,3 @@
-/**
- * The editor owns Mod-z / Mod-y / Mod-Shift-z.
- *
- * The keys drive the document session's history (`editor-history.ts`): the writer's own
- * steps, kept by Loro's `UndoManager`. Meridian binds the keys itself, at a priority above
- * every other extension, because undo is the writer's recovery over LLM writes: the keys are
- * a named part of the editor rather than a default inherited from a dependency that another
- * extension's keymap could shadow. Mount it only where a document session exists — a
- * standalone editor has no undo command to bind to.
- */
 import { Extension } from "@tiptap/core";
 import { type DocumentHistory, redoEditorHistory, undoEditorHistory } from "../editor-history";
 
@@ -25,7 +15,6 @@ export const UndoRedoKeymapExtension = Extension.create({
     return { detach: null as (() => void) | null };
   },
 
-  // The history belongs to the document's session; this editor follows it while mounted.
   onCreate() {
     this.storage.detach = this.options.history?.attach(this.editor) ?? null;
   },

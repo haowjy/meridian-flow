@@ -1,4 +1,3 @@
-// Hard breaks round-trip in both dialects, including where Markdown has no `\` spelling.
 import { describe, expect, it } from "vitest";
 import { docFrom, paragraph, schema, t } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";

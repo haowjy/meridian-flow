@@ -19,12 +19,9 @@ import {
 } from "./version.js";
 import type { DocChange } from "./write.js";
 
-/** What an import did to a copy (`RoomDocs.importBatch`). */
 export interface Imported {
-  /** The docs the import changed, the restore's included. */
   changed: DocKey[];
   pending: boolean;
-  /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
   restore: DocChange[];
 }
 
@@ -125,11 +122,8 @@ export class RoomDocs {
   readonly shape: ShapeSchema;
   readonly peer: PeerId;
   private readonly structureDoc: LoroDoc;
-  /** Text docs this copy owns, by block id. */
   readonly texts = new Map<BlockId, LoroDoc>();
-  /** Live's copy, for a draft's fork; not owned. */
   readonly live: RoomDocs | null;
-  /** A copy of Live this copy made for itself (`fork`, `at`), freed with it. */
   private ownedLive: RoomDocs | null = null;
   private readonly textWriteListeners = new Set<(id: BlockId, doc: LoroDoc) => void>();
   private readonly importListeners = new Set<() => void>();
@@ -145,7 +139,6 @@ export class RoomDocs {
     this.live = live;
   }
 
-  /** An empty Live copy. */
   static create(shape: ShapeSchema, peer: PeerId): RoomDocs {
     return new RoomDocs(shape, peer, new LoroDoc(), null);
   }
@@ -180,7 +173,6 @@ export class RoomDocs {
     return docs;
   }
 
-  /** A new draft fork of `live`: its structure forked, no text of its own yet. */
   static draftOf(live: RoomDocs, peer: PeerId): RoomDocs {
     return new RoomDocs(live.shape, peer, live.structure.fork(), live);
   }
@@ -268,13 +260,11 @@ export class RoomDocs {
     return copy;
   }
 
-  /** The doc a reader reads a block's text from: its own, else Live's for a draft. */
   textOf(id: BlockId): LoroDoc | undefined {
     this.alive();
     return this.texts.get(id) ?? this.live?.textOf(id);
   }
 
-  /** Every block whose text a reader reads (`textOf`): its own and, for a draft, Live's. */
   textKeys(): Set<BlockId> {
     this.alive();
     return new Set([...(this.live?.textKeys() ?? []), ...this.texts.keys()]);
@@ -310,27 +300,20 @@ export class RoomDocs {
     return () => this.textWriteListeners.delete(listener);
   }
 
-  /**
-   * Calls `listener` each time ops from elsewhere are about to go into this copy (`importBatch`,
-   * `forward`). Returns the stop.
-   */
   beforeImport(listener: () => void): () => void {
     this.importListeners.add(listener);
     return () => this.importListeners.delete(listener);
   }
 
-  /** The owned doc of `key`. */
   doc(key: DocKey): LoroDoc | undefined {
     return key === STRUCTURE_KEY ? this.structure : this.texts.get(key);
   }
 
-  /** Every doc this copy owns, by doc key. */
   *owned(): Iterable<[DocKey, LoroDoc]> {
     yield [STRUCTURE_KEY, this.structure];
     yield* this.texts;
   }
 
-  /** The room version: each owned doc's oplog version. */
   version(): Map<DocKey, DocVersion> {
     const out = new Map<DocKey, DocVersion>();
     for (const [key, doc] of this.owned()) out.set(key, docVersion(doc));
@@ -351,7 +334,6 @@ export class RoomDocs {
     return out;
   }
 
-  /** The update of every owned doc that has ops beyond `since` (all of a doc it lacks). */
   exportSince(since: RoomVersion = new Map()): Map<DocKey, Uint8Array> {
     const out = new Map<DocKey, Uint8Array>();
     for (const [key, doc] of this.owned()) {
@@ -366,7 +348,6 @@ export class RoomDocs {
     return out;
   }
 
-  /** A snapshot per owned doc, for `document_snapshots` rows. */
   snapshots(
     keys: Iterable<DocKey> = [...this.owned()].map(([key]) => key),
   ): Map<DocKey, Uint8Array> {
@@ -418,11 +399,6 @@ export class RoomDocs {
     return { changed, pending, restore: this.answer(before, changed) };
   }
 
-  /**
-   * Bring a draft's fork up to Live (design §2, "Forwarding"): Live's structure into the structure
-   * fork, and each Live text into the fork's own fork of it. A block the fork reads from Live
-   * needs nothing. An import like any other (`importBatch`); it never waits on ops.
-   */
   forward(): Imported {
     const live = this.live;
     if (!live) return { changed: [], pending: false, restore: [] };
@@ -473,11 +449,9 @@ export class RoomDocs {
   }
 }
 
-/** A fresh peer in `peer`'s range (server or tab), for the Live copy a draft copy owns. */
 const peerBeside = (peer: PeerId): PeerId =>
   isServerPeer(peer) ? freshServerPeerId() : freshPeerId();
 
-/** Oplog frontiers move exactly when the oplog gains ops; comparing them needs no version handle. */
 function sameFrontiers(a: Frontiers, b: Frontiers): boolean {
   return (
     a.length === b.length &&

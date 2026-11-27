@@ -1,26 +1,3 @@
-/**
- * DebugOverlay — the single mount point for the dev-only debug surface.
- *
- * Renders `null` unless `useDebugEnabled()` reports the overlay is on. When
- * enabled, renders a small floating PILL (bottom-right) that expands to a
- * compact panel and opens the trace viewer in a separate window. The pill stays
- * deliberately thin: only state with no better home lives here. Store inspection
- * is delegated to Redux DevTools (via the `devtools` middleware), so we don't
- * reinvent a mature tool. Per-turn/block inspection moves inline onto the real transcript via
- * `data-turn-id` anchors (see dom-anchors-contract).
- *
- * Key decisions:
- * - Mounted once inside the providers tree in `routes/_authenticated.tsx` so it
- *   can read transport/stores/query through their public hooks. The mount gate
- *   there is an inline `import.meta.env.DEV || VITE_DEBUG_OVERLAY === "1"` for
- *   dead-code elimination.
- * - The pill stays out of the way; the Streams action uses a pop-out so the
- *   editor and live event table remain usable at the same time.
- * - Each section is wrapped in `DebugErrorBoundary` so one misbehaving read
- *   degrades to an inline message instead of tearing down the overlay.
- * - i18n exception: DEV-only debug surface; inline English strings bypass
- *   Lingui by design.
- */
 import {
   useCallback,
   useEffect,

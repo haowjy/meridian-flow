@@ -1,24 +1,3 @@
-/**
- * The small popover the object's own words are edited in (§5.6: "Alt text edits
- * in a small popover").
- *
- * One surface for every field a registration declares, rather than one popover
- * per verb: the ⋯ item the writer picked decides which field takes the caret, and
- * a figure editing its caption can reach its label without going back to the
- * menu. Which fields are here at all is `surfaceFields` on the object's row, so
- * the inline picture and the captioned figure share this surface.
- *
- * **It writes as the writer types.** These are attributes on a node every peer
- * can see, and a form with a Save button would hold a second copy of the truth
- * for as long as it stayed open — the failure the figure's old node-view form
- * had. Each keystroke is one attribute step, so undo takes an edit back and a
- * collaborator watches the caption arrive.
- *
- * It holds the object the way every surface in this lane does: a `NodeHold`
- * resolved per render, so a peer's write cannot leave the popover writing into a
- * node that has moved or gone.
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useId } from "react";
@@ -32,9 +11,7 @@ import { objectFieldLabel } from "./object-menu-items";
 
 export type ObjectFieldPopoverProps = {
   editor: Editor;
-  /** Resolved from the hold every render; null while a node view is rebuilding. */
   target: ObjectSurfaceTarget | null;
-  /** The field the writer asked for, which is the one that takes the caret. */
   field: ObjectSurfaceField;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,8 +32,6 @@ export function ObjectFieldPopover({
       id="object-fields"
       open={open}
       onOpenChange={onOpenChange}
-      // The object's own bounds, re-measured on every reposition: the picture
-      // scrolls with the manuscript and the popover travels with it.
       anchorRect={() => target?.element.getBoundingClientRect() ?? null}
       side="bottom"
       align="end"
@@ -102,8 +77,6 @@ function ObjectFieldInput({
     (control: HTMLInputElement | HTMLTextAreaElement | null) => {
       if (!control || !claimsFocus) return;
       control.focus();
-      // The caret at the end of what is already written: the writer came here to
-      // add to it more often than to replace it.
       control.setSelectionRange(control.value.length, control.value.length);
     },
     [claimsFocus],
@@ -114,7 +87,6 @@ function ObjectFieldInput({
     className: "meridian-object-field-input",
     value,
     placeholder: fieldPlaceholder(field),
-    // Straight through to the document: see the header on why there is no draft.
     onChange: (event: { currentTarget: { value: string } }) =>
       setObjectField(editor, pos, field, event.currentTarget.value),
   };

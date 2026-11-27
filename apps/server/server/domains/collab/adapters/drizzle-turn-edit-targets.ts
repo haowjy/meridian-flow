@@ -1,11 +1,3 @@
-/**
- * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
- * documents the turn edited the text of that some tree view still shows, live or in a draft.
- * Final address liveness stays with the lineage reader.
- * A tree change leaves no text target;
- * `readTurnTreeTargets` lists the documents a reply only moved, created or deleted, for its card.
- */
-
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
@@ -29,12 +21,6 @@ import type { TurnEditedDocumentId, TurnFolderTarget } from "../domain/turn-live
  */
 export const receiptDraftExists = or(isNull(treeEditReceipts.draftId), isNotNull(drafts.id));
 
-/**
- * Where the turn wrote text: each document, live or in the draft the write was made in (its
- * part's `origin`: a fork, or a document only that draft holds), with the owner's handle, and the
- * first block the turn's first write there changed, where its card opens the document. A part in
- * a draft a Work purge deleted has nothing left to show.
- */
 export async function readTurnEditTargets(
   db: Pick<Database, "select">,
   query: TurnInverseQuery,
@@ -93,10 +79,6 @@ export async function readTurnEditTargets(
   return [...targets.values()];
 }
 
-/**
- * The first block a write's delta changed, by id: one it put in or changed, or for a write that
- * only took blocks out, the block after them. The delta keeps one unchanged block either side.
- */
 function firstChangedBlock(delta: StoredDelta): string | undefined {
   const idOf = (block: Record<string, unknown>) => (block.attrs as { id?: string } | undefined)?.id;
   const before = new Map(delta.before.map((block) => [idOf(block), JSON.stringify(block)]));
@@ -105,13 +87,6 @@ function firstChangedBlock(delta: StoredDelta): string | undefined {
   return at ? idOf(at) : undefined;
 }
 
-/**
- * The folders the turn's tree receipts changed, live or in the draft the change was drafted in,
- * whether or not the card's Undo has since taken them back: a folder has no document, and the
- * reply's card lists it all the same. Each is named by the path the receipt recorded. Only the
- * turn's own writes say where it wrote: a Redo of an applied draft lands live, and read as a
- * target it would list the folder a second time, live.
- */
 export async function readTurnFolderTargets(
   db: Pick<Database, "selectDistinct">,
   query: {
@@ -150,11 +125,6 @@ export async function readTurnFolderTargets(
   return [...folders.values()];
 }
 
-/**
- * The documents the turn's tree receipts changed (a folder has no document), live or in the
- * draft the change was drafted in, whether or not the card's Undo has since taken them back.
- * Merged into `known` where a text edit already lists the same destination.
- */
 export async function readTurnTreeTargets(
   db: Pick<Database, "selectDistinct">,
   query: {

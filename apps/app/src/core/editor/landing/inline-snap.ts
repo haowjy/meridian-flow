@@ -1,9 +1,3 @@
-/**
- * Where an inline drop moves to so it never lands inside a unit the writer
- * reads as one thing: a code span, a chip (an atom, or a link that names a
- * file), a word. Pure over the document and, for an atom, the `Geometry` port.
- */
-
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 
 import { chipLinkTarget } from "../links/link-chip";
@@ -12,14 +6,12 @@ import type { Geometry, Point } from "./point-landing";
 
 type Run = { start: number; end: number };
 
-/** Adjacent children with equal keys form one run; null keeps a child out of every run. */
 type RunKey = (node: PMNode) => Mark | true | null;
 
 function sameKey(a: Mark | true, b: Mark | true): boolean {
   return a === b || (a !== true && b !== true && a.eq(b));
 }
 
-/** The run of the textblock around `pos` that `pos` is strictly inside, or null. */
 function runAround(doc: PMNode, pos: number, key: RunKey): Run | null {
   const $pos = doc.resolve(pos);
   if (!$pos.parent.isTextblock) return null;
@@ -60,37 +52,24 @@ function snapOutOf(doc: PMNode, pos: number, key: RunKey): number {
 
 const codeMark: RunKey = (node) => node.marks.find((mark) => mark.type.name === "code") ?? null;
 
-/** A link drawn as a chip, which the writer reads as one thing. */
 function chipLink(node: PMNode): Mark | null {
   return (
     node.marks.find((mark) => mark.type.name === "link" && chipLinkTarget(mark.attrs.href)) ?? null
   );
 }
 
-/** Inside inline code the landing is the span's nearer edge. */
 export function snapOutOfCode(doc: PMNode, pos: number): number {
   return snapOutOf(doc, pos, codeMark);
 }
 
-/** Inside a link chip the landing is the chip's nearer edge. */
 export function snapOutOfChip(doc: PMNode, pos: number): number {
   return snapOutOf(doc, pos, chipLink);
 }
 
-/**
- * The nearer edge of a code span or a link chip `pos` is inside: where a unit
- * of its own (a picture, a chip) stands so it doesn't split one in two.
- */
 export function snapOutOfUnits(doc: PMNode, pos: number): number {
   return snapOutOfChip(doc, snapOutOfCode(doc, pos));
 }
 
-/**
- * Where `slice` inserted at `pos` lands, and as what. Content carrying a unit
- * of its own (a picture, a chip) goes beside a chip or code span `pos` is
- * inside. Text stays at `pos`, and strictly inside a chip it takes the chip's
- * link, as typing there does, so it edits the label instead of splitting it.
- */
 export function inlineLanding(
   doc: PMNode,
   pos: number,
@@ -102,7 +81,6 @@ export function inlineLanding(
   return { pos, slice: new Slice(withMark(slice.content, chip), slice.openStart, slice.openEnd) };
 }
 
-/** The chip link on both sides of `pos`, or null at a chip's edge or outside one. */
 function chipAround(doc: PMNode, pos: number): Mark | null {
   const $pos = doc.resolve(pos);
   if (!$pos.parent.isTextblock || !$pos.nodeBefore || !$pos.nodeAfter) return null;
@@ -126,7 +104,6 @@ function withMark(content: Fragment, mark: Mark): Fragment {
   return Fragment.fromArray(nodes);
 }
 
-/** Text already linked to `around`'s address (a plain-text paste takes the caret's marks) is its label, not a chip. */
 function carriesUnit(content: Fragment, around: Mark | null): boolean {
   let found = false;
   content.descendants((node) => {
@@ -139,7 +116,6 @@ function carriesUnit(content: Fragment, around: Mark | null): boolean {
   return found;
 }
 
-/** A pointer over an inline atom (a mention chip) chooses its nearer side. */
 export function snapOutOfAtom(
   doc: PMNode,
   pos: number,
@@ -166,7 +142,6 @@ function isWordCharacter(character: string): boolean {
   return /[\p{L}\p{M}\p{N}_]/u.test(character);
 }
 
-/** A pointer inside a word of plain text chooses the word's nearer edge. */
 export function snapToWordEdge(doc: PMNode, pos: number): number {
   const run = runAround(doc, pos, (node) =>
     node.isText && !chipLink(node) && !codeMark(node) ? true : null,

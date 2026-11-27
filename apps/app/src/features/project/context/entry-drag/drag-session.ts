@@ -10,7 +10,6 @@ import type { DragEntry, DragSource, EntryDrag } from "./entry";
 
 let active: EntryDrag | null = null;
 
-/** The drag with where it came from: the identities (for a writing surface), and the source (for a drop target deciding between moving at once and asking). */
 export function activeDragSession(): EntryDrag | null {
   return active;
 }
@@ -35,7 +34,6 @@ function endEntryDrag() {
   active = null;
 }
 
-/** The chip under the pointer: the first row's name, and +N for the rest. */
 function setPreview(transfer: DataTransfer, entries: readonly DragEntry[]) {
   const chip = document.createElement("div");
   chip.className =

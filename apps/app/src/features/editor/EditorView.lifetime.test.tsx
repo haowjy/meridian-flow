@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** Writer edits, undo history, and read-only fencing survive editor surface changes. */
 
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
@@ -40,7 +39,6 @@ const threadList: { current: ThreadListItem[] } = {
   current: [{ id: "thread-1", title: "Chapter voice" }],
 };
 
-/** Runtime callbacks are inert; these tests own only editor lifetime and surface selection. */
 const controller = { draftId: "" };
 
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
@@ -59,7 +57,6 @@ vi.mock("@/features/project/context/open-project-document", () => ({
 const queryClient = new QueryClient();
 const { EditorView } = await import("./EditorView");
 
-/** The mounted instance, read the way the browser probe reads it. */
 function mountedEditor(): Editor {
   const dom = document.querySelector<HTMLElement & { editor?: Editor }>(".ProseMirror");
   if (!dom?.editor) throw new Error("no mounted editor");
@@ -119,14 +116,12 @@ describe("editor lifetime", () => {
       await act(async () => {
         mountedEditor().commands.insertContent("words the writer typed");
       });
-      // A thread-list refetch hands the tree a brand-new array on every turn.
       await act(async () => {
         threadList.current = [{ id: "thread-1", title: "Chapter voice — revised" }];
         applyProps({});
       });
       expect(mountedEditor().getText()).toBe("words the writer typed");
 
-      // Surface changes preserve the pending edit and its undo history.
       await act(async () => {
         applyProps({ editable: false, ariaLabel: "Read-only live document" });
       });
@@ -148,8 +143,6 @@ describe("editor lifetime", () => {
         expect(redoEditorHistory(mountedEditor())).toBe(true);
       });
       expect(mountedEditor().getText()).toBe("words the writer typed");
-
-      // Navigating to another room must not carry this document's content or undo.
 
       await act(async () => {
         applyProps({ documentId: "document-2" });

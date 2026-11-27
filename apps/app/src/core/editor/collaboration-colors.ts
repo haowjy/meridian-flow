@@ -1,4 +1,3 @@
-/** Shared token-valued palette for live cursors and settled peer marks. */
 export const COLLABORATION_CURSOR_COLORS = [
   "var(--color-collab-cursor-1)",
   "var(--color-collab-cursor-2)",

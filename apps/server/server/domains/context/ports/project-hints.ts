@@ -1,4 +1,3 @@
-/** What a project's subscribers are woken with. Every hint is lossy and truth-free: it says "ask again". */
 import type {
   AgentFilesHint,
   ContextSourcesHint,

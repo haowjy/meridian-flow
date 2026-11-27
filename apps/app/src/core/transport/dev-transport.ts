@@ -1,10 +1,3 @@
-/**
- * dev-transport — builds the WebSocket URLs the app opens.
- *
- * They are always same-origin as the page. In dev, Vite's `server.proxy` upgrades
- * these paths to the server at `MERIDIAN_API_ORIGIN`, so the browser never needs
- * the server's own port.
- */
 export type BrowserLocationLike = {
   protocol: string;
   hostname: string;

@@ -1,10 +1,3 @@
-/**
- * Hears the server bounce the writer's own tree changes: a record it stamped `dropped` (it changed
- * a Work that was closed) arriving after this tab read the list. The replay already leaves the
- * record out, so the row stands as it was; this says so on it (`addBounces`), with what Copy
- * takes: a created document's text from its local copy, or a rename's name. Stamps the stored copy
- * already held when the tab opened the list were said in the tab that saw them arrive.
- */
 import {
   childrenOf,
   type DroppedRecord,
@@ -29,7 +22,6 @@ export function watchBounces(session: TreeListSession, actor: string): () => voi
   const check = () => {
     if (!read) return;
     const now = session.getSnapshot().doc;
-    // A stamp is a settlement: nothing to read until the settle log grows.
     const length = listOf(now).settleCount();
     if (now === doc && length === settles) return;
     const fresh = now !== doc;
@@ -70,7 +62,6 @@ function say(session: TreeListSession, arrived: readonly DroppedRecord[]): void 
   );
 }
 
-/** Where a create's row stood: its name, and the siblings its rank puts before it, nearest first. */
 function madeAt(
   projection: TreeProjection,
   record: Extract<DroppedRecord["record"], { type: "create" }>,

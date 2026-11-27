@@ -1,10 +1,3 @@
-/**
- * useRenameProject — the project title rename command. The title shows at
- * once; a refusal reverts to the last confirmed title, but only when no newer
- * rename has started since, so an older failure never rolls back over a newer
- * pending or confirmed title. The returned `rename` rejects only for the latest
- * rename's refusal, the one a `TitleEditSlot` should reopen.
- */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
@@ -15,15 +8,11 @@ import { projectQueryKeys } from "./project-query-keys";
 type RenameVariables = { title: string; revision: number };
 
 type RenameRecord = {
-  /** Revision of the latest rename started. */
   revision: number;
-  /** Renames not yet settled. */
   pending: number;
-  /** The last confirmed title; what the latest rename's refusal reverts to. */
   confirmed: string;
 };
 
-/** Titles of project renames still on their way, the latest per project. */
 export function pendingProjectTitles(client: QueryClient): Map<string, string> {
   const titles = new Map<string, string>();
   for (const mutation of client

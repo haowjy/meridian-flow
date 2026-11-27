@@ -1,9 +1,3 @@
-/**
- * One ContextFS source's Copy capability: the frozen subtree read a copy starts from, and the
- * destination half (`copy-tree.ts`): the plan and the insert. `context/copy/` decides what to
- * copy and in what order; this only knows this namespace.
- */
-
 import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EffectiveDocumentReader } from "../../../collab/index.js";
@@ -34,12 +28,6 @@ type ContextFsCopyDeps = CopyTreeDeps & {
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
 
-  /**
-   * The source subtree of node `id`, wherever it stands now (live, or in Trash with what its
-   * delete took): the folder with every descendant in its visible order, or the one file. `path`
-   * only spells the root's address; the id decides which node is copied. A draft `view` reads the
-   * Work's tree, where the node must be placed.
-   */
   async function snapshotSource(source: {
     id: string;
     path: string;
@@ -130,7 +118,6 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   };
 }
 
-/** The subtree of node `id` as a Work's draft tree places it, from one read of the view. */
 async function viewSubtree(
   store: ContextDocumentStore,
   view: TreeView,

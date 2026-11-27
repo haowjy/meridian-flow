@@ -21,23 +21,16 @@ import type { EditorView } from "prosemirror-view";
  * hear of it, whether or not an editor is bound to the draft (design §2, "Forwarding").
  */
 export interface EditorListener {
-  /** Called before a batch is imported, while the editor and the docs still agree. */
   before(): void;
-  /**
-   * Called after, with the doc keys that changed in the docs this listener is bound to, and
-   * whether a peer's batch changed them (else a local write outside the editor, `notifyChanged`).
-   */
   after(changed: ReadonlySet<DocKey>, remote: boolean): void;
 }
 
-/** Sends a write the copy made itself on an import (a restore, `RoomDocs.importBatch`) as a local one. */
 export type PublishWrite = (changes: DocChange[]) => void;
 
 interface Hold {
   views: Set<EditorView>;
   queued: { docs: RoomDocs; batch: Envelope; publish: PublishWrite }[];
   releasing: boolean;
-  /** Each registered draft's fork (`registerDraft`), with what sends a restore its forward writes. */
   drafts: Map<RoomDocs, PublishWrite>;
   listeners: Map<RoomDocs, Set<EditorListener>>;
 }
@@ -83,15 +76,10 @@ export function importRemoteUpdate(
   return apply(hold, docs, batch, publish);
 }
 
-/** How many batches are held for this room right now. */
 export function heldUpdateCount(docs: RoomDocs): number {
   return holds.get(docs.live ?? docs)?.queued.length ?? 0;
 }
 
-/**
- * Tell the editors on `docs` that a local write outside the editor (a command run in the tab)
- * changed these keys, so they re-read them.
- */
 export function notifyChanged(docs: RoomDocs, changed: Iterable<DocKey>) {
   const hold = holdFor(docs);
   const keys = new Set(changed);
@@ -112,11 +100,8 @@ function apply(hold: Hold, docs: RoomDocs, batch: Envelope, publish: PublishWrit
   return { changed: result.changed, pending: result.pending };
 }
 
-/** Bring every registered draft up to Live, after Live's docs changed by `changed`. */
 function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
   for (const [draft, publishDraft] of hold.drafts) {
-    // The draft reads Live's text for blocks it has not written, and its structure fork follows
-    // Live's structure once forwarded.
     const forwarded = draft.forward();
     if (forwarded.restore.length) publishDraft(forwarded.restore);
     const keys = new Set([
@@ -127,12 +112,6 @@ function forwardInto(hold: Hold, changed: ReadonlySet<DocKey>) {
   }
 }
 
-/**
- * A local write into a Live copy outside an import (its own editor's typing, an Undo): forward
- * the copy's drafts. Their editors hear of it after Live's docs already changed, so a draft
- * editor's caret inside a paragraph this tab's Live editor typed into can land a few characters
- * off; it holds for every other block.
- */
 export function forwardLocalWrite(live: RoomDocs, changed: Iterable<DocKey>) {
   const hold = holds.get(live);
   if (!hold || live.live) return;
@@ -166,7 +145,6 @@ function composing(hold: Hold): boolean {
   return false;
 }
 
-/** Register a listener for imports into `docs`; returns the unregister. */
 export function listenToImports(docs: RoomDocs, listener: EditorListener): () => void {
   const hold = holdFor(docs);
   let set = hold.listeners.get(docs);

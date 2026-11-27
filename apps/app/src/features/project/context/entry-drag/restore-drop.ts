@@ -20,7 +20,6 @@ export type RestorePlan =
       entries: readonly TrashEntry[];
       destination: TreeDestination;
       destinationName: string;
-      /** The sibling an edge drop lands beside, by name, for the hint. */
       beside?: { kind: "before" | "after"; name: string };
     };
 

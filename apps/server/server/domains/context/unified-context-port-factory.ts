@@ -1,13 +1,3 @@
-import type { CopySourceView } from "./ports/context-port.js";
-/**
- * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
- * Work-scoped (scratch) ContextFS adapters, and chat-scoped (uploads) ones into one router per scope.
- *
- * Contracts owns the scheme taxonomy; adapter assembly lives here as one deep
- * module. Source provisioning is delegated to context-source-provisioning.ts;
- * thread resolution to context-port-resolution.ts.
- */
-
 import type { CanonicalContextAuthority, DraftId } from "@meridian/contracts";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
@@ -50,6 +40,7 @@ import type { ContextDocumentStore } from "./ports/context-document-store.js";
 import type {
   ContextPort,
   ContextScheme,
+  CopySourceView,
   ProjectContextFsScheme,
   ThreadContextView,
   UploadsOwner,
@@ -62,22 +53,18 @@ import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
-/** Uploads belong to a chat, so a Work provisions Scratch only. */
 const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["scratch"];
 
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
   topPrimaryChats: TopPrimaryChatResolver;
-  /** Chats by handle, for `uploads://@c12/` addresses. */
   chats: ChatUploadsOwners;
-  /** Where a chat's uploads and Scratch live, for errors and pointers. */
   chatFiles: OwnerLookup;
   forProject(
     projectId: string,
     userId: string,
     workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
     lineage?: ScratchLineage,
-    /** Whose uploads bare `uploads://` names, when the caller scopes to one chat. */
     chat?: UploadsOwner,
   ): ContextPort;
   forWork(
@@ -94,7 +81,6 @@ interface ContextStoreResolvers {
   chats: ChatUploadsOwners;
   chatFiles?: OwnerLookup;
   resolveLineageStore(projectId: string, rootThreadId: string): ContextDocumentStore;
-  /** The chat's uploads; `chatId` is a top primary thread id (`resolveTopPrimaryChat`). */
   resolveChatStore(projectId: string, chatId: string, scheme: "uploads"): ContextDocumentStore;
   resolveProjectStore(
     projectId: string,
@@ -105,7 +91,6 @@ interface ContextStoreResolvers {
   resolveNoWorkId(projectId: string): Promise<string>;
 }
 
-/** What every adapter of one port shares: storage, collab, tree writes and the reading thread. */
 interface AdapterAssembly {
   links: ContextFSDeps["links"];
   storeResolvers: ContextStoreResolvers;
@@ -113,19 +98,12 @@ interface AdapterAssembly {
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   thread?: ThreadContextView;
-  /** The adapters' tree writes go through `treeLists`. */
   treeLists: Pick<TreeListStore, "submit" | "read">;
   db: Database;
   arrivals?: DocumentArrivals;
   owner: { projectId: string; userId: string };
 }
 
-/**
- * Where an adapter's creates land (contract §2.3): a drafted source whose writes draft is a
- * draft placement, exactly as `sourceDestination` decides; people and the places an auto-apply
- * chat writes live are live. A draft-mode chat's live source still reads its draft's tree, where
- * a draft moved a file in.
- */
 function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): ContextPlacement {
   const { thread } = assembly;
   if (!thread) return { kind: "live" };
@@ -192,7 +170,6 @@ function buildWorkScopedContextFsAdapters(
   assembly: AdapterAssembly,
   workId: string,
   projectId: string,
-  /** The Work's URI authority (`{ kind: "none" }` for No Work). */
   authority: CanonicalContextAuthority,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
@@ -397,15 +374,10 @@ export function createProductionUnifiedContextPortFactory(options: {
   links: ContextFSDeps["links"];
   db: Database;
   documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
-  /** The project's tree lists: every create, move and delete is a `submit` on one. */
   treeLists: Pick<TreeListStore, "submit" | "read">;
-  /** Told when a source is provisioned: the first write into a Work, a chat or a lineage makes it. */
   sourceHints: Pick<ProjectHintPort, "publishSourcesHint">;
-  /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
-  /** The one drafts resolver: draft placements read and write through it (§2.3). */
   drafts: Drafts;
-  /** Copy's collab cut/bind and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
   /**
    * The Work mutation boundary: a draft command locks its draft's Work first

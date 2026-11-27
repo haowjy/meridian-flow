@@ -19,14 +19,11 @@ import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 export type TreeView = { kind: "live" } | { kind: "draft"; draftId: DraftId };
 export const LIVE_TREE: TreeView = Object.freeze({ kind: "live" });
 
-// The relations' column shapes. Not schema tables: they type and decode the subqueries below,
-// and every reference to them renders qualified by the subquery's alias.
 const visibleDocumentShape = pgTable("visible_documents", {
   id: uuid("id").$type<DocumentId>().notNull(),
   contextSourceId: uuid("context_source_id").$type<ContextSourceId>().notNull(),
   folderId: uuid("folder_id").$type<FolderId>(),
   name: text("name").notNull(),
-  /** The path segment: the name, and a later twin's `~` suffix. */
   segment: text("segment").notNull(),
   extension: text("extension").notNull(),
   fileType: text("file_type").notNull(),
@@ -62,7 +59,6 @@ export type VisibleDocumentsSubquery = Subquery<
 export type VisibleFoldersSubquery = Subquery<"visible_folders", typeof visibleFolderColumns> &
   typeof visibleFolderColumns;
 
-/** A typed `FROM` item over raw SQL, proxied the way Drizzle's own `.as()` proxies subqueries. */
 function subquery<TAlias extends string, TColumns extends Record<string, unknown>>(
   query: SQL,
   columns: TColumns,
@@ -108,27 +104,22 @@ function foldersQuery(view: TreeView): SQL {
     WHERE b.draft_id = ${draft} AND b.kind = 'folder' AND NOT b.deleted`;
 }
 
-/** Documents visible in this view, at the view's location (alias "visible_documents"). */
 export function visibleDocuments(view: TreeView): VisibleDocumentsSubquery {
   return subquery(documentsQuery(view), visibleDocumentColumns, "visible_documents");
 }
 
-/** Folders visible in this view (alias "visible_folders"). */
 export function visibleFolders(view: TreeView): VisibleFoldersSubquery {
   return subquery(foldersQuery(view), visibleFolderColumns, "visible_folders");
 }
 
-/** The documents relation for raw-SQL readers: `sql\`… FROM ${visibleDocumentsSql(view)} d …\``. */
 export function visibleDocumentsSql(view: TreeView): SQL {
   return sql`(${documentsQuery(view)})`;
 }
 
-/** The folders relation for raw-SQL readers. */
 export function visibleFoldersSql(view: TreeView): SQL {
   return sql`(${foldersQuery(view)})`;
 }
 
-/** The columns of a visible-documents relation as selectable fields, for `select(...)`. */
 export function visibleDocumentFields(
   relation: VisibleDocumentsSubquery,
 ): typeof visibleDocumentColumns {

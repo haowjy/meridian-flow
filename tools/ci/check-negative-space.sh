@@ -43,9 +43,6 @@ if (( ${#found[@]} > 0 )); then
   exit 1
 fi
 
-# Content mutation operations are explicit capabilities, and journal attribution
-# is the sole birth-class authority. The old sum-interface, fake source-cut
-# lookup, unsupported arms, and explicit provenance-root policy must not return.
 mutation_policy_violations=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && mutation_policy_violations+=("$hit")
@@ -60,9 +57,6 @@ done < <(
     2>/dev/null || true
 )
 
-# These permissive historical heuristics are forbidden specifically in the
-# settlement/provenance safety core. Presentation and navigation code may still
-# use text comparison or RelativePosition for their unrelated jobs.
 forbidden_safety_fallbacks=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && forbidden_safety_fallbacks+=("$hit")

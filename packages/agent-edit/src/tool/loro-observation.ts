@@ -1,7 +1,3 @@
-// What a result showed on Loro, and who changed what since the model's last read (design §5,
-// "The concurrent-change report"): the frontiers say which docs changed, the docs' commit messages
-// say who (`readCommitMessage`: a chat's turn, the writer's Apply or Discard, or else the writer).
-
 import { type DocumentRoom, loroRoomName } from "@meridian/contracts/protocol";
 import {
   type BlockId,
@@ -28,27 +24,17 @@ import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditConcurrentGroup } from "./model-result.js";
 
 export interface LoroListingSource {
-  /** The room copy the result rendered from, the call's own write merged in. */
   copy: LoroDocument;
   model: LoroDocumentModel;
   room: DocumentRoom;
   documentId: string;
   recording?: FrontierLookup;
-  /** The reader's own turn: its changes are not listed. */
   ownTurn: string | null;
-  /** Blocks the result's own write removed. */
   ownRemoved: ReadonlySet<string>;
   authorOfTurn?(turnId: string): Promise<string | null>;
   onFailed(cause: unknown): void;
 }
 
-/**
- * The result with the frontier it showed and, when the model's latest read of this document
- * (`latestRead`) is one this room can check out, the blocks others changed since that read, by
- * author. In a fork, Live's forwarded changes carry their own commit messages: the writer's typing
- * reads as `the user`, a press as their Apply or Discard, a Live chat's writes as that chat. Never
- * fails the result: a failure goes out without it.
- */
 export async function recordLoroObservation(
   result: InternalWriteResult,
   source: LoroListingSource,
@@ -78,7 +64,6 @@ async function listing(
 ): Promise<AgentEditConcurrentGroup[]> {
   const { copy } = source;
   const docs = copy.docs;
-  // A read below the cutoff, or of docs this copy no longer has, has no comparable cut.
   if (!planningFrontiers(docs, recorded, [])) return [];
   const changedKeys = changedSince(docs, recorded);
   if (changedKeys.size === 0) return [];
@@ -166,7 +151,6 @@ async function listing(
   return groups;
 }
 
-/** Who a commit message names: null for the reader's own turn. */
 async function labelOf(
   source: LoroListingSource,
   by: CommitAuthor | undefined,
@@ -184,10 +168,6 @@ async function labelOf(
   return label;
 }
 
-/**
- * Top-level blocks whose structure changed between two reads: new, retyped, re-attributed, a
- * nested block added, removed, moved or retyped, or moved among the blocks both reads show.
- */
 function structurallyChanged(
   before: readonly ShapeBlock[],
   after: readonly ShapeBlock[],

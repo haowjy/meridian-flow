@@ -14,7 +14,6 @@ import { ChatDeletes } from "./chat-deletes";
 
 const ChatDeletesContext = createContext<ChatDeletes | null>(null);
 
-/** One project's chat deletes; mount it keyed by the project, so leaving the project ends them. */
 export function ChatDeleteProvider({
   projectId,
   children,

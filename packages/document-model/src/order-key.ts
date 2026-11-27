@@ -9,7 +9,6 @@ const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 
 export type Random = () => number;
 
-/** A key strictly between `lower` and `upper` (either null for open). */
 export function keyBetween(lower: string | null, upper: string | null, random: Random): string {
   let prefix = "";
   let high = upper;
@@ -26,7 +25,6 @@ export function keyBetween(lower: string | null, upper: string | null, random: R
   }
 }
 
-/** Sibling order: by key, then by id. */
 export function compareOrder(keyA: string, idA: string, keyB: string, idB: string): number {
   return keyA < keyB ? -1 : keyA > keyB ? 1 : idA < idB ? -1 : idA > idB ? 1 : 0;
 }
@@ -48,7 +46,6 @@ export function orderKeys(
   const keep = new Set<number>();
   let segment: number[] = [];
   let low: string | null = null;
-  // Between two pinned blocks, the longest run of keys that fit between theirs.
   const close = (high: string | null) => {
     const fits = segment.filter((i) => {
       const key = keyOf(i) as string;
@@ -83,10 +80,6 @@ export function orderKeys(
   return result;
 }
 
-/**
- * The longest run of `indices` whose keys strictly increase, by patience sorting: `tails[k]` is the
- * index ending the best run of length k + 1 found so far.
- */
 function longestRun(
   indices: readonly number[],
   keyOf: (i: number) => string | undefined,

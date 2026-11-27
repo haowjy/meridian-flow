@@ -1,17 +1,3 @@
-/**
- * The envelope both suggestion triggers share, as rows.
- *
- * `/` and `@` differ in their boundary rules — one needs a word boundary, the
- * other refuses an existing link — but the places a trigger may open at all are
- * one decision, held in `PROSE_TRIGGER_BLOCKS` and read by both predicates. So
- * the containers and the source refusals are one corpus, consumed by both lane
- * suites, and a block that becomes prose (or stops being it) is one row here
- * rather than two edits in two files.
- *
- * Lane-specific rules stay in the lane's own suite: this corpus says where a
- * trigger may open, never what a trigger is.
- */
-
 import { getSchema, type JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
@@ -24,9 +10,7 @@ const paragraph = (...content: JSONContent[]): JSONContent => ({ type: "paragrap
 const cell = (...content: JSONContent[]): JSONContent => ({ type: "table_cell", content });
 
 export type TriggerEnvelopeRow = {
-  /** What the row proves, in the writer's terms. */
   claim: string;
-  /** The document, with `marker` typed where the writer typed it. */
   content: (marker: string) => JSONContent[];
   opens: boolean;
 };
@@ -85,11 +69,6 @@ export const SHARED_TRIGGER_ENVELOPE: readonly TriggerEnvelopeRow[] = [
   },
 ];
 
-/**
- * Build a document and return it with the position of the marker a writer just
- * typed, which is what `@tiptap/suggestion` hands its `allow` predicate as
- * `range.from`.
- */
 export function docWithTrigger(
   content: JSONContent[],
   marker: string,
@@ -107,7 +86,6 @@ export function docWithTrigger(
   return { doc, from };
 }
 
-/** Positions no document holds, where a trigger predicate must refuse. */
 export function positionsOutsideDocument(doc: PMNode): readonly number[] {
   return [-1, doc.content.size + 5];
 }

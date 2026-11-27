@@ -1,16 +1,3 @@
-/**
- * Ref assignment: giving written link and source occurrences their stored attrs, after
- * parse (contract §5.2).
- *
- * Parse is pure syntax; everything that needs the document tree happens here,
- * over a prepared holder scope. Each written occurrence takes, in order: the
- * ref of the old occurrence it continues (pass 1), the ref the model was
- * last shown at its address (pass 2), or a fresh classify, resolve or mint
- * (pass 3). Pictures follow the same passes, and an uploaded picture's
- * `asset:<id>` src is its identity in passes 1 and 2 as a ref is a link's; the
- * shipped image rule (`asset:`) is part of pass 3, so a new occupant of a
- * shown path never captures a picture that continues its identity (L39, L41).
- */
 import {
   type AheadRef,
   aheadAddress,
@@ -44,15 +31,11 @@ import {
 import { type OccurrenceAttrs, rebuildOccurrences } from "./occurrences.js";
 
 export interface AssignInput {
-  /** Occurrences in the replaced span of the current document (empty for create/insert). */
   old: readonly LinkOccurrence[];
-  /** Parsed nodes of the replaced span. */
   written: readonly PMNode[];
   scope: HolderLinkScope;
   shown: readonly ShownLink[];
-  /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
-  /** The writing thread's top chat; a freshly written bare `uploads://` link is stored qualified to it. */
   uploadsChat?: string;
 }
 
@@ -61,7 +44,6 @@ export interface AssignResult {
   minted: AheadMint[];
 }
 
-/** Assign refs to written nodes against the occurrences they replace. Synchronous, pure over the scope. */
 export function assignLinkRefs(input: AssignInput): AssignResult {
   const written = walkLinkOccurrences(input.written);
   const { attrs, minted } = assignOccurrences({ ...input, written });
@@ -77,11 +59,6 @@ export interface AssignOccurrencesInput {
   uploadsChat?: string;
 }
 
-/**
- * The attrs each written occurrence stores (index-aligned with `written`),
- * and the ahead refs minted for them. Links and sources (images, figures)
- * correspond separately: each kind spells under its own address grammar.
- */
 export function assignOccurrences(input: AssignOccurrencesInput): {
   attrs: OccurrenceAttrs[];
   minted: AheadMint[];
@@ -116,13 +93,7 @@ export function assignOccurrences(input: AssignOccurrencesInput): {
 }
 
 interface Grammar {
-  /** Written href → decoded canonical target, or null if this grammar cannot name it. */
   address(href: string, holderUri: string | null): ResolvedDocumentHref | null;
-  /**
-   * The address passes 1 and 2 compare a written href by: the codec name
-   * ahead minting stores, so any prose spelling still continues a link after
-   * that document moved. Pass 3 keeps its exact-then-unique-extension resolve.
-   */
   correspondenceKey(href: string, holderUri: string | null): string | null;
   acceptsRef(ref: string): boolean;
   spell(scope: HolderLinkScope, attrs: OccurrenceAttrs): SpelledHref;
@@ -159,7 +130,6 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
   },
 };
 
-/** An old occurrence, its identity, and what the reader was shown for it in this scope. */
 interface SpelledOld {
   occurrence: LinkOccurrence;
   identity: string | null;
@@ -232,7 +202,6 @@ function assignKind(input: {
       const continues = (corresponding[match.occurrence] as SpelledOld).occurrence;
       return continued(grammar, scope, continues.attrs, occurrence.attrs, writtenSuffix);
     }
-    // A written occurrence equal to an unaddressed old one keeps its attrs (no churn).
     const twin = unaddressed.findIndex(
       ({ occurrence: each, spelled }, position) =>
         !twinTaken.has(position) &&
@@ -255,10 +224,6 @@ function assignKind(input: {
   });
 }
 
-/**
- * Pass 1's attribute policy: an unchanged link keeps its old attrs verbatim,
- * so it emits no format operation; a title or suffix edit applies.
- */
 function continued(
   grammar: Grammar,
   scope: HolderLinkScope,
@@ -266,7 +231,6 @@ function continued(
   written: OccurrenceAttrs,
   writtenSuffix: string,
 ): OccurrenceAttrs {
-  // An upload's src is its identity and carries no suffix.
   if (old.ref === null) return written.title === old.title ? old : { ...old, title: written.title };
   const oldSuffix = splitDocumentHrefSuffix(old.href).suffix;
   if (written.title === old.title && writtenSuffix === oldSuffix) return old;
@@ -284,13 +248,6 @@ function continued(
   };
 }
 
-/**
- * Pass 2's stored form: the shown identity in the written occurrence's own
- * representation. Either kind of occurrence may have shown an upload, as a
- * picture's `asset:<id>` or a text link's `doc:<id>`; a picture stores an
- * upload as `asset:<id>` and a text link as its document ref, at its current
- * address (else the shown one) plus the written suffix.
- */
 function shownAttrs(
   grammar: Grammar,
   scope: HolderLinkScope,
@@ -312,7 +269,6 @@ function shownAttrs(
   };
 }
 
-/** The upload a picture source would store as `asset:<id>` for a shown document ref, or null. */
 function uploadOf(scope: HolderLinkScope, ref: string, grammar: Grammar): string | null {
   const parsed = parseLinkRef(ref);
   if (grammar.kind !== "source" || parsed?.kind !== "doc") return null;
@@ -320,11 +276,6 @@ function uploadOf(scope: HolderLinkScope, ref: string, grammar: Grammar): string
   return scope.spellSource({ src: asset, ref: null }).address === null ? null : parsed.documentId;
 }
 
-/**
- * Pass 3: a source naming a picture the project knows takes the shipped image
- * rule; anything else is markup's `assignFreshLink` in this view. A minted ref
- * is registered by the host.
- */
 function fresh(
   input: {
     grammar: Grammar;
@@ -362,10 +313,6 @@ function fresh(
   return { ref: assigned.ref, title, href: assigned.href };
 }
 
-/**
- * Where a stored link leads now: its live document's address. An unsettled
- * ahead ref leads to a document only once one holds the address its href names.
- */
 function currentUri(scope: HolderLinkScope, link: { ref: string; href: string }): string | null {
   const resolution = scope.resolve(link);
   if (resolution.kind === "document") return resolution.document.uri;
@@ -420,26 +367,14 @@ function isAssetSrc(src: string): boolean {
   return src.startsWith("asset:");
 }
 
-/**
- * The shipped image rule: a written source naming a picture the project knows
- * becomes `asset:<id>`. A source the scope cannot claim is assigned like a
- * link; guessing an id would store a reference that can never render.
- */
 function assetFor(scope: HolderLinkScope, src: string): string | null {
   const target = writtenSourceTarget(src);
   return target ? scope.assetFor(target.uri) : null;
 }
 
-/** The write path's ref assigner: one per command, over one prepared scope and one set of showings. */
 export interface WriteLinkAssigner {
-  /** Assign refs to the nodes written over `old` (empty for an insert or a create). */
   assignSpan(old: readonly PMNode[], written: readonly PMNode[]): PMNode[];
-  /**
-   * Assign refs in a find's parsed spliced group: occurrences outside the
-   * splice keep their old attrs, only the inside ones are assigned (§5.4).
-   */
   assignSplice(input: Omit<SpliceRestoreInput, "assignOccurrences">): PMNode[];
-  /** Every ahead ref minted so far; the handler registers them before applying. */
   readonly minted: readonly AheadMint[];
 }
 
@@ -448,7 +383,6 @@ export function createWriteLinkAssigner(input: {
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
   uploadsChat?: string;
-  /** Hears each splice that fell back to whole-group assignment (possible format churn there). */
   onSpliceFallback?: (reason: SpliceFallback) => void;
 }): WriteLinkAssigner {
   const minted: AheadMint[] = [];

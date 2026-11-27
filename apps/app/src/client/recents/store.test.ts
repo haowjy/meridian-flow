@@ -1,4 +1,3 @@
-/** A list may add a newer opening. It cannot delete, overwrite a locator, or undo a removal. */
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_RECENTS_STORAGE_KEY,

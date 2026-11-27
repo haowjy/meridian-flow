@@ -1,4 +1,3 @@
-/** Pure projection of the replay's trees, and ranking, for file suggestion hosts. */
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import { type ProjectContextTreeScheme, readSegment } from "@meridian/contracts/protocol";
 import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
@@ -10,7 +9,6 @@ export type FileSuggestion = {
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
-  /** A twin's `~id` (`EntryName`). */
   suffix?: string;
   kind: FileSuggestionKind;
   parents: readonly string[];
@@ -40,7 +38,6 @@ export function treeFileSuggestions(
   return suggestions;
 }
 
-/** One entry as a suggestion, a file keyed by its document. */
 export function fileSuggestion(scheme: ProjectContextTreeScheme, entry: TreeEntry): FileSuggestion {
   return {
     entryId: entry.kind === "dir" ? entry.entryId : entry.documentId,
@@ -53,7 +50,6 @@ export function fileSuggestion(scheme: ProjectContextTreeScheme, entry: TreeEntr
   };
 }
 
-/** The folders above a path as the writer reads them: a twin's `~id` is not part of a name. */
 function folderNames(path: string): string[] {
   return path
     .split("/")
@@ -62,12 +58,6 @@ function folderNames(path: string): string[] {
     .map((segment) => readSegment(segment).name);
 }
 
-/**
- * Direct children of one folder in `entries`' order, which for
- * `treeFileSuggestions` is the writer's order in the tree. `path` is the
- * folder's own path (`/` for a scheme root); scheme-root entries themselves
- * (`path === "/"`) are never children.
- */
 export function folderChildren(
   entries: readonly FileSuggestion[],
   scheme: ProjectContextTreeScheme,
@@ -78,16 +68,11 @@ export function folderChildren(
   );
 }
 
-/** Parent folder path of an entry path: `/a/b` → `/a`, `/a` → `/`. */
 export function parentPath(path: string): string {
   const index = path.lastIndexOf("/");
   return index <= 0 ? "/" : path.slice(0, index);
 }
 
-/**
- * Rank matches by the part a writer is most likely recalling: the beginning
- * of a leaf name, then a word within it, then anywhere in its full path.
- */
 export function matchFileSuggestions(
   entries: readonly FileSuggestion[],
   query: string,

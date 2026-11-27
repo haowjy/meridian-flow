@@ -1,14 +1,3 @@
-/**
- * useThreadSnapshotSync — the binding of the chat's `ThreadSync` to React.
- *
- * `createThreadSync` (in `@meridian/thread-client/sync`) is the chat's one mounted subscriber and
- * decides when to read, what is missing, how a read applies and joins the stream, and in what
- * order frames reach the turns. This hook gives it the app's ports: the store's cell for the
- * chat's value, React Query as the fetcher, the account signal, and the store's effects as its
- * observer. It starts the sync once the chat is no longer pending creation and stops it on
- * cleanup. React Query's `queryFn` hands every completed read to `sync.receive`, so the cache
- * publishes only reads the sync applied.
- */
 import { acceptsSnapshot, createThreadSync, SNAPSHOT_RETRY_MS } from "@meridian/thread-client/sync";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useReducer, useRef } from "react";
@@ -43,7 +32,6 @@ export type ThreadSnapshotSyncStatus = {
   refetch: () => void;
 };
 
-/** Pending creation gates HTTP and automatic subscription through first-send admission. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
   const transport = useThreadTransport();
@@ -68,7 +56,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       state: ports.state,
       /** Bumped by cleanup: a request queued under an earlier mount must not run after it. */
       epoch: 0,
-      /** Late-bound: the query that fetches is built after the sync that needs to ask it. */
       bind(next: (kind: "fresh" | "any") => void) {
         request = next;
       },

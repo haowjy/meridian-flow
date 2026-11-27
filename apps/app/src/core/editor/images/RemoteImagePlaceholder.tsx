@@ -4,7 +4,6 @@ import { ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadRemoteImage, useRemoteImageStatus } from "./remote-image";
 
-/** What a remote picture shows until the writer loads it: its address, and the button that loads it. */
 export function RemoteImagePlaceholder({ address, alt }: { address: string; alt: string }) {
   const status = useRemoteImageStatus(address);
   const loading = status?.kind === "loading";

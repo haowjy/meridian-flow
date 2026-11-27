@@ -18,23 +18,16 @@ import { DropdownMenuCheckboxItem, DropdownMenuItem } from "@/components/ui/drop
 import { cn } from "@/lib/utils";
 import { ReasonTooltip } from "./ReasonTooltip";
 
-/** Why this row cannot run here. Null or absent means it runs. */
 type Refusable = { blockedReason?: string | null };
 
 export type EditorMenuItemProps = ComponentProps<typeof DropdownMenuItem> & Refusable;
 export type EditorMenuCheckboxItemProps = ComponentProps<typeof DropdownMenuCheckboxItem> &
   Refusable;
 
-/**
- * Greyed, and still the row the writer is on: the highlight stays, so arrowing
- * onto a refused row shows where they are, muted by the same opacity as the
- * rest of it.
- */
 const REFUSED_ROW = "cursor-not-allowed opacity-50";
 
 type RowProps = { className?: string; onSelect?: (event: Event) => void };
 
-/** What a reason does to a row, for whichever Radix item is wearing it. */
 function refusal(blockedReason: string | null | undefined, { className, onSelect }: RowProps) {
   if (!blockedReason) return { className, onSelect };
   return {

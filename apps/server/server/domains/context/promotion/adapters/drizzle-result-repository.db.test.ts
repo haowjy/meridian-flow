@@ -1,5 +1,3 @@
-/** Durable reconciliation contract for caller-owned promotion result identity. */
-
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { projectResults, projects, threads, turns, users } from "@meridian/database/schema";
 import postgres from "postgres";

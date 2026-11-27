@@ -3,11 +3,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { tabChipClass } from "./tab-chip";
 
-/**
- * An icon-only control in a `tab-band` (Recently opened, New, All open tabs): a tab chip, so its
- * hover pill, height and glyph match the tabs beside it under any pointer. `label` names it and
- * is its tooltip unless `tooltip` says more.
- */
 export function BandIconButton({
   label,
   tooltip = label,

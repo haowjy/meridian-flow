@@ -21,13 +21,11 @@ function randomBelow(limit: bigint, crypto: Crypto): bigint {
   return words[0] % limit;
 }
 
-/** A fresh peer id for a client session (a browser tab's copy of a room). */
 export function freshPeerId(crypto: Crypto = globalThis.crypto): PeerId {
   const peer = SERVER_PEER_LIMIT + randomBelow(PEER_ID_LIMIT - SERVER_PEER_LIMIT, crypto);
   return peer.toString() as PeerId;
 }
 
-/** A fresh peer id for one of the server's writers: a room's own, a command's, an AI turn's. */
 export function freshServerPeerId(crypto: Crypto = globalThis.crypto): PeerId {
   return (1n + randomBelow(SERVER_PEER_LIMIT - 1n, crypto)).toString() as PeerId;
 }

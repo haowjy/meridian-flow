@@ -1,10 +1,3 @@
-/**
- * The picked Work's drafts in a version chip's menu (`DraftSwitcher`), the same in the sidebar's
- * chip and a document's: each draft with how many files it changes, `+ New draft`, which makes
- * one and shows it, and `Delete draft` for the one on screen, which goes back to Live. Its notice,
- * "Darker ending deleted. Undo", is the project's delete notice (`deleteNoticeKey`), on main's
- * document or Recently opened; its Undo lists the draft again and changes nothing on screen.
- */
 import { plural } from "@lingui/core/macro";
 import type { WorkDraft } from "@meridian/contracts/drafts";
 import type { ReactNode } from "react";
@@ -19,7 +12,6 @@ import type { DraftVersion } from "./DraftSwitcher";
 import { nextDraftName, workDraftName } from "./draft-names";
 import { deleteNoticeKey } from "./draft-notices";
 
-/** A Work's drafts as `WorkDraftRows` lists them: each with how many files it changes. */
 export function workDraftVersions(
   list: readonly WorkDraft[],
   current: (draftId: string) => boolean,
@@ -38,11 +30,6 @@ export function workDraftVersions(
   });
 }
 
-/**
- * The Work's drafts as menu entries, `current` on the one on screen; the name the chip gives it
- * (`owner`), among several; and the menu's New and Delete. Null with no picked Work: a chat's own
- * draft is the only one.
- */
 export function useWorkDraftMenu(
   projectId: string,
   shell: ShellTreeVersion | null,
@@ -73,7 +60,6 @@ export function useWorkDraftMenu(
       ? () => {
           state.remove(shown);
           const main = presented?.mainDocumentId(projectId) ?? null;
-          // A page only this draft held closes, and the notice goes where main lands.
           let notice: number | null = null;
           if (main && draftOnly(main))
             removal?.leaveDraftOnly(projectId, main, (landing) => {

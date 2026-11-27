@@ -22,7 +22,6 @@ import type { ProjectResultRecord } from "./ports/result-repository.js";
 import { createPromotionService } from "./promotion-service.js";
 
 __mergedSuite("promotion-reconciliation.test.ts", () => {
-  // Merged from apps/server/server/domains/context/promotion/promotion-reconciliation.test.ts.
   const input = {
     projectId: "project-1",
     workId: "work-1",
@@ -86,7 +85,6 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
         error: { code: "repository_error" },
       });
       expect(test.put).toHaveBeenCalledOnce();
-      // The stored object once (plus its derived keys, which the release always pairs with it).
       const deleted = test.remove.mock.calls.map(([key]) => key);
       const derived = deleted.flatMap(derivedObjectKeys);
       expect(deleted.filter((key) => !derived.includes(key))).toHaveLength(1);
@@ -138,7 +136,6 @@ __mergedSuite("promotion-reconciliation.test.ts", () => {
 });
 
 __mergedSuite("promotion-and-flush.test.ts", () => {
-  // Merged from apps/server/server/domains/context/promotion/__tests__/promotion-and-flush.test.ts.
   const promotionDeps = (
     objectStore: ReturnType<typeof createInMemoryObjectStore>,
     results: ReturnType<typeof createInMemoryResultRepository>,

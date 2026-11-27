@@ -1,9 +1,3 @@
-/**
- * figures-api — HTTP client for a picture's signed read URLs.
- *
- * Reads a signed-URL cache and fetches a fresh URL when it has expired. Pictures arrive by the
- * direct upload in `context-upload-api.ts`; this is what draws them.
- */
 import type { GetFigureSignedUrlResponse } from "@meridian/contracts/protocol";
 
 import { signedUrlRefreshDelayMs } from "@/core/editor/images";
@@ -24,10 +18,6 @@ export function documentDownloadUrl(documentId: string): string {
 }
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
-  /**
-   * The Work the viewer is in. A picture still in a Work's draft is readable
-   * only through that Work, so the request names it.
-   */
   owner?: string;
   src?: string;
   skipCache?: boolean;

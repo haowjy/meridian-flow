@@ -73,7 +73,6 @@ function myers(
   return null;
 }
 
-/** The runs of the shortest edit script, read back from each round's saved diagonals. */
 function backtrack(
   trace: readonly Int32Array[],
   offset: number,

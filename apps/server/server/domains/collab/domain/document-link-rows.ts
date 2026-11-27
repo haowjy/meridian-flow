@@ -1,5 +1,3 @@
-/** Map a holder's stored link occurrences to link-index rows, one per link key (contract §11). */
-
 import {
   classifyWrittenLink,
   classifyWrittenSource,
@@ -10,21 +8,15 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { StoredLinkOccurrence } from "@meridian/markup/stored-links";
 
 export type DocumentLinkRow = {
-  /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */
   linkKey: string;
   targetDocumentId: DocumentId | null;
   aheadId: string | null;
-  /** Decoded canonical address the ref was stored with; null for contextual keys. */
   address: string | null;
   occurrences: number;
 };
 
 const ASSET = /^asset:(.+)$/;
 
-/**
- * Never resolves whether a target exists: the index is a hint from a certified cut. External
- * hrefs, malformed refs and ref-less internal hrefs (which no producer writes) have no row.
- */
 export function deriveDocumentLinkRows(input: {
   occurrences: readonly StoredLinkOccurrence[];
   holderUri: string;

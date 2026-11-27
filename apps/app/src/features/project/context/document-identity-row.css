@@ -3,7 +3,6 @@
   position: relative;
   z-index: 20;
 }
-/* Extend only vertically: every visible box owns its full width. */
 @media (max-width: 640px), (pointer: coarse) {
   [data-document-identity-row] button {
     position: relative;
@@ -20,7 +19,6 @@
   }
 }
 
-/* A finger owns the whole 44px square, as in the phone shell. */
 @media (pointer: coarse) {
   [data-document-identity-row] button {
     min-width: 44px;

@@ -30,11 +30,6 @@ const cutBehind = [
 ];
 const otherExtractor = ne(documentBlockRooms.extractorVersion, DOCUMENT_EXTRACTOR_VERSION);
 
-/**
- * What a reader may not trust: no room, behind the document, or written by any other extractor
- * version. A newer build's room is no older build's truth, so an older build's readers fall
- * back to the room copy for it.
- */
 export const staleForReaders = or(
   isNull(documentBlockRooms.roomId),
   ...cutBehind,
@@ -77,8 +72,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .where(
           and(
             current(ids),
-            // The stored blocks are Live's: a reader whose draft has a fork of the document reads
-            // the fork instead.
             draft
               ? sql`not exists (select 1 from ${documentForks} where ${documentForks.documentId} = ${documents.id}
                   and ${documentForks.draftId} = ${draft})`

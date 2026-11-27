@@ -1,11 +1,3 @@
-/**
- * The marks around a fork's inherited rows.
- *
- * Each run of rows from one source opens with "From <source>", whose name
- * links to that chat. The last inherited row closes with the fork point, below
- * which the fork's own conversation begins. Both are quiet rules in the
- * compaction divider's grammar: words first, the rule after them.
- */
 import { Trans } from "@lingui/react/macro";
 import { GitFork } from "lucide-react";
 import type { SourceOwner } from "./inherited-view";

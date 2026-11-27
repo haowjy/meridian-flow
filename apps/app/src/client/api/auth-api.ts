@@ -1,4 +1,3 @@
-/** Typed client for the authenticated Meridian identity bootstrap. */
 import { API_AUTH_ME_PATH, type AuthMeResponse } from "@meridian/contracts/protocol";
 import { getJson } from "./http-client";
 

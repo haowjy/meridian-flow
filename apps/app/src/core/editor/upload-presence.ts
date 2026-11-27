@@ -42,7 +42,6 @@ import type { LocalPresenceFields, PeerAwareness } from "./local-presence";
 
 const UPLOAD_PRESENCE_NAME = "meridianUploadPresence";
 
-/** The awareness field carrying what one client is sending right now. */
 const UPLOAD_PRESENCE_FIELD = "uploads";
 
 type UploadPresenceOptions = {
@@ -67,7 +66,6 @@ function readFrame(value: unknown): UploadFrame | null {
     : null;
 }
 
-/** Every upload some OTHER client says it is sending right now. */
 function sentElsewhere(peers: PeerAwareness): Map<string, UploadFrame | null> {
   const owners = new Map<string, UploadFrame | null>();
   for (const [clientId, state] of peers.getStates()) {
@@ -127,7 +125,6 @@ export const UploadPresenceExtension = Extension.create<UploadPresenceOptions>({
     if (!presence) return [];
     const { peers } = presence;
 
-    /** The pictures this client is filling, and the files it is sending under chips here. */
     const sentHere = (): AnnouncedUpload[] => {
       const host = fileDropHost(editor);
       const files = host ? uploads.sending(host.hostDocumentId) : [];

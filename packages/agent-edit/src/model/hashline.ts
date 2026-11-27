@@ -11,27 +11,15 @@
  * that is where the writer put it.
  */
 
-/** The two halves of a serialized block. */
 export interface Hashline {
-  /** Empty when the writer had no hash for the block. */
   hash: string;
   body: string;
 }
 
-/**
- * Serialize one block for the agent. A multi-line body starts on its own line
- * so the prefix never runs into prose.
- */
 export function toHashline(hash: string, body: string): string {
   return body.includes("\n") ? `${hash}|\n${body}` : `${hash}|${body}`;
 }
 
-/**
- * Split a line this system serialized. `null` when the line carries no
- * separator at all, which means it is not a hashline and the caller decides
- * what the whole string is — historically a body in some places and a hash in
- * others, and only the caller knows which.
- */
 export function splitHashline(serialized: string): Hashline | null {
   const separator = serialized.indexOf("|");
   if (separator < 0) return null;

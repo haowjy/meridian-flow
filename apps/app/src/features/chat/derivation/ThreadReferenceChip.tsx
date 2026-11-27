@@ -1,11 +1,3 @@
-/**
- * The `from` source of a spawned child: a chip at the top of the child's chat
- * naming the conversation its parent pointed it at (`spawn.from`).
- *
- * The name opens that chat, and a trashed source says so. The block's title is
- * frozen at spawn, so the chat's current title wins.
- */
-
 import { Trans } from "@lingui/react/macro";
 import type { ThreadReference } from "@meridian/contracts/threads";
 import { MessagesSquare } from "lucide-react";

@@ -9,7 +9,6 @@ import { getEditorChrome, hoverOwner, watchManuscriptLayout } from "../chrome";
 import type { LocalPresenceFields } from "../local-presence";
 import { decodePoint, encodePoint, pointAt } from "../loro-points";
 
-/** How far either side of a peer's caret line still names the peer, in px. */
 const REACH = 4;
 
 export type PeerUser = { accountId?: string; name?: string; color?: string };
@@ -17,7 +16,6 @@ export type PeerUser = { accountId?: string; name?: string; color?: string };
 const key = new PluginKey<DecorationSet>("peerCarets");
 const REDRAW = "peerCaretsRedraw";
 
-/** A caret on the wire: both ends as encoded Loro points, resolved against each peer's copy. */
 function wireCursor(docs: RoomDocs, state: EditorState) {
   const anchor = pointAt(docs, state.doc, state.selection.anchor);
   const head = pointAt(docs, state.doc, state.selection.head);
@@ -48,11 +46,6 @@ function peerCarets(docs: RoomDocs, presence: LocalPresenceFields, doc: Node): P
   return out;
 }
 
-/**
- * The text at `pos` is scrolled out of a box that pans on its own (a wide table, a long code
- * line). The layer sits outside those boxes' clip, so such a caret is hidden rather than drawn
- * over the margin.
- */
 function pannedAway(view: EditorView, pos: number, x: number): boolean {
   const at = view.domAtPos(pos).node;
   for (

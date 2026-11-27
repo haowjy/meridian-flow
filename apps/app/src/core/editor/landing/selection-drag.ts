@@ -1,32 +1,3 @@
-/**
- * The editor's own drag of a text selection: a press on the highlight that
- * travels 4px lifts it at once, the way Google Docs does, with no pause and no
- * third-click refusal. The browser's text drag has both (see
- * `findings/text-drag.md` in the editor-followups work), and brings a drag
- * image; this gesture has neither.
- *
- * Two halves that change independently: `trackPress` (in `chrome/`) follows the
- * mouse and decides click or lift; `liftSelection` is the pump. The pump is not a second
- * drop path. It feeds the drag events a native drag
- * would send (`dragstart`, `dragenter`, `dragover`, `drop`, `dragend`, with a
- * real `DataTransfer`) into the pipeline that already handles them:
- * ProseMirror's `view.dragging`, `LandingExtension`'s caret and doors, link
- * announcements, other surfaces' `LandingExtension` (the composer copies).
- * Release first lifts a press that has not lifted yet but ended past the press slop
- * from where it began (a flick can release before any move is heard), then
- * sends one `dragover` at the release point, so a fast drag lands where it is
- * let go, then `drop` only if that `dragover` was cancelled:
- * a target that claims nothing gets nothing. (A native drag also withholds
- * `drop` from a target that set `dropEffect` to `none`; this one does not, and
- * the doors check again on `drop`.)
- *
- * A press that never travels does what the browser would have done on
- * release: a caret there, or the paragraph for a third click. Presses it does
- * not take stay native, among them any with a modifier (so Ctrl/Option-drag
- * still carries text out of the window) and surfaces with no chrome kernel,
- * which have no Escape route for a drag.
- */
-
 import type { Editor } from "@tiptap/core";
 import { AllSelection, Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
@@ -103,7 +74,6 @@ export function claimRepress(
   return true;
 }
 
-/** Listens for qualifying presses on `view` for as long as it lives. Returns the teardown. */
 export function installSelectionDrag(view: EditorView, editor: Editor): () => void {
   let cancel: (() => void) | null = null;
 
@@ -136,7 +106,6 @@ export function installSelectionDrag(view: EditorView, editor: Editor): () => vo
   };
 }
 
-/** Starts tracking a press the selection drag took: a click places the caret (or the paragraph for a third press), a travel lifts. */
 function startGesture(
   view: EditorView,
   chrome: EditorChrome,
@@ -161,11 +130,6 @@ function startGesture(
   });
 }
 
-/**
- * Lifts the selection with the drag events a native drag would send, and
- * keeps them coming until `finish`, the chrome's Escape, or a peer's edit that
- * changes what the selection holds. After the last two `finish` is a no-op.
- */
 function liftSelection(
   view: EditorView,
   chrome: EditorChrome,
@@ -197,7 +161,6 @@ function liftSelection(
     return event;
   };
 
-  /** One `dragover`, preceded by `dragleave`/`dragenter` when the element under the pointer changed. Whether the target accepts. */
   const hover = () => {
     const now = doc.elementFromPoint(pointer.clientX, pointer.clientY);
     if (now !== over) {
@@ -208,7 +171,6 @@ function liftSelection(
     return over ? send("dragover", over).defaultPrevented : false;
   };
 
-  /** Whether a peer's edit has changed what the selection holds, so the drag no longer carries what was lifted. */
   const carriedChanged = () => {
     if (view.state !== seenState) {
       seenState = view.state;
@@ -221,7 +183,6 @@ function liftSelection(
     if (ended) return;
     ended = true;
     clearInterval(tick);
-    // A release first asks the target once more at the release point, and `drop`s only if it accepts.
     if (release && !carriedChanged()) {
       if (hover() && over) send("drop", over);
     } else if (over?.isConnected) {
@@ -268,7 +229,6 @@ function liftSelection(
   };
 }
 
-/** The caret a click makes at the pointer, or the pressed textblock for a third click. */
 function placeCaret(view: EditorView, x: number, y: number, third: boolean): void {
   const at = view.posAtCoords({ left: x, top: y });
   if (!at) return;

@@ -1,17 +1,3 @@
-/**
- * The slash catalog — what the menu offers, and who says so.
- *
- * This is the seam that survived the toolkit demolition (§8: "salvage the
- * catalog getter, rewrite the trigger"): the item shape, the fuzzy filter, and
- * the read-at-open getter. The host owns the catalog because the labels are
- * localized and the image entry needs the host's file picker; everything else
- * in this directory builds around it.
- *
- * Ids are a closed union on purpose. The surface renders an icon per id and
- * `slash-insertion.ts` builds a node per id, so an entry that reached the
- * catalog without either is a compile error rather than a blank row.
- */
-
 import type { HeadingLevel } from "@meridian/prosemirror-schema";
 
 import type { EditorAnchor } from "../../anchors";
@@ -28,7 +14,6 @@ export type SlashCommandId =
   | "code"
   | "image";
 
-/** The menu's two halves (§5.7): retype this block, or make a new object. */
 export type SlashCommandGroupId = "text" | "insert";
 
 export type SlashCommandItem = {
@@ -36,9 +21,7 @@ export type SlashCommandItem = {
   group: SlashCommandGroupId;
   label: string;
   aliases: readonly string[];
-  /** A second line of answer for entries whose result is not obvious. */
   hint?: string;
-  /** Left out of the unfiltered menu, so rarer rows don't push the rest past its fold. */
   onlyWhenSearched?: boolean;
 };
 
@@ -75,7 +58,6 @@ function fuzzyScore(value: string, query: string): number | null {
   return null;
 }
 
-/** Fuzzy label + alias filtering; stable ties preserve the writer-first catalog order. */
 export function filterSlashCommandItems(
   items: readonly SlashCommandItem[],
   query: string,

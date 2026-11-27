@@ -1,15 +1,3 @@
-/**
- * The document operations that spell links and image sources, each run inside
- * a document-link scope (see `ports/document-link-scope.ts`). A door opens or
- * joins the snapshot; the operation itself prepares it with the documents it
- * is about to spell, because only it has loaded them.
- *
- * Text crosses these doors: the Markdown engine (reads, the read API and
- * download, writer and import writes), the model's edit core and draft-aware reads (Markdown, hashlines and revision).
- * ContextFS.search scopes its source's chapters together. Links
- * spelled outside every scope are reported (`createLinkScopeObserver`).
- */
-
 import type { FileGrant } from "../../file-policy/index.js";
 import type { EffectiveDocumentReader } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
@@ -23,7 +11,6 @@ export function scopeMarkdownEngine(
 ): MarkdownDocumentEngine {
   const by = (documentId: string) => ({ documentId });
   return {
-    // The caller spells: a room copy is only text, and `serializeVersionedDocument` is scoped.
     readRoom: engine.readRoom,
     currentBlocks: engine.currentBlocks,
     serializeVersionedDocument: (documentId, doc, view) =>
@@ -42,7 +29,6 @@ export function scopeMarkdownEngine(
       scopes.within(by(input.documentId), () => engine.writeCreatedContent(input)),
     mergeCodeText: (input) =>
       scopes.within(by(input.documentId), () => engine.mergeCodeText(input)),
-    // Neither spells a link: a seed is encoded from bound blocks.
     encodeSeed: engine.encodeSeed,
     installSeeds: engine.installSeeds,
   };
@@ -62,10 +48,6 @@ function requestScope(context: {
   throw new Error("A model edit runs in no thread and no agent's project");
 }
 
-/**
- * A model read is scoped by its request's project, which exists even for a chapter the call is
- * creating; it reads as the account it acts for, in the thread it reads in.
- */
 export function scopeAgentEdit(
   router: AgentEditRouter,
   scopes: DocumentLinkScopes,
@@ -85,7 +67,6 @@ export function scopeAgentEdit(
   };
 }
 
-/** A model edit's write is scoped by its request's project and its thread. */
 export function scopeModelEditWrite(
   write: ModelEdits["write"],
   scopes: DocumentLinkScopes,
@@ -103,10 +84,6 @@ export function scopeModelEditWrite(
     );
 }
 
-/**
- * Reads in the reader's link scope: its thread decides the tree view links spell
- * in. The revision depends on the tree, so it is scoped like the text.
- */
 export function scopeEffectiveReader(
   access: Omit<EffectiveDocumentReader, "writeWorkCreatedContent">,
   scopes: DocumentLinkScopes,
@@ -119,7 +96,6 @@ export function scopeEffectiveReader(
   return {
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
-    // Passed through: no Markdown of their own.
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
     readDraftMarkdown: (command) =>

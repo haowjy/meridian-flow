@@ -12,7 +12,6 @@ import { parentPort } from "node:worker_threads";
 import { RE2JS } from "re2js";
 
 type Span = [start: number, end: number];
-/** A block's index among the texts sent, and its first match as offsets into that text. */
 export type Passage = [index: number, start: number, end: number];
 
 export type MatchRequest = { pattern: string; ignoreCase: boolean } & (
@@ -20,7 +19,6 @@ export type MatchRequest = { pattern: string; ignoreCase: boolean } & (
   | { op: "passages"; texts: readonly string[]; limit: number }
 );
 
-/** What each op replies with. */
 export interface MatchValue {
   count: number;
   passages: Passage[];

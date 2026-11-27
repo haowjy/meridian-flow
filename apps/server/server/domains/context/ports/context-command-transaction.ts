@@ -21,21 +21,16 @@ export type ContextCommandOptions = {
   sourceIds?: readonly string[];
 };
 
-/** A locked draft as the transaction resolved it. */
 export type ContextCommandActiveDraft = { id: DraftId };
 
-/** What the transaction resolved before the command ran. */
 export type ContextCommandContext = {
-  /** The locked draft, when the command asked for one. */
   draft: ContextCommandActiveDraft | null;
 };
 
-/** Scopes known up front, or resolved when the transaction starts (an identity destination's current home). */
 export type ContextCommandScopes =
   | readonly ContextCommandScope[]
   | (() => Promise<readonly ContextCommandScope[]>);
 
-/** Transaction boundary for one result-returning Context command. */
 export interface ContextCommandTransaction {
   run<T>(
     operation: (command: ContextCommandContext) => Promise<T>,

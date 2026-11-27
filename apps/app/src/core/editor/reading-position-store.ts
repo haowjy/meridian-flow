@@ -1,14 +1,10 @@
-/** Account-stamped device memory of places per document room, bounded by LRU. */
-
 import { browserRecord, isRecord, type StorageSource } from "@/client/storage/browser-record";
 import { decodePoint, type EncodedPoint } from "./loro-points";
 
 export const READING_POSITION_STORAGE_KEY = "meridian:reading-position:v2";
 export const READING_POSITION_LIMIT = 300;
-/** A Loro point as `encodePoint` writes it. */
 export type ReadingAnchor = EncodedPoint;
 export type ReadingPosition = {
-  /** `block` is the id of the block the reading line is in. */
   viewport: { block: string; text: ReadingAnchor | null; offset: number };
   selection: { anchor: ReadingAnchor; head: ReadingAnchor; node: boolean };
 };

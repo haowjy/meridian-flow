@@ -1,5 +1,3 @@
-/** Pure-markdown plugin and convenience codec preset. */
-
 import type { Schema } from "prosemirror-model";
 import type { PluggableList } from "unified";
 
@@ -55,10 +53,6 @@ export function markdown(): MarkupPlugin {
   };
 }
 
-/**
- * The canonical Markdown codec. Callers may extend parsing with
- * `remarkPlugins`; without them it is the wire codec.
- */
 export function markdownCodec(options: { schema: Schema; remarkPlugins?: PluggableList }) {
   const { remarkPlugins, ...codecOptions } = options;
   return createMarkupCodec(codecOptions)

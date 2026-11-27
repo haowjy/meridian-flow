@@ -1,14 +1,3 @@
-/**
- * Durable unresolved chat-submission journal.
- *
- * One record per `(accountId, recordId)`. It stores only the local intent
- * needed to re-issue an idempotent lookup/replay and rebuild one user row: it
- * is not a thread replica and never holds assistant turns. Composer submissions
- * retain their structured snapshot only until ownership returns to authoring or
- * the server acknowledges the message.
- * Canonical history stays in the server admission/turn records.
- */
-
 import { isDraftId, newDraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import {
@@ -43,17 +32,11 @@ export type ChatSubmissionStorage = {
   key(index: number): string | null;
 };
 
-/**
- * The server's answer to a switch, stamped on its record: the whole run-state record the answer
- * carries, labelled with its version. Every tab reads the stamp as a server fact. `at` (ms) lets
- * the journal prune it.
- */
 export type ControlAnswer = {
   runState: RunState;
   at: number;
 };
 
-/** A stamped record stays this long, so a tab that was hidden when it was answered can read it. */
 export const ANSWER_GRACE_MS = 60_000;
 
 export type ChatSubmission = {
@@ -75,17 +58,7 @@ export type ChatSubmission = {
   references: SubmittedReference[];
   activatedSkillSlugs: string[];
   state?: "rejected";
-  /**
-   * A write-mode switch, not a message. It is posted to the chat's controls route in
-   * `seq` order with the messages around it; `recordId` and `submissionId` are
-   * the control's own id, and the message fields are empty.
-   */
   control?: { kind: "write_mode"; mode: AiWriteMode };
-  /**
-   * The server's answer to the control. The driver stamps it instead of deleting the record, so
-   * every tab, driving or not, reads one server fact; a stamped record is never posted again,
-   * and the journal prunes it at the first write after `ANSWER_GRACE_MS`.
-   */
   answer?: ControlAnswer;
   /**
    * Set before a message or control's first POST. Without it, the server cannot hold the
@@ -95,14 +68,10 @@ export type ChatSubmission = {
   draft?: ComposerDraftSnapshot;
   creation?: {
     title: string;
-    /** The chat's lineage draft (`newDraftId`), minted with `threadId`. */
     draftId: string;
     workId: string | null;
-    /** The Work's default when sent: the optimistic chat's mode when no choice was made. */
     workAiWriteMode: AiWriteMode;
-    /** The writer's explicit choice, sent with the creation request. */
     aiWriteMode?: AiWriteMode;
-    /** Sent with the creation request. */
     overrides: ThreadOverrides;
     agentSelection: AgentSelection;
     agentName: string;
@@ -110,10 +79,8 @@ export type ChatSubmission = {
   };
 };
 
-/** A record as callers build it: the journal allocates `seq` when the record is first appended. */
 export type NewChatSubmission = Omit<ChatSubmission, "seq"> & { seq?: number };
 
-/** The chat's durable order. Equal `seq` (two tabs appending in one tick) breaks on the id. */
 export function compareSubmissions(a: ChatSubmission, b: ChatSubmission): number {
   return a.seq - b.seq || (a.recordId < b.recordId ? -1 : a.recordId > b.recordId ? 1 : 0);
 }
@@ -240,7 +207,6 @@ function parseSubmission(value: unknown): ChatSubmission | null {
 
 export class DeviceChatSubmissionJournal {
   private state: { accountId: string } | null = null;
-  /** Session fence: bumped on every account bind. Not a durable revision. */
   private bindEpoch = 0;
   private lastKnown: ChatSubmission[] = [];
   private readonly listeners = new Set<() => void>();
@@ -279,8 +245,6 @@ export class DeviceChatSubmissionJournal {
   setUser(accountId: string): void {
     if (this.state?.accountId === accountId) return;
     this.bindEpoch += 1;
-    // Per-account storage keys mean another account's records are never read
-    // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     this.lastKnown = [];
     this.notify();
@@ -345,7 +309,6 @@ export class DeviceChatSubmissionJournal {
     return written;
   }
 
-  /** Drop stamped records past their grace. A tab blind for that long learns from frames instead. */
   private pruneAnswered(accountId: string): void {
     const now = Date.now();
     for (const other of this.entries())
@@ -376,7 +339,6 @@ export class DeviceChatSubmissionJournal {
     return seq;
   }
 
-  /** Drop a deleted chat's counter with its other journal state. */
   forgetOrder(accountId: string, threadId: string): void {
     if (this.state?.accountId !== accountId) return;
     try {
@@ -411,7 +373,6 @@ export class DeviceChatSubmissionJournal {
   }
 }
 
-/** Storage mirrors attempt facts without making the other tab replay those facts back. */
 export function submissionReplayChanged(before: string | null, after: string | null): boolean {
   const scheduling = (raw: string | null) => {
     if (raw === null) return null;

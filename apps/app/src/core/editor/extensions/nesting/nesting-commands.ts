@@ -1,9 +1,3 @@
-/**
- * List and quote commands as attribute writes. Neither is a node: a block's `path`, `kind`,
- * `marker`, `start` and `loose` say which quotes and lists it sits in (`nest`,
- * `@meridian/prosemirror-schema`), so making, nesting, quoting and lifting change attributes
- * on the same elements and wrap nothing.
- */
 import {
   type BlockFacts,
   extentOf,
@@ -19,27 +13,18 @@ import { NodeSelection, type Transaction } from "@tiptap/pm/state";
 
 export type ListKindName = "bullet" | "ordered";
 
-/** What a block out of every list keeps of its item: nothing. */
 export const NO_LIST = { kind: null, marker: null, start: null, loose: null } as const;
 
-/** Tab stops at this many list levels; the path is still read and written in full beyond it. */
 export const MAX_LIST_DEPTH = 8;
 
-/** The sibling blocks a selection reaches: the children of one container, read together. */
 type Sequence = {
   blocks: ProseMirrorNode[];
-  /** Position of each block. */
   positions: number[];
   facts: BlockFacts[];
-  /** Index range of the blocks the selection touches. */
   from: number;
   to: number;
 };
 
-/**
- * The blocks the selection touches, as siblings under their nearest shared container: what every
- * list and quote command and key reads and writes.
- */
 export function selectedSequence(selection: Transaction["selection"]): Sequence {
   const { $from, $to } = selection;
   const textDepth =
@@ -72,7 +57,6 @@ function write(tr: Transaction, sequence: Sequence, index: number, attrs: Record
   tr.setNodeMarkup(sequence.positions[index], undefined, { ...block.attrs, ...attrs });
 }
 
-/** Item starts of the selected blocks, each once, with blocks outside any list left out. */
 function selectedItems(sequence: Sequence): number[] {
   const starts = new Set<number>();
   for (let i = sequence.from; i < sequence.to; i++) {
@@ -81,7 +65,6 @@ function selectedItems(sequence: Sequence): number[] {
   return [...starts];
 }
 
-/** The kind of the innermost list every selected block sits in, or null when they differ or one is in none. */
 export function selectionListKind(sequence: Sequence): ListKindName | null {
   let kind: ListKindName | null = null;
   for (let i = sequence.from; i < sequence.to; i++) {
@@ -94,10 +77,6 @@ export function selectionListKind(sequence: Sequence): ListKindName | null {
   return kind;
 }
 
-/**
- * Makes every selected block an item of this kind, or changes the kind of the items it already
- * is. With `keepKind`, items keep their kind and only blocks in no list become items.
- */
 export function setList(
   tr: Transaction,
   kind: ListKindName,
@@ -113,7 +92,6 @@ export function setList(
     if (level < 0) {
       const steps = readPath(sequence.blocks[i].attrs.path);
       steps.push({ type: "list", fresh: false });
-      // A list item holds body text, so wrapping a heading in one clears its level.
       const level0 = sequence.blocks[i].type.name === "paragraph" ? { level: null } : {};
       write(tr, sequence, i, { path: pathOf(steps), marker: "item", ...own, ...level0 });
       changed = true;
@@ -125,7 +103,6 @@ export function setList(
   return changed;
 }
 
-/** True when every selected block starts or continues a task item. */
 export function selectionIsTaskList(sequence: Sequence): boolean {
   for (let i = sequence.from; i < sequence.to; i++) {
     const marker = sequence.facts[itemStart(sequence.facts, i)].marker;
@@ -134,7 +111,6 @@ export function selectionIsTaskList(sequence: Sequence): boolean {
   return true;
 }
 
-/** Makes every selected block a task item, keeping the kind of the items it already is; a checked task stays checked. */
 export function setTaskList(tr: Transaction): boolean {
   let changed = setList(tr, selectionListKind(selectedSequence(tr.selection)) ?? "bullet", {
     keepKind: true,
@@ -149,7 +125,6 @@ export function setTaskList(tr: Transaction): boolean {
   return changed;
 }
 
-/** Returns the selected items' blocks to body text, however deep they sit. */
 export function unsetList(tr: Transaction): boolean {
   let changed = false;
   // Each pass lifts the selected items one level, so the depth bounds the loop.
@@ -157,14 +132,12 @@ export function unsetList(tr: Transaction): boolean {
   return changed;
 }
 
-/** One more list level for each selected item and what is under it. */
 export function indent(tr: Transaction): boolean {
   const sequence = selectedSequence(tr.selection);
   let changed = false;
   for (const start of selectedItems(sequence)) {
     const level = innermostListStep(sequence.facts[start].steps);
     const step = sequence.facts[start].steps[level];
-    // Nothing above to nest under: the first item of its list.
     if (!step.startsItem || step.opens) continue;
     const depth = sequence.facts[start].steps.filter((s) => s.type === "list").length;
     if (depth >= MAX_LIST_DEPTH) continue;
@@ -179,7 +152,6 @@ export function indent(tr: Transaction): boolean {
   return changed;
 }
 
-/** One list level fewer for each selected item and what is under it; the last level returns the blocks to body text. */
 export function outdent(tr: Transaction): boolean {
   const sequence = selectedSequence(tr.selection);
   let changed = false;
@@ -198,7 +170,6 @@ export function outdent(tr: Transaction): boolean {
   return changed;
 }
 
-/** True when every selected block sits in a quote. */
 export function selectionIsQuoted(sequence: Sequence): boolean {
   for (let i = sequence.from; i < sequence.to; i++) {
     if (!sequence.facts[i].steps.some((step) => step.type === "quote")) return false;
@@ -206,11 +177,6 @@ export function selectionIsQuoted(sequence: Sequence): boolean {
   return true;
 }
 
-/**
- * Puts the selected blocks in a quote of their own, inside every container they share: in one
- * item that quotes the item's words (`- > text`), over several items it quotes the list. A quote
- * just above or below stays separate (`|`).
- */
 export function quote(tr: Transaction): boolean {
   const sequence = selectedSequence(tr.selection);
   const { from, to } = sequence;
@@ -234,10 +200,6 @@ export function quote(tr: Transaction): boolean {
   return to > from;
 }
 
-/**
- * Takes the selected blocks out of the innermost quote they share, so quoting a list and
- * unquoting it gives the list back. Blocks that share no quote each leave their innermost one.
- */
 export function unquote(tr: Transaction): boolean {
   const sequence = selectedSequence(tr.selection);
   const shared = sequence.facts[sequence.from].steps

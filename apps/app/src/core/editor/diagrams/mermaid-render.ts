@@ -1,16 +1,6 @@
-/**
- * The mermaid render boundary: source text in, SVG markup out.
- *
- * Its own module because it is the one asynchronous, side-effecting edge of
- * diagram rendering — the mermaid bundle is loaded on first use and never
- * again, and a test that wants a diagram without a real parser fakes exactly
- * this function.
- */
-
 import { readMermaidTheme } from "./mermaid-theme";
 
 let mermaidModule: Promise<typeof import("mermaid")["default"]> | null = null;
-/** The palette mermaid was last configured with, so a re-apply is skipped. */
 let appliedTheme: string | null = null;
 
 const MERMAID_BASE_CONFIG = {

@@ -1,8 +1,3 @@
-/**
- * What Review changes compares the draft against, on the review line: `against Live ▾`. Its list
- * offers Live, the Work's other drafts (whose paragraphs `Take` copies), and any other file (read
- * only), found as the side's picker finds documents. Picking replaces the address.
- */
 import { t } from "@lingui/core/macro";
 import { Layers } from "lucide-react";
 import { useRef, useState } from "react";
@@ -27,7 +22,6 @@ export function ReviewTargetPicker({ mode }: { mode: ReviewMode }) {
   const searchRef = useRef<HTMLInputElement>(null);
   const shell = useShellTreeVersion();
   const trees = useProjectTrees(mode.projectId);
-  // The other drafts of the Work this draft is one of.
   const workDrafts = shell?.workDrafts?.drafts ?? [];
   const others = workDrafts.some((draft) => draft.id === mode.draftId)
     ? workDrafts.filter((draft) => draft.id !== mode.draftId)

@@ -1,8 +1,3 @@
-/**
- * The `read` and `write` tools: a path resolves to its tracked document,
- * the file policy grants the call, and collab reads or writes under that grant. `skills://` paths go to the skill files.
- */
-
 import type {
   AgentEditResultV1,
   DocumentCommandName,
@@ -99,10 +94,8 @@ import {
 import { runTreeToolCommand } from "./tree-commands.js";
 import { runTreeInverse } from "./tree-inverse.js";
 
-/** A `write` call the engine runs: everything but the host's whole-document commands. */
 type EngineWriteInput = Exclude<WriteToolInput, { command: NamespaceCommandName }>;
 
-/** Resolves a model path to its tracked document; only `create` may make one. */
 export async function resolveDocumentAddress(
   context: ResolvedModelContextPort,
   command: DocumentCommandName,
@@ -114,9 +107,7 @@ export async function resolveDocumentAddress(
     recordCreate?: NonNullable<
       import("../../domains/context/ports/context-adapter.js").ContextEnsureTrackedPortOptions["recordCreate"]
     >;
-    /** The folder node a create goes in, as the names shown resolved its folders. */
     into?: string;
-    /** A new document even where the path reaches one (a twin): the one there holds text. */
     beside?: true;
   } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
@@ -156,8 +147,6 @@ export async function resolveDocumentAddress(
         path: path,
       });
     }
-    // A URI naming no Work, no scheme or no live chat addresses no document; the reason says
-    // what is valid. A read never reports a write status.
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
       (command === "read" ||
@@ -218,15 +207,12 @@ function buildAgentWriteCommand(
   };
 }
 
-/** Writes report where they landed; a drafted write names its Work. */
 function withDestination(
   outcome: WriteOutcome,
   destination: FileDestination,
   command: EngineWriteInput["command"],
 ): WriteOutcome {
   if (outcome.isError) return outcome;
-  // Inverses can follow an edit away from the chat's current destination. Their owner reports
-  // the version actually changed, or deliberately leaves it unnamed when one command spans views.
   if (command === "undo" || command === "revert") return outcome;
   return {
     ...outcome,
@@ -241,14 +227,8 @@ function withDestination(
 const isTextEdit = (command: string) =>
   command === "insert" || command === "replace" || command === "remove";
 const isInverseCommand = (command: string) => command === "undo" || command === "revert";
-/** What a call to a removed document is answered for: a text edit, or an undo or revert. */
 const settlesOnRemoval = (command: string) => isTextEdit(command) || isInverseCommand(command);
 
-/**
- * A write the file policy refused: a text edit whose Work is closed or whose document was
- * removed is returned with the document as it stands, and every other refusal is the tool's
- * error.
- */
 async function deniedWrite(
   deps: ToolWiringDeps,
   principal: Principal,
@@ -259,7 +239,6 @@ async function deniedWrite(
 ) {
   const removal = await removalBehind(deps, principal, denial);
   const returned = returnedWhy(denial, removal);
-  // An undo, redo or revert is returned only for a removed document; a closed Work is its refusal.
   const why =
     returned === "document_removed" || (returned && isTextEdit(parsed.command)) ? returned : null;
   if (!why) return fileAccessDeniedError(parsed.command, denial, address.filePath, removal);
@@ -269,11 +248,6 @@ async function deniedWrite(
   });
 }
 
-/**
- * A text edit that changed nothing because what it edits is closed or gone, answered with the
- * document as this chat reads it now. The text is a read: its evidence is recorded with the
- * result, so the model's next write plans on it. A removed document has no text to show.
- */
 export async function returnedEdit(
   deps: ToolWiringDeps,
   principal: Principal,
@@ -321,11 +295,6 @@ export async function returnedEdit(
   };
 }
 
-/**
- * The answer for a write to a document the writer removed, from the node the model was shown: it
- * is returned as `document_removed`, whatever the command, naming who removed it. Null when the
- * reached node is not a removed document.
- */
 async function removedAnswer(
   deps: ToolWiringDeps,
   principal: Principal,
@@ -352,11 +321,6 @@ async function removedAnswer(
   return { output: outcome.result, evidence: outcome.evidence };
 }
 
-/**
- * The write itself: the edit grant on the document, then the pool call that
- * carries it. A seam that refuses the grant under its locks reports the same
- * error a preflight denial does.
- */
 async function writeUnderGrant(
   deps: ToolWiringDeps,
   principal: Principal,
@@ -383,7 +347,6 @@ async function writeUnderGrant(
   }
   let written: WriteOutcome;
   try {
-    // The write runs under its own lock, inside the command's transaction.
     written = await deps.documentSync
       .modelEdits()
       .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
@@ -401,9 +364,6 @@ async function writeUnderGrant(
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
-    // A removal that won the document's lock after the grant: a text edit is returned with who
-    // removed it; any other call's interim answer is `document_not_found`, with the record's
-    // sentence.
     if (isDocumentNotFoundError(cause)) {
       if (cause.removal && settlesOnRemoval(parsed.command))
         return returnedEdit(deps, principal, parsed, address, ctx, "document_removed", {
@@ -416,7 +376,6 @@ async function writeUnderGrant(
     if (!(cause instanceof FileEditRefusedError)) throw cause;
     return deniedWrite(deps, principal, parsed, address, ctx, firstRefusal(cause));
   }
-  // A drafted edit returned because its document was removed names who removed it.
   if (written.result.status === "returned" && written.result.returned?.why === "document_removed") {
     const removal = (await deps.documentRemovals.lookup([address.documentId])).get(
       address.documentId,
@@ -425,9 +384,6 @@ async function writeUnderGrant(
       ...(removal ? { removal } : {}),
     });
   }
-  // The echo and an undo or redo result were shown; so was a partial failure's
-  // echo. Whatever frontier a result carries records,
-  // error or not.
   const evidence = evidenceOf(address.documentId, written);
   if (written.isError)
     return {
@@ -436,7 +392,6 @@ async function writeUnderGrant(
       evidence,
       ...(written.occupied ? { occupied: true as const } : {}),
     };
-  // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
   return {
     ...withDestination(outcome, grant.destination, parsed.command),
@@ -447,7 +402,6 @@ async function writeUnderGrant(
   };
 }
 
-/** The names a result printed for the document it was about: what the path reached, else the tree's own. */
 async function printedOf(
   call: ToolCall,
   address: ResolvedDocumentAddress,
@@ -459,7 +413,6 @@ async function printedOf(
   return area ? printedNames(call, area, [address.documentId], version) : reached?.delta;
 }
 
-/** Shared tracked read: ordinary tool arguments, optionally pinned to a known identity. */
 export async function readTrackedDocument(
   deps: ToolWiringDeps,
   input: ReadToolInput,
@@ -468,9 +421,7 @@ export async function readTrackedDocument(
   options: {
     expectedDocumentId?: string;
     recordingFrontier?: FrontierLookup;
-    /** The thread's model, asked for only when the file is binary and what to show depends on it. */
     model?: () => Promise<ModelInfo | undefined>;
-    /** Where the file is shown: a writer's mention goes in the user message, the agent's read in the tool result. */
     placement?: ReadPlacement;
   } = {},
 ): Promise<{
@@ -541,7 +492,6 @@ export async function readTrackedDocument(
     path,
     address.uri,
   );
-  // Only a draft that outlived a live delete reads a deleted document.
   const parsedUri = parseContextUri(address.uri);
   const surviving =
     parsedUri.ok && grant.destination.kind === "draft" && grant.facts.deleted
@@ -599,7 +549,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let reached: Reached | undefined;
     let parsed = written;
     if (!isInverse) {
-      // The path the model wrote is the node it was shown: a create only looks up its folders.
       const first = await reachShown(deps, call, ctx, written.path, {
         folderOf: creates,
         deleted: !creates,
@@ -615,9 +564,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       reached = first;
       parsed = { ...written, path: first.path } as typeof written;
     }
-    // A create or copy needs edit on the folder it makes the file in, at the
-    // destination the file lands in; the namespace transaction confirms that
-    // grant under its locks (seam C).
     const target = creates ? await threadContainerTarget(context.resolution, parsed.path) : null;
 
     // A copy reads its source before it creates anything, so a bad source leaves no file.
@@ -644,8 +590,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             fromMessage(parsed.from, sourceGrant.output.message ?? ""),
           );
         }
-        // A binary copy lands where a create would: in a draft-mode chat, a hidden row
-        // holding the draft's own object (12b-Q2).
         return settle(() =>
           inContainer(deps, principal, parsed.command, target, () =>
             copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
@@ -672,7 +616,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    // A write to an existing document finds it before the command claims its id.
     let existing: ResolvedDocumentAddress | undefined;
     if (!isInverse && !creates) {
       const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
@@ -683,7 +626,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let refresh: DocumentId | undefined;
     const effect = async () => {
       refresh = undefined;
-      // What the tree took back of this call's `count`, said before the text engine's own line.
       let treeUndone: string[] = [];
       let engine = parsed;
       if (isInverse) {
@@ -698,9 +640,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           treeUndone = tree.undone;
           engine = { ...written, count: tree.count } as typeof written;
         }
-        // The node the model was shown, deleted or not: a removed document is answered below.
         const first = await reachShown(deps, call, ctx, written.path, { deleted: true });
-        // A reversed creation took the document and its text steps with it.
         if (tree?.kind === "then_text" && !first.node) return tree.answer;
         if (first.gone)
           return writeToolError(
@@ -759,9 +699,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       // remaps its own copy of it to the document that attempt made.
       const placedAt = (address: ResolvedDocumentAddress) => {
         if (engine.command !== "copy" || !copied) return copied;
-        // The copy's new identity is known now: a whole document's own links name the copy, not
-        // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
-        // A selection is not the copied set: its links to the whole source keep naming it.
         return {
           ...copied,
           nodes: remapCopiedBlocks({
@@ -796,15 +733,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         );
 
       let outcome = await writeAt(address);
-      // The path reaches a document with text: the create makes another of that name, a twin.
       if (creates && outcome.isError && "occupied" in outcome && outcome.occupied) {
         address = await resolveCreated(true);
         if (isToolError(address)) return address;
         outcome = await writeAt(address);
       }
-      // A reversed move left the document somewhere else: the result names where it is now. A
-      // reversed creation removed the document, so its text half must not claim an empty document
-      // survived the tree half of the same inverse.
       if (isInverse && !outcome.isError && outcome.result.status === "success") {
         const located = await call.context.port.locate(address.documentId);
         const now = located.ok ? (located.value?.uri ?? null) : null;
@@ -815,7 +748,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       }
       if (outcome.isError)
         return { isError: true, output: outcome.output, evidence: outcome.evidence };
-      // A create into a folder deleted since brought it back: said as a move into one is.
       if (creates && reached?.kept)
         outcome = {
           ...outcome,
@@ -848,7 +780,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         evidence: {
           ...outcome.evidence,
           ...namesEvidence(
-            // A create's own name and an inverse's new place are printed too.
             await printedOf(call, address, creates || isInverse ? null : (reached ?? null)),
           ),
         },
@@ -866,7 +797,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
   return (input: unknown, ctx: ToolHandlerContext) => write(input, ctx);
 }
 
-/** A failed edit the server runs again once, under the same command id. */
 class TransientEditFailure extends Error {}
 
 /**
@@ -938,14 +868,12 @@ function effectSettler(
   };
 }
 
-/** The tool's own failure result: an apply or commit that did not land. */
 function isServerFailure(value: unknown): boolean {
   if (!isErrorOutput(value)) return false;
   const status = (value as { output?: { status?: unknown } }).output?.status;
   return status === "internal_error" || status === "partial_failure";
 }
 
-/** What a returned edit's result says closed it, when the effect returned one. */
 function returnedOf(value: unknown): ReturnedWhy | null {
   const output = (value as { output?: { status?: unknown; returned?: { why?: ReturnedWhy } } })
     ?.output;

@@ -1,16 +1,3 @@
-/**
- * Row selection for one list, on VS Code's model. A plain click opens or
- * toggles the row and leaves no selection of its own: until the writer
- * Ctrl/Cmd- or Shift-clicks, the selection is just the open row. Ctrl/Cmd-click
- * starts an explicit selection from the open row and adds or removes rows;
- * Shift-click selects the on-screen range from the last clicked row; Escape
- * returns to the open row. Dragging a selected row carries the whole selection.
- * Range order is the order rows appear on screen, read from the DOM, so it
- * always matches what the writer sees.
- *
- * The list that renders the rows owns the selection (`useEntrySelection`), so
- * its drop route can reselect what it moved; rows read it through the provider.
- */
 import {
   createContext,
   type KeyboardEvent,
@@ -28,16 +15,10 @@ import {
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { type DragEntry, type EntryRef, entryKey } from "./entry";
 
-/** What a row lets a selection's menu do with it. */
 export type SelectionGrant = "move" | "delete" | "restore";
 
-/** Which list a row's node is in: the project's files, or the account's Your files. */
 export type EntryList = "project" | "account";
 
-/**
- * A selection of two or more rows, in screen order, and what every one of them grants. A list is
- * the unit of history, so a selection in both lists is copied, never moved.
- */
 export type SelectionGroup = {
   entries: DragEntry[];
   grants: SelectionGrant[];
@@ -45,25 +26,14 @@ export type SelectionGroup = {
 };
 
 export type EntrySelection = {
-  /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
   draggable: boolean;
-  /** Shown as selected: part of an explicit selection. The open row has its own highlight. */
   isSelected(key: string): boolean;
-  /** True when the click was a selection gesture and must not open the row. */
   click(entry: DragEntry, event: MouseEvent | KeyboardEvent): boolean;
-  /** What a drag of this row carries, in screen order; a row outside the selection goes alone. */
   dragged(entry: DragEntry): DragEntry[];
-  /** The selection a menu on this row acts on; null when the row is outside it or alone in it. */
   group(entry: DragEntry): SelectionGroup | null;
-  /** A menu opened on a row outside the selection selects that row alone. */
   pick(entry: DragEntry): void;
-  /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
-  /**
-   * Focuses the list's first selected row, or its first row. For a short while after,
-   * focus follows the first selected row on screen (`settleFocus`).
-   */
   focus(): void;
   /**
    * Soon after `focus`, puts focus back on the first selected row on screen when it was lost or
@@ -71,17 +41,13 @@ export type EntrySelection = {
    * keyed reorder moves a focused row's node, which blurs it without remounting it.
    */
   settleFocus(): void;
-  /** Rows announce themselves while mounted; the open row says so. */
   register(entry: DragEntry, active: boolean): () => void;
-  /** What a row's menu lets a selection's menu do with it, while the menu is mounted. */
   grant(entry: DragEntry, grants: readonly SelectionGrant[], list: EntryList): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
 const KEY_ATTRIBUTE = "data-entry-key";
-/** Set on a selected row: `start`, `middle`, `end` or `single` within its run. */
 const RUN_ATTRIBUTE = "data-selection-run";
-// Long enough for the catalogs to catch up with a move and place its rows.
 const FOCUS_RECLAIM_MS = 2000;
 
 const departures = new Set<(keys: ReadonlySet<string>) => void>();
@@ -95,13 +61,7 @@ export function leaveSelections(refs: readonly EntryRef[]) {
   for (const leave of departures) leave(keys);
 }
 
-/**
- * One list's selection; the list component owns it and hands it to its rows and
- * drop route. Every selected row stays in the drag; each destination decides
- * whether its operation subsumes descendants.
- */
 export function useEntrySelection(): EntrySelection {
-  // null: no explicit selection, so the selection is the open row.
   const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
   const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
@@ -110,7 +70,6 @@ export function useEntrySelection(): EntrySelection {
   );
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
-  // The row `focus` fell back to while no selected row was drawn yet (a copy still arriving).
   const parked = useRef<HTMLElement | null>(null);
   const shown = useRef<ReadonlySet<string> | null>(null);
   shown.current = explicit;
@@ -202,7 +161,6 @@ export function useEntrySelection(): EntrySelection {
       const open = openKey();
       return new Set(open ? [open] : []);
     };
-    /** The mounted selected rows in screen order, or null when `entry` isn't one of them. */
     const selectedRows = (entry: DragEntry) => {
       const selected = current();
       if (!selected.has(entryKey(entry.ref))) return null;
@@ -220,8 +178,6 @@ export function useEntrySelection(): EntrySelection {
         if (event.shiftKey) {
           const order = screenOrder();
           const to = order.indexOf(key);
-          // With no anchor on screen (a list whose plain click navigates away, or an anchor row
-          // since removed), the range starts at the open row, else at this row.
           let from = anchor.current ? order.indexOf(anchor.current) : -1;
           if (from < 0) {
             const open = openKey();
@@ -312,17 +268,14 @@ export function useEntrySelection(): EntrySelection {
 
 const SelectionContext = createContext<EntrySelection | null>(null);
 
-/** Selects the rows an operation made or moved, where the list that holds them is mounted. */
 export function selectRows(selection: EntrySelection | null, rows: readonly EntryRef[]) {
   if (rows.length > 0) selection?.replace(rows.map(entryKey));
 }
 
-/** The enclosing list's selection; none outside a list (phone browsing). */
 export function useOptionalEntrySelection(): EntrySelection | null {
   return useContext(SelectionContext);
 }
 
-/** Gives the list's rows its selection; Escape inside returns to the open row. */
 export function EntrySelectionProvider({
   selection,
   children,
@@ -350,7 +303,6 @@ export function EntrySelectionProvider({
   );
 }
 
-/** A row's place in its list's selection; inert outside one (phone browsing). */
 export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   const selection = useContext(SelectionContext);
   const key = entryKey(entry.ref);
@@ -359,10 +311,6 @@ export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   return {
     selection,
     selected,
-    /**
-     * Spread on the row so range selection can read screen order. Rows are buttons, so
-     * the selection is their pressed state; outside an explicit selection they aren't toggles.
-     */
     rowProps: { [KEY_ATTRIBUTE]: key, "aria-pressed": selected || undefined },
   };
 }

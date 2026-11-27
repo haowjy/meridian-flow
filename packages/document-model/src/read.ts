@@ -29,7 +29,6 @@ import { StructureView } from "./structure.js";
  */
 export const emptyParagraphId = (parent: BlockId | null) => `${parent ?? ""}/empty`;
 
-/** The parent whose placeholder id `id` is (null: the document), or undefined for any other id. */
 export function emptyParagraphOf(id: BlockId): BlockId | null | undefined {
   const suffix = emptyParagraphId(null);
   if (!id.endsWith(suffix)) return undefined;
@@ -63,7 +62,6 @@ export function derivedEmptyParent(
   return view.children(parent).length === 0 ? parent : undefined;
 }
 
-/** Whether `block`, written under `parent`, is the derived empty paragraph still holding nothing. */
 export function isDerivedEmpty(block: ShapeBlock, parent: BlockId | null): boolean {
   return (
     block.kind === "text" &&
@@ -86,11 +84,6 @@ export function storedOf(
   return list.length === 1 && isDerivedEmpty(list[0], parent) ? [] : list;
 }
 
-/**
- * What a reader read before, to read again by what changed since (`readDocument`'s `since`).
- * `blocks` is what the docs read as then, `comments` the comments it saw bodies of then
- * (`visibleComments`), and `changed` every doc key whose state changed since.
- */
 export interface ReadSince {
   blocks: readonly ShapeBlock[];
   comments: ReadonlySet<string>;
@@ -134,7 +127,6 @@ function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): Sha
   const visibleComment = commentVisibility(view);
   const previous = since ? blocksById(since.blocks) : new Map<BlockId, ShapeBlock>();
   const reread = since?.changed ?? new Set<DocKey>();
-  // A comment whose body came or went changes how every text doc reads.
   const textsHold = since ? sameSet(since.comments, visibleComments(docs)) : false;
   const one = (id: BlockId): ShapeBlock => {
     const node = view.node(id) as string;
@@ -164,10 +156,6 @@ function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): Sha
   return blocks;
 }
 
-/**
- * The read after a batch that changed text docs only: the blocks named in `changed` read again,
- * the rest as they were.
- */
 function readTexts(docs: RoomDocs, since: ReadSince): ShapeBlock[] {
   const visibleComment = commentVisibility(structureValues(docs));
   const again = (block: ShapeBlock): ShapeBlock => {
@@ -185,12 +173,10 @@ function readTexts(docs: RoomDocs, since: ReadSince): ShapeBlock[] {
   return since.blocks.map(again);
 }
 
-/** The unstored empty paragraph of `parent`: the one read before, if it showed one then. */
 function emptyParagraph(parent: BlockId | null, was?: readonly ShapeBlock[]): ShapeBlock {
   return was?.length === 1 && isDerivedEmpty(was[0], parent) ? was[0] : derivedEmpty(parent);
 }
 
-/** The stored blocks of `blocks` by id: an unstored empty paragraph is no block to reuse. */
 function blocksById(blocks: readonly ShapeBlock[]): Map<BlockId, ShapeBlock> {
   const out = new Map<BlockId, ShapeBlock>();
   const walk = (list: readonly ShapeBlock[], parent: BlockId | null) => {
@@ -232,7 +218,6 @@ export function commentVisibility(
   };
 }
 
-/** `StructureView.value` read key by key from the doc, for a write that reads a few keys. */
 export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
   const get = (name: string, key: string) => inMap(docs.structure, name, (map) => map.get(key));
   return {
@@ -243,7 +228,6 @@ export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
   };
 }
 
-/** A textblock's text doc, normalized. A block with no text doc yet reads as empty. */
 export function readInline(
   doc: LoroDoc | undefined,
   rule: NodeRule,
@@ -266,7 +250,6 @@ export function readInline(
   return out;
 }
 
-/** The stored marks of one character as a reader sees them. */
 export function normalizeMarks(
   stored: Readonly<Record<string, unknown>>,
   rule: NodeRule,
@@ -305,7 +288,6 @@ function pushText(out: InlineItem[], text: string, marks: Marks) {
   } else out.push({ kind: "text", text, marks });
 }
 
-/** Normalized inline content, with adjacent text runs of equal marks merged, as readers compare it. */
 export function normalizeInline(items: readonly InlineItem[]): InlineItem[] {
   const out: InlineItem[] = [];
   for (const item of items) {
@@ -316,7 +298,6 @@ export function normalizeInline(items: readonly InlineItem[]): InlineItem[] {
   return out;
 }
 
-/** One UTF-16 unit of a text doc, as stored, with whether a reader shows it. */
 export interface TextUnit {
   ch: string;
   stored: Readonly<Record<string, unknown>>;
@@ -373,7 +354,6 @@ export function shownStyleKeys(
   return out;
 }
 
-/** A text doc's runs as stored, each with its inline style and whether its block shows that node. */
 function storedRuns(doc: LoroDoc | undefined, rule: NodeRule, shape: ShapeSchema) {
   if (!doc) return [];
   const runs: {

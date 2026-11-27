@@ -42,13 +42,7 @@ import { useEditorChrome } from "./useEditorChrome";
 const ChromeLayerContext = createContext<string | null>(null);
 
 export type ChromeLayerBinding = {
-  /** This layer's id in the chain. */
   id: string;
-  /**
-   * Give this to the Radix content's `onEscapeKeyDown`. It is the whole
-   * subordination mechanism: Radix keeps owning its own dismissal, and defers
-   * whenever the kernel knows something deeper is open.
-   */
   onEscapeKeyDown: (event: { preventDefault: () => void; defaultPrevented?: boolean }) => void;
   /**
    * Give this to the Radix content's `onCloseAutoFocus`. Radix restores focus
@@ -65,20 +59,13 @@ export type ChromeLayerBinding = {
    * writer left it.
    */
   onCloseAutoFocus: (event: Event) => void;
-  /** Wrap whatever this surface renders, so a layer inside it knows its parent. */
   scope: (children: ReactNode) => ReactNode;
 };
 
 export type UseChromeLayerOptions = {
-  /** Names the surface; the hook makes it unique per mounted instance. */
   id: string;
   open: boolean;
   close: () => void;
-  /**
-   * `"self"` for a surface with its own Escape listener — every Radix layer.
-   * The default is `"kernel"`, because a layer with no listener of its own
-   * would otherwise survive every Escape pressed outside the editor.
-   */
   dismissal?: ChromeLayerDismissal;
   /**
    * Where focus goes when this surface closes and nothing took its place. The
@@ -91,16 +78,6 @@ export type UseChromeLayerOptions = {
    * routing it through here rather than racing this handler from its own timer.
    */
   returnFocus?: () => void;
-  /**
-   * Keys this surface answers while it is open, in ProseMirror's spelling
-   * (`"Mod-Enter"`). A binding returns true when it took the key.
-   *
-   * They belong to the layer rather than to the content inside it, because the
-   * content is what comes and goes: a dialog's Ctrl+Enter has to open the pane
-   * that is closed, and a pane cannot register the key that summons it. Declare
-   * them inline — the handlers are read live, and only a change to the SET of
-   * keys re-registers.
-   */
   keys?: Readonly<Record<string, KeymapBinding>>;
 };
 

@@ -1,8 +1,3 @@
-/**
- * A drafted document as a row, the same in the Changes tab and a chat's draft dock: its name,
- * what the draft does to it in a quiet line, and its × / ✓, always shown. A click opens Review
- * changes on it (a picture opens its preview).
- */
 import { t } from "@lingui/core/macro";
 import type { LandingFault } from "@meridian/project-tree";
 import { type ReactNode, useState } from "react";
@@ -22,11 +17,6 @@ import { landingFaultSentence } from "./tree-groups";
 import { opensAsDocument, treeLineOf } from "./tree-line";
 import type { WorkDraftCommands } from "./usePressCommands";
 
-/**
- * One drafted document: its name, and under it what the draft does to it (a move, rename or
- * delete, a new document, its text changes), with its × and ✓ for the whole document. A refused
- * or pending command shows in the status line under it.
- */
 export function DraftFileRow({
   projectId,
   draftId,
@@ -44,13 +34,9 @@ export function DraftFileRow({
   projectId: string;
   draftId: string;
   file: ReviewFileTarget;
-  /** Right before this row's Discard or Apply: the list holds what it shows. */
   onCommand?: () => HeldNoticeRows;
-  /** What the owner's notice says on this row (`useDraftNoticeWords`). */
   notice: ReactNode;
-  /** Under its changed folder's row. */
   depth: number;
-  /** Why its tree change cannot land, which stays after Apply as the change stays pending. */
   fault: LandingFault | null;
   active: boolean;
   canApply: boolean;
@@ -140,10 +126,6 @@ export function DraftFileRow({
   );
 }
 
-/**
- * What the draft does to the document, in a quiet line under its name; nothing to say, no line.
- * The row's name is already the draft's, so a rename says what it was.
- */
 export function changeSummary(file: ReviewFileTarget) {
   const line = treeLineOf(file.item);
   const place = file.contextLocation ? folderPlace(file.contextLocation) : null;
@@ -160,7 +142,6 @@ export function changeSummary(file: ReviewFileTarget) {
           : line?.kind === "reorder"
             ? t`Changing position`
             : null;
-  // A row with text changes says so by being listed: no screen counts them.
   if (!tree) return null;
   return (
     <span className="flex min-w-0 flex-wrap gap-x-2">
@@ -169,7 +150,6 @@ export function changeSummary(file: ReviewFileTarget) {
   );
 }
 
-/** "Manuscript/Arc 3": the source and folder a document lands in. */
 function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>): string {
   const folders = location.path.split("/").filter(Boolean).slice(0, -1);
   const source = location.scheme ? schemeLabel(location.scheme) : null;

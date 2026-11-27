@@ -1,10 +1,3 @@
-/**
- * MobileSideSheetHeader — the band above the phone's side sheet: what the side shows (its picker),
- * its actions, and the sheet's close.
- *
- * Built from the same status-bar-aware chrome primitives as `MobileTopBar` (`IconButton`,
- * safe-area padding), independent of the desktop `SideHeader`.
- */
 import { t } from "@lingui/core/macro";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";

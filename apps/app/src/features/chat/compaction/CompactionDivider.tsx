@@ -1,18 +1,3 @@
-/**
- * The compaction divider: where the model's working context was summarized.
- *
- * One quiet rule across the transcript, with the state in words at its start
- * and its controls right after the words (bare transcript rows never
- * right-align controls). A compaction is a turn: once it finishes, its actions
- * are Fork and, for stats for nerds, Info (no Copy, no Hand off), revealed like
- * a reply's actions. A finished
- * divider's state words (icon and label, one button) open and close its
- * summary; a running compaction's Stop lives on the same line. The writer's `/compact <instructions>` sit under the line, verbatim. A
- * manual compaction's failure is a card on the divider it belongs to
- * (`chatCards`), with Try again. An autocompaction's failure stays quiet (R3):
- * the failed reply under the writer's newest message already says so. State changes are spoken by the
- * global polite announcer, never a live region on the row.
- */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -41,9 +26,7 @@ export type CompactionDividerProps = {
 };
 
 type StateLabel = {
-  /** The divider's state in words; also the divider's accessible name. */
   full: string;
-  /** What a narrow chat column shows, so the divider stays on one line. */
   short: string;
 };
 
@@ -51,11 +34,9 @@ function stateLabel(view: DividerView, stopping: boolean): StateLabel {
   const same = (label: string) => ({ full: label, short: label });
   switch (view.state) {
     case "pending":
-      // A waiting `/compact` is a queued row, so a pending divider is compacting.
       if (stopping) return { full: t`Stopping compaction`, short: t`Stopping` };
       return { full: t`Compacting conversation`, short: t`Compacting` };
     case "complete":
-      // Narrow, the trigger yields to the controls; the section's name keeps it.
       return view.trigger === "manual"
         ? { full: t`Conversation compacted`, short: t`Compacted` }
         : { full: t`Conversation compacted automatically`, short: t`Compacted` };
@@ -83,29 +64,18 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
       data-compaction-divider
       data-compaction-state={view.state}
       data-compaction-trigger={view.trigger}
-      // With a summary, the toggle carries the state words (and what it
-      // reveals); naming the section too would read them twice.
       aria-label={view.summary ? undefined : full}
       className="@container/divider flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
-      {/* One line at every width: a narrow column shows the short label, and
-          the label truncates before a control or the rule would wrap. */}
       <div className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         {view.summary ? (
-          // The state words are the summary's disclosure: icon and label are
-          // one button, so the row carries no separate "Summary" control.
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
             aria-controls={panelId}
-            // The visible words, then what the button reveals.
             aria-label={t`${full}, summary`}
-            // Stop's replacement: focus lands here when a finished run removes it.
             data-focus-landing
-            // Not a FoldToggle: a leading chevron would move the icon off the edge every
-            // other divider state holds, and shift it when compaction finishes. It folds
-            // like one otherwise: no hover fill, hover darkens the words.
             className="focus-ring focus-ring-outside flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md py-1 text-muted-foreground transition-colors hover:text-foreground aria-expanded:text-foreground motion-reduce:transition-none"
           >
             <DividerMark state={view.state} />
@@ -183,7 +153,6 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
   );
 }
 
-/** One re-shown document: a read row whose body is the text the successor holds. */
 function CompactionDocument({ document }: { document: DividerDocument }) {
   return (
     <ActivityRow
@@ -210,7 +179,6 @@ function CompactionDocument({ document }: { document: DividerDocument }) {
   );
 }
 
-/** With Stats for nerds on: the divider's stats, in the same popover a reply's Turn information opens. */
 function CompactionInfo({ view }: { view: DividerView }) {
   const statsForNerds = useStatsForNerds();
   const { model, tokens } = view;
@@ -245,7 +213,6 @@ function CompactionInfo({ view }: { view: DividerView }) {
   );
 }
 
-/** Full words on a wide column, the short form narrow; truncates before the row wraps. */
 function DividerLabel({ label, className }: { label: StateLabel; className: string }) {
   return (
     <span data-compaction-label className={cn("min-w-0 truncate text-xs font-medium", className)}>
@@ -255,7 +222,6 @@ function DividerLabel({ label, className }: { label: StateLabel; className: stri
   );
 }
 
-/** The rule that runs out from a divider's words. */
 export function DividerRule() {
   return <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />;
 }

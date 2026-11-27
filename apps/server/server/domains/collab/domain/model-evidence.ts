@@ -14,32 +14,16 @@ export type ForgottenRooms =
  * awaits each call before the next, so the latest row is the latest shown.
  */
 export interface ModelEvidence {
-  /**
-   * Records `evidence`, replacing the frontier a block already holds. Joins an ambient
-   * transaction: an edit records its own inside its command, a read's after its block is stored.
-   */
   resultStored(evidence: StoredEvidence): Promise<void>;
-  /**
-   * The latest-recorded frontier among `blockIds` in any room of the document, tagged with its
-   * room, or null.
-   */
   latestFrontier(
     documentId: string,
     blockIds: readonly string[],
   ): Promise<ObservationFrontier | null>;
-  /** Every row in `rooms` among `blockIds`, oldest recorded first. */
   frontiersIn(
     rooms: FrontierRooms,
     blockIds: readonly string[],
   ): Promise<{ blockId: string; recordedSeq: number; snapshot: Uint8Array }[]>;
-  /** Own shown links plus, for a fork, its source's at turns up to its cutoff, recursively. */
   forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
-  /** Deletes what these threads were shown and the tool results their model edits stored, when the threads are deleted. */
   forgetThreads(threadIds: readonly ThreadId[]): Promise<void>;
-  /**
-   * Deletes the frontiers recorded of rooms: one fork room deleted for being empty, or every room
-   * of documents whose content was purged, which only the owning account's threads can have shown.
-   * Joins an ambient transaction.
-   */
   forgetFrontiers(rooms: ForgottenRooms): Promise<void>;
 }

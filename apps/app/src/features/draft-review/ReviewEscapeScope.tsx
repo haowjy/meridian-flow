@@ -2,13 +2,10 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { useOptionalPanePlace } from "@/features/project/pane-place";
 import { useReviewMode } from "./review-mode";
 
-/** Where the focus is in something that takes Esc for itself: a menu, a dialog, a listbox. */
 const OWNS_ESCAPE = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
-/** Something open over the page (a popover, a menu, a dialog) that Esc closes first. */
 const OPEN_LAYER =
   '[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"], [role="alertdialog"]';
 
-/** A field the writer types in, other than a document's editor, keeps Esc for itself. */
 function isOtherField(target: Element): boolean {
   if (target.closest(".ProseMirror")) return false;
   return (
@@ -19,12 +16,6 @@ function isOtherField(target: Element): boolean {
   );
 }
 
-/**
- * The one Esc of Review changes: wherever the focus is on the page, Esc closes the
- * review of the host it is in, or main's when it is in no host (the sidebar, the top bar). What
- * handles Esc first (an editor's popup, which prevents it) or owns it (a menu, a dialog, another
- * field) keeps it.
- */
 export function ReviewEscapeScope({ children }: { children: ReactNode }) {
   const mode = useReviewMode();
   const place = useOptionalPanePlace();

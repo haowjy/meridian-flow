@@ -1,4 +1,3 @@
-/** Tab-local selection, with a device seed only for a tab's first read. */
 import { browserRecord } from "./storage/browser-record";
 
 type RememberedKind = "chat" | "work" | "document" | "tree-version" | "work-draft";

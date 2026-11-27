@@ -1,9 +1,3 @@
-/**
- * The tree's rows, written from the list in the transaction that admitted its records
- * (`tree_nodes` for live, `draft_tree_nodes` for each open Work's view). Only this module
- * writes them: it replays live and each view the records can change, compares with what the
- * last replay wrote, and writes the rows that differ with the history text derivations need.
- */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import { entrySegment, filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -42,7 +36,6 @@ import { pendingText } from "../tree/pending-documents.js";
 import { ownerColumns, sourceOwnerProjectId } from "../tree/source-owner.js";
 import { keptDrafts } from "./tree-list-facts.js";
 
-/** Rows per statement: bounds the parameter count, not the atomic operation. */
 const BATCH = 500;
 
 type LiveRow = ProjectedRow & {
@@ -57,10 +50,6 @@ function chunks<T>(items: readonly T[]): T[][] {
   return out;
 }
 
-/**
- * The rows a replay shows. A purged node is gone for good: it has no row. A file's row is a
- * document's, typed by its blob's mime (the package leaves a file's type null).
- */
 function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
   const rows = projectedRows(projection);
   for (const node of projection.nodes.values()) {
@@ -72,7 +61,6 @@ function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
   return rows;
 }
 
-/** The delete covering each trashed node (`deleteCovering`), and who made it. */
 function trashRecords(
   projection: TreeProjection,
   actors: ReadonlyMap<string, string>,
@@ -85,7 +73,6 @@ function trashRecords(
   return out;
 }
 
-/** Each node's source (its top folder's) and its path from that source's top, so a move or a twin's suffix flip of any ancestor shows. */
 function addresses(
   rows: ReadonlyMap<string, ProjectedRow>,
 ): Map<string, { source: string; path: string }> {
@@ -168,9 +155,7 @@ async function loadDrafts(
   return out;
 }
 
-/** An admitted `create`'s node id is refused: another node, a document or a list has it. */
 export class NodeIdRefusedError extends Error {
-  /** The node id at fault, when the claim could tell which. */
   constructor(
     message: string,
     readonly nodeId?: string,
@@ -261,11 +246,6 @@ export async function claimNodeIdsEach(
   return failed;
 }
 
-/**
- * Takes out of `next` the rows this list has no claim on: a node whose id another list or a
- * document holds (a failed claim) never gets a row, so it can't overwrite one. Only rows the
- * list had no row for are asked, so a sync costs what it adds.
- */
 async function dropUnowned(
   tx: DrizzleDb,
   listId: string,
@@ -283,11 +263,6 @@ async function dropUnowned(
   for (const id of fresh) if (!owned.has(id)) next.delete(id);
 }
 
-/**
- * A document or file made by an admitted `create` has its `documents` row from the same
- * transaction, drafted or live: its drafts, receipts and links point at it by foreign key. A
- * file's bytes are the record's blob. A node that no view shows has no row.
- */
 async function insertDocumentRows(
   tx: DrizzleDb,
   owner: TreeList,
@@ -324,7 +299,6 @@ async function writeLive(
 ): Promise<{ changed: string[]; reassigned: string[] }> {
   const prev = await loadLive(tx, listId);
   await dropUnowned(tx, listId, prev, next);
-  // The delete in force of each node the replay shows in Trash.
   const trashed = (id: string) => (next.get(id)?.deleted ? (trash.get(id) ?? null) : null);
   const trashOf = (id: string) => trashed(id)?.record ?? null;
   const { upserts, gone } = changedRows(prev, next);
@@ -340,9 +314,6 @@ async function writeLive(
     was.get(id)?.path !== now.get(id)?.path ||
     was.get(id)?.source !== now.get(id)?.source ||
     prev.get(id)?.deleted !== next.get(id)?.deleted;
-  // A node whose address (its source included) or Trash state changed has a new version, and so
-  // has everything under a folder that moved or was renamed: it is the address text derivations
-  // compare.
   const bumped = [...next.keys()].filter((id) => prev.has(id) && moved(id));
   const bumpedIds = new Set(bumped);
   const changed = new Map(upserts.map((row) => [row.id, row]));
@@ -395,8 +366,6 @@ async function writeLive(
       .delete(treeNodes)
       .where(and(eq(treeNodes.listId, listId), inArray(treeNodes.id, batch)));
 
-  // A document shown at one address and now at another leaves its old path as an alias; every
-  // address a document now shows at claims it (a swap, a renumber).
   const vacated: { contextSourceId: string; path: string; documentId: string }[] = [];
   const claimed: { contextSourceId: string; path: string }[] = [];
   for (const [id, row] of next) {
@@ -415,9 +384,6 @@ async function writeLive(
   }
   if (vacated.length > 0 || claimed.length > 0)
     await recordLocationHistory(tx as unknown as Database, { vacated, claimed });
-  // A document that changed source may have changed Work, and so who may write it; so has one
-  // that comes into Live from a Work's draft (its create applied), whose sockets were admitted as
-  // that Work's.
   const reassigned = [...next].flatMap(([id, row]) =>
     row.kind === "document" &&
     (prev.has(id) ? was.get(id)?.source !== now.get(id)?.source : !made.has(id))
@@ -478,11 +444,6 @@ async function writeDraft(
   return [...upserts.map((row) => row.id), ...gone];
 }
 
-/**
- * Nodes under a source that is not this list's (a client named another project's source, or one
- * that is gone) or whose row is gone (a purged Work's) have no row: a source's end is its row's,
- * and an ended source's nodes are not shown. Drops them from the views' rows.
- */
 async function dropForeignSources(
   tx: DrizzleDb,
   list: TreeList,
@@ -573,8 +534,6 @@ export async function syncRows(
   const next = new Map(
     [...works].map(([draftId, { rows, faulted, pending }]) => {
       const differing = draftRows(liveRows, rows, pending);
-      // A folder whose move cannot land shows as live does and is still a change: its row stands
-      // for it, so the stored count is the one the Changes list shows.
       for (const id of faulted) {
         const row = rows.get(id);
         if (row && !differing.get(id)?.changed)
@@ -637,7 +596,6 @@ export async function syncRows(
   return { created, changedDrafts: [...new Set(changedDrafts)], liveChangedUnder, reassigned };
 }
 
-/** The list's drafts (`kept`) with pending text in one of `documentIds`. */
 async function draftsWithText(
   tx: DrizzleDb,
   kept: readonly string[],

@@ -16,15 +16,10 @@ const DESTINATION_FREE_LINKS: DocumentLinkScope = {
   spellSource: () => ({ href: "", address: null }),
 };
 
-/** Each block's markdown with link and image destinations spelled empty. */
 export function destinationFreeBlocks(markup: MarkupCodec, blocks: readonly PMNode[]): string[] {
   return markup.serializeBlocks(blocks, DESTINATION_FREE_LINKS).map((entry) => entry.body);
 }
 
-/**
- * One block's grep text, from its {@link destinationFreeBlocks} markdown. `verbatim` is a
- * code file's block, whose text is the node's text as stored.
- */
 export function grepBlockText(destinationFree: string, node: PMNode, verbatim: boolean): string {
   return verbatim ? node.textContent : markdownPlainText(destinationFree);
 }

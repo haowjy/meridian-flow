@@ -104,7 +104,7 @@ it("restores only this tab's account, project, and tree, including explicit coll
     values.set(other, values.get(key) ?? "");
     expect(readTreeExpansion(other, "account")).toEqual(EMPTY_TREE_EXPANSION);
   }
-  values.clear(); // a fresh tab has no expansion seed
+  values.clear();
   expect(readTreeExpansion(key, "account")).toEqual(EMPTY_TREE_EXPANSION);
 });
 

@@ -1,10 +1,3 @@
-/**
- * MainTabStrip — one lane of main's open items as folder tabs in main's band
- * (`client/project-shell/main-tabs`): the document lane in Write, the chat lane in Chat. The tab
- * main shows is the active chip, joined to the page below it. Main's item when the record holds no
- * tab for it (an address that names nothing, a document back within one history entry) is drawn
- * after the tabs as the active chip, so what main shows never depends on the record.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
@@ -57,10 +50,6 @@ import { useDocumentPaint } from "../views";
 import { BandIconButton } from "./BandIconButton";
 import { tabChipClass } from "./tab-chip";
 
-/**
- * Selecting and closing one lane's tabs: each writes the address from the tab it names. Closing
- * main's last tab leaves for the lane's empty page: Recently opened, or the new-chat composer.
- */
 export function useMainTabCommands({
   projectId,
   kind,
@@ -70,7 +59,6 @@ export function useMainTabCommands({
   projectId: string;
   kind: MainTabKind;
   open: OpenContextRoute;
-  /** The tab main shows; null while main holds no tab. */
   mainKey: string | null;
 }) {
   const { showEditorRecents } = useProjectRouteCommands();
@@ -104,14 +92,12 @@ export function useMainTabCommands({
       const next = closeMainTab(accountId, projectId, kind, key, mainKey, lane.tabs);
       if (key === mainKey) show(next);
     },
-    /** Main goes to the lane's empty page unless it is there already. */
     closeAll: async ({ keepMain }: { keepMain: boolean }) => {
       // Main leaves first: while it still shows an item, that item's arrival puts its tab back
       // (`useMainArrival`). An Untitled page leaves later than a filed one.
       if (!keepMain) await showEmpty();
       closeAllMainTabs(accountId, projectId, kind);
     },
-    /** Main's item holds no tab: main goes to the tab it showed last, else the empty page. */
     closeMain: () => {
       const { tabs, selected } = lane;
       show(tabs.find((tab) => mainTabKey(tab) === selected) ?? tabs.at(-1) ?? null);
@@ -128,14 +114,10 @@ export function MainTabStrip({
   onNew,
 }: {
   projectId: string;
-  /** The lane this strip draws. */
   kind: MainTabKind;
   open: OpenContextRoute;
-  /** The item main shows in this lane, drawn as the active chip after the tabs when the record lacks it. */
   mainTab?: MainTab;
-  /** Main's item when it takes no tab (a removed page, the Trash), drawn as the active chip after the tabs. */
   current?: ReactNode;
-  /** Absent while nothing can be created (documents: no Work is ready to hold an Untitled one). */
   onNew?: () => void;
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
@@ -181,8 +163,6 @@ export function MainTabStrip({
       onKeyDown={moveAlongStrip}
       className="flex h-full min-w-0 shrink items-stretch"
     >
-      {/* The padding is room for the end tabs' flares, which this scroller would clip; the
-          negative margins take it back, so the first tab starts where the chip before it ends. */}
       <div
         ref={stripRef}
         onWheel={scrollStripWithWheel}
@@ -193,7 +173,6 @@ export function MainTabStrip({
         {tabs.map((tab, index) => {
           const active = mainTabKey(tab) === mainKey;
           const previous = tabs[index - 1];
-          // A divider only between two inactive tabs: the active tab's shape separates itself.
           return chip(
             tab,
             active,
@@ -202,7 +181,6 @@ export function MainTabStrip({
         })}
         {unrecorded ? chip(unrecorded, true, false) : null}
         {current ? (
-          // The active item never shrinks: the inactive tabs give way first, then the strip scrolls.
           <div
             data-active-tab
             data-main-current
@@ -212,8 +190,6 @@ export function MainTabStrip({
           </div>
         ) : null}
       </div>
-      {/* New follows the lane's tabs only: after main's other item (a removed page) it would read
-          as a new one of those. */}
       {current ? null : (
         <BandIconButton
           label={newLabel}
@@ -236,7 +212,6 @@ export function MainTabStrip({
   );
 }
 
-/** Every tab of the lane in one list, to jump to one the strip has squeezed or scrolled away. */
 export function MainTabMenu({
   projectId,
   kind,
@@ -248,7 +223,6 @@ export function MainTabMenu({
   kind: MainTabKind;
   open: OpenContextRoute;
   mainTab?: MainTab;
-  /** Close all leaves main's item where it is: the lane's empty page is the goal. */
   keepMain: boolean;
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
@@ -347,7 +321,6 @@ function ChatMenuItem({
   );
 }
 
-/** The lane's tabs the strip draws: the live record, then main's item when it lacks one. */
 function useDrawnTabs(kind: MainTabKind, mainTab?: MainTab) {
   const { lanes, project } = useLiveTabs();
   const lane = lanes[kind].tabs;
@@ -378,7 +351,6 @@ function DocumentTabChip({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  // The active tab names what main paints: its draft while main reviews one.
   const paint = useDocumentPaint(projectId, active ? document : null);
   const drafts = useOwnerDrafts(projectId, paint.draft?.draftId ?? null);
   const file = paint.draft ? drafts.fileForDocument(document.documentId) : null;
@@ -417,14 +389,10 @@ function DocumentTabChip({
       tabProps={{
         ...drag,
         style: heldWidth === null ? undefined : { flex: `0 0 ${heldWidth}px` },
-        // Anywhere on the tab, its close included, as in Chrome.
         onAuxClick: (event) => {
           if (event.button === 1) closeByPointer(event.currentTarget);
         },
       }}
-      // Every tab is one width, as in Chrome: 240px, all shrinking together when the band is full,
-      // to the start of its name (a chapter's number). No icon: every document's would be the same.
-      // The open tab keeps room for its close; the strip scrolls past that.
       className={cn("@container/tab w-60 shrink", active ? "min-w-16" : "min-w-12")}
     >
       <button
@@ -432,7 +400,6 @@ function DocumentTabChip({
         role="tab"
         aria-selected={active}
         aria-label={label}
-        // One stop in the Tab order; the arrows move along the strip (`moveAlongStrip`).
         tabIndex={active ? 0 : -1}
         data-main-tab={key}
         onClick={(event) => {
@@ -441,8 +408,6 @@ function DocumentTabChip({
           // Each document's page has its own band: the focus follows to this tab in the new one.
           if (focused) holdFocus(() => selectedTabFor(key));
         }}
-        // The whole chip is the hit target; the close button sits above it. The overlay carries
-        // the name, so the visible label is hidden from assistive tech.
         className="focus-ring absolute inset-0"
         title={document.kind === "new" ? document.name : document.path}
       />
@@ -461,7 +426,6 @@ function DocumentTabChip({
   );
 }
 
-/** A chat's tab: the chat bubble and the thread's live title. */
 function ChatTabChip({
   projectId,
   chatId,
@@ -521,10 +485,6 @@ function ChatTabChip({
   );
 }
 
-/**
- * Main's item when it takes no tab (an address that names nothing, a document in Trash): a chip
- * in the strip that says what main shows, and closing it leaves the address.
- */
 export function UntabbedChip({
   icon: Icon,
   name,
@@ -568,8 +528,6 @@ function TabCloseButton({
       className={cn(
         "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground",
         "hover:bg-ink-fill hover:text-foreground",
-        // On every tab, in the same place, so closing several is one target after another; an
-        // inactive tab narrower than 64px (40px inside its padding) gives the close up, as in Chrome.
         !active && "@max-[2.5rem]/tab:hidden",
       )}
     >
@@ -665,10 +623,6 @@ function selectedTabFor(key: string): HTMLElement | null {
   return [...tabs].find((tab) => tab.checkVisibility()) ?? null;
 }
 
-/**
- * Arrow keys, Home and End move focus along the strip's tabs and main's other item; Enter or Space
- * opens the focused one. Control+Tab is the browser's, so the page never sees it.
- */
 function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
   const stops = [
     ...event.currentTarget.querySelectorAll<HTMLElement>(
@@ -711,7 +665,6 @@ function TabChipFrame({
   className,
 }: {
   active: boolean;
-  /** What the active chip joins below it: the page, or the review strip. */
   surface?: "page" | "review";
   divider: boolean;
   children: ReactNode;
@@ -727,7 +680,6 @@ function TabChipFrame({
         // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
         "group scroll-mx-6 gap-1.5",
         tabChipClass(active),
-        // The active chip takes the surface under it, so tab and page (or review strip) read as one.
         active && surface === "review" && "[--tab-chip-surface:var(--color-review)]",
         className,
       )}

@@ -1,11 +1,3 @@
-/**
- * The press: Apply or Discard on a change, a document, a draft or every draft of a Work, and its
- * Undo, as commands the driver delivers (resent under one id until the server stores an answer).
- * Each is journaled and shown at once and leaves once the server holds what this browser's copies
- * of the rooms it presses had (`ready`), so the server presses what the writer saw (design §4).
- * The server runs both halves; an open document's text changes when its update arrives on the
- * socket.
- */
 import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
 import { type DraftId, parseDraftItemKey } from "@meridian/contracts";
 import type { PressAction, PressRequest, PressScope } from "@meridian/contracts/drafts";
@@ -23,7 +15,6 @@ import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 export const PRESS_KIND = "press";
 export const PRESS_UNDO_KIND = "unpress";
 
-/** `PressRequest` without its id, one member per verdict, so a body still pairs a verdict with its scope. */
 export type PressBody = { projectId: string } & (PressRequest extends infer R
   ? R extends PressRequest
     ? Omit<R, "commandId">
@@ -31,7 +22,6 @@ export type PressBody = { projectId: string } & (PressRequest extends infer R
   : never);
 export type PressUndoBody = { projectId: string; pressCommandId: string };
 
-/** Settles once the server holds what this browser's copies of the press's rooms had. */
 export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
 
 /**
@@ -40,7 +30,6 @@ export type PressGate = (projectId: string, rooms: PressRooms) => Promise<void>;
  */
 const PRESS_LANE = "press:";
 
-/** The drafts a press takes: a Work's are the ones the pressing tab listed, which its body names. */
 export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[] {
   if (scope.kind === "work") return scope.drafts;
   if (scope.kind === "draft" || scope.kind === "turn") return [scope.draft];
@@ -48,10 +37,6 @@ export function pressDrafts(scope: PressScope | PressAction["scope"]): DraftId[]
   return parsed ? [parsed.draftId] : [];
 }
 
-/**
- * What a journaled press or Undo presses, read from its record: the drafts its lanes name, and the
- * document of a press of one document or change.
- */
 export function pressRooms(record: CommandRecord): PressRooms {
   const scope = (record.body as Partial<PressBody>).scope;
   const parsed =
@@ -67,10 +52,6 @@ export function pressRooms(record: CommandRecord): PressRooms {
 }
 
 export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain {
-  // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
-  // own reads of drafts all begin after it opened, so a press settled before then is in them;
-  // only the Works the server read for the page may predate it. A turn card follows its chat's
-  // waiting drafts (`useDraftDock`).
   const opened = Date.now();
   let bound: CommandDriver | null = null;
   const settled = (record: CommandRecord) => {
@@ -81,7 +62,6 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
     // The journal's press holds its rows until every draft list on screen has it
     // (`DraftCommandOwner.followPresses`); a list read before it opened already does.
     const read = whenRead(client, { queryKey: projectQueryKeys.draftsOf(projectId) }, before);
-    // A press can change any draft's list: two Works on one passage, the first applied wins.
     void Promise.all([
       before
         ? refreshWorksSnapshotSince(client, projectId, since)
@@ -92,7 +72,6 @@ export function pressDomain(client: QueryClient, gate: PressGate): CommandDomain
   const kinds: Record<string, CommandKind> = {
     [PRESS_KIND]: {
       version: 3,
-      // Nothing reads an older build's press: the driver settles it never sent.
       migrate: () => {
         throw new Error("A press from an older build");
       },

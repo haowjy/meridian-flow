@@ -1,5 +1,3 @@
-/** Main's document identity proofs across every editable catalog scheme. */
-
 import { describe, expect, it } from "vitest";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import { resolveMainDocument } from "./views";
@@ -55,7 +53,6 @@ describe("main's draft-only review route", () => {
   });
 
   it("keeps a bound draft-only document when another document now holds its old path", () => {
-    // Document A moved from /old.md to /new.md and B took /old.md before the URL repaired.
     const occupant = { ...file, documentId: "document-b", path: "/old.md" };
     const tree = {
       ...emptyTree,
@@ -72,7 +69,6 @@ describe("main's draft-only review route", () => {
       tree,
     });
     expect(resolved.document).toMatchObject({ documentId: "document-draft" });
-    // A bound document no source resolves is pending, never the occupant.
     expect(
       route({ path: "/old.md", boundDocumentId: "document-draft", addressed: null, tree }).document,
     ).toBeNull();

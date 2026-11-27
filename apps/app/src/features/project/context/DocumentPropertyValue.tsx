@@ -1,8 +1,3 @@
-/**
- * DocumentPropertyValue — one property's value, as the writer wrote it: words
- * and numbers plain, lists as chips, Yes and No for flags, and the writer's own
- * YAML text for maps and lists of maps. Display only.
- */
 import { Trans } from "@lingui/react/macro";
 import type { JsonValue } from "@meridian/contracts/threads";
 
@@ -26,7 +21,6 @@ export function DocumentPropertyValue({
   source,
 }: {
   value: JsonValue;
-  /** The text the writer wrote for a list or map value. */
   source: string | null;
 }) {
   if (isEmptyValue(value)) {

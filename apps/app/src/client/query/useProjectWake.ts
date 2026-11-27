@@ -48,8 +48,6 @@ export function useProjectWake(projectId: string): void {
         }
       });
     };
-    // Drafts' lists are stale, every draft's when the set holds `undefined`. An Apply of many
-    // documents sends a hint per document: as with chats, one read runs and one more follows it.
     let draftsRefreshing = false;
     let draftsTrailing: Set<string | undefined> | null = null;
     const readDrafts = (drafts: ReadonlySet<string | undefined>) => {
@@ -79,7 +77,6 @@ export function useProjectWake(projectId: string): void {
     const unsubscribe = transport.subscribeCatalog(projectId, (hint) => {
       if (hint.type === "project-chats-hint") {
         refreshChats();
-        // Hints were lost (a reconnect) or a Work went: every read a hint covers is stale.
         if (hint.recheckTabs) {
           refreshDrafts();
           refreshSources();
@@ -89,13 +86,10 @@ export function useProjectWake(projectId: string): void {
       } else if (hint.type === "draft-hint") {
         refreshDrafts(hint.draft);
       } else if (hint.type === "context-sources-hint") {
-        // A chat or a lineage gained or lost a source (Scratch, uploads): which trees exist changed.
         refreshSources();
       } else if (hint.type === "agent-files-hint") {
-        // An Agent file's text changed elsewhere (another tab, the AI): its verdict is read again.
         void invalidateAgentReads(queryClient, projectId, accountId);
       } else if (hint.type === "mcp-connections-hint") {
-        // A connection was checked, edited or removed: its status and tools are read again.
         void invalidateMcpConnections(queryClient, accountId);
       }
     });

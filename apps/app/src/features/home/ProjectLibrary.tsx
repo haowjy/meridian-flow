@@ -1,5 +1,3 @@
-/** Authenticated project library: select an existing body of work or begin another. */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";

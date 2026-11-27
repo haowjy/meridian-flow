@@ -1,4 +1,3 @@
-/** HTTP mutation and causal outcome classification for a thread Work rebind. */
 import type { RebindThreadWorkResponse, Work } from "@meridian/contracts/works";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isMeridianApiError } from "@/client/api/http-client";

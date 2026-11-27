@@ -20,12 +20,10 @@ export type MainTab =
 
 export type MainTabKind = MainTab["kind"];
 
-/** One kind's tab, so a lane's reader never re-checks the kind it already named. */
 export type TabOf<K extends MainTabKind> = Extract<MainTab, { kind: K }>;
 
 export type Lane<K extends MainTabKind = MainTabKind> = Readonly<{
   tabs: readonly TabOf<K>[];
-  /** The tab main showed last, kept while main shows the other kind: a new tab opens to its right. */
   selected: string | null;
 }>;
 
@@ -130,11 +128,6 @@ function writeLane<K extends MainTabKind>(
   write(accountId, projectId, { ...readMainTabs(accountId, projectId), [kind]: lane });
 }
 
-/**
- * Main arrived at an item: its tab is selected in its kind's lane, opened to the right of the tab
- * main showed last in that lane when it is new. A document already open takes its fresh descriptor
- * (a rename, a move) in place.
- */
 export function arriveMainTab(accountId: string, projectId: string, tab: MainTab): void {
   const current: Lane = readMainTabs(accountId, projectId)[tab.kind];
   const key = mainTabKey(tab);
@@ -169,11 +162,6 @@ function refreshed(tabs: readonly MainTab[], at: number, tab: MainTab): readonly
     : tabs.map((member, i) => (i === at ? tab : member));
 }
 
-/**
- * Closes a tab. Returns the tab main should show in its place when it was main's (its right
- * neighbour, else its left, among `drawn`: the tabs the strip shows, not the whole record), or null
- * when none is left or it was not main's.
- */
 export function closeMainTab(
   accountId: string,
   projectId: string,
@@ -199,7 +187,6 @@ export function closeAllMainTabs(accountId: string, projectId: string, kind: Mai
     writeLane(accountId, projectId, kind, EMPTY_LANE);
 }
 
-/** These tabs' items are gone (documents deleted or Discarded, chats deleted): their tabs close. */
 function dropTabs<K extends MainTabKind>(
   accountId: string,
   projectId: string,

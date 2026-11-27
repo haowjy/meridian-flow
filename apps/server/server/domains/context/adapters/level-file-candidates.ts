@@ -7,11 +7,9 @@ import { LIVE_TREE } from "../tree/tree-view.js";
 
 export interface Candidate {
   document: ContextDocument;
-  /** What the document answers to as a package file: a prose `x` answers to `x.md`. */
   path: string;
 }
 
-/** The documents answering to each path of a level, or none when its folder is not there. */
 export async function candidatesOf(
   db: Database,
   input: { level: AgentsLevel; userId: string; projectId?: string },
@@ -42,7 +40,6 @@ export async function candidatesOf(
       const name = document.extension ? `${document.name}.${document.extension}` : document.name;
       const prose =
         document.fileType === null && document.filetype !== "source" && !document.extension;
-      // A later twin is its own file: its `~id` ends the path, so Mars reads it as no package file.
       const { suffix } = readSegment(document.segment);
       const path = `${prefix}${entrySegment(prose ? `${name}.md` : name, suffix)}`;
       byPath.set(path, [...(byPath.get(path) ?? []), { document, path }]);

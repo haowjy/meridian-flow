@@ -1,4 +1,3 @@
-/** Live-tree facts used to prepare an import without taking mutation locks. */
 export type ContextImportArea = "manuscript" | "kb" | "unfiled";
 
 export type ContextImportDestination = {
@@ -6,7 +5,6 @@ export type ContextImportDestination = {
   folderId: string | null;
   uri: string;
   fellBack: boolean;
-  /** `name` is the filename as the tree shows it; `id` decides the `~id` an import's twin gets. */
   children: { id: string; kind: "folder" | "file"; name: string }[];
 };
 

@@ -73,7 +73,6 @@ function openExisting(idb: IDBFactory, name: string): Promise<IDBDatabase | null
   });
 }
 
-/** `use` on the database `name` if it exists, closed after; null when it does not, and none is created. */
 async function withExisting<T>(
   idb: IDBFactory,
   name: string,
@@ -90,7 +89,6 @@ async function withExisting<T>(
 
 export type CopyHold = { release(): void };
 
-/** The room a database name is a copy of, for one account; null for any other database. */
 function roomOf(name: string, accountId: AccountId): DocumentRoom | null {
   const head = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/`;
   const { key } = parseName(name);
@@ -104,17 +102,12 @@ function roomOf(name: string, accountId: AccountId): DocumentRoom | null {
     : null;
 }
 
-/** A copy no tab held, read whole; it stays locked until `finish`. */
 export type UnheldCopy = {
-  /** Its database name. */
   name: string;
-  /** Everything the copy holds. */
   loaded: LoadedCopy;
-  /** Releases the copy, deleting it. */
   finish(): Promise<void>;
 };
 
-/** Everything the database `name` holds; read under a hold that keeps it. Null when it is gone, and none is created. */
 async function load(idb: IDBFactory, name: string): Promise<LoadedCopy | null> {
   if (!(await withExisting(idb, name, async () => true))) return null;
   const database = await openCopyDatabase(idb, name);
@@ -126,7 +119,6 @@ async function load(idb: IDBFactory, name: string): Promise<LoadedCopy | null> {
 }
 
 export class LocalDocumentCopies {
-  /** The documents with a copy here: read from the browser once, then kept as sessions open and copies go. */
   private known: Set<DocumentId> | null = null;
   private readonly loading: Promise<void>;
   private readonly observers = new Set<(documents: ReadonlySet<DocumentId>) => void>();
@@ -135,7 +127,6 @@ export class LocalDocumentCopies {
     private readonly accountId: AccountId,
     private readonly locks: CrossContextLockManager | null = nativeLocks(),
     private readonly idb: IDBFactory | null = typeof indexedDB === "undefined" ? null : indexedDB,
-    /** Where each room's current incarnation is recorded, for every tab of the browser. */
     private readonly pointers: RecordStorage = browserStorage("local") ?? memoryStorage(),
   ) {
     this.loading = this.names().then((names) => {
@@ -184,7 +175,6 @@ export class LocalDocumentCopies {
     return opened.filter((copy) => copy !== null);
   }
 
-  /** The copy `name` read whole under its exclusive lock; null when a tab holds it or it is gone. */
   private async openIfUnheld(name: string): Promise<UnheldCopy | null> {
     const { locks, idb } = this;
     if (!locks || !idb) return null;
@@ -208,14 +198,12 @@ export class LocalDocumentCopies {
     for (const observer of this.observers) observer(this.known);
   }
 
-  /** Calls `observer` with the documents that have a copy, once they are known and at each change. */
   observe(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
     this.observers.add(observer);
     if (this.known) observer(this.known);
     return () => this.observers.delete(observer);
   }
 
-  /** Each room's current copy here, by database name. */
   async currentCopies(): Promise<{ name: string; room: DocumentRoom }[]> {
     return (await this.names()).flatMap((name) => {
       const room = roomOf(name, this.accountId);
@@ -224,7 +212,6 @@ export class LocalDocumentCopies {
     });
   }
 
-  /** Shared hold while a session has the database `name` open; release it once the session is destroyed. */
   async hold(name: string): Promise<CopyHold> {
     const documentId = roomOf(name, this.accountId)?.documentId;
     if (documentId) {
@@ -245,7 +232,6 @@ export class LocalDocumentCopies {
     };
   }
 
-  /** `run` with every one of `names` locked exclusively; undefined when `ifAvailable` and one is held. */
   private async exclusively<T>(
     names: readonly string[],
     options: { ifAvailable: true } | { signal: AbortSignal },
@@ -261,7 +247,6 @@ export class LocalDocumentCopies {
     );
   }
 
-  /** Whether the copy `name` holds words beyond its mark, read under a shared hold. */
   async wordsBeyondMark(name: string): Promise<boolean> {
     const idb = this.idb;
     if (!idb) return false;
@@ -274,11 +259,6 @@ export class LocalDocumentCopies {
     }
   }
 
-  /**
-   * Deletes every copy of the document, which can never come back, once `drop` has heard which
-   * held words beyond its mark. False when another tab holds one open: that tab's own reading of
-   * the list clears it, and a copy left behind is found at the next start.
-   */
   async clear(documentId: DocumentId, drop: () => void): Promise<boolean> {
     const names = await this.namesOf(documentId);
     const run = async () => {
@@ -295,10 +275,6 @@ export class LocalDocumentCopies {
     return (await this.exclusively(names, { ifAvailable: true }, run)) ?? false;
   }
 
-  /**
-   * Deletes every copy of the account, waiting for the tabs that hold one; false when a copy was
-   * still held after the wait.
-   */
   async clearAll(): Promise<boolean> {
     const documents = new Set(
       (await this.names()).flatMap((name) => roomOf(name, this.accountId)?.documentId ?? []),
@@ -326,7 +302,6 @@ export class LocalDocumentCopies {
         }
       }),
     );
-    // The account's lists go with its documents: they hold its tree and records not yet sent.
     const prefix = treeListCopyPrefix(this.accountId);
     await Promise.all(
       (await this.names())
@@ -342,7 +317,6 @@ export class LocalDocumentCopies {
     );
   }
 
-  /** No copy of the document is left, so its pointers and its place in `known` go too. */
   private async deleteCopies(documentId: DocumentId, names: readonly string[]) {
     await Promise.all(names.map((name) => this.deleteDatabase(name)));
     for (const { key } of names.map(parseName)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
@@ -365,7 +339,6 @@ export class LocalDocumentCopies {
   }
 }
 
-/** The accounts that have a copy in this browser. */
 async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
   const names = (await idb.databases?.()) ?? [];
   const accounts = new Set<AccountId>();
@@ -377,12 +350,10 @@ async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
   return [...accounts];
 }
 
-/** Deletes every copy of an account, waiting for the tabs that hold one; returns whether none was left. */
 export function clearAccountCopies(accountId: AccountId): Promise<boolean> {
   return new LocalDocumentCopies(accountId).clearAll();
 }
 
-/** Deletes the copies of every account but this one: the browser's last user was someone else. */
 export async function clearCopiesOfOtherAccounts(current: AccountId): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const others = (await accountsWithCopies(indexedDB)).filter((account) => account !== current);

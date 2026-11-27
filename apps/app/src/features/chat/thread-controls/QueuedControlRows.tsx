@@ -1,19 +1,3 @@
-/**
- * Writer commands that have not run yet.
- *
- * A pending write-mode switch is the write-mode notice at the transcript tail:
- * "Switched to auto-apply" while the next reply will apply it, "Switch to
- * auto-apply queued" while a reply that held the chat first has to finish. A
- * queued `/compact` sits there as a dashed rule, the divider it will become,
- * with the writer's instructions under it verbatim. The withdraw button (Undo on a
- * switch, Stop on a compaction) is right after the words on every pending row from its first
- * frame (disabled while the switch's post is unanswered), and removes the row at once; it
- * cancels the command the way a switch back does. A withdraw that failed on the server is a
- * card in the row with Try again where the button was; a failed enqueue is a card with Retry. Both come from `chatCards`.
- * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
- * each change through the global polite announcer, which also reaches a row
- * scrolled out of the virtualized list.
- */
 import { t } from "@lingui/core/macro";
 import { FoldVertical } from "lucide-react";
 import { useRef } from "react";
@@ -62,10 +46,8 @@ function QueuedControlRow({
   const label = controlStatusCopy(control.control, status, control.waiting);
   const actions = (
     <>
-      {/* A failed enqueue is a card (Retry in it); the row's withdraw button still takes the command out. */}
       {failed ? <AnchoredCards anchor={{ queuedControl: control.id }} /> : null}
       {status === "withdraw_failed" ? (
-        // The row stays, so the failure is a card here (`chatCards`) with the withdraw's retry in its place.
         <AnchoredCards anchor={{ queuedControl: control.id }} />
       ) : onWithdraw && !(failed && control.awaitingServer) ? (
         <Button

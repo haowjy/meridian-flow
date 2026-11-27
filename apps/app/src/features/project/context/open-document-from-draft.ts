@@ -1,20 +1,3 @@
-/**
- * open-document-from-draft — OpenDocument synthesized from a work-draft group.
- *
- * Draft-only documents (created by the draft, or deleted live while this draft
- * still has them) have no context-tree entry until Apply, so the
- * route→tab auto-open (ContextPaneController → findContextFile) has nothing
- * to match and review lands on an empty pane. The document itself is
- * real — its `documents` row and Live room exist from write time — only the
- * tree manifest entry is missing, so review entry builds the tab from draft
- * metadata instead. The tab is only the document's descriptor: which draft it
- * shows is its view's pin, and whether live lacks it is the host's
- * (`useDraftOnlyPresentation`).
- *
- * Filetype/schema derive purely from the path (same contracts registry the
- * tree uses): a prose document's stored name has no extension and is markdown,
- * a visible extension (`outline.json`) states its type.
- */
 import { classifyFiletype, filetypeForPath, readSegment } from "@meridian/contracts/protocol";
 import type { OpenDocument } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
@@ -29,11 +12,7 @@ export function openDocumentFromDraftGroup(group: {
   const { scheme, path } = location;
   const filetype = filetypeForPath(path);
   const classification = classifyFiletype(filetype);
-  // Draft review only exists for tracked editable documents; a path that
-  // doesn't resolve to a schema has no editor surface to synthesize.
   if (classification.kind !== "tracked") return null;
-  // Tab names are the path basename, the stored name (tree `nameFromPath`
-  // convention); the group's `documentName` is that same name.
   const basename = readSegment(path.slice(path.lastIndexOf("/") + 1)).name;
   return {
     kind: "tracked",

@@ -17,7 +17,6 @@ import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 
 const DISCARD_PURGE_BATCH_LIMIT = 100;
-/** A press can be undone for as long as its row lives; an Undo's row only ever names its press. */
 const PURGED_KINDS = ["press", "unpress"] as const;
 
 export function createDrizzleDiscardPurge(
@@ -33,10 +32,6 @@ export function createDrizzleDiscardPurge(
     });
   }
 
-  /**
-   * One batch of the oldest due entries, each its own transaction: a failure is logged with its id
-   * and stays for the next pass, and does not stop the entries after it. Returns how many it took.
-   */
   async function purgeBatch(now: Date): Promise<number> {
     const due = await currentDrizzleDb(db)
       .select({
@@ -71,7 +66,6 @@ export function createDrizzleDiscardPurge(
   }
 
   return {
-    /** Purges every entry older than the retention, batch by batch; the command rows it removed. */
     async purge(now: Date = new Date()): Promise<number> {
       let purged = 0;
       for (;;) {

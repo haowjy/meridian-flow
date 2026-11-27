@@ -23,7 +23,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { followNode, holdNode, type NodeHold, sameHold } from "@/core/editor/anchors";
 
-/** `null` lets go; a position takes hold of whatever node starts there. */
 export type TakeNodeHold = (pos: number | null) => void;
 
 export function useNodeHold(editor: Editor): [NodeHold | null, TakeNodeHold] {

@@ -1,18 +1,3 @@
-/**
- * chat-projections — the one place that knows every cache holding a
- * denormalized chat row: the project thread list (`ThreadListItem[]`), every
- * `chatFeed` page (including filtered Work feeds).
- *
- * A mutation patches one chat row through `patchChatRow`; every cache that
- * carries that row updates atomically inside one `notifyManager.batch`, so a
- * subscriber never renders a half-applied state. The two row shapes differ
- * (`ThreadListItem` carries Work/lifecycle for the header; `ProjectChatItem`
- * carries the feed's denormalized preview/Favorite state), so a patch supplies
- * one updater per shape it actually touches; an updater returning `null`
- * removes the row from that cache. Omit `projectId` only for a project-agnostic
- * lifecycle signal that must reach every mounted project's caches — the thread
- * store patches by thread id alone and does not know which project owns it.
- */
 import type {
   ProjectChatFeedPage,
   ProjectChatItem,
@@ -23,7 +8,6 @@ import { projectQueryKeys } from "./project-query-keys";
 
 export type ChatFeedData = InfiniteData<ProjectChatFeedPage>;
 
-/** Every cached chat-feed page (the Project index or a Work), newest first, deduplicated. */
 export function flattenChatFeed(data: ChatFeedData | undefined): ProjectChatItem[] {
   const seen = new Set<string>();
   return (data?.pages.flatMap((page) => page.items) ?? []).filter(
@@ -39,9 +23,7 @@ export function projectChatFeedPage(
 }
 
 export type ChatRowPatch = {
-  /** The project thread list's denormalized row; return `null` to remove it. */
   threadListItem?: (item: ThreadListItem) => ThreadListItem | null;
-  /** A chat-feed or Work-feed row (same shape); return `null` to remove it. */
   projectChatItem?: (item: ProjectChatItem) => ProjectChatItem | null;
 };
 
@@ -103,11 +85,6 @@ function patchFeedQueries(
   );
 }
 
-/**
- * Patch (or, via `null`, remove) one chat row across every cache that holds
- * it. Scoped to one project by default; pass no `projectId` only for a
- * lifecycle signal that must reach every mounted project.
- */
 export function patchChatRow(
   client: QueryClient,
   projectId: string | undefined,
@@ -147,7 +124,6 @@ export function patchChatRow(
   });
 }
 
-/** Remove a chat row from every projection at once (delete). */
 export function removeChatRow(client: QueryClient, projectId: string, threadId: string): void {
   patchChatRow(client, projectId, threadId, {
     threadListItem: () => null,
@@ -155,13 +131,11 @@ export function removeChatRow(client: QueryClient, projectId: string, threadId: 
   });
 }
 
-/** A pre-mutation capture of every cache entry that currently holds a chat row. */
 export type ChatRowSnapshot = {
   threadList: ThreadListItem[] | null;
   feeds: { queryKey: readonly unknown[]; data: ChatFeedData }[];
 };
 
-/** Snapshot every cache holding this chat row, so a failed write can restore it exactly. */
 export function snapshotChatRow(
   client: QueryClient,
   projectId: string,
@@ -181,7 +155,6 @@ export function snapshotChatRow(
   return { threadList, feeds };
 }
 
-/** Restore every cache captured by {@link snapshotChatRow}, in one batch. */
 export function restoreChatRow(
   client: QueryClient,
   projectId: string,

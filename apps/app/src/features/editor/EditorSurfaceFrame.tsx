@@ -1,4 +1,3 @@
-/** Shared docked-toolbar and scrolling layout for document editor surfaces. */
 import { type ReactNode, type Ref, type UIEventHandler, useRef } from "react";
 
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
@@ -6,23 +5,11 @@ import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
-  /** Notes about this document (a fenced session), prose-aligned above the toolbar. */
   notices?: ReactNode;
-  /** The persistent document toolbar, docked prose-aligned above the scroll area. */
   toolbar?: ReactNode;
-  /**
-   * Review changes' bar, holding the toolbar's place in the review tint, prose-aligned and never
-   * scrolled: it fits its own width.
-   */
   toolbarHeld?: ReactNode;
-  /** What follows the formatting controls on the toolbar row: the document's state. */
   toolbarTrailing?: ReactNode;
   children: ReactNode;
-  /**
-   * The whole scroll area is caret territory (the ProseMirror node spans it,
-   * so a margin press is the editor's own to answer): the cursor promises it.
-   * The pane must not have click-dead margins.
-   */
   textCursor?: boolean;
   scrollClassName?: string;
   scrollRef?: Ref<HTMLDivElement>;
@@ -41,18 +28,13 @@ export function EditorSurfaceFrame({
   onScroll,
 }: EditorSurfaceFrameProps) {
   return (
-    // The container the column insets answer to: the pane, not the viewport.
     <div className="@container flex min-h-0 flex-1 flex-col">
       {notices ? (
-        // empty:hidden: a notice that has nothing to say (none yet, or dismissed)
-        // renders nothing, and the row must not keep its padding.
         <div className={cn(editorColumnChrome, "flex shrink-0 flex-col gap-1.5 pt-2 empty:hidden")}>
           {notices}
         </div>
       ) : null}
       {toolbar || toolbarHeld ? (
-        // Equal gutters keep the toolbar on the prose column; the state sits at the pane's right
-        // edge, in the right gutter, and takes room from the column only when the pane is narrow.
         <div
           className={cn("flex h-8 shrink-0 items-center coarse:h-11", toolbarHeld && "bg-review")}
         >
@@ -60,8 +42,6 @@ export function EditorSurfaceFrame({
           {toolbarHeld ? (
             <div className={cn(editorColumnChrome, "flex h-full min-w-0")}>{toolbarHeld}</div>
           ) : (
-            // The toolbar's geometry is fixed (ten controls, one order), so a
-            // pane too narrow for it scrolls the row rather than dropping controls.
             <ToolbarScroller>{toolbar}</ToolbarScroller>
           )}
           <div className="flex flex-1 basis-0 justify-end pr-3">{toolbarTrailing}</div>
@@ -91,7 +71,6 @@ export function EditorSurfaceFrame({
   );
 }
 
-/** Scrolls a toolbar wider than its pane, fading the edge that has buttons behind it. */
 function ToolbarScroller({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(ref);

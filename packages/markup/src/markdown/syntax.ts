@@ -1,5 +1,3 @@
-/** Concrete Markdown regions reported by the canonical micromark tokenizer. */
-
 import { parse, postprocess, preprocess } from "micromark";
 import { gfm } from "micromark-extension-gfm";
 

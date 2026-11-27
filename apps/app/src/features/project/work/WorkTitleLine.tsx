@@ -1,10 +1,3 @@
-/**
- * A Work's name with its status beside it: the AI's short word for where the
- * Work stands (Drafting, Blocked, Done). The status is read-only for the
- * writer, so it is a quiet label, never a control; no status, no label.
- * This row owns the layout: the name truncates first, and the status never
- * takes more than two fifths of the line before it truncates itself.
- */
 import type { ReactNode } from "react";
 import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/utils";
@@ -14,10 +7,8 @@ export function WorkTitleLine({
   status,
   size = "row",
 }: {
-  /** The name, which truncates itself; a list row's text or the page heading. */
   title: ReactNode;
   status: string | null | undefined;
-  /** `row` beside a list row's name; `heading` beside the page title. */
   size?: "row" | "heading";
 }) {
   return (

@@ -1,13 +1,7 @@
-/*
- * A toy project for the architecture map engine: two level pages, one journey, a fake source tree.
- * Check it:  node tools/architecture-map/check.mjs tools/architecture-map/example/map.config.mjs
- * View it:   node tools/architecture-map/serve.mjs tools/architecture-map/example/map.config.mjs
- * The README next to the engine explains every key.
- */
 export default {
   title: "Example architecture",
-  root: ".", // this directory
-  repo: "example/toy", // "on GitHub" links point at a repository that doesn't exist
+  root: ".",
+  repo: "example/toy",
   branch: "main",
   pagesDir: "architecture",
   tokens: {

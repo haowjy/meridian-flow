@@ -23,41 +23,30 @@ import type { PanePlace } from "../pane-place";
 import type { Item } from "../views";
 
 export type SettledSide = {
-  /** Null: nothing to show (a chat beside which no document is open). */
   item: Item | null;
-  /** A document item's descriptor. */
   document: OpenDocument | null;
 };
 
-/** What main shows, as the side's rule reads it. */
 export type MainForSide =
   | { kind: "document"; documentId: string }
   | { kind: "chat"; chatId: string }
-  /** The new-chat composer: main is a chat with none yet. */
   | { kind: "new-chat" }
-  /** Recent chats: the chat lane's page that names no chat. */
   | { kind: "chat-recents" }
-  /** Recently opened: main names no document. */
   | { kind: "landing" }
-  /** The address names a document that is still resolving. */
   | { kind: "opening" };
 
-/** A document's descriptor as far as it is known; a null tab no longer opens in the editor. */
 export type Described =
   | { status: "pending" }
   | { status: "failed"; retry: () => void }
   | { status: "ready"; document: OpenDocument | null };
 
-/** A document to describe: a document held beside from a link keeps the link's Work. */
 export type Describing = { documentId: string; workId?: string };
 
-/** The side waits: `describing` is the document whose descriptor it waits on. */
 export type SideResolution =
   | { kind: "settled"; side: SettledSide }
   | { kind: "pending"; describing: Describing | null }
   | { kind: "failed"; failed: SideFailure };
 
-/** A document's lookup failed. */
 export type SideFailure = { retry: () => void };
 
 export function sameItem(a: Item | null, b: Item | null): boolean {
@@ -75,7 +64,6 @@ export function mainItem(main: MainForSide): Item | null {
       : null;
 }
 
-/** The kind of item main holds, which the side does not show; null while main is opening. */
 export function mainMode(main: MainForSide): Item["kind"] | null {
   if (main.kind === "opening") return null;
   return main.kind === "chat" || main.kind === "new-chat" || main.kind === "chat-recents"
@@ -83,16 +71,11 @@ export function mainMode(main: MainForSide): Item["kind"] | null {
     : "document";
 }
 
-/** Whether an item may sit beside main, before its descriptor is known: the other kind. */
 export function fitsBeside(item: Item, main: MainForSide): boolean {
   const mode = mainMode(main);
   return mode === null || item.kind !== mode;
 }
 
-/**
- * Where an item opens: main's kind in main, the other kind beside. The left sidebar always opens in
- * main, which its callers do without asking.
- */
 export function placeIn(kind: Item["kind"], main: MainForSide): PanePlace {
   return kind === (mainMode(main) ?? "document") ? "main" : "side";
 }

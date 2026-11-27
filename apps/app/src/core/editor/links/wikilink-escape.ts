@@ -18,8 +18,6 @@ const BACKSLASH = 92;
 const LEFT_BRACKET = 91;
 const TOKEN = "wikilinkEscape";
 
-// The few micromark and mdast-util-from-markdown shapes this construct
-// touches, stated locally rather than depending on their type packages.
 type Code = number | null;
 type State = (code: Code) => State | undefined;
 type Effects = {
@@ -66,7 +64,6 @@ const exitData: Handle = function (token) {
   this.config.exit.data?.call(this, token);
 };
 
-/** The remark plugin the clipboard door's codec adds. */
 export const remarkKeepWikilinkEscapes: Plugin = function () {
   const data = this.data() as Record<string, unknown[] | undefined>;
   data.micromarkExtensions = [

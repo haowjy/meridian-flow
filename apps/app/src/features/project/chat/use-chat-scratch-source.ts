@@ -1,10 +1,3 @@
-/**
- * The Scratch a chat has on screen, as its Files menu and the document
- * menus read it: the lineage's for a No Work chat, the Work's
- * for a chat on a named Work (with the lineage left behind by a rebind kept
- * findable), named "Scratch for this chat" or "Scratch for <Work>". Null while
- * the chat is unknown, so the callers show nothing rather than guess.
- */
 import { t } from "@lingui/core/macro";
 import { useMemo } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
@@ -33,9 +26,7 @@ export function useChatScratchSource(
     if (!owner || !thread) return null;
     return {
       owner: rootThreadId !== null ? { rootThreadId } : { workId },
-      // A chat rebound onto a Work keeps its lineage's notes findable.
       earlierRootThreadId,
-      // The menus always mean the chat on screen, so a chat's own notes need no name.
       heading: workName
         ? t`Scratch for ${workName}`
         : rootThreadId !== null
@@ -45,10 +36,6 @@ export function useChatScratchSource(
   }, [Boolean(owner), Boolean(thread), rootThreadId, workId, earlierRootThreadId, workName]);
 }
 
-/**
- * The Scratch a document menu offers at its root: the chat on screen's, in main or the side,
- * never the one the open document belongs to.
- */
 export function useOnScreenChatScratchSource(projectId: string): ScratchSource | null {
   return useChatScratchSource(projectId, useOptionalChatOnScreen());
 }

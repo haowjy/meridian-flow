@@ -1,5 +1,3 @@
-/** Derives and transports one explicit writer request for a document's final identity. */
-
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
@@ -18,18 +16,14 @@ export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
 export type IdentityCommitOutcome = { status: "committed" } | { status: "error"; message: string };
 
-/** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
   scheme: ProjectContextTreeScheme;
-  /** Tree-style path with a leading slash. */
   path: string;
   name: string;
 } & OpenDocumentOwner;
 
 export type IdentityCommitOwnership = {
-  /** Always true: a commit appends its records before it returns, so none is superseded. */
   isLatest: boolean;
-  /** The mounted representation captured before the namespace command. */
   document: OpenDocument;
 };
 
@@ -41,11 +35,6 @@ export function identityCommitMayNavigate(
   return ownership.isLatest && activeDocumentId === committedDocumentId;
 }
 
-/**
- * The route command that follows a committed rename or move of the document the
- * address names. The address stays on that document, so it repairs in place: no
- * history entry, and the review it carries survives.
- */
 export function identityCommitRoute(
   documentId: string,
   next: Pick<IdentityCommitted, "scheme" | "path" | "workId" | "rootThreadId">,
@@ -64,7 +53,6 @@ export function deriveIdentityCommitPlan(
   editorWorkId: string | null,
 ): IdentityCommitPlan {
   const location = tabLocation(tab);
-  // Compare the name the server will store (`Chapter 13.md` is `Chapter 13`).
   const stored = storedFilename(
     target.name,
     tab.kind === "new" ? undefined : documentRow(location.leaf),

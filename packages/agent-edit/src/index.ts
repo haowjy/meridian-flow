@@ -1,4 +1,3 @@
-// Deep public facade for the agent editing core.
 export { splitDocumentFile } from "./document-address.js";
 export { fullHashForBlockId } from "./model/block-hash.js";
 export { bodyRange, destinationFreeBlocks, grepBlockText } from "./model/grep-text.js";

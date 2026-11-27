@@ -1,4 +1,3 @@
-/** Real tree-backed document-link scopes for DB suites. */
 import type { Database } from "@meridian/database";
 import { createDrizzleDocumentLinkScopes } from "../../context/adapters/document-link-scope.js";
 import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
@@ -11,7 +10,6 @@ export function createTestDocumentLinkScopes(
   db: Database,
   options: {
     fileAccess?: Pick<FileAccess, "listAccess">;
-    /** Hears the warnings a prepared scope's misses emit (they never throw). */
     eventSink?: EventSink;
   } = {},
 ) {
@@ -22,15 +20,10 @@ export function createTestDocumentLinkScopes(
   });
 }
 
-/** The production ahead-ref registry over a DB suite's database,. */
 export function createTestLinkAheadRegistry(db: Database, eventSink?: EventSink) {
   return createDrizzleLinkAheadRegistry(db, eventSink ? { eventSink } : {});
 }
 
-/**
- * The collab deps a DB suite passes for links: real scopes, no ahead-ref minting. A short room
- * debounce keeps the pending save, which the harness drains between cases, from taking seconds.
- */
 export function testLinkDeps(db: Database) {
   return {
     links: createTestDocumentLinkScopes(db),

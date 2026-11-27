@@ -48,7 +48,6 @@ import {
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import { writeLiveMarkdown, writerEdit } from "./test-support/live-room-text.js";
 
-/** A live edit of the tree (rename, delete), as a person's would be. */
 async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
   await treeSeeder(db).store.submit({
     lists: [await treeListOfSource(db, SOURCE_ID)],
@@ -56,7 +55,6 @@ async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
   });
 }
 
-/** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
   return grantInProject(grant, PROJECT_ID, USER_ID);
 }
@@ -80,7 +78,6 @@ async function fixture(
     .set({ aiWriteMode: mode })
     .where(eq(schema.threads.id, THREAD_ID));
   await writeLiveMarkdown(f.rooms, ALPHA_ID, "Opening paragraph.\n\nSurvivor.");
-  // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
   const effective = scopeEffectiveReader(
     createEffectiveDocumentReader({
@@ -139,7 +136,6 @@ async function fixture(
     );
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
-  /** The writer deletes the first paragraph in the Live room. */
   const writerDelete = () => writerEdit(f.rooms, ALPHA_ID, (blocks) => blocks.slice(1));
   async function stage(responseId: string) {
     await db.insert(schema.modelResponses).values({
@@ -211,11 +207,8 @@ describe("document revisions (postgres and collab)", () => {
     const shown = await f.current();
     expect(shown).toMatch(/^l1:/);
     expect(await f.current()).toBe(shown);
-    // The model's read and the revision-only path agree under real scopes, or
-    // compaction would never elide a copy.
     expect((await f.read()).revision).toBe(shown);
 
-    // Nothing in alpha changes; only where its link's target sits.
     await liveEdit(db, (writer) => writer.rename(LIVE, "system", BETA_ID, "gamma"));
     const moved = await f.current();
     expect(moved).not.toBe(shown);

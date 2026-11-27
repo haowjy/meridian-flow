@@ -1,10 +1,3 @@
-/**
- * The drafts a Work's own creates make, before the server lists them. A document created in a
- * Work is drafted under an id its create names (`createdDraftId`), so the browser knows the whole
- * item from its copy of the list: where the Work puts the document and its item key. It
- * opens at once, offline too, and the server's row, when it comes, is the same draft and replaces
- * this one. A create the server dropped, discarded or applied is no longer pending, and leaves.
- */
 import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DraftItem } from "@meridian/contracts/drafts";
@@ -20,10 +13,6 @@ import { parseContextUri } from "@/lib/context-uri";
 import { useTreeList } from "./useProjectTree";
 import { useProjectTreesAt } from "./useProjectTrees";
 
-/**
- * Each draft's pending document creates the server has not listed, as list rows, keyed by draft.
- * `listed` holds the drafts whose server list has come, with its rows.
- */
 export function useCreatedDrafts(
   projectId: string,
   listed: ReadonlyMap<string, readonly DraftItem[]>,
@@ -74,7 +63,6 @@ export function useCreatedDrafts(
   }, [listed, project.snapshot, account.snapshot, treesAt]);
 }
 
-/** The documents the Work's pending creates make and its view still shows: an Undo trashes one. */
 function createdDocuments(doc: LoroDoc, draftId: string): string[] {
   const created = pendingCreates(pendingRecords(doc, draftId), "document");
   if (created.size === 0) return [];
@@ -82,10 +70,6 @@ function createdDocuments(doc: LoroDoc, draftId: string): string[] {
   return [...created].filter((id) => nodes.get(id)?.trashed === false);
 }
 
-/**
- * Whether this browser's lists hold the pending create that makes a draft item, read when asked:
- * a server read that lacks the item proves nothing then.
- */
 export function useCreatesDraft(projectId: string): (itemKey: string) => boolean {
   const accountId = useAccountId();
   const lists = useOptionalTreeLists();

@@ -1,4 +1,3 @@
-/** Document ids to canonical URIs, answered by the one document-address owner (L32). */
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -8,13 +7,8 @@ import { currentDrizzleDb } from "../../shared/drizzle-transaction.js";
 import { currentDocumentAddress } from "./adapters/document-address.js";
 import { loadDocumentAddresses } from "./tree/tree-addresses.js";
 
-/** Where a document lives now; null when it is deleted there or unspellable. */
 export type DocumentUriResolver = (documentId: string) => Promise<string | null>;
 
-/**
- * The address a document last held, with whether it is deleted there; null when unspellable. A
- * document that never reached live is named where a Work's draft tree placed it.
- */
 export type DocumentLastAddress = (
   documentId: DocumentId,
   draftId?: DraftId,
@@ -29,7 +23,6 @@ export function createDocumentLastAddress(db: Database): DocumentLastAddress {
   return async (documentId, draftId) => {
     const [live] = await loadDocumentAddresses(db, { ids: [documentId] });
     if (live) return live;
-    // A caller that knows the Work's draft reads that one; otherwise any draft that placed it.
     const placedIn =
       draftId ??
       (
@@ -46,7 +39,6 @@ export function createDocumentLastAddress(db: Database): DocumentLastAddress {
   };
 }
 
-/** Resolve a draft list through the shared address owner in one batch. */
 export function createDocumentUrisResolver(db: Database) {
   return async (documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>> => {
     const addresses = await loadDocumentAddresses(db, { ids: documentIds });

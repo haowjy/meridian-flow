@@ -41,7 +41,6 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/compon
 import { cn } from "@/lib/utils";
 import { useChromeLayer } from "./chrome-layers";
 
-/** floating-ui's measurable reference, plus the element whose scrolling moves it. */
 type EditorPopoverAnchor = {
   getBoundingClientRect: () => DOMRect;
   contextElement?: Element;
@@ -52,16 +51,12 @@ export type EditorPopoverProps = {
   id: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Client coordinates for a surface anchored to a place that cannot move. */
   at?: { x: number; y: number } | null;
-  /** A rect read on every reposition, for a surface anchored to the text. */
   anchorRect?: (() => DOMRect | null) | null;
   trigger?: ReactNode;
   align?: ComponentProps<typeof PopoverContent>["align"];
   side?: ComponentProps<typeof PopoverContent>["side"];
-  /** `prose` leaves the caret where it was; the default takes focus in. */
   focusOnOpen?: "content" | "prose";
-  /** Where focus goes on close; the default hands the caret back to the prose. */
   returnFocus?: () => void;
   className?: string;
   children: ReactNode;

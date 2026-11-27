@@ -6,7 +6,6 @@ import {
 } from "../storage/index.js";
 import { prepareBinaryCopy } from "./binary-copy.js";
 
-/** Guards: a file derived from an original (preview, extracted text) is copied and released with it. */
 describe("derived files", () => {
   async function stored() {
     const objectStore = createInMemoryObjectStore();

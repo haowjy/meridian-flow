@@ -1,8 +1,3 @@
-/**
- * What the Work command records leave for the writer to see: each Work's failed command, each
- * deleted Work's Undo window, and the Works being restored. Every surface reads the same
- * records, so the list and the band agree.
- */
 import { useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
 import { useWorksSnapshot } from "./useWorks";
@@ -20,19 +15,11 @@ export type WorkCommandFailure<Op extends WorkOperation = WorkOperation> = {
   workId: string;
   operation: Op;
   error: WorkCommandRefused;
-  /** A restore's Work name, for its row when the Work is gone. */
   name?: string;
-  /** Runs the command again; resolves to its failure, or `null`. */
   retry: () => Promise<Error | null>;
   dismiss: () => void;
 };
 
-/**
- * The failed command each Work still shows, keyed by Work id. A Work's latest command wins, so
- * a retry or any newer command on it replaces the failure, and a failure goes quiet once the
- * server already shows its target (another device archived the Work, say). `operations` is a
- * module constant.
- */
 export function useWorkCommandFailures<Op extends WorkOperation>(
   projectId: string,
   operations: readonly Op[],
@@ -66,13 +53,8 @@ function latestByWork(records: readonly WorkCommandRecord[]) {
   return latest;
 }
 
-/**
- * A deleted Work's Undo window: open from the delete until the writer undoes or closes it. A
- * refused Undo reopens it; its failure is the Work's restore failure.
- */
 export type WorkDeleteWindow = { workId: string };
 
-/** Every open Undo window in this project, oldest delete first. */
 export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWindow[] {
   const server = useWorksSnapshot(projectId).list.data;
   const records = useWorkCommandRecords(projectId);
@@ -107,7 +89,6 @@ export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWind
   }, [entries, records, server]);
 }
 
-/** Works whose restore is still on its way; they already show in their tab. */
 export function useRestoringWorkIds(projectId: string): ReadonlySet<string> {
   const records = useWorkCommandRecords(projectId);
   return useMemo(

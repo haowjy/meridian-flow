@@ -1,29 +1,3 @@
-/**
- * The code block's chip cluster — `[language ▾ | copy | ⋯]` inside the block's
- * top-right bounds.
- *
- * A code block is the partial exception to object physics: its rendering IS its
- * source, so a click places a caret and there is no hidden mode to fall into.
- * Its controls follow the same inside-corner physics as the object rows, but
- * they are one cluster rather than separate chips: the language is a labeled
- * control, and a labeled control standing alone over code would read as part of
- * the code.
- *
- * The block's own context surface, so no prose formatting verb appears here
- * (law 4): the caret is in code, and the persistent toolbar keeps its own fixed
- * geometry rather than growing a contextual segment. A right-click inside the
- * fence reaches the same verbs as one list — both doors read
- * [`fence-menu-items.tsx`](./fence-menu-items.tsx).
- *
- * Every control here is the dense `xs` size, including the language: the
- * cluster may not stand taller than one line of the code it decorates (see
- * overlay-icon-row.css), and the label is what drives that height.
- *
- * It is rendered INSIDE the fence's own node view, so a scroll or a reflow
- * moves the cluster and the code as one piece rather than as a rect and a
- * chaser (`chrome/object-overlay.ts`).
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { Copy, Ellipsis } from "lucide-react";
@@ -53,9 +27,7 @@ export type CodeBlockChipsProps = {
   editor: Editor;
   target: ObjectSurfaceTarget;
   visible: boolean;
-  /** Raised while a menu here is open, so the cluster holds its ground. */
   onMenuOpenChange: (open: boolean) => void;
-  /** Copy reaches a clipboard the browser can refuse; the answer comes back. */
   run: RunVerb;
 };
 
@@ -85,8 +57,6 @@ export function CodeBlockChips({
       data-code-chips=""
       data-state={visible && !suppressed ? "open" : "closed"}
       data-placement={placement.placement}
-      // Chrome, never text ProseMirror owns: the cluster lives inside the
-      // fence's own node view so it travels with it.
       contentEditable={false}
       // Right-clicks on chrome route through the claim ladder like right-clicks
       // on the block itself, rather than falling through to the browser. The

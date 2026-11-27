@@ -1,7 +1,3 @@
-/**
- * The tree half of a Work's Discard: its pending records settled discarded in every list it
- * spans. The press's Discard and Work purge's disposal (`drizzle-work-disposal.ts`) run it.
- */
 import type { DraftId, UserId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -9,12 +5,6 @@ import { discardDraft, pendingRecords, recordsOfItem } from "@meridian/project-t
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
-/**
- * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
- * the records of those documents' items, or with `records` those records (and, either way, what
- * stands on a node they create); with neither, all of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`).
- * Returns the documents that had records, and the Trash deletes the press records for its Undo.
- */
 export async function discardTreeRecords(
   db: Database,
   deps: { treeLists: Pick<TreeListStore, "submit"> },

@@ -1,4 +1,3 @@
-/** Renders a single process activity row in the transcript. */
 import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { DisclosureMark } from "@/components/ui/marks";
@@ -8,15 +7,11 @@ export type ActivityRowStatus = "running" | "done" | "error";
 
 export type ActivityRowProps = {
   Icon: LucideIcon;
-  /** Preserve the rail gutter while omitting a redundant per-row icon chip. */
   quietIcon?: boolean;
-  /** Single-line action title (e.g. `Read foo.md`). Omit when using `children`. */
   title?: ReactNode;
-  /** Status indicator. Hidden when the row is `done` and not interactive. */
   status?: ActivityRowStatus;
   expand?: () => ReactNode;
   children?: ReactNode;
-  /** Optional className applied to the prose container — for variant tinting. */
   proseClassName?: string;
 };
 
@@ -25,9 +20,6 @@ const ICON_TOP_PAD = "pt-[3px]";
 const TITLE_ROW_PAD = "py-0.5";
 
 const COMPACT_LINE_BOX =
-  // `box-content` so the min-height describes the line box itself, leaving the
-  // content column's padding to be added on top of it exactly as the title row
-  // adds it.
   "box-content min-h-[calc(var(--text-compact)*var(--text-compact--line-height))]";
 
 export function ActivityRow({
@@ -62,10 +54,6 @@ export function ActivityRow({
     ) : (
       <div className={cn("flex w-[19px] shrink-0 flex-col items-center", ICON_TOP_PAD)}>
         <span className={cn("flex items-center", COMPACT_LINE_BOX, firstLinePad)}>
-          {/* Row chrome is deliberately tone-flat. The chip is a place for the
-              glyph, not a signal of its own: whether the agent changed the book
-              is carried by the verb and by the edits receipt, and jade in the
-              timeline means one thing only, which is that something is a door. */}
           <span className="grid size-[19px] shrink-0 place-items-center rounded-md bg-ink-fill text-muted-foreground">
             <Icon className="size-3" aria-hidden />
           </span>
@@ -74,9 +62,6 @@ export function ActivityRow({
       </div>
     );
 
-  // Prose layout: no title, just children. Side-by-side with the icon so a
-  // multiline paragraph's first line aligns to the chip and subsequent lines
-  // wrap under it (in the content column, never under the icon column).
   if (!title && children) {
     return (
       <div className="flex items-stretch gap-[var(--chat-space-block)]" data-activity-row>
@@ -118,7 +103,6 @@ export function ActivityRow({
         TITLE_ROW_PAD,
       )}
     >
-      {/* A fold's chevron leads, as on every FoldToggle; there is no hover fill. */}
       {hasInlineFold ? (
         <DisclosureMark open={open} className="-mr-1 mt-[var(--chat-space-inline)]" />
       ) : null}
@@ -138,7 +122,6 @@ export function ActivityRow({
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           aria-controls={panelId}
-          // The toggle has no text of its own; the row's title names it.
           aria-labelledby={titleId}
           className="focus-ring absolute inset-0 rounded-md"
         />
@@ -176,7 +159,6 @@ export function ActivityRow({
             )}
           >
             <div className="min-w-0 overflow-hidden">
-              {/* Evaluated on open, not on render. */}
               <div className="mt-[var(--chat-space-inline)]">{open ? expand() : null}</div>
             </div>
           </div>

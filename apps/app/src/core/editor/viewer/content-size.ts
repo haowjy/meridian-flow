@@ -14,10 +14,6 @@
 
 import type { ViewerSize } from "./viewer-math";
 
-/**
- * The content's intrinsic size in CSS px, or null when the element has not
- * laid out and has no declared dimensions to fall back on.
- */
 export function intrinsicContentSize(element: Element): ViewerSize | null {
   if (element instanceof SVGSVGElement) {
     const box = element.viewBox.baseVal;

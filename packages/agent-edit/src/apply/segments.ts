@@ -1,4 +1,3 @@
-/** Write-time grouping policy; review may join segments but never split them. */
 import type { DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ResolvedEdit } from "./types.js";

@@ -1,4 +1,3 @@
-/** Canonical lifting of scheme-adapter faults into URI-scoped context errors. */
 import type { AdapterFault } from "../ports/context-adapter.js";
 import type { ContextError } from "../ports/context-port.js";
 

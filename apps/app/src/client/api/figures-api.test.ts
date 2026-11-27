@@ -1,4 +1,3 @@
-/** A picture still in a Work's draft is readable only through that Work, so the request names it. */
 import { afterEach, expect, it, vi } from "vitest";
 
 import { getFigureSignedUrl } from "./figures-api";

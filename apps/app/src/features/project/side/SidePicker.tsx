@@ -1,11 +1,3 @@
-/**
- * SidePicker — the side header's name, and the list that chooses what sits beside main.
- *
- * It offers one kind, the one main is not. Beside a document, chats as the sidebar lists them:
- * New chat, the scoped Work's chats (pinned first), then Other chats. Beside a chat, documents:
- * those open in main's tabs, Recently opened, then the file explorer over the project's areas.
- * Search filters that kind. A choice writes the chat or document slot, which lasts until main changes mode.
- */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
@@ -31,7 +23,6 @@ import { DocumentChoices } from "./DocumentChoices";
 import { type PlacedItem, useMainForSide, usePlace, useSideItem } from "./SideView";
 import { mainMode } from "./side-item";
 
-/** Unpinned chats a list shows at first, and adds with each Show more (the sidebar's page). */
 const PAGE = 20;
 const FIND_LIMIT = 12;
 
@@ -41,7 +32,6 @@ export function SidePicker({
   icon,
 }: {
   projectId: string;
-  /** What the side shows now, as its trigger names it; null while it shows nothing. */
   name: string | null;
   icon: ReactNode;
 }) {
@@ -107,8 +97,6 @@ function SidePickerLists({
     place(item);
     onDone();
   };
-  // Beside the chat lane, documents; otherwise (a document, the landing, a document still
-  // opening) chats.
   return mainMode(main) === "chat" ? (
     <DocumentChoices
       projectId={projectId}
@@ -123,7 +111,6 @@ function SidePickerLists({
 
 const chatItem = (chatId: string): PlacedItem => ({ kind: "chat", chatId });
 
-/** Beside a document: the sidebar's order, New chat first. */
 function ChatChoices({
   projectId,
   searchRef,
@@ -228,7 +215,6 @@ function ChatChoices({
   );
 }
 
-/** A list's pinned chats, then its other chats a page at a time, as the sidebar pages them. */
 function PagedChats({
   pinned,
   chats,

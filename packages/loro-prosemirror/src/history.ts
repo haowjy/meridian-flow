@@ -19,7 +19,6 @@ import { type SelectionCursors, selectionCursors } from "./cursors.js";
  */
 export { UNTRACKED_ORIGIN };
 
-/** Writes closer than this join one step. */
 const GROUP_MS = 500;
 /**
  * Steps kept. A step can be any number of items on a manager (a peer's import splits typing into
@@ -28,22 +27,17 @@ const GROUP_MS = 500;
 const DEPTH = 500;
 
 type End = "anchor" | "head";
-/** What each Undo item carries: its step, and which selection ends its cursors are. */
 type Tag = { step: number; ends: End[] };
 type Step = {
   id: number;
-  /** What the step did: its structure values, and the text docs its Loro managers undo. */
   edit: Edit;
   selection: SelectionCursors;
   at: number;
-  /** A step this copy's editor did not write (a press): its Undo and Redo are the caller's. */
   outside?: OutsideStep;
 };
-/** A step taken outside the editor, such as a press: Ctrl+Z runs `undo`, Ctrl+Shift+Z `redo`. */
 export type OutsideStep = { undo: () => void; redo: () => void };
 type Watched = { manager: UndoManager; doc: LoroDoc };
 
-/** What one Undo or Redo did: the changes to publish, and the selection to put back. */
 export interface HistoryRun {
   changes: DocChange[];
   selection: SelectionCursors | null;
@@ -70,16 +64,12 @@ export class UndoHistory {
   private readonly watched = new Map<DocKey, Watched>();
   private readonly undoSteps: Step[] = [];
   private readonly redoSteps: Step[] = [];
-  /** The step writes join until it closes. */
   private open: Step | null = null;
-  /** What a commit pushed now is tagged with: the step being written, undone or redone. */
   private tag: { step: number; selection: SelectionCursors } | null = null;
-  /** The cursors each selection end came back with from the items popped in a run. */
   private readonly popped = new Map<End, Uint8Array>();
   /** The cursors the last push handed to Loro: still ours to free. */
   private pushed: Cursor[] = [];
   private ids = 0;
-  /** Whether the write `beforeWrite` announced joins as typing: it leaves the step open. */
   private joining = false;
   private readonly now: () => number;
   private readonly stopWatching: () => void;
@@ -92,12 +82,6 @@ export class UndoHistory {
     this.stopWatching = docs.beforeTextWrite((id, doc) => this.watch(id, doc));
   }
 
-  /**
-   * A tracked write is about to run from `state`. Typing (`joins`) joins the open step when it
-   * comes soon after the last write, and leaves it open; any other write starts a step, whose
-   * selection is `state`'s, taken as cursors before the write so a restored deletion brings the
-   * selection back over it, and closes it.
-   */
   beforeWrite(state: EditorState, { joins }: { joins: boolean }): void {
     this.joining = joins;
     const now = this.now();
@@ -115,11 +99,6 @@ export class UndoHistory {
     this.tag = { step: step.id, selection: step.selection };
   }
 
-  /**
-   * A step taken outside the editor (a press) goes on the history as the newest: Ctrl+Z reaching
-   * it runs its `undo` and goes no further, which writes nothing here; whatever that does arrives
-   * as imports. Redo runs `redo`.
-   */
   pushOutside(outside: OutsideStep): void {
     this.endStep();
     this.undoSteps.push({
@@ -133,7 +112,6 @@ export class UndoHistory {
     this.clearRedo();
   }
 
-  /** An outside step leaves the history, from either stack: it has nothing left to take back. */
   removeOutside(outside: OutsideStep): void {
     for (const list of [this.undoSteps, this.redoSteps]) {
       const at = list.findIndex((step) => step.outside === outside);
@@ -141,7 +119,6 @@ export class UndoHistory {
     }
   }
 
-  /** An outside step whose Undo didn't happen goes back where Ctrl+Z reaches it again. */
   restoreOutside(outside: OutsideStep): void {
     const at = this.redoSteps.findIndex((step) => step.outside === outside);
     if (at < 0) return;
@@ -149,7 +126,6 @@ export class UndoHistory {
     if (step) this.undoSteps.push(step);
   }
 
-  /** The write `beforeWrite` announced is done; `changes` are what it changed (maybe nothing). */
   record(changes: readonly DocChange[]): void {
     const step = this.open;
     this.tag = null;
@@ -169,19 +145,14 @@ export class UndoHistory {
       if (span) span.after = after;
       else {
         edit.texts.set(key, { before, after });
-        // The doc's first commit in the step is an item already; the rest of the step merges into
-        // one more. A peer's batch imported meanwhile may split it: the tags still say whose it is.
         this.watched.get(key)?.manager.groupStart();
       }
     }
-    // The step's first reading of each doc, which no Undo or Redo reads again: a peer's typing in
-    // a block the step made, or one it joined away, stays unread.
     readOf(this.docs, edit, edit.read);
     step.at = this.now();
     if (edit.values.size > 0 && !this.joining) this.endStep();
   }
 
-  /** The next write starts its own step. */
   endStep(): void {
     const step = this.open;
     if (!step) return;
@@ -197,7 +168,6 @@ export class UndoHistory {
     return this.redoSteps.length > 0;
   }
 
-  /** Undo the newest step, from the editor at `state`. Null when the history had nothing to undo. */
   undo(state: EditorState): HistoryRun | null {
     return this.run("undo", state);
   }
@@ -222,7 +192,6 @@ export class UndoHistory {
       direction === "undo" ? [this.undoSteps, this.redoSteps] : [this.redoSteps, this.undoSteps];
     if (from.length === 0) return null;
     const now = selectionCursors(this.docs, state);
-    // A step whose run changes nothing (a peer already took out all it did) leaves the history.
     for (let step = from.pop(); step; step = from.pop()) {
       if (step.outside) {
         to.push(step);
@@ -266,18 +235,12 @@ export class UndoHistory {
     return { changes: [], selection: null };
   }
 
-  /**
-   * `step` leaves the history as it fell off its end. Its items stay at the bottom of its docs'
-   * managers, under every kept step's, where no run reaches them; a manager no kept step has items
-   * on starts again empty, so they are freed.
-   */
   private forget(step: Step): void {
     const kept = (key: DocKey) =>
       [this.undoSteps, this.redoSteps].some((list) => list.some(({ edit }) => edit.texts.has(key)));
     for (const key of step.edit.texts.keys()) if (!kept(key)) this.restart(key);
   }
 
-  /** The manager of doc `key` starts again empty. */
   private restart(key: DocKey): void {
     const watched = this.watched.get(key);
     if (!watched) return;
@@ -285,7 +248,6 @@ export class UndoHistory {
     watched.manager = this.manager(key, watched.doc);
   }
 
-  /** A step's selection, each end moved to the cursor its doc's popped item carried back. */
   private restored(selection: SelectionCursors): SelectionCursors {
     const end = (name: End) => {
       const at = selection[name];

@@ -1,4 +1,3 @@
-/** The document side of the command record (`shared/commands`): its port and its statuses. */
 import type { StoredDocumentCommandResult } from "@meridian/contracts/drafts";
 import type {
   CommandEnvelope,
@@ -7,9 +6,7 @@ import type {
 } from "../../../shared/commands/command-record.js";
 
 export interface DocumentCommands {
-  /** Fresh and authenticated: the account and digest the key names are all it reads. */
   lookup(key: CommandLookupKey): Promise<CommandLookup>;
-  /** `lookup` for a resend: waits a while on a first request still running under the id. */
   await(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
   /**
    * Claims the id and runs the effect in one transaction that holds no second connection.
@@ -35,7 +32,6 @@ const DONE_STATUSES: ReadonlySet<string> = new Set([
   "unpressed",
 ]);
 
-/** `done` when the effect committed or answered with the document as it stands; every other answer is a refusal that changed nothing. */
 export function documentOutcomeOf(result: { status: string }): "done" | "refused" {
   return DONE_STATUSES.has(result.status) ? "done" : "refused";
 }

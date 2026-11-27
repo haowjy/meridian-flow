@@ -1,22 +1,3 @@
-/**
- * useProjectContextRead — read-route projection for non-tracked context files.
- *
- * Backed by `GET /api/projects/:projectId/documents/:documentId/read`, which
- * returns either:
- *   - `{ kind: "tracked", ... }` — markdown projection (not used by the
- *     collaborative editor surface; that binds the Loro room), or
- *   - `{ kind: "binary", url, mimeType }` — a short-lived signed URL the
- *     viewer renders directly.
- *
- * The signed URL has a TTL; we treat the response as stale-fast (`staleTime:
- * 0`) and keep it in cache only briefly. UI state is honest via
- * `ContextReadStatus` instead of `array.length`.
- *
- * The query is keyed and fetched by document identity: a rename or move is the
- * same file at a new path, so the bytes on screen stay and the read never asks
- * the server about a path.
- */
-
 import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 
@@ -27,11 +8,9 @@ export type ContextReadStatus = {
   status: "loading" | "ready" | "error";
   isError: boolean;
   isFetching: boolean;
-  /** Re-reads, resolving to the fresh answer (null when failed). */
   refetch: () => Promise<ContextReadResponse | null>;
 };
 
-/** `documentId` null reads nothing: the status stays `loading`. */
 export function useProjectContextRead(
   projectId: string,
   documentId: string | null,

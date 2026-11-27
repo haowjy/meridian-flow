@@ -1,7 +1,3 @@
-/**
- * Draws the label beside the pointer that says what dropping here will do
- * ("Move to Act 2", "Can't go inside itself"). The store is in the editor's landing code.
- */
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -11,7 +7,6 @@ import {
 } from "@/core/editor/landing/drag-hint-store";
 import { cn } from "@/lib/utils";
 
-/** Mounted once per project view. */
 export function DragHint() {
   const current = useSyncExternalStore(subscribeDragHint, currentDragHint, () => null);
   useEffect(() => {
@@ -28,7 +23,6 @@ export function DragHint() {
       aria-hidden
       className={cn(
         "pointer-events-none fixed z-50 max-w-72 overflow-hidden rounded-md px-2 py-1 text-xs shadow-float",
-        // A refusal is not an error: ink, not the deletion red.
         current.refused ? "bg-foreground text-background" : "bg-primary text-primary-foreground",
       )}
       style={{ left: current.x + 14, top: current.y + 18 }}

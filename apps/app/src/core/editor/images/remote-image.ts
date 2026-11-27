@@ -1,13 +1,3 @@
-/**
- * Remote pictures: web addresses Flow never fetches on its own. A page that loaded one would
- * tell its host who is reading and, in a chat, could carry the writer's text in the address.
- * A picture shows its address instead, and the writer's click loads it through Flow's image
- * proxy (`/api/image-proxy`), which is the only way the page draws one.
- *
- * The click asks the proxy first, so a refusal can say why; the proxy's answer is then in the
- * browser's cache for the `<img>`. A load lasts for the life of the tab and applies to that
- * address wherever it appears. Nothing is stored.
- */
 import {
   apiImageProxyPath,
   IMAGE_PROXY_REASON_HEADER,
@@ -17,7 +7,6 @@ import { useSyncExternalStore } from "react";
 
 const WEB_ADDRESS = /^(?:https?:)?\/\//i;
 
-/** The absolute address of a web picture source (a protocol-relative one is https), or null. */
 export function remotePictureSource(src: string): string | null {
   return WEB_ADDRESS.test(src) ? (src.startsWith("//") ? `https:${src}` : src) : null;
 }
@@ -29,7 +18,6 @@ export function remotePictureSource(src: string): string | null {
  */
 export const REMOTE_SRC_ATTRIBUTE = "data-remote-src";
 
-/** A web address read back from untrusted clipboard HTML, or null. */
 export function clipboardRemoteSource(value: string | null): string | null {
   const address = value === null ? null : remotePictureSource(value.trim());
   if (!address) return null;

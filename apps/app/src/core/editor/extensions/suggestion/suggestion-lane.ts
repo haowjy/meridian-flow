@@ -77,53 +77,23 @@ export const defaultSuggestionLaneDriver = <TCatalog, TCandidate, TRow, TMeta>(
   runtime: SuggestionLaneDriverRuntime<TCatalog, TCandidate, TRow, TMeta>,
 ) => createDefaultSuggestionDriver({ project: runtime.defaultProject });
 
-/**
- * A lane's own answers. `TItem` is what matched the query; `TEntry` is how the
- * menu shows it, which is the same thing until a lane has something to say about
- * a row that the query cannot answer (the slash menu's refusals).
- */
 export type SuggestionLaneSpec<TCatalog, TCandidate, TRow = TCandidate, TMeta = null> = {
-  /** Extension name, storage key, and the plugin key's name. */
   name: string;
-  /** The text that opens the menu: `/`, `@`. */
   char: string;
-  /**
-   * Whether the query may carry spaces. On for a lane matching names a writer
-   * wrote (document titles have spaces in them); off for a closed vocabulary,
-   * where the first space means the writer moved on.
-   */
   allowSpaces?: boolean;
-  /** Kernel keymap id for the lane's arrow keys, and what diagnostics show. */
   keymapId: string;
-  /** The listbox's accessible name, from the catalog that carries the locale. */
   label: (catalog: TCatalog) => string;
-  /**
-   * The whole envelope, as the lane's own pure predicate over the document.
-   * `from` is the position of the trigger text itself. Being offered a catalog
-   * at all is asked separately, so a lane's rule stays readable on its own.
-   */
   allows: (doc: PMNode, from: number) => boolean;
-  /** What matched what the writer has typed after the trigger. */
   items: (catalog: TCatalog, query: string) => readonly TCandidate[];
-  /** Stable identity across reorder and same-session catalog refreshes. */
   rowId: (entry: TRow) => string;
-  /**
-   * How the visible list reads where the caret is — per-row state that depends
-   * on the document rather than the query. Asked once per update, so every row
-   * is judged against the same document a pick would act on. Absent means the
-   * rows ARE the matches.
-   */
   entries?: (input: {
     editor: Editor;
     catalog: TCatalog;
     range: Range;
     items: readonly TCandidate[];
   }) => readonly TRow[];
-  /** Rows this lane will refuse (law 5). Absent means every row works. */
   choosable?: (entry: TRow) => boolean;
-  /** What the menu needs that a row does not carry. Absent means nothing. */
   meta?: (catalog: TCatalog) => TMeta;
-  /** What a choice writes into the document, over the trigger's own range. */
   choose: (input: {
     editor: Editor;
     catalog: TCatalog;
@@ -132,21 +102,12 @@ export type SuggestionLaneSpec<TCatalog, TCandidate, TRow = TCandidate, TMeta = 
     action: SuggestionChoiceAction;
   }) => void;
   driver: SuggestionLaneDriverFactory<TCatalog, TCandidate, TRow, TMeta>;
-  /**
-   * Overrides the current three-key behavior for a richer lane. The menu owns
-   * navigation and action intent; the host only registers the returned chords.
-   */
   keyBindings?: (menu: SuggestionMenu<TRow, TMeta>) => SuggestionKeyBindings;
-  /** Hierarchical retreat. False tells the host to dismiss the root. */
   backtrack?: (input: { editor: Editor; catalog: TCatalog; range: Range }) => boolean;
 };
 
 export type SuggestionLane<TCatalog, TEntry, TMeta = null> = {
   extension: Extension<SuggestionLaneOptions<TCatalog>>;
-  /**
-   * The open menu for this editor, or null on a surface that never mounted the
-   * lane (a code file, a read-only viewer). Null is a real state.
-   */
   getMenu: (editor: Editor | null | undefined) => SuggestionMenu<TEntry, TMeta> | null;
 };
 
@@ -277,14 +238,9 @@ export function createSuggestionLane<TCatalog, TCandidate, TRow = TCandidate, TM
 
   const getMenu = (editor: Editor | null | undefined): SuggestionMenu<TRow, TMeta> | null => {
     if (!editor || editor.isDestroyed) return null;
-    // TipTap's storage registry is keyed by extension-name literals, and a lane
-    // brings its name at runtime. The cast is the price of one mechanism
-    // serving every lane; the shape is this factory's own `addStorage`.
     const storage = editor.storage as unknown as Record<string, LaneStorage | undefined>;
     return storage[spec.name]?.driver?.menu ?? null;
   };
 
-  // The plugin key stays inside: a lane's open state is read through its menu,
-  // and a returned key is an invitation to read the plugin's state instead.
   return { extension, getMenu };
 }

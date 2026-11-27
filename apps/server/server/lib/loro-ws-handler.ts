@@ -1,5 +1,3 @@
-/** The `/ws/loro` room server (design §4): `loro-protocol` frames over one socket, many rooms. */
-
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
@@ -67,9 +65,7 @@ export type LoroGatewayServices = {
   documents: {
     draftsHolding(documentId: DocumentId): Promise<DraftId[]>;
     roomRemoval(documentId: DocumentId): Promise<{ documentId: DocumentId } | null>;
-    /** The newest schema that wrote the document's text; null when it has no row. */
     schemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
-    /** Documents whose rooms end for good (a purge): their sockets are told and dropped. */
     onRoomsEnded(listener: (documentIds: readonly DocumentId[]) => void): () => void;
   };
   eventSink: AppServices["eventSink"];
@@ -83,12 +79,9 @@ export type LoroGatewayPeer = {
 };
 
 type Joined = {
-  /** The document a document room holds; null for a tree list's room. */
   documentId: DocumentId | null;
   permission: Permission;
-  /** Imports one batch a client sent into the room. */
   write(batch: Uint8Array): Promise<void>;
-  /** Batches heard before the Join's answer went out, sent right after it. */
   held: { batch: Uint8Array }[] | null;
   unsubscribe(): void;
   registration: RoomRegistration;
@@ -99,7 +92,6 @@ export type LoroGatewayConnection = {
   readonly peer: LoroGatewayPeer;
   readonly joined: Map<string, Joined>;
   read: (data: Uint8Array) => ProtocolMessage | null;
-  /** A socket's frames are handled one after another, in arrival order. */
   queue: Promise<void>;
   closed: boolean;
 };
@@ -117,7 +109,6 @@ type Admission = {
   readOnlyWhy?: ClosedOwnerWhy;
   target: FileTarget;
   accessKeys: string[];
-  /** The project the document is in; null for an account's document. */
   projectId: string | null;
 };
 
@@ -135,7 +126,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
       for (const [name, joined] of [...connection.joined])
         if (joined.documentId !== null && ended.has(joined.documentId))
           endRoom(connection, name, LORO_ROOM_ERROR.DOCUMENT_DELETED);
-    // The access-changed path is how every other change of access reaches a socket.
   });
 
   function send(connection: LoroGatewayConnection, message: ProtocolMessage) {
@@ -184,7 +174,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
     };
   }
 
-  /** What the person may do in the room, decided once at Join (file-access §7). */
   async function admit(
     userId: UserId,
     room: DocumentRoom,
@@ -197,7 +186,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
         : // A document in Trash takes text until its node is purged, so the room reads through Trash.
           { kind: "restore", documentId };
     let found = await findAccess(userId, target);
-    // A document only a draft holds is Live text that draft's view reads.
     if (!found && room.kind === "live")
       for (const draftId of await services.documents.draftsHolding(documentId)) {
         const draft: FileTarget = { kind: "draft", documentId, draftId };
@@ -320,11 +308,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
     });
   }
 
-  /**
-   * A tree list's room: open to the list's owner, always for writing. `extra` names the list, so
-   * a client holding a copy of another list (a reset database, a recreated account list) drops it
-   * and joins again from nothing.
-   */
   async function joinTree(
     connection: LoroGatewayConnection,
     message: JoinRequest,
@@ -421,10 +404,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
     ack(UpdateStatusCode.Ok);
   }
 
-  /**
-   * A room's presence, open to a socket that has joined the room: its Join is answered with who
-   * is there, its updates go to the room's other sockets.
-   */
   function relayPresence(connection: LoroGatewayConnection, message: ProtocolMessage) {
     if (!("roomId" in message)) return;
     const name = message.roomId;
@@ -437,7 +416,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
   }
 
   async function handle(connection: LoroGatewayConnection, message: ProtocolMessage) {
-    // Presence shares the document room's id, on its own channel.
     if (message.crdt === CrdtType.LoroEphemeralStore) return relayPresence(connection, message);
     switch (message.type) {
       case MessageType.JoinRequest:
@@ -447,7 +425,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
       case MessageType.Leave:
         return drop(connection, message.roomId);
       default:
-        // Acks of the server's own batches, and server-to-client frames a client never sends.
         return;
     }
   }
@@ -476,7 +453,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
       try {
         message = connection.read(data);
       } catch {
-        // Not a protocol frame: nothing a client of ours sends. The socket's other rooms stay.
         return;
       }
       if (!message) return;
@@ -505,7 +481,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
       connections.delete(connection);
     },
 
-    /** Stops taking sockets, closes the open ones for a reconnect, and saves every room. */
     async drain(): Promise<void> {
       accepting = false;
       unsubscribeAccess();
@@ -523,7 +498,6 @@ export function createLoroGateway(services: LoroGatewayServices) {
 
 export type LoroGateway = ReturnType<typeof createLoroGateway>;
 
-/** Why the file's owner is closed, if it is: what a read-only Join tells the writer. */
 function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | undefined {
   const owner = facts?.draftOwner ?? facts?.ownerWork;
   if (!owner) return undefined;
@@ -534,11 +508,6 @@ function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | u
   return owner.archived ? "work_archived" : undefined;
 }
 
-/**
- * Room access follows the file's owners (each under its `ownerAccessKey`), its project and the
- * document itself: access is decided once, at Join, so every change that can end it must reach
- * a key the room is under.
- */
 function accessKeys(facts: FileFacts, documentId: DocumentId): string[] {
   const { workIds, lineageRootIds } = grantOwnerLocks(facts);
   return [

@@ -1,35 +1,3 @@
-/**
- * What an image or figure shows: which document its source names, and the
- * signed-URL lifecycle that draws a document-backed picture.
- *
- * A picture names a document one of two ways. An upload stores `asset:<id>`.
- * A picture written as an address stores a `ref` (`doc:`/`ahead:`) beside it,
- * and that ref is answered by the editor's link cache like any link's: the
- * same `(ref, href)` key, the same local rule and settlement memo, asked
- * through the editor's one requester while the picture is mounted. A
- * ref-less source that is a document address (`uploads://seal.png`) is asked
- * by its address, as a ref-less link is. A document answer draws exactly as
- * an `asset:` picture does. A source that is neither draws only if
- * `inlinePictureSource` allows it (an image `data:` URL). A web address
- * waits as `remote` for the writer's click and then draws through the image
- * proxy; anything else is unavailable with no Retry (retrying cannot change
- * a stored source), never handed to the browser as a URL.
- *
- * Whether a document is gone is the server's answer, never a guess: the link
- * resolver's for a ref, the signed-URL route's 404 for a document (which also
- * hides an unreadable one, so a stored id is never a capability). A gone
- * document is asked again when the catalog changes, so restoring it draws it.
- *
- * The signed-URL answer names what to draw (`drawUrl`: the server's preview,
- * or the original when browsers draw it). With none, the file card stands in.
- * An `<img>` failure gets one automatic URL refresh, then the card, and that
- * picture is then known undrawable: later re-signs only renew the card's
- * Download and never try the `<img>` again. The card keeps re-signing before
- * expiry, as a drawn picture does, so Download works however long the chapter
- * stays open. Retry is only for a signed-URL request that failed, which a
- * second try can fix.
- */
-
 import { t } from "@lingui/core/macro";
 import { resolveDocumentHref } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
@@ -64,12 +32,10 @@ import {
   pictureKeyOfNode,
 } from "./links";
 
-/** What the file card shows for a stored picture that can't be drawn. */
 export type AssetFileFacts = {
   name: string;
   mimeType: string;
   sizeBytes: number;
-  /** The stored original, which Download serves. */
   downloadUrl: string;
 };
 
@@ -77,35 +43,20 @@ export type AssetImageRenderState =
   | { kind: "idle"; url: string | null; message?: string }
   | { kind: "loading"; url: string | null; message?: string }
   | { kind: "ready"; url: string; expiresAt?: string }
-  /** A web address, shown with a button until the writer loads it. */
   | { kind: "remote"; url: null; address: string }
-  /** Stored, but not drawable by this browser: the file card stands in. */
   | { kind: "file"; url: null; file: AssetFileFacts }
   | { kind: "error"; url: string | null; message: string }
-  /**
-   * Nothing to draw, and nothing to retry: an address nothing has been
-   * uploaded to yet (it draws itself when a file arrives there), a
-   * document that is gone, or a stored source no URL can be made of.
-   */
   | { kind: "unavailable"; url: null; message: string };
 
-/** What a picture's source names, before any URL is signed. */
 type PictureTarget =
   | { kind: "empty" }
   | { kind: "literal"; url: string }
-  /** A web address the writer has not loaded yet. */
   | { kind: "remote"; address: string }
   | { kind: "document"; documentId: string }
-  /** No answer yet: no resolver registered, or the question is out. */
   | { kind: "resolving" }
-  /** The question failed. Retry asks again. */
   | { kind: "unanswered" }
   | { kind: "unavailable"; message: string };
 
-/**
- * Not asked yet: no resolver is registered, or the requester has not asked
- * this generation about the picture. Distinct from a failed question (null).
- */
 const UNASKED = "unasked" as const;
 const noSubscription = () => () => {};
 
@@ -127,9 +78,6 @@ function usePictureTarget(
   const assetDocumentId = assetDocumentIdFromSrc(src);
   if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
   if (!key) {
-    // Not a document, so only a supported web URL draws as written. Anything
-    // else is a stored source no retry can change: nothing to draw, nothing
-    // to retry, and not a gone document.
     const url = inlinePictureSource(src);
     if (url) return { kind: "literal", url };
     if (remote) {
@@ -139,8 +87,6 @@ function usePictureTarget(
     }
     return { kind: "unavailable", message: t`Image could not be displayed.` };
   }
-  // A document address is not a URL: an editor with no link lane has no way
-  // to ask about it, which is a question that could not be asked.
   if (!cache) return { kind: "unanswered" };
   if (entry === UNASKED || entry?.state === "pending") return { kind: "resolving" };
   if (!entry) return { kind: "unanswered" };
@@ -152,7 +98,6 @@ function usePictureTarget(
       return { kind: "unavailable", message: t`No image has been uploaded to ${path} yet.` };
     }
     case "gone":
-    // A picture's source is never a folder; a folder answer is nothing to draw.
     case "folder":
       return { kind: "unavailable", message: goneMessage() };
   }
@@ -162,16 +107,11 @@ function goneMessage(): string {
   return t`This image is no longer available.`;
 }
 
-/**
- * The link cache's current generation: a new one is a catalog change, after
- * which a document the server said was gone is worth asking about again.
- */
 function useLinkGeneration(resolution: LinkAnswerCache | null): unknown {
   const subscribe = useMemo(() => resolution?.subscribe ?? noSubscription, [resolution]);
   return useSyncExternalStore(subscribe, () => resolution?.assignment ?? null);
 }
 
-/** A manuscript picture's address as the writer wrote it: its path from the root. */
 function displayedAddress(href: string): string {
   const uri = resolveDocumentHref(href, null)?.uri ?? href;
   const parsed = parseUnifiedContextUri(uri);
@@ -232,33 +172,26 @@ export function reduceAssetImageLoadFailure(
 export type AssetImageRenderActions = {
   retry: () => void;
   imageLoadFailed: () => void;
-  /** The picture is on screen. Report it, or the next expiry has no recovery. */
   imageDisplayed: () => void;
 };
 
 export function useAssetImageRenderState(input: {
   projectId?: string;
-  /** The Work the viewer is in, when they are in one. */
   owner?: string;
   src: string;
-  /** The picture's stored `ref`, as the node holds it. */
   ref?: unknown;
-  /** The editor's link cache, which answers the ref, and its requester. */
   links?: MountedLinks | null;
 }): [AssetImageRenderState, AssetImageRenderActions] {
   const { projectId, owner, src } = input;
   const resolution = input.links?.resolution ?? null;
   const requester = input.links?.requester ?? null;
   const stored = pictureKeyOfNode({ ref: input.ref, src });
-  // Stable across renders while the stored link is: the subscription and the
-  // retry belong to the key, not to a fresh object.
   const keyRef = stored?.ref ?? null;
   const keyLink = stored?.href ?? null;
   const key = useMemo<LinkKey | null>(
     () => (keyLink ? { ref: keyRef, href: keyLink } : null),
     [keyRef, keyLink],
   );
-  // Asked about while shown, and released on unmount or when the key changes.
   useEffect(() => (key && requester ? requester.watch(key) : undefined), [key, requester]);
   const target = usePictureTarget(src, key, resolution);
   const targetIdentity = pictureTargetIdentity(target);
@@ -278,23 +211,13 @@ export function useAssetImageRenderState(input: {
   // rendered state: an `<img>` error arrives between renders, and what it has
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
-  // The facts of the picture last signed, for the card an `<img>` failure ends in.
   const fileFactsRef = useRef<AssetFileFacts | null>(null);
-  // The picture and document whose `<img>` failed past its refresh: a settled
-  // fact, so a re-sign renews the card instead of drawing it again.
   const undrawableRef = useRef<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const generation = useLinkGeneration(resolution);
   const generationRef = useRef(generation);
   generationRef.current = generation;
-  // The picture the signed-URL route last called gone, and the generation it
-  // was asked in. A later generation asks again.
   const [gone, setGone] = useState<{ picture: string; generation: unknown } | null>(null);
-  // Which picture this is: its project, and its stored link or its source.
-  // A URL on screen belongs to one picture. It stays while that same picture
-  // revalidates (a catalog change, a signed-URL refresh), and a node view
-  // retargeted to another picture (a ref or source edit, undo, a peer's
-  // update) never draws the previous one while the new one loads.
   const picture = `${projectId ?? ""}\u0000${owner ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
   const [shown, setShown] = useState<{ picture: string; state: AssetImageRenderState }>(() => ({
     picture,
@@ -317,7 +240,6 @@ export function useAssetImageRenderState(input: {
 
   const unanswered = target.kind === "unanswered";
   const retry = useCallback(() => {
-    // A question that failed is asked again; anything else signs a fresh URL.
     if (unanswered && key && resolution) void resolution.resolve(key);
     else setRefreshToken((token) => token + 1);
   }, [key, resolution, unanswered]);
@@ -328,7 +250,6 @@ export function useAssetImageRenderState(input: {
   const imageLoadFailed = useCallback(() => {
     const setState = showFor(setShown, picture);
     if (!assetDocumentId) {
-      // A web URL that won't draw: asking again can't change a stored source.
       setState({ kind: "unavailable", url: null, message: t`Image could not be displayed.` });
       return;
     }
@@ -365,8 +286,6 @@ export function useAssetImageRenderState(input: {
       return;
     }
 
-    // A new resolution generation (every catalog change) asks again, and the
-    // same picture stays on screen while it does, as a signed-URL refresh's does.
     if (target.kind === "resolving") {
       setState((kept) => ({ kind: "loading", url: kept?.url ?? null }));
       return;
@@ -449,10 +368,6 @@ export function useAssetImageRenderState(input: {
   return [state, { retry, imageLoadFailed, imageDisplayed }];
 }
 
-/**
- * Sets the state shown for one picture. An update may keep what is already
- * on screen only when it is this same picture's.
- */
 function showFor(
   setShown: Dispatch<SetStateAction<{ picture: string; state: AssetImageRenderState }>>,
   picture: string,
@@ -469,7 +384,6 @@ function showFor(
     }));
 }
 
-/** The state a target draws before any URL is signed. */
 function initialState(target: PictureTarget): AssetImageRenderState {
   switch (target.kind) {
     case "empty":

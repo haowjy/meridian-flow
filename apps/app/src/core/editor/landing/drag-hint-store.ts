@@ -1,10 +1,3 @@
-/**
- * The label beside the pointer that says what dropping here will do. The lit
- * target sets it (the editor's drop plugin, the project tree, the composer's
- * drop zone); `DragHint` in the project feature draws it. It follows the
- * pointer and goes away when the drag leaves every target or ends.
- */
-
 export type DragHintVerdict = { kind: "accept" | "refuse"; label: string };
 
 export type DragHintState = {

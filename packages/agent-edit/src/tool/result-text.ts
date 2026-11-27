@@ -1,6 +1,3 @@
-// The one renderer from a `read` or `write` result to the text the model sees.
-//
-// Hosts keep the typed result beside this text; nothing parses the text back.
 import { splitDocumentFile } from "../document-address.js";
 import { toHashline } from "../model/hashline.js";
 import type {
@@ -10,10 +7,6 @@ import type {
   AgentEditResultV1,
 } from "./model-result.js";
 
-/**
- * Renders one status line, any notes and the message, then the blocks as
- * `hash|text` lines and the concurrent-edit account. Each outline heading carries its `#slug`.
- */
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
   const sections = [
@@ -62,7 +55,6 @@ function statusLine(result: AgentEditResultV1): string {
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
-    // An edits or changes read lists the chat's edits or the draft's changes, not the blocks.
     if (result.read.format === "edits" || result.read.format === "changes")
       facts.push(`format: ${result.read.format}`);
     else
@@ -78,10 +70,6 @@ function statusLine(result: AgentEditResultV1): string {
   return facts.join("; ");
 }
 
-/**
- * The first drafted tree change of a reply says once that drafted changes wait for review, before
- * the status a model otherwise reads as done; after it, `version: draft (w2)` carries it.
- */
 function pendingLine(result: AgentEditResultV1): string[] {
   if (!result.tree?.firstDrafted || result.destination !== "draft") return [];
   return [
@@ -100,7 +88,6 @@ const LEFT_OUT_TEXT = {
   purged: "deleted for good",
 } as const;
 
-/** The facts of a tree result after the status line's own fields, in the order the spec shows them. */
 function treeFacts(tree: NonNullable<AgentEditResultV1["tree"]>): string[] {
   const facts: string[] = [];
   if (tree.moved)
@@ -124,12 +111,6 @@ function blockCount(count: number): string {
   return count === 1 ? "1 block" : `${count} blocks`;
 }
 
-/**
- * A finished call's result in brief, for one history line: the status
- * when it isn't plain success, the write handle, `words` (the size of the
- * content the call sent, which only the host has), the draft it changed, what it
- * copied, and a read's block count.
- */
 export function agentEditResultSummary(result: AgentEditResultV1, words?: number): string {
   const facts: string[] = [];
   if (result.status !== "success" && result.status !== "reversed") facts.push(result.status);
@@ -149,11 +130,6 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   return facts.join(", ");
 }
 
-/**
- * The version a write changed, in `read`'s terms: `live`, or `draft
- * (w3)` for a write held in a named Work's draft; No Work's draft has no
- * handle to name, so it is plain `draft`. Undo and redo name none.
- */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   if (result.destination === "draft" && result.draftWork !== undefined)
     return result.draftWork === "/" ? "draft" : `draft (${result.draftWork})`;
@@ -178,7 +154,6 @@ function notes(result: AgentEditResultV1): string[] {
   return lines;
 }
 
-/** Who changed which blocks after the model last read them, by hash. */
 function concurrentLines(listing: AgentEditConcurrentListing): string[] {
   return listing.groups.flatMap((group) => {
     const changed = group.changed ?? [];
@@ -195,7 +170,6 @@ function concurrentLines(listing: AgentEditConcurrentListing): string[] {
   });
 }
 
-/** The file an outline's sections are read from; undefined when the result isn't an outline. */
 function outlineFile(result: AgentEditResultV1): string | undefined {
   if (result.read?.format !== "outline" || !result.path) return undefined;
   return splitDocumentFile(result.path).filePath;
@@ -208,7 +182,6 @@ function bodyLines(groups: readonly AgentEditBlockGroup[], outline: string | und
       ...(item.gapLine === undefined ? [] : [item.gapLine]),
       blockLine(item),
     ]);
-  // A heading whose slug looks like a hash is read by its hash.
   return items.map((item) => `${blockLine(item)}  #${item.section ?? item.hash}`);
 }
 

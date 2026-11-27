@@ -5,19 +5,11 @@ import { dragEdgeScroll } from "@/core/editor/landing/edge-scroll";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import type { TreeDropState } from "../../context/tree-drop/tree-drop";
 
-/** A list's drop at its root: where a row lands when it is let go anywhere but on a row. */
 export type SourceDrop = {
   dropProps: HTMLAttributes<HTMLElement>;
   dropState: TreeDropState;
 };
 
-/**
- * The frame every sidebar list shares: its name and actions held still above
- * one scroller of rows, and, with a `drop`, the whole pane as one target at
- * the list's root. Rows that are targets of their own claim their drags first
- * (`tree-drop.tsx`), so the pane takes only what lands on the heading, a
- * row that isn't a target, or the space below the rows.
- */
 export function SourcePane({
   label,
   title,
@@ -29,14 +21,10 @@ export function SourcePane({
   children,
 }: {
   label: string;
-  /** Tooltip and accessible name, for a list whose full name is longer than its label. */
   title?: string;
   actions?: ReactNode;
-  /** The list's search, above its heading. */
   search?: ReactNode;
-  /** Controls too wide for the heading's line, held still on their own line under it. */
   bar?: ReactNode;
-  /** A row word with no row of its own drawn to say it on (`RowWord`), first in the heading. */
   notice?: ReactNode;
   drop?: SourceDrop;
   children: ReactNode;

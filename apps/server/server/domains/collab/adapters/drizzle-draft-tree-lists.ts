@@ -1,7 +1,3 @@
-/**
- * Which tree lists a Work's tree spans. A Work's drafted records are in the list of the source
- * they were made in: its project's list, or the account's for `user://`.
- */
 import type { DraftId } from "@meridian/contracts";
 import type { TreeSaw } from "@meridian/contracts/drafts";
 import { docVersion, encodeDocVersion } from "@meridian/document-model";
@@ -15,7 +11,6 @@ import type { TreeList, TreeListStore } from "../../context/ports/tree-list-stor
  */
 export const treeCommand = (commandId: string, draft: DraftId) => `${commandId}_${draft}`;
 
-/** The lists a Work's draft can hold records in: its project's, and its owner's account list. */
 export async function treeListsOfDraft(db: DrizzleDb, draftId: DraftId): Promise<TreeList[]> {
   const [row] = await currentDrizzleDb(db).execute<{ project_id: string; user_id: string }>(sql`
     SELECT b.project_id::text AS project_id, p.user_id::text AS user_id
@@ -27,7 +22,6 @@ export async function treeListsOfDraft(db: DrizzleDb, draftId: DraftId): Promise
   ];
 }
 
-/** The list that claimed a node id: the one whose records and rows hold the node. */
 export async function treeListOfNode(db: DrizzleDb, nodeId: string): Promise<TreeList | null> {
   const [row] = await currentDrizzleDb(db).execute<{
     project_id: string | null;
@@ -43,7 +37,6 @@ export async function treeListOfNode(db: DrizzleDb, nodeId: string): Promise<Tre
   return null;
 }
 
-/** The list that holds each of `nodeIds`, in one read; a node no list holds is absent. */
 export async function treeListsOfNodes(
   db: DrizzleDb,
   nodeIds: readonly string[],

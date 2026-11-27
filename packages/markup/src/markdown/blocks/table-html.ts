@@ -1,5 +1,3 @@
-/** Canonical HTML spelling for every table, including block-capable cells. */
-
 import { type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 import { type FlatBlock, flattenSources, type Source, withNesting } from "../../flatten.js";
@@ -98,7 +96,6 @@ function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): strin
   return lines;
 }
 
-/** A cell's blocks, grouped back into `blockquote`, `ul`, `ol` and `li` by where each sits. */
 function serializeCellBlocks(parent: PMNode, ctx: SerializeContext, indent: string): string[] {
   const blocks: PMNode[] = [];
   parent.forEach((block) => {
@@ -279,7 +276,6 @@ function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNod
   return block?.isBlock && block.type.name === kind ? block : null;
 }
 
-/** The blocks of a cell, with any quotes and lists inside flattened onto the blocks. */
 function parseBlockContainer(element: HtmlElement, ctx: ParseContext): PMNode[] | null {
   const sources = parseContainerSources(element, ctx);
   return sources && flattenBlocks(sources, ctx);
@@ -439,7 +435,6 @@ function inlineNodeToHtml(node: MdastInline): string {
       const image = node as { url: string; alt: string | null; title: string | null };
       return imageHtmlTag({ ...image, width: null });
     }
-    // Sized pictures have already escalated to their own HTML tag.
     case "html":
       return String((node as { value?: unknown }).value ?? "");
     default:
@@ -574,7 +569,6 @@ function inlineMark(element: HtmlElement, ctx: ParseContext): Mark | null {
   return ctx.schema.marks.link.create({
     href: decodeHtmlAttribute(href),
     title: title ? decodeHtmlAttribute(title) : null,
-    // A stored ref is never in the wire; parse is syntax only.
     ref: null,
   });
 }

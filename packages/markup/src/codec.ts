@@ -1,5 +1,3 @@
-/** Builder for assembling markdown/MDX codecs from markup plugins. */
-
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
@@ -136,7 +134,6 @@ function buildMarkupCodec(
   const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] =>
     parseTopLevel(content, baseCtx, false).blocks;
 
-  /** One top-level parse; spans only when asked, since every write parses. */
   const parseTopLevel = (
     content: string,
     baseCtx: ParseContext,
@@ -206,9 +203,6 @@ function buildMarkupCodec(
         repairTail: null,
       };
     if (within) {
-      // The stub opens the same containers as the block the content lands beside, holding one
-      // rule. Its blocks are the rule and, when the stub opens two lists at once, the empty
-      // paragraph that carries the outer item before it. Spans count from the end of the stub.
       const stub = `${within}${STUB_RULE}\n`;
       const parsed = parseTopLevel(stub + content, { schema }, withSpans);
       return {
@@ -260,7 +254,6 @@ function buildMarkupCodec(
   const serializeOne = (block: PMNode, ctx: SerializeContext): string =>
     ensureTrailingNewline(serializeWithHooks(block, ctx));
 
-  /** Each block as it sits in the document: its own Markdown under its containers' prefixes. */
   const serializeNestedBlocks = (
     blockList: readonly PMNode[],
     ctx: SerializeContext,

@@ -1,79 +1,37 @@
-/**
- * Every file this tab is sending, keyed by its intake id, and the one rule for when the writer
- * has taken one back.
- *
- * A Composer chip, a file chip in a document and a picture slot all stand for "a file on its way
- * up". What that node says meanwhile (progress, a failure) is not in any document: it would be
- * undoable there, and outlive its truth. It lives here, with the abort and the `File` a retry
- * sends again. A surface only draws an entry and reports which of its uploads its text still
- * holds (`watch`); this module decides the rest:
- *
- * - an upload is in sight while any mounted surface's text holds it, whoever sent it: a chip cut
- *   from one document and pasted into another keeps sending, and its retry there can finish;
- * - out of sight for `GRACE_MS` (an undo, a delete, a cut never pasted back), a sending upload
- *   stops and keeps its file, so a redo can retry;
- * - stopped or failed and out of sight for `KEPT_MS`, the file is let go;
- * - a holder with no surface mounted keeps sending what its text held, because the writer who
- *   opens another document has not asked to stop. What its text no longer held stops at once:
- *   nothing can paste it back into a closed document, and an upload finishing then would leave a
- *   file nothing links to.
- *
- * A stop cannot call back a finish the server already has: that file lands, with nothing in the
- * text linking to it.
- *
- * Module-wide, not per editor, so the timers run whether or not any editor is open.
- *
- * Peers' uploads ride presence (`core/editor/upload-presence.ts`), which reports them here
- * (`reportPeers`): another tab's chip reads "Uploading" from the same place this tab's does.
- */
-
 import { t } from "@lingui/core/macro";
 
 export type UploadState =
   | { kind: "uploading"; percent: number | null }
   | { kind: "failed"; message: string };
 
-/**
- * Sends the file and lands it; whole percents, or null where the browser cannot say how much
- * there is. A rejection is the failure to show, in the writer's words.
- */
 export type UploadRun = (
   signal: AbortSignal,
   onProgress: (percent: number | null) => void,
 ) => Promise<void>;
 
-/** The shape a peer reserves for an upload it watches arrive: a picture's, else null. */
 export type UploadFrame = { width: number; height: number };
 
-/** Long enough for a cut and paste inside one document; an undo does not come back. */
 const GRACE_MS = 10_000;
-/** How long a stopped or failed upload keeps its file for a node that returns to retry. */
 const KEPT_MS = 10 * 60_000;
 
 type Waiting = "grace" | "kept";
 
 type Entry = {
-  /** Who draws the upload: a document, or a Composer. Its surfaces report what their text holds. */
   holder: string;
-  /** Null for a refusal nothing can send again (a folder). */
   run: UploadRun | null;
   state: UploadState;
   controller: AbortController;
-  /** Whether the holder's text held it when last asked: the answer once no surface of it is mounted. */
   held: boolean;
   waiting: Waiting | null;
   since: number;
   timer: ReturnType<typeof setTimeout> | null;
 };
 
-/** The ids a mounted surface's text holds now. */
 type UploadsPresent = () => ReadonlySet<string>;
 
-/** One mounted surface, with what its text held when last asked. */
 type Watcher = { holder: string; read: UploadsPresent; last: ReadonlySet<string> };
 
 export type UploadWatch = {
-  /** The holder's text changed: ask again what it holds. */
   changed(): void;
   release(): void;
 };
@@ -106,7 +64,6 @@ function waitingFor(id: string, entry: Entry): Waiting | "now" | null {
   return entry.held ? null : "now";
 }
 
-/** Sets the one timer the take-back rule needs for this entry, keeping its start across changes. */
 function arm(id: string): void {
   const entry = entries.get(id);
   if (!entry) return;
@@ -140,7 +97,6 @@ function setState(id: string, entry: Entry, state: UploadState): void {
   arm(id);
 }
 
-/** Aborts what is in flight and keeps the file: a node that comes back can retry. */
 function stop(id: string): void {
   const entry = entries.get(id);
   if (!entry || entry.state.kind === "failed") return;
@@ -164,16 +120,13 @@ async function send(id: string, entry: Entry, run: UploadRun): Promise<void> {
     entries.delete(id);
     publish(id);
   } catch (error) {
-    // An abort is the writer taking the file back, not a failure to report.
     if (controller.signal.aborted || !current()) return;
     const message = error instanceof Error && error.message ? error.message : t`The upload failed.`;
     setState(id, entry, { kind: "failed", message });
   }
 }
 
-/** Asks one surface again what its text holds, then re-arms every upload it could have moved. */
 function settle(watcher: Watcher): void {
-  // Nothing to look for: a keystroke costs nothing while nothing is sending.
   if (entries.size === 0) {
     watcher.last = NOTHING;
     return;
@@ -193,13 +146,11 @@ function settle(watcher: Watcher): void {
 export const uploads = {
   read: (id: string): UploadState | null => entries.get(id)?.state ?? null,
 
-  /** The upload another client says it is sending: its frame, null for none, undefined if nobody is. */
   peerSending(id: string): UploadFrame | null | undefined {
     for (const announced of peers.values()) if (announced.has(id)) return announced.get(id);
     return undefined;
   },
 
-  /** This tab's upload of the file, else another client's as presence reports it. */
   of(id: string): UploadState | null {
     return (
       uploads.read(id) ??
@@ -207,10 +158,8 @@ export const uploads = {
     );
   },
 
-  /** Whether any peer is sending anything, so a text with no upload of its own need not be read. */
   anyPeerSending: (): boolean => peers.size > 0,
 
-  /** Calls back with the ids whose state, or whose peer, changed. */
   subscribe(listener: Listener): () => void {
     listeners.add(listener);
     return () => listeners.delete(listener);
@@ -238,7 +187,6 @@ export const uploads = {
     void send(id, entry, run);
   },
 
-  /** A file refused before any byte left: its node shows why, and nothing can retry it. */
   refuse(id: string, holder: string, message: string): void {
     uploads.discard(id);
     entries.set(id, {
@@ -255,7 +203,6 @@ export const uploads = {
     arm(id);
   },
 
-  /** Sends a stopped or failed upload again, on the same id. */
   retry(id: string): void {
     const entry = entries.get(id);
     if (!entry?.run || entry.state.kind !== "failed") return;
@@ -264,7 +211,6 @@ export const uploads = {
     void send(id, entry, entry.run);
   },
 
-  /** Lets go of the file now: nothing will retry this upload. */
   discard(id: string): void {
     const entry = entries.get(id);
     if (!entry) return;
@@ -274,23 +220,16 @@ export const uploads = {
     publish(id);
   },
 
-  /** Lets go of everything `holder` sent: a surface whose uploads mean nothing without it. */
   discardHeld(holder: string): void {
     for (const [id, entry] of entries) if (entry.holder === holder) uploads.discard(id);
   },
 
-  /** What `holder` is sending now, which its presence announces. */
   sending(holder: string): string[] {
     return [...entries].flatMap(([id, entry]) =>
       entry.holder === holder && entry.state.kind === "uploading" ? [id] : [],
     );
   },
 
-  /**
-   * A surface drawing uploads: `holder`'s, and any other's pasted into its text. `present` is
-   * asked only while this tab is sending anything, so a keystroke costs nothing the rest of the
-   * time.
-   */
   watch(holder: string, present: UploadsPresent): UploadWatch {
     const watcher: Watcher = { holder, read: present, last: NOTHING };
     watchers.add(watcher);
@@ -301,13 +240,11 @@ export const uploads = {
       },
       release() {
         if (!watchers.delete(watcher)) return;
-        // The text this surface drew is gone; its holder's last answer stands for it.
         for (const id of entries.keys()) arm(id);
       },
     };
   },
 
-  /** What one room's peers say they are sending; null when the room closes. */
   reportPeers(room: object, announced: ReadonlyMap<string, UploadFrame | null> | null): void {
     const before = peers.get(room);
     if (announced && announced.size > 0) peers.set(room, announced);

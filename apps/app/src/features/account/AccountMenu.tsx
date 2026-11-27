@@ -29,7 +29,6 @@ export function AccountMenu() {
   const leave = () => {
     if (!clearBeforeSignOut) return window.location.assign("/logout");
     setLeaving(true);
-    // The account's text leaves this browser before it does; if it can't, the writer stays signed in.
     clearBeforeSignOut().then(
       () => window.location.assign("/logout"),
       (error: unknown) => {
@@ -51,7 +50,6 @@ export function AccountMenu() {
 
   return (
     <DropdownMenu>
-      {/* One place for the account and Settings: the avatar, in every header that shows it. */}
       <DropdownMenuTrigger
         type="button"
         className="focus-ring grid size-8 shrink-0 place-items-center rounded-md hover:bg-ink-fill popup-open:bg-ink-fill-strong coarse:size-11"

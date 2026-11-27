@@ -1,8 +1,3 @@
-/**
- * The tree half of the review list, read from the Work's rows (`draft_tree_nodes`, written by
- * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
- * A row the Work did not change (`changed` false: only a twin's suffix differs) is no row here.
- */
 import { type DraftId, isDraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -25,7 +20,6 @@ type Row = {
   binary: boolean;
 };
 
-/** The folders the Work has a row on: what an Apply of a folder lands. */
 export async function draftFolderIds(db: Database, draftId: DraftId): Promise<{ id: string }[]> {
   if (!isDraftId(draftId)) return [];
   const rows = await currentDrizzleDb(db).execute<{ id: string }>(sql`
@@ -35,11 +29,6 @@ export async function draftFolderIds(db: Database, draftId: DraftId): Promise<{ 
   return [...rows];
 }
 
-/**
- * Where live has (or, in Trash, last had) a document the Work keeps elsewhere: a Work's move of
- * a document out of its own applied delete is still a move. Null when live's address is the
- * Work's.
- */
 function movedFrom(live: IdentityStatus | undefined, workUri: string | null): string | null {
   const at =
     live?.kind === "visible"

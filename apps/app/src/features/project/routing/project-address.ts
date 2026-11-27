@@ -1,11 +1,3 @@
-/**
- * Browser project addresses. After `/p/<projectId>` the first segment is the kind of main's item
- * (`chats`, `editor` or `trash`) and the rest names it: a chat by id, or `chats/recent`, the chat
- * lane's Recent chats page. The Work scope is not in the address; the
- * query holds the owner of a Scratch document, the draft the page shows (`item`, whose key names
- * the draft), whether Review changes is on and against what (`review`), the change in focus
- * there (`change`), and overlays. `review` is legal only with `item`, `change` only with `review`.
- */
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
@@ -18,22 +10,14 @@ export type ProjectDestination =
   | { kind: "new-chat" | "chat-recents" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "document"; scheme: ProjectContextTreeScheme; path: string }
-  /** A document in Trash, by identity: it has no path while deleted. */
   | { kind: "trashed"; documentId: string };
 
 export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
-  /**
-   * A Scratch document's owner (its identity). A project document has none: the scope does not
-   * belong in a link.
-   */
   owner?: ScratchOwnerKey;
-  /** The draft the page shows: `${draftId}:${documentId}`, so it names its draft. No review. */
   itemKey?: string;
-  /** Review changes is on, against this: `live`, a draft id, or `file:<documentId>`. */
   review?: ReviewTarget;
-  /** The change in focus in Review changes: the id of one of its members. */
   changeId?: string;
   settings?: SettingsSection;
 };
@@ -51,10 +35,8 @@ function uuid(value: string | undefined): string | null {
   return normalized && UUID.test(normalized) ? normalized : null;
 }
 
-/** Who owns a Scratch document, as its address spells it: `work:<id>` or `lineage:<rootThreadId>`. */
 export type ScratchOwnerKey = `work:${string}` | `lineage:${string}`;
 
-/** The owner key a Scratch document's address carries: its Work, or the chat lineage of a No Work chat. */
 export function scratchOwnerKey(target: {
   workId: string;
   rootThreadId?: string;
@@ -69,13 +51,11 @@ function parseScratchOwner(key: string): { kind: "work" | "lineage"; id: string 
     : null;
 }
 
-/** The chat lineage a Scratch document's address names as its owner. */
 export function addressLineage(address: ProjectAddress): string | undefined {
   const owner = address.owner ? parseScratchOwner(address.owner) : null;
   return owner?.kind === "lineage" ? owner.id : undefined;
 }
 
-/** The Work a Scratch address names as its owner: the document's identity, whatever the scope. */
 export function addressScratchWorkId(address: ProjectAddress): string | undefined {
   const owner = address.owner ? parseScratchOwner(address.owner) : null;
   return address.destination.kind === "document" &&
@@ -85,17 +65,14 @@ export function addressScratchWorkId(address: ProjectAddress): string | undefine
     : undefined;
 }
 
-/** The address with Review changes off: the plain draft page it was on. */
 export function withoutReview(address: ProjectAddress): ProjectAddress {
   return { ...address, review: undefined, changeId: undefined };
 }
 
-/** The address with its draft dropped: the page's Live address. */
 export function withoutDraft(address: ProjectAddress): ProjectAddress {
   return { ...address, itemKey: undefined, review: undefined, changeId: undefined };
 }
 
-/** The path names the kind of main's item, then which one. */
 function parseDestination(parts: string[]): ProjectDestination | null {
   const [screen, ...rest] = parts;
   if (screen === undefined) return { kind: "new-chat" };
@@ -149,8 +126,6 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
   const changeId = review ? query.get("change") || undefined : undefined;
   const ownerParam = query.get("owner");
   const parsedOwner = ownerParam === null ? null : parseScratchOwner(ownerParam);
-  // The owner is part of the address only where the path alone does not name the resource:
-  // Scratch. Anywhere else a stray one is dropped from the canonical href.
   const needsOwner = document && destination.scheme === "scratch";
   if (needsOwner && !parsedOwner) return { kind: "invalid", reason: "owner" };
   const owner: ScratchOwnerKey | undefined =

@@ -44,7 +44,6 @@ import {
 
 const AUTO_PAIR_NAME = "meridianAutoPair";
 
-/** A closer this plugin wrote, and where it sits in the current document. */
 type AutoClosedPair = { pos: number; spec: AutoPairSpec };
 
 type AutoPairState = { readonly closers: readonly AutoClosedPair[] };
@@ -62,7 +61,6 @@ const NOTHING_OPEN: AutoPairState = { closers: [] };
  */
 const MAX_TRACKED_CLOSERS = 32;
 
-/** The character immediately after the caret, or null at the block's end. */
 function characterAfter($pos: ResolvedPos): string | null {
   const node = $pos.nodeAfter;
   if (!node) return null;
@@ -71,7 +69,6 @@ function characterAfter($pos: ResolvedPos): string | null {
   return node.isText ? (node.text?.[0] ?? "") : "";
 }
 
-/** The character immediately before the caret, or null at the block's start. */
 function characterBefore($pos: ResolvedPos): string | null {
   const node = $pos.nodeBefore;
   if (!node) return null;
@@ -126,7 +123,6 @@ function insertionCaret(state: EditorState, from: number, to: number): number | 
   return from >= caret.$from.before() && to <= caret.$from.after() ? caret.from : null;
 }
 
-/** `[` here means `[]` with the caret in the middle. */
 function openPairTransaction(state: EditorState, at: number, typed: string): Transaction | null {
   const $at = state.doc.resolve(at);
   const context = resolveAutoPairContext($at, state.storedMarks);
@@ -143,7 +139,6 @@ function openPairTransaction(state: EditorState, at: number, typed: string): Tra
   return tr.scrollIntoView();
 }
 
-/** `]` in front of an `]` this plugin wrote is a step, not a character. */
 function stepOverTransaction(state: EditorState, at: number, typed: string): Transaction | null {
   const entry = autoClosedAt(state, at);
   if (!entry || entry.spec.close !== typed) return null;
@@ -153,7 +148,6 @@ function stepOverTransaction(state: EditorState, at: number, typed: string): Tra
   return tr.scrollIntoView();
 }
 
-/** Backspace between the halves of a pair this plugin wrote takes both. */
 function unpairTransaction(state: EditorState): Transaction | null {
   const { empty, $from } = state.selection;
   if (!empty) return null;

@@ -22,11 +22,6 @@ import { relativeTime } from "../../relative-time";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type SourceDrop, SourcePane } from "./SourcePane";
 
-/**
- * Trash as a source: its entries, newest first, a deleted folder as one entry with what its
- * delete took. Rows dropped on it are deleted at once; its rows drag out to be restored where they
- * land. Picking a document or an uploaded file shows it in main, read-only with Restore.
- */
 export function TrashSource({
   projectId,
   onPicked,
@@ -47,7 +42,6 @@ export function TrashSource({
   }, [listed, restored]);
   const notices = useTreeNoticeWords(projectId, place);
   const entries = listed ?? [];
-  // An entry just restored stays, struck through, with its Undo, until the notice ends.
   const rows = withGone(
     entries,
     trashKey,
@@ -76,7 +70,6 @@ export function TrashSource({
                 notices={notices}
                 onOpen={() => {
                   notices.end();
-                  // A folder has no page of its own yet: its menu and a drag restore it.
                   if (entry.kind === "folder") return;
                   void trash.open(entry.nodeId);
                   onPicked?.();
@@ -112,7 +105,6 @@ export function TrashSource({
   );
 }
 
-/** A Trash entry: its age at the right, where it was deleted from under its name; its menu restores. */
 const trashKey = (entry: TrashEntry) => entry.nodeId;
 
 function TrashRow({
@@ -128,7 +120,6 @@ function TrashRow({
   active: boolean;
   notices: TreeNoticeWords;
   onOpen: () => void;
-  /** Restores these entries by node id: this row, or the selection its menu acted on. */
   onRestore: (nodeIds: readonly string[]) => void;
 }) {
   const location = schemeLocation(entry.scheme, entry.folders);
@@ -159,7 +150,6 @@ function TrashRow({
 
 const RESTORE = ["restore"] as const;
 
-/** Where it was deleted from; a folder leads with what went with it, which a narrow row keeps. */
 function deletedFrom(entry: TrashEntry, location: string): string {
   if (entry.documents === 0) return t`Deleted from ${location}`;
   return plural(entry.documents, {

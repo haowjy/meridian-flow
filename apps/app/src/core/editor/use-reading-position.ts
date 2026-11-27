@@ -1,8 +1,3 @@
-/**
- * Per-mounted-view device memory; a kept document retains their existing DOM and place. Keyed by
- * room. A replaced session (a room rebuilt from the server) keeps its room, and the anchors resolve
- * in the new copy for every block and character the server has.
- */
 import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
@@ -45,8 +40,6 @@ export function useReadingPosition({
     let stop: (() => void) | null = null;
     let unreport: (() => void) | null = null;
     const begin = () => {
-      // A mount with no layout yet (hidden warm, or an editor that remounted before its pane was
-      // measured) begins once it has some: its first reveal is its first restoration.
       if (stop || !active || !scroller.clientHeight) return;
       if (initialized.current !== editor) {
         initialized.current = editor;
@@ -62,7 +55,6 @@ export function useReadingPosition({
       unreport = reportEditorMounted(documentId, editor);
     };
     const track = (editor: Editor, scroller: HTMLDivElement) => {
-      /** When the place last moved, until it is measured and stored. */
       let moved: number | null = null;
       let timer: ReturnType<typeof setTimeout> | null = null;
       let restoring = true;
@@ -70,7 +62,6 @@ export function useReadingPosition({
       const frame = requestAnimationFrame(() => {
         restoring = false;
       });
-      // Measured once the place settles, not per keystroke: measuring reads the layout.
       const flush = () => {
         if (timer) clearTimeout(timer);
         timer = null;

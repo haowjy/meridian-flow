@@ -1,9 +1,3 @@
-/**
- * The drop target lifecycle: a folder row and the rows inside it are one target,
- * a target always gives back what it lit (whatever the verdict is by then), a
- * drag ending anywhere cancels a pending spring-open, and an inner target that
- * ignores a drag never lets its group take it.
- */
 import { act, type ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MERIDIAN_ENTRIES_MIME } from "@/core/editor/landing/drag-payload";
@@ -114,7 +108,6 @@ it("never lets a group take a drag its row ignored", async () => {
     );
   }
   await withReactRoot(
-    // The area would take it; the row it sits in says nothing.
     scope((target) => (target.folder ? null : accept), <Nested />),
     async () => {
       const event = await fire("row", "dragenter");

@@ -1,5 +1,3 @@
-// Composition adapter binds model history commands to the caller's document.
-
 import type { DocumentEditRequest, DocumentEdits } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import { currentInversePrincipal } from "./inverse-principal.js";

@@ -1,4 +1,3 @@
-/** Table transforms that are intentionally absent from prosemirror-tables. */
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Command, EditorState } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
@@ -17,9 +16,7 @@ import {
 export type TableSelection = {
   table: ProseMirrorNode;
   tablePos: number;
-  /** Grid row of the cell the caret is in, not its index among row children. */
   row: number;
-  /** Grid column of that cell. Diverges from the child index once spans exist. */
   column: number;
   rowFrom: number;
   rowTo: number;
@@ -27,14 +24,6 @@ export type TableSelection = {
   columnTo: number;
 };
 
-/**
- * Where the selection stands in a table, in GRID coordinates.
- *
- * Grid rather than child index is the point: a spanned cell occupies several
- * columns, so `row.child(2)` and "column 2" stop meaning the same thing the
- * moment a writer merges anything. `TableMap` is what knows the difference, so
- * every reading here goes through it.
- */
 export function tableSelection(state: EditorState): TableSelection | null {
   if (!isInTable(state)) return null;
 
@@ -108,7 +97,6 @@ export function hasHeaderRow(table: ProseMirrorNode): boolean {
   return first?.type.spec.tableRole === "header_cell";
 }
 
-/** Any merged cell in the table. Row and column moves refuse across one. */
 export function tableHasSpans(table: ProseMirrorNode): boolean {
   let found = false;
   table.descendants((node) => {
@@ -137,8 +125,6 @@ export function moveTableRow(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
     if (!selection || tableHasSpans(selection.table)) return false;
-    // Where a header row exists it is structural: it never moves, and no body
-    // row moves above it. A headerless table has no such floor.
     const floor = hasHeaderRow(selection.table) ? 1 : 0;
     if (
       selection.rowFrom < floor ||
@@ -228,7 +214,6 @@ export function moveTableColumn(direction: -1 | 1): Command {
   };
 }
 
-/** Text alignment for every cell in the selected columns, spanned cells included. */
 export function alignTableColumn(alignment: "left" | "center" | "right"): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
@@ -253,7 +238,6 @@ export function alignTableColumn(alignment: "left" | "center" | "right"): Comman
   };
 }
 
-/** Inserts a body row while preserving the whole-column alignment invariant. */
 export function addTableRow(direction: "above" | "below"): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
@@ -291,10 +275,6 @@ export function addTableRow(direction: "above" | "below"): Command {
   };
 }
 
-/**
- * Where the table sits in the measure (§5.4). `null` is the default flow,
- * which is what "left" means for a block that is already left-aligned.
- */
 export function setTablePlacement(align: "center" | "right" | null): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
@@ -306,7 +286,6 @@ export function setTablePlacement(align: "center" | "right" | null): Command {
   };
 }
 
-/** Drops every persisted column width so the table sizes to its content again. */
 export const resetTableColumnWidths: Command = (state, dispatch) => {
   const selection = tableSelection(state);
   if (!selection) return false;

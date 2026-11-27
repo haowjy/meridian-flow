@@ -9,13 +9,10 @@ import { RowContextMenu, type RowMenu, RowMenuButton } from "./row-menu";
 
 type Density = "list" | "menu";
 
-/** Where a row's content starts inside its control: the control's padding and the indent. */
 export function contentInset(depth: number, density: Density = "list"): number {
   return (density === "list" ? 6 : 8) + depth * 16;
 }
 
-/** The leading icon's slot (`w-4`) and the gap after it. */
-/** The leading icon slot and its gap: where a row with an icon starts its title. */
 export const ICON_SLOT_PX = 16 + 8;
 
 type ControlProps = Omit<
@@ -27,7 +24,6 @@ type FrameProps = Omit<HTMLAttributes<HTMLDivElement>, "className" | "style" | "
   [key: `data-${string}`]: string | number | boolean | undefined;
 };
 
-/** The control's box, which a row being renamed in place (`ListRowField`) shares. */
 function controlClassName(density: Density): string {
   return cn(
     "flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md text-left text-sm text-inherit no-underline outline-none select-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
@@ -46,81 +42,41 @@ function IconSlot({ icon: Icon }: { icon: LucideIcon }) {
 }
 
 type ListRowProps = {
-  /** `list` rows are 28px, `menu` rows 32px; a `detail` adds the second line. 44px on touch. */
   density?: Density;
-  /**
-   * Makes the control a link: a plain click calls `onOpen`, a modified click stays the
-   * browser's. Ignored while `disabled`.
-   */
   href?: string;
-  /** Required unless `gone`. */
   onOpen?: () => void;
-  /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
-  /**
-   * Part of the list's selection (Ctrl/Cmd- or Shift-click): the current fill, not its weight.
-   * Rows whose control carries `data-selection-run` (start, middle, end) join into one block.
-   */
   selected?: boolean;
-  /** The row another part of the surface shows (a picker's detail): the hover fill, held. */
   pointed?: boolean;
-  /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
-  /**
-   * What the row names is gone (deleted, discarded, restored out of this list) while its
-   * `notice` can still bring it back: the name is struck through and the row opens nothing.
-   */
   gone?: boolean;
-  /** What the row names is left out of use but still opens (an Agent file with an Error): struck through. */
   crossedOut?: boolean;
-  /** Indent steps for a row nested under another, the file tree's step. */
   depth?: number;
-  /** The main control, when it is a button. */
   ref?: Ref<HTMLButtonElement>;
-  /** The row's kind, in the one leading-icon slot every list shares. */
   icon?: LucideIcon;
-  /** A mark before the title that is not the row's kind: a picker's glyph, a status. */
   leading?: ReactNode;
-  /** A twin's `~id`, faint after the title (`EntryName`). */
   suffix?: string;
-  /** The second line. */
   detail?: ReactNode;
-  /** Right of the title: an age, a count, a model name. */
   meta?: ReactNode;
-  /** A mark at the row's end, inside the control. */
   trailing?: ReactNode;
-  /**
-   * What just happened to the row (`RowWord`), after the control and always shown: it takes the
-   * place of `meta` and `trailing` while it shows, so the row keeps its height.
-   */
   notice?: ReactNode;
-  /** Buttons beside the control; in a picker, Left and Right move between them. */
   actions?: ReactNode;
-  /** Hides `actions` and the ⋯ until the row is hovered or holds focus. Touch always shows them. */
   revealActions?: boolean;
-  /** Under the row, outside its control: a failure of this row's action. */
   below?: ReactNode;
   describedBy?: string;
   /** Spread first: the row's own handler, state and classes win. */
   controlProps?: ControlProps;
-  /** On the whole row, its actions included: drop handlers, data attributes. */
   frameProps?: FrameProps;
   /** Must return the control itself (a Tooltip trigger `asChild`), never a wrapping element. */
   wrapControl?: (control: ReactElement) => ReactNode;
 } & (
   | {
       title: string;
-      /** The row's actions: its right-click menu and its ⋯, named "Actions for {title}". */
       menu: RowMenu | undefined;
     }
   | { title: ReactNode; menu?: undefined }
 );
 
-/**
- * A line the writer clicks in a list. The frame owns the fills and the focus ring, so the
- * whole row lights as one; the main control fills it; `actions` are buttons beside it.
- * The row has no outer margin: its list carries the inset.
- */
 export function ListRow({
   density = "list",
   href,
@@ -206,7 +162,6 @@ export function ListRow({
         {content}
       </button>
     );
-  // A row with a menu has a string title (the props' type).
   const name = suffix ? `${String(title)}~${suffix}` : String(title);
   const frame = (
     <div
@@ -215,7 +170,6 @@ export function ListRow({
       data-list-row
       className={cn(
         "group/row dropdown-focus-ring flex min-w-0 items-center rounded-md text-sm transition-colors has-[>[data-list-item]:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong data-[selected=true]:font-medium motion-reduce:transition-none",
-        // A run of selected rows reads as one block, rounded only at its ends.
         "has-[>[data-selection-run=start]]:rounded-b-none has-[>[data-selection-run=middle]]:rounded-none has-[>[data-selection-run=end]]:rounded-t-none",
         selected && !current && role.selected,
         !current && !selected && !disabled && "hover:bg-ink-fill",
@@ -246,10 +200,6 @@ export function ListRow({
   );
 }
 
-/**
- * A row whose name is being edited in place (rename, create): the field sits where the
- * row's title does, so the words don't move when editing starts.
- */
 export function ListRowField({
   depth = 0,
   icon,
@@ -257,7 +207,6 @@ export function ListRowField({
 }: {
   depth?: number;
   icon: LucideIcon;
-  /** The field. */
   children: ReactNode;
 }) {
   return (
@@ -268,10 +217,6 @@ export function ListRowField({
   );
 }
 
-/**
- * The line that stands in for a list's rows: loading, empty, no matches. Put it where the
- * rows go, inside the list's inset; its text starts where theirs would.
- */
 export function ListLine({
   children,
   density = "list",
@@ -280,12 +225,9 @@ export function ListLine({
   status = false,
 }: {
   children: ReactNode;
-  /** The density of the rows it stands in for. */
   density?: Density;
   depth?: number;
-  /** The list's rows lead with an icon: start after its slot. */
   iconSlot?: boolean;
-  /** A state that changes while the writer waits (loading): announced when it does. */
   status?: boolean;
 }) {
   return (

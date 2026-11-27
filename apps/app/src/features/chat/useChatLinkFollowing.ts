@@ -64,7 +64,6 @@ import { useLinkPlacement } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 
-/** What a chat link is resolved against, or pending while that is still loading. */
 function chatLinkScope({
   projectId,
   activeWork,
@@ -75,21 +74,16 @@ function chatLinkScope({
   worksSettled,
 }: {
   projectId: string;
-  /** The thread's Work from the Works snapshot; null when unknown or missing. */
   activeWork: Pick<Work, "id"> | null;
   thread: Pick<Thread, "workId"> | null;
-  /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
   rootThreadId: string | null;
-  /** The chat that owns the uploads a bare `uploads://` names. */
   chatThreadId: string | null;
   noWorkId: string | null;
-  /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
   if (activeWork)
     return { projectId, workId: activeWork.id, rootThreadId, chatThreadId, baseUri: null };
   if (!worksSettled || !thread?.workId) return "pending";
-  // A thread whose Work the snapshot lacks asks with its own binding; No Work is still its lineage.
   return {
     projectId,
     workId: thread.workId,
@@ -108,14 +102,11 @@ export function useChatLinkFollowing({
   projectId: string;
   activeThread: Thread | null;
   activeWork: Work | null;
-  /** The chat is showing; hiding it aborts a follow in flight. */
   active: boolean;
 }): {
   navigation: TranscriptLinkNavigation;
-  /** What the chat's folder chips (transcript and composer) open documents through. */
   folders: FolderMenuHost;
   dialog: ComponentProps<typeof LinkFollowDialog>;
-  /** The shell's URI doors, following through this same follower; null without a shell. */
   doors: {
     open: (uri: string, passage?: ContextPassageAnchor) => void;
     canOpen: ChatDoors["canOpen"];
@@ -125,7 +116,6 @@ export function useChatLinkFollowing({
   const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
   const noWorkId = noWork?.id ?? null;
-  // The first chat's id: a No Work chat's Scratch is its lineage's.
   const lineageId = activeThread?.rootThreadId ?? null;
   const chatThreadId =
     useTopChat(projectId, activeThread)?.chatId ??
@@ -167,7 +157,6 @@ export function useChatLinkFollowing({
       }),
     [openReferenceDocument],
   );
-  // A page this chat drafted opens on its draft.
   const place = useLinkPlacement(
     projectId,
     activeWork && activeThread ? activeThread.draftId : null,

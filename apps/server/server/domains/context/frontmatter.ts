@@ -13,18 +13,15 @@
 import type { JsonValue } from "@meridian/contracts/threads";
 import YAML from "yaml";
 
-/** Frontmatter beyond this is kept as written without being parsed. */
 export const MAX_PROPERTIES_TEXT_LENGTH = 32_768;
 const MAX_NODES = 10_000;
 const MAX_DEPTH = 32;
 
-/** Thrown inside the converter for YAML that is valid but beyond what we read. */
 class NotReadable extends Error {}
 
 export interface FrontmatterEntry {
   key: string;
   value: JsonValue;
-  /** The value's node, for projections that show it as written. */
   node: unknown;
 }
 
@@ -42,12 +39,10 @@ export function readFrontmatter(text: string): ReadFrontmatter {
   try {
     return parseBounded(text) ?? { readable: false, tooLarge: false };
   } catch {
-    // The parser or converter gave up (deep nesting, a cycle, the budget).
     return { readable: false, tooLarge: false };
   }
 }
 
-/** The aliases a document's frontmatter names; none when it is unreadable. */
 export function frontmatterAliases(text: string): string[] {
   const read = readFrontmatter(text);
   return read.readable ? read.aliases : [];
@@ -58,7 +53,6 @@ function parseBounded(text: string): ReadFrontmatter | null {
   // Errors include duplicate keys, which stay as written instead of one silently winning.
   // Warnings include a tag the core schema does not know, whose meaning we would lose.
   if (document.errors.length > 0 || document.warnings.length > 0) return null;
-  // Frontmatter that is only comments has no keys, which is readable and names nothing.
   if (document.contents === null) return { readable: true, entries: [], aliases: [], document };
   if (!YAML.isMap(document.contents)) return null;
 
@@ -78,7 +72,6 @@ function keyText(key: unknown): string {
   return String(key.value);
 }
 
-/** A node as JSON, expanding aliases within the document-wide budget. */
 function convert(
   node: unknown,
   document: YAML.Document,
@@ -104,7 +97,6 @@ function convert(
   throw new NotReadable("node");
 }
 
-/** YAML can hold what JSON cannot (`.inf`, bigints); those travel as their text. */
 function scalarJson(value: unknown): JsonValue {
   if (value === null || value === undefined) return null;
   if (typeof value === "string" || typeof value === "boolean") return value;
@@ -112,7 +104,6 @@ function scalarJson(value: unknown): JsonValue {
   return String(value);
 }
 
-/** `aliases` as a name or a list of names; anything else in that key is not an alias. */
 function aliasesOf(entries: readonly FrontmatterEntry[]): string[] {
   const value = entries.find((entry) => entry.key === "aliases")?.value;
   if (typeof value === "string") return [value];

@@ -1,7 +1,3 @@
-/**
- * Server adapter for the shared context URI parser. Domain callers keep the
- * context-port error vocabulary while contracts owns normalization semantics.
- */
 import {
   canonicalContextUri,
   formatParsedContextUri,
@@ -31,10 +27,6 @@ export function parseUnifiedContextUri(raw: string): Result<ParsedContextUri, Co
   });
 }
 
-/**
- * The root of the area `uri` is in (its scheme and owner): where a move or delete is aimed,
- * naming no entry. An address that does not parse stays as it is, for the port to refuse.
- */
 export function contextAreaOf(uri: string): string {
   const parsed = parseUnifiedContextUri(uri);
   return parsed.ok ? formatParsedContextUri(parsed.value.scheme, "", parsed.value.authority) : uri;

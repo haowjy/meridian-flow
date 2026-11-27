@@ -23,7 +23,6 @@ import type { Editor } from "@tiptap/core";
 
 import { type NodeHold, resolveNodeHold } from "../anchors";
 
-/** Which corner the writer took hold of. */
 export type ImageResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export const IMAGE_RESIZE_CORNERS: readonly ImageResizeCorner[] = [
@@ -33,33 +32,14 @@ export const IMAGE_RESIZE_CORNERS: readonly ImageResizeCorner[] = [
   "bottom-right",
 ];
 
-/** Everything the drag needs, read once at the press. */
 export type ImageResizeGesture = {
   corner: ImageResizeCorner;
-  /** The picture's rendered width when the press landed, in CSS pixels. */
   startWidth: number;
-  /** Height over width, so the drag can only ever change one number. */
   ratio: number;
-  /** Small enough to be a picture, big enough to still be one: a line of prose. */
   minimum: number;
-  /**
-   * The narrowest box between the picture and the manuscript: the prose column,
-   * or the cell and the scroller a table gives it instead. A picture is never
-   * wider than what the writer can see of the place it stands in, and never
-   * wider than the height cap lets it be drawn.
-   */
   maximum: number;
 };
 
-/**
- * The width a pointer offset asks for, aspect preserved and column capped.
- *
- * The pointer rarely travels along the picture's own diagonal, so the offset is
- * PROJECTED onto it: the returned box is the one closest to where the pointer
- * actually is, which is what makes the corner feel attached to the hand. Taking
- * the horizontal alone would ignore a straight-down drag; taking whichever axis
- * moved more would jump between two answers mid-gesture.
- */
 export function resizedImageWidth(
   gesture: ImageResizeGesture,
   offset: { x: number; y: number },
@@ -71,7 +51,6 @@ export function resizedImageWidth(
   return Math.round(Math.min(Math.max(width, gesture.minimum), gesture.maximum));
 }
 
-/** Which way is bigger, from the corner the writer grabbed. */
 function cornerDirection(corner: ImageResizeCorner): { x: number; y: number } {
   return {
     x: corner === "top-right" || corner === "bottom-right" ? 1 : -1,
@@ -119,7 +98,6 @@ function parsedWidth(value: string | null): number | null {
   return Number.isSafeInteger(width) && width > 0 ? width : null;
 }
 
-/** The picture's stored display width, or null for one at its natural size. */
 export function imageWidthAttr(attrs: Record<string, unknown>): number | null {
   const width = attrs.width;
   return typeof width === "number" && Number.isFinite(width) && width > 0 ? width : null;

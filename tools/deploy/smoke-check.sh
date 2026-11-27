@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Post-deploy health probe.
-#
-# REAL when STAGING_URL points at a live environment. Stub-safe otherwise:
-# prints the probe it would run and exits 0.
 
 url="${STAGING_URL:-}"
 if [[ -z "$url" ]]; then

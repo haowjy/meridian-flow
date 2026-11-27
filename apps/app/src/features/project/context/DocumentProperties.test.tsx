@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/** The properties block is fetched only when the list says so, and is read-only. */
 import type { DocumentProperties as Dto } from "@meridian/contracts";
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
@@ -55,10 +54,8 @@ const chapter: Dto = {
   text: "aliases: [Gate Opening, First Chapter]\n",
 };
 
-// Query results reach components in the dispatch that settles them, not a later tick.
 notifyManager.setScheduler((callback) => callback());
 
-/** Resolves once no query is pending; act then renders what they returned. */
 function settle(client: QueryClient) {
   const cache = client.getQueryCache();
   const done = () => cache.getAll().every((query) => query.state.status !== "pending");
@@ -134,7 +131,6 @@ it("opens to chips, Yes, Empty and block YAML, with nothing to edit", async () =
     ]);
     expect(values[3]?.textContent).toBe("Yes");
     expect(values[4]?.textContent).toBe("Empty");
-    // Nested values are the writer's own text, not a re-printing of the parsed value.
     expect(values[5]?.querySelector("pre")?.textContent).toBe(
       '- "a: b": x # quoted key\n  note: "abc #def"\n  sci: "1e3"',
     );

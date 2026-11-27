@@ -128,9 +128,6 @@ export function FigureNodeView(props: NodeViewProps) {
         ) : null}
       </div>
 
-      {/* Absent while there is nothing to say, rather than a prompt in the
-          chapter: an empty caption is an empty caption, and the verb that fills
-          it is in the ⋮. */}
       {label || caption ? (
         <figcaption className="meridian-figure-node__caption">
           {label ? <span className="meridian-figure-node__label">{label}</span> : null}

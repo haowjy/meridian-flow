@@ -1,5 +1,3 @@
-/** MDX syntax with HTML void-element closure at the JSX token boundary. */
-
 import type { Extension } from "mdast-util-from-markdown";
 import remarkMdx from "remark-mdx";
 import type { Processor } from "unified";

@@ -1,9 +1,3 @@
-/**
- * The one reader of a project's tree: the replay of its list, a source at a time. A tree is the
- * list's replay cut to the source its scheme and owner name; the sources query says which source
- * that is. Whoever reads a name, a path or a place reads it here, so a rename shows in the tree,
- * the tabs, the identity bar and the pickers at once.
- */
 import type {
   ContextSource,
   ProjectContextTreeScheme,
@@ -24,18 +18,10 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 
-/**
- * Whose sources a view reads, under `ContextOwner`'s names: a Work or lineage holds Scratch, and a
- * chat holds its uploads. One read can name all three, one per owned scheme.
- */
 export type TreeOwner = {
   [K in "workId" | "rootThreadId" | "chatThreadId"]?: string | null;
 };
 
-/**
- * The list's session and its snapshot, held while the caller is mounted. Null until the account's
- * lists are open (outside the authenticated shell there are none).
- */
 export function useTreeList(list: TreeListRef | null): {
   session: TreeListSession | null;
   snapshot: TreeListSnapshot | null;
@@ -43,7 +29,6 @@ export function useTreeList(list: TreeListRef | null): {
   const registry = useOptionalTreeLists();
   const kind = list?.kind ?? null;
   const owner = list ? (list.kind === "project" ? list.projectId : list.userId) : null;
-  // The handle is held while the caller is mounted on this list, and released with it.
   const [held, setHeld] = useState<TreeListHandle | null>(null);
   useEffect(() => {
     if (!registry || !kind || !owner) {
@@ -72,7 +57,6 @@ export function useTreeList(list: TreeListRef | null): {
   return useMemo(() => ({ session, snapshot }), [session, snapshot]);
 }
 
-/** A source's authority and id for a scheme and owner, or null when the sources do not hold one. */
 export function sourceFor(
   sources: readonly ContextSource[],
   scheme: ProjectContextTreeScheme,
@@ -92,21 +76,14 @@ export function sourceFor(
 
 const READY = new Set<TreeListStatus>(["synced", "offline", "broken", "unauthenticated"]);
 
-/** The copy has synced or can stand in for the list: an address that finds no node is "not there". */
 export const listIsComplete = (status: TreeListStatus): boolean => READY.has(status);
 
 export type TreeViewResult = {
   tree: TreeView | null;
-  /** The list has synced or the copy can stand in for it: an address that finds no node is "not there". Otherwise it is "waiting for the list". */
   isComplete: boolean;
-  /** This account has no access to the list. */
   isError: boolean;
 };
 
-/**
- * The trees of the schemes' sources, built from the lists' replays: live, unless the caller names
- * a version (the sidebar's Live/Draft toggle, a review address read in its Work's tree).
- */
 export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   projectId: string,
   schemes: readonly S[],
@@ -176,7 +153,6 @@ export function useProjectTreeView(
   return useProjectTreeViews(projectId, schemes, options)[scheme];
 }
 
-/** What an address found in a tree: a node, "not there", or "waiting for the list" while the copy has not synced. */
 export type Resolved<T> = { kind: "found"; value: T } | { kind: "absent" } | { kind: "waiting" };
 
 export function resolveIn<T>(

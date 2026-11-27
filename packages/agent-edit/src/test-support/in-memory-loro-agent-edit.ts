@@ -1,7 +1,3 @@
-// An in-memory host for the Loro core: the rooms adapter for a Live or a Draft chat, write records,
-// the model's edit list, undo and revert on the one Undo rule in the room each write landed in, and the
-// writer's turn Undo, Apply, Discard and a turn's restore press, for hand-run probes. The server's host
-// does the same on Postgres.
 import { type DocumentRoom, liveRoomOf, loroRoomName } from "@meridian/contracts/protocol";
 import {
   applyBlocks,
@@ -32,7 +28,6 @@ import { agentEditRooms } from "../ports/document-rooms.js";
 import { editHandle } from "../ports/write-ordinals.js";
 import { undoInRooms } from "../undo-in-rooms.js";
 
-/** What a chat's core runs on: its rooms and its edit history. */
 export interface InMemoryChatRooms {
   rooms: AgentEditRooms;
   documentEdits: LoroDocumentEdits;
@@ -40,51 +35,26 @@ export interface InMemoryChatRooms {
 
 export interface InMemoryLoroHost {
   rooms: MemoryDocumentRooms;
-  /**
-   * A chat's door: Live for `null`, else the draft's fork room from the first read, whether or not
-   * the draft has written there (design §5). One core per mode; a chat that switches mode keeps
-   * its frontiers, which live in its context.
-   */
   chat(draftId: string | null): InMemoryChatRooms;
   ordinals: { reserveWriteOrdinal(documentId: string, threadId: string): Promise<number> };
   records: AgentWriteRecord[];
-  /** Run `work` as one command: its saves land, and import into the room, when it resolves. */
   command<T>(work: () => Promise<T>): Promise<T>;
-  /** A first state for a document: these blocks, with ids. */
   seed(documentId: string, blocks: readonly PMNode[]): Promise<void>;
-  /** The document's blocks in Live now, with ids. */
   live(documentId: string): Promise<PMNode[]>;
-  /** The document's blocks as the draft reads them now (Live's where it wrote nothing), with ids. */
   draft(documentId: string, draftId: string): Promise<PMNode[]>;
-  /**
-   * The writer types, in Live or in a Draft page: `edit` returns the document they want from the
-   * one they see, and the difference lands as a client's batch (a fresh client peer, no commit
-   * message).
-   */
   writerEdit(
     documentId: string,
     edit: (blocks: PMNode[]) => PMNode[],
     draftId?: string,
   ): Promise<void>;
-  /**
-   * The writer's Apply or Discard in Review changes: the draft's changes naming these blocks (or
-   * all), pressed as the server's press does (design §2), Live's room committed first. Returns
-   * how many changes it acted on.
-   */
   press(
     kind: "apply" | "discard",
     documentId: string,
     draftId: string,
     selection: ChangeSelection,
   ): Promise<number>;
-  /**
-   * A Draft-mode turn's restore press: the turn's writes into the fork taken back by the
-   * Undo rule, newest first (design §2). Returns how many went back.
-   */
   restoreBefore(documentId: string, draftId: string, turnId: string): Promise<number>;
-  /** Compact the document's history to now (design §4's cutoff), as an unload past the bound does. */
   compact(documentId: string): Promise<void>;
-  /** The writer's turn Undo on a chat card: the turn's writes taken back, each in its room (design §5). */
   undoTurn(documentId: string, turnId: string): Promise<{ taken: number }>;
   close(): Promise<void>;
 }
@@ -99,7 +69,6 @@ const fork = (documentId: string, draftId: string): DocumentRoom => ({
 export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
   const rooms = createMemoryDocumentRooms(shapeSchemaOf(schema));
   const records: AgentWriteRecord[] = [];
-  /** Writes an inverse took back: the model's undo goes past them, as the server's does. */
   const takenBack = new Set<AgentWriteRecord>();
   const ordinals = new Map<string, number>();
   let tx: MemoryRoomTx | null = null;
@@ -133,7 +102,6 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     }
   };
 
-  /** The writer's typing: `want`'s document from a fresh client's copy, sent as one batch. */
   const writerWrite = async (room: DocumentRoom, want: (current: PMNode[]) => PMNode[]) => {
     const docs = await rooms.read(room, { peer: freshPeerId() });
     try {
@@ -146,10 +114,6 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
     }
   };
 
-  /**
-   * `parts` taken back, each in the room it landed in, newest first as given, by the planner the
-   * server runs (`undoInRooms`). Returns the parts that went, and those whose history was cut.
-   */
   const takeBackIn = async (parts: readonly AgentWriteRecord[], by?: CommitAuthor) => {
     const held = new Map<string, RoomDocs>();
     try {
@@ -196,7 +160,6 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
           status: "success",
           message: `${editHandle(chosen[0].wId)} is already taken back.`,
         };
-      // The model's inverse names its turn, as its writes do.
       const { taken, compacted } = await takeBackIn(chosen, { turn: context.turnId ?? "model" });
       const names = (parts: readonly AgentWriteRecord[]) =>
         parts.map((r) => editHandle(r.wId)).join(", ");
@@ -312,7 +275,6 @@ export function createInMemoryLoroHost(schema: Schema): InMemoryLoroHost {
       const parts = records
         .filter((r) => r.documentId === documentId && r.turnId === turnId && !takenBack.has(r))
         .reverse();
-      // The writer's card Undo is the writer's.
       return { taken: (await takeBackIn(parts)).taken.length };
     },
     close: () => rooms.close(),

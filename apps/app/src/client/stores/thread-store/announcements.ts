@@ -26,7 +26,6 @@ const useAnnouncementStore = create<AnnouncementStore>((set) => ({
   clearPolite: () => set({ polite: "" }),
 }));
 
-/** Long enough for a screen reader to take the text; it describes a moment, not a state. */
 const POLITE_LIFETIME_MS = 5000;
 let politeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -45,7 +44,6 @@ export function announce(message: string): void {
   });
 }
 
-/** Publish a batch in one live-region update; report only keys actually published. */
 export function announceErrors(
   entries: { key: string; message: string }[],
   published: (keys: string[]) => void,
@@ -76,7 +74,6 @@ export function announceError(message: string, options?: { key: string }): void 
   publishErrors([{ key: options?.key, message }]);
 }
 
-/** Retire a key, filtering unpublished batches and clearing published text without re-speaking survivors. */
 export function clearAnnouncement(key: string): void {
   const { assertiveOwner: owner } = useAnnouncementStore.getState();
   if (!owner?.entries.some((entry) => entry.key === key)) return;
@@ -88,7 +85,6 @@ export function clearAnnouncement(key: string): void {
   });
 }
 
-/** React hook for {@link AnnouncementRegion} and components that announce. */
 export function useAnnouncement() {
   const current = useAnnouncementStore(
     useShallow((s) => ({ polite: s.polite, assertive: s.assertive })),

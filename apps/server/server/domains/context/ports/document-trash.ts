@@ -1,4 +1,3 @@
-/** Restorable document trash and the retention path that eventually purges its content. */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/protocol";
 
@@ -13,21 +12,12 @@ export type DocumentPurgeDisposal = {
 };
 
 export type DocumentTrash = {
-  /** Which requested document identities are still retained in this project's Trash. */
   retained(
     projectId: ProjectId,
     documentIds: readonly DocumentId[],
   ): Promise<ReadonlySet<DocumentId>>;
-  /** The server's facts of the project's Trash entries, newest first: documents on their own and deleted folders. */
   list(projectId: ProjectId): Promise<readonly TrashEntryFacts[]>;
-  /** Reads one restorable removal and its text, serialized from its retained room. */
   read(projectId: ProjectId, documentId: DocumentId): Promise<DocumentTrashEntry | null>;
-  /** Whether a missing trash entry belonged here and has since been permanently purged. */
   wasPurged(projectId: ProjectId, documentId: DocumentId): Promise<boolean>;
-  /**
-   * Retention: empties each Trash entry whose nodes have been in Trash for the retention window
-   * (a `purge` record per entry, then the purged documents' content is released), and releases
-   * a drafted create that left every view that long ago. Returns the documents released.
-   */
   purge(): Promise<number>;
 };

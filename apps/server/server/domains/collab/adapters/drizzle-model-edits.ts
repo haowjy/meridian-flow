@@ -1,4 +1,3 @@
-/** Postgres model edits: the command claim, the effect's transaction, and `resolve`. */
 import type {
   ModelEditCommandResult,
   ModelEditKey,

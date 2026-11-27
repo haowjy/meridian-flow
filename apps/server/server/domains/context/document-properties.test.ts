@@ -1,4 +1,3 @@
-/** Stored frontmatter parses for display in source order, or is reported unreadable. */
 import { describe, expect, it } from "vitest";
 import { parseDocumentProperties } from "./document-properties.js";
 import { MAX_PROPERTIES_TEXT_LENGTH } from "./frontmatter.js";
@@ -158,7 +157,6 @@ describe("hostile frontmatter", () => {
     expect(result.text.endsWith("\n")).toBe(false);
   });
 
-  // Parse cost at the cap is measured by apps/server/scripts/probe-link-resolution.ts.
   it("parses frontmatter right at the cap", () => {
     const text = Array.from({ length: 2_000 }, (_, index) => `key${index}: value`).join("\n");
     const padded = `${text}\n#${" ".repeat(MAX_PROPERTIES_TEXT_LENGTH - text.length - 2)}`;

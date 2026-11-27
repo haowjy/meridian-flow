@@ -1,11 +1,3 @@
-/**
- * Work purge's disposal of a purged Work (§2.6, F10), inside purge's transaction after its
- * deleted/cutoff proof: the Work's drafts and those its purged lineages' roots name each have their
- * tree records discarded; the purge then deletes their rows, and their forks go with them. The Work and the
- * lineages it purges are gone for good, so nothing is recorded to take back. The public command's
- * active-Work fence is never used, and no pending projection runs: the Work is being deleted.
- * Its drafted creates are in no view afterwards and retention purges them.
- */
 import type { DraftId, WorkId } from "@meridian/contracts";
 import type { ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -47,8 +39,6 @@ export function createDrizzleWorkDraftDisposal(
       lists.set(listKey(list), list);
     }
     if (lists.size > 0) await deps.treeLists.lock([...lists.values()]);
-    // One pass per draft: its tree records settled discarded in each list, then its view's rows
-    // go. The purge deletes the rows after the Work and chats naming them.
     for (const draftId of draftIds) {
       await discardTreeRecords(db, deps, { draftId, commandId: newId() });
       await deps.treeLists.resync(await treeListsOfDraft(db, draftId));

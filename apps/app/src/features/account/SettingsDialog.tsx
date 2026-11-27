@@ -47,12 +47,6 @@ import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSett
 import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
 import type { AccountPreference, SettingKey } from "./useAccountSettings";
 
-/**
- * Open/close the settings overlay by patching `?settings=` on the CURRENT
- * route — the path never changes, which is what lets the overlay work
- * identically from any shell. Shared by the account menu, the ⌘, shortcut, and
- * the dialog's own rail/close affordances.
- */
 export function useSettingsNavigation() {
   const navigate = useNavigate();
   const defaultSection: SettingsSection = "preferences";
@@ -73,8 +67,6 @@ export function useSettingsNavigation() {
     (section?: SettingsSection) => setSection(section ?? defaultSection, false),
     [setSection],
   );
-  // Section switches replace history so a single Back closes the overlay
-  // instead of replaying every rail click.
   const switchSection = useCallback(
     (section: SettingsSection) => setSection(section, true),
     [setSection],
@@ -112,11 +104,6 @@ function phoneSections(): PhoneSettingsSectionItem[] {
   }));
 }
 
-/**
- * One body per section, parameterized by presentation — the phone takeover and
- * the desktop dialog render the SAME bodies; only the surrounding chrome
- * differs. This is the single place that maps a section to its content.
- */
 const SECTION_CONTENT: Record<SettingsSection, (presentation: SectionPresentation) => ReactNode> = {
   profile: (presentation) => <ProfileSection presentation={presentation} />,
   preferences: (presentation) => <PreferencesSection presentation={presentation} />,
@@ -137,13 +124,10 @@ function SectionContent({
 export function SettingsDialog() {
   const search = useSearch({ strict: false }) as { settings?: SettingsSection };
   const { open, switchSection, close } = useSettingsNavigation();
-  // `null` until the media query resolves (first client effect) — render no
-  // content for that frame rather than flashing the wrong presentation.
   const isPhone = usePhoneShell();
 
   const section = search.settings;
 
-  // ⌘,/Ctrl+, — the conventional settings shortcut, app-wide.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
@@ -273,12 +257,6 @@ function SectionHeading({ title, description }: { title: ReactNode; description:
   );
 }
 
-/**
- * Sections take a `presentation` because the phone/desktop split is a shell
- * decision (coarse pointer). Phone always stacks each label above its control.
- * The desktop dialog decides by its own width: a narrow desktop window gets the
- * same stacked rows, since a `w-28` label column leaves too little control width.
- */
 type SectionPresentation = "desktop" | "phone";
 
 function rowLayout(presentation: SectionPresentation) {
@@ -435,7 +413,6 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
   );
 }
 
-/** Account-level display preference with an error beside its control. */
 function StatsForNerdsRow() {
   const preference = useSharedAccountSettings().preference("statsForNerds");
   const enabled = preference.value;
@@ -462,11 +439,6 @@ function StatsForNerdsRow() {
   );
 }
 
-/**
- * UsageSection — read-only usage + balance summary with a link to the
- * standalone /billing page. Intentionally minimal: subscription and extra-usage
- * purchase flows live on their own page, not inside the settings overlay.
- */
 function UsageSection() {
   return (
     <div>

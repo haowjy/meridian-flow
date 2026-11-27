@@ -1,5 +1,3 @@
-/** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
-
 import { flattenDom, NESTING_DATA_ATTRIBUTES } from "./extensions/nesting/nesting-clipboard";
 import { clipboardRemoteSource, REMOTE_SRC_ATTRIBUTE } from "./images/remote-image";
 import {
@@ -50,13 +48,6 @@ const ELEMENT_NAMES = new Map<string, string>([
 
 const EXPLICIT_URI_SCHEME = /^[a-z][a-z\d+.-]*:/i;
 
-/**
- * Returns inert, schema-only HTML for ProseMirror's clipboard parser.
- *
- * This uses a fresh output document and an attribute allowlist rather than
- * mutating the untrusted tree. That makes new browser-supported attributes
- * unsafe by default, including every `on*` handler and inline CSS.
- */
 export function sanitizePastedHTML(html: string): string {
   const parser = new DOMParser();
   const source = parser.parseFromString(html, "text/html");
@@ -127,7 +118,6 @@ function copyNesting(source: Element, target: Element): void {
   }
 }
 
-/** The id this editor's clipboard HTML carries on a block (`extensions/block-id`). */
 function copyBlockId(source: Element, target: Element): void {
   const id = source.getAttribute("data-block-id");
   if (id !== null && /^[0-9A-Za-z]{10}$/.test(id)) target.setAttribute("data-block-id", id);
@@ -146,14 +136,6 @@ function copyLinkHref(source: Element, target: Element): void {
   if (href) target.setAttribute("href", href);
 }
 
-/**
- * What an internal link or picture named where it was copied: its address,
- * and its ref and project, each only in the shape the copy writes (a picture's
- * ref may be an upload's `asset:<id>`, recorded with no address when copied
- * before the catalog held it). The link transform after this decides whether
- * the ref is kept (same project) or the address is bound fresh. Returns the
- * address.
- */
 function copyRecordedTarget(
   source: Element,
   target: Element,
@@ -171,14 +153,9 @@ function copyRecordedTarget(
 }
 
 function copyImageAttributes(source: Element, target: Element): boolean {
-  // A picture copied from a Meridian document names a document address,
-  // which is its source here; nothing a browser would fetch on its own.
   const address = copyRecordedTarget(source, target, clipboardPictureRef);
-  // Flow's own copy of a remote picture names it here and carries no `src`.
   const remote = clipboardRemoteSource(source.getAttribute(REMOTE_SRC_ATTRIBUTE));
   if (remote) target.setAttribute(REMOTE_SRC_ATTRIBUTE, remote);
-  // An upload recorded with no address keeps no source here: the link
-  // transform restores its `asset:` source in the same project or drops it.
   const recordedUpload = !address && target.hasAttribute(LINK_REF_ATTRIBUTE);
   if (!recordedUpload && !remote) {
     const rawSrc = source.getAttribute("src");
@@ -194,7 +171,6 @@ function copyImageAttributes(source: Element, target: Element): boolean {
   return true;
 }
 
-/** A Meridian figure keeps its type and label; any other `<figure>` is just its contents. */
 function copyFigureAttributes(source: Element, target: Element): void {
   if (source.getAttribute("data-type") !== "figure") return;
   target.setAttribute("data-type", "figure");
@@ -207,8 +183,6 @@ function isSafeImageSrc(src: string): boolean {
   if (/^data:/i.test(src)) return /^data:image\/[a-z\d.+-]+(?:;[^,]*)?,/i.test(src);
   if (src.startsWith("//")) return true;
   if (!EXPLICIT_URI_SCHEME.test(src)) return true;
-  // A document address with no Meridian metadata (`manuscript://art/map.png`)
-  // is a source like its bare-path spelling: the image door assigns it fresh.
   if (classifyLinkTarget(src)?.kind === "scheme") return true;
 
   try {

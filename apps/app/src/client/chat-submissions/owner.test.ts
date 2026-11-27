@@ -169,7 +169,6 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   };
   recordChatSubmission(account, { ...entry(), creation });
   recordChatSubmission(account, { ...entry("two", "Second rejected"), creation });
-  // A switch queued behind the refused creation has no words; Edit takes it with the cohort.
   recordChatSubmission(account, {
     ...entry("mode", ""),
     state: undefined,

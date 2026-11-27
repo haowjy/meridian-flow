@@ -12,7 +12,5 @@ cat <<MSG
 ────────────────────────────────────────────────────
 MSG
 
-# ── SWAP-IN POINT ───────────────────────────────────────────────────────────
 echo "::warning title=Staging deploy is a stub::No real staging host wired yet. See tools/deploy/deploy-staging.sh."
 echo "[stub] would publish apps/server, apps/app, and apps/www artifacts and run the rollout."
-# ────────────────────────────────────────────────────────────────────────────

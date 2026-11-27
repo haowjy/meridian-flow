@@ -68,7 +68,6 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
         and(
           eq(contextSources.id, found.document.contextSourceId),
           isNull(contextSources.deletedAt),
-          // The project's own files, and its account's home folder's.
           ownedByRequestSql(
             { projectId: sourceOwnerProjectId, userId: sql`${contextSources.userId}` },
             {

@@ -1,8 +1,3 @@
-/**
- * Live project documents and canonical addresses for an atomic export snapshot, in tree order:
- * one source after another (by canonical address; sources are not siblings), each walked depth
- * first with every folder's children in the project's sibling order (`compareCatalogSiblings`).
- */
 import type { ProjectId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -18,7 +13,6 @@ type Sibling<Document> = {
   name: string;
   rank: string | null;
   entryId: string;
-  /** The row a file stands for; absent for a folder. */
   document?: Document;
 };
 
@@ -72,7 +66,6 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
         .where(inArray(vf.contextSourceId, sourceIds))
     : [];
 
-  // A parent is a source's top level (null folder) or a folder.
   const parentKey = (sourceId: string, folderId: string | null) => `${sourceId}/${folderId ?? ""}`;
   const children = new Map<string, Sibling<(typeof live)[number]>[]>();
   const adopt = (key: string, child: Sibling<(typeof live)[number]>) => {
@@ -113,7 +106,6 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
     left < right ? -1 : left > right ? 1 : 0,
   );
   for (const [sourceId] of bySourceUri) walk(sourceId, null);
-  // The export spells a file as stem plus extension, which the filename codec splits.
   return ordered.map((row) => {
     const parsed = parseDocumentFilename(row.name);
     return {

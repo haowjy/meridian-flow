@@ -3,7 +3,6 @@ import { inMap } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, overrideMap, pieceEnds } from "./shape.js";
 
-/** The blocks the `pieces` records connect, one group per connected component. */
 export function linkedPieces(keys: Iterable<string>): Groups {
   const linked = new Groups([]);
   for (const key of keys) {
@@ -15,10 +14,6 @@ export function linkedPieces(keys: Iterable<string>): Groups {
   return linked;
 }
 
-/**
- * The `d.pieces` records of each connected component holding one of `blocks`, each with the block
- * of `blocks` in its component: a press deletes them with the change it presses.
- */
 export function piecesOf(docs: RoomDocs, blocks: Iterable<BlockId>): Map<string, BlockId> {
   const out = new Map<string, BlockId>();
   const keys = inMap(docs.structure, overrideMap("pieces"), (map) => map.keys());

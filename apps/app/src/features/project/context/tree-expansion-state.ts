@@ -1,4 +1,3 @@
-/** Tab-local tree arrangement, scoped to the account, project, and tree owner. */
 import { browserRecord, isRecord } from "@/client/storage/browser-record";
 
 export type TreeExpansion = { entries: Record<string, boolean> };
@@ -45,7 +44,6 @@ export function pruneTreeExpansion(
     : { ...state, entries };
 }
 
-/** Walk all folders, including those hidden by a collapsed ancestor. */
 export function treeFolderIds(children: (parent: string | null) => readonly string[]): string[] {
   const ids: string[] = [];
   const visit = (parent: string | null) => {

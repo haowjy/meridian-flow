@@ -1,12 +1,3 @@
-/**
- * The model-facing view revision: what a reader was shown, as an opaque token.
- *
- * `l1:` + sha256 over the cut's room version (every doc's version vector, so any op changes it),
- * the holder's URI, and how every ref-bearing link and `asset:` source spells in this view. A
- * tree-only move changes the spelling and so the token, though the room did not change. It is
- * computed in the same synchronous block as the render it identifies, and is a freshness signal,
- * never a write refusal. A Work's read appends the Work's key (`viewRevision`).
- */
 import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
 import type {
@@ -24,7 +15,6 @@ export function cutRevision(cut: DocumentCut, scope: HolderLinkScope): string {
   const triples = new Set<string>();
   for (const { kind, attrs } of walkLinkOccurrences(cut.blocks)) {
     const asset = kind !== "link" && attrs.href.startsWith("asset:");
-    // A no-ref link spells its stored bytes, which the version already covers.
     if (attrs.ref === null && !asset) continue;
     const spelled =
       kind === "link"
@@ -41,12 +31,10 @@ export function cutRevision(cut: DocumentCut, scope: HolderLinkScope): string {
     .digest("base64url")}`;
 }
 
-/** A revision as `draft`'s view reads it; Live's (`null`) stays as it is. */
 export function viewRevision(revision: string, draft: string | null): string {
   return draft ? `${revision}:${draft}` : revision;
 }
 
-/** A read whose revision names `draft`'s view. */
 export function inView<T extends { revision: string | null }>(read: T, draft: string | null): T {
   return draft && read.revision ? { ...read, revision: viewRevision(read.revision, draft) } : read;
 }

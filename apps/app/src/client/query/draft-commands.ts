@@ -1,10 +1,3 @@
-/**
- * A Work's drafts as the writer changes them: `+ New draft`, `Delete draft` and its Undo, and a
- * chat pointed at another of them, each a command the driver delivers. The lists a surface shows
- * are the server's reads with every command this tab has not seen a read include laid over them
- * (`projectWorkDrafts`, `projectChatDrafts`), so a new draft shows, a deleted one leaves and a
- * chat writes into its new draft at once, offline too.
- */
 import type {
   CommandDriver,
   CommandKind,
@@ -32,7 +25,6 @@ const KINDS = {
   restore: "draft_restore",
 } as const;
 
-/** `draft`: the draft as the writer saw it, which the list shows until the server's read has it. */
 type DraftCommandBody = {
   projectId: string;
   workId: string;
@@ -43,10 +35,8 @@ const lane = (workId: string) => `work-drafts:${workId}`;
 
 const CHAT_DRAFT = "chat_draft";
 
-/** A chat's lineage writes into another draft of its Work (`PUT /api/threads/:id/draft`). */
 type ChatDraftBody = { projectId: string; threadId: string; rootThreadId: string; draftId: string };
 
-/** The project's chats with this tab's unseen chat-draft commands over them, oldest last. */
 export function projectChatDrafts(
   records: readonly CommandRecord[],
   threads: ThreadListItem[],
@@ -95,11 +85,6 @@ export function workDraftsQueryOptions(projectId: string, workId: string) {
   };
 }
 
-/**
- * The Work's drafts with this tab's unseen commands over them, oldest command last: a create or a
- * restore lists its draft, a delete takes it out. A command that never reached the server shows
- * nothing.
- */
 export function projectWorkDrafts(
   records: readonly CommandRecord[],
   workId: string,
@@ -114,7 +99,6 @@ export function projectWorkDrafts(
     drafts = drafts.filter((draft) => draft.id !== body.draft.id);
     if (record.kind !== KINDS.delete) drafts.push(body.draft);
   }
-  // A deleted default passes the mark on at the server: until its read, the oldest left holds it.
   if (drafts.length > 0 && !drafts.some((draft) => draft.isDefault))
     drafts = drafts.map((draft, at) => (at === 0 ? { ...draft, isDefault: true } : draft));
   return drafts.sort(
@@ -130,7 +114,6 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
     const queryKey = projectQueryKeys.workDrafts(projectId, workId);
     void whenRead(client, { queryKey }).then(() => bound?.observe((each) => each.id === record.id));
     void client.refetchQueries({ queryKey });
-    // Its chats moved to the default, and its changes left every list and count.
     void refreshDraftReads(client, projectId, new Set([undefined]), since);
   };
   const kind = (request: (body: DraftCommandBody) => HttpRequest): CommandKind => ({
@@ -194,16 +177,12 @@ export function draftCommandsDomain(client: QueryClient): CommandDomain {
 }
 
 export type WorkDraftsState = {
-  /** Default first, then by creation; null until the first read. */
   drafts: readonly WorkDraft[] | null;
-  /** `+ New draft`: lists it at once and returns its id, to show it. */
   create: (name: string) => DraftId | null;
-  /** `Delete draft`, whose Undo is `restore` with the same draft. */
   remove: (draft: WorkDraft) => void;
   restore: (draft: WorkDraft) => void;
 };
 
-/** A named Work's drafts; `workId` null reads nothing (No Work owns no drafts). */
 export function useWorkDrafts(projectId: string, workId: string | null): WorkDraftsState {
   const query = useQuery({
     ...workDraftsQueryOptions(projectId, workId ?? ""),
@@ -237,7 +216,6 @@ export function useWorkDrafts(projectId: string, workId: string | null): WorkDra
           pendingFolderCount: 0,
           createdAt: new Date().toISOString(),
         };
-        // An empty draft has an empty list: seed it, so its pages don't wait on a read.
         queryClient.setQueryData(projectQueryKeys.drafts(projectId, draft.id), {
           items: [],
           folders: [],

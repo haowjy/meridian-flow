@@ -30,7 +30,6 @@ import { carryAnchor, holdBlock, type NodeHold, resolveBlockHold } from "../anch
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
 
-/** Marks the lifted block for the block surface's CSS; nothing is owned here. */
 export const BLOCK_LIFTED_CLASS = "meridian-block-lifted";
 
 type BlockDragState = {
@@ -41,7 +40,6 @@ type BlockDragState = {
    * replacement now starts.
    */
   hold: NodeHold;
-  /** False while the press might still turn out to be a click. */
   lifted: boolean;
 };
 
@@ -58,14 +56,12 @@ export function beginBlockDrag(editor: Editor, pos: number): void {
   if (hold) dispatchBlockDrag(editor, { hold, lifted: false });
 }
 
-/** The press became a drag. The block lifts. */
 export function liftBlockDrag(editor: Editor): void {
   const current = blockDragPluginKey.getState(editor.state);
   if (!current || current.lifted) return;
   dispatchBlockDrag(editor, { ...current, lifted: true });
 }
 
-/** Let go, dropped or cancelled. */
 export function endBlockDrag(editor: Editor): void {
   if (!blockDragPluginKey.getState(editor.state)) return;
   dispatchBlockDrag(editor, null);
@@ -85,8 +81,6 @@ export function draggedBlockPos(state: EditorState): number | null {
 
 export const BlockDragExtension = Extension.create({
   name: BLOCK_DRAG_NAME,
-  // Below the chrome kernel and object physics: this holds no keys and claims
-  // nothing, it only decorates.
   priority: 1030,
 
   addProseMirrorPlugins() {
@@ -115,7 +109,6 @@ export const BlockDragExtension = Extension.create({
             if (!held?.lifted) return null;
             const pos = draggedBlockPos(state);
             if (pos === null || !state.doc.nodeAt(pos)) return null;
-            // A list item lifts with what is under it: the run a drop moves.
             const index = state.doc.resolve(pos).index(0);
             const [from, to] = extentOf(nestNodes(state.doc.content.content), index);
             const decorations: Decoration[] = [];

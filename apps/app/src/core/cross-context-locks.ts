@@ -1,4 +1,3 @@
-/** Native Web Locks adaptation and callback-lifetime leases shared by browser owners. */
 type LockMode = "shared" | "exclusive";
 type LockRequestOptions =
   | { mode?: LockMode; signal?: AbortSignal; ifAvailable?: never }

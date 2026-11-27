@@ -114,7 +114,6 @@ if (!RUN) {
       expect(await settledIds()).toEqual([DOCUMENT]);
       const [first] = await database.select().from(linkAheadRefs);
 
-      // Delete and recreate the address: the compare-and-set must not move the target.
       await treeSeeder(database).store.submit({
         lists: [await treeListOfSource(database, SOURCE)],
         make: ([{ writer }]) => {
@@ -132,7 +131,6 @@ if (!RUN) {
         registry.register([{ ...registration, address: "manuscript://other.toml" }]),
       ).rejects.toThrow(/another address/);
 
-      // Registration commits first, so a caller that then rolls back leaves a harmless orphan row.
       const orphan = { ...registration, aheadId: "00000000-0000-4000-8000-000000000b06" };
       await registry.register([orphan]);
       await expect(
@@ -142,7 +140,6 @@ if (!RUN) {
       ).rejects.toThrow("caller rolls back");
       expect(await database.select().from(linkAheadRefs)).toHaveLength(2);
 
-      // Inside the caller's transaction the guard throws before anything is written.
       const inside = { ...registration, aheadId: "00000000-0000-4000-8000-000000000b07" };
       await expect(
         runInDrizzleTransaction(database, () => registry.register([inside])),
@@ -200,7 +197,7 @@ if (!RUN) {
       expect(await database.select().from(linkAheadRefs)).toEqual([
         expect.objectContaining({ aheadId: AHEAD, settledDocumentId: DOCUMENT }),
       ]);
-      await registry.register([{ ...registration, aheadId: AHEAD.toUpperCase() }]); // idempotent
+      await registry.register([{ ...registration, aheadId: AHEAD.toUpperCase() }]);
 
       for (const address of [
         "scratch://@/trailing.",
@@ -214,7 +211,6 @@ if (!RUN) {
       }
       expect(await database.select().from(linkAheadRefs)).toHaveLength(1);
 
-      // A valid address past PostgreSQL's B-tree tuple limit registers and is found exactly.
       let seed = 913;
       const segment = () =>
         Array.from({ length: 90 }, () => {
@@ -244,7 +240,6 @@ if (!RUN) {
       const runtimes = useComposedRuntimes(() => db);
       const KAEL = "manuscript://lore/kael";
 
-      /** The ref's registry row: registered, and the one live document it is bound to. */
       async function registryRow(aheadId: string) {
         const [ref] = await db
           .select({ settled: linkAheadRefs.settledDocumentId })
@@ -257,18 +252,15 @@ if (!RUN) {
         const runtime = await runtimes.compose();
         const scenario = await draftTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
-        // The model's create is a hidden row in the Work's draft.
         const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
         const registry = createTestLinkAheadRegistry(db);
         const at = { holderProjectId: scenario.project.id, address: KAEL };
-        // The draft's hidden document at the path binds nothing, for any holder or mint.
         const typed = crypto.randomUUID();
         await registry.register([{ ...at, aheadId: typed }]);
         await registry.register([{ ...at, aheadId: typed }]);
         expect
           .soft(await registryRow(typed), "registered once, not bound to the draft's document")
           .toEqual({ registered: true, live: null });
-        // A model's mint in the draft's view registers the same way.
         const links = createScopedDocumentLinks({
           scopes: createTestDocumentLinkScopes(db),
           registrar: registry,
@@ -276,8 +268,6 @@ if (!RUN) {
         const minted = crypto.randomUUID();
         await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
         expect.soft(await registryRow(minted)).toEqual({ registered: true, live: null });
-        // The first live arrival at the path (a live create there: the draft's document stays the
-        // draft's) binds every waiting ref, once.
         const live = await scenario.writer.createDocument("lore/kael", "Kael, live.");
         for (const aheadId of [typed, minted]) {
           expect.soft(await registryRow(aheadId), "bound to the live document").toEqual({
@@ -292,7 +282,6 @@ if (!RUN) {
         const runtime = await runtimes.compose();
         const scenario = await draftTreeScenario(db, { runtime, runtimes });
         const chapter = await scenario.writer.createDocument("chapter-two", "The forge was cold.");
-        // The client mints the ahead ref as the writer types; the server has never seen it.
         const link =
           (aheadId: string, href = KAEL) =>
           (schema: Schema) =>
@@ -302,7 +291,6 @@ if (!RUN) {
                 schema.marks.link.create({ href, ref: `ahead:${aheadId}`, title: null }),
               ]),
             );
-        // The document's derivation registers the links it finds, after the writer's update.
         const derive = () => runtime.ports.documentSync.documentDerivations.derive(chapter);
         const typed = crypto.randomUUID();
         await scenario.writer.editLive(chapter, (schema) => [link(typed)(schema)]);
@@ -311,8 +299,6 @@ if (!RUN) {
           .soft(await registryRow(typed), "after the debounce, registered and unbound")
           .toEqual({ registered: true, live: null });
 
-        // A ref that can never register (its Work doesn't exist) never keeps the valid one
-        // beside it from registering.
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
         await scenario.writer.editLive(chapter, (schema) => [
           link(beside)(schema),

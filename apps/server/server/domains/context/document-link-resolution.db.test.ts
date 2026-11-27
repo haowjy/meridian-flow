@@ -54,7 +54,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     const sourceOf = new Map<string, string>();
-    /** A document seeded into a source through the list; remembers its source. */
     async function seedDocument(
       sourceId: string,
       name: string,
@@ -65,7 +64,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       sourceOf.set(id, sourceId);
       return id;
     }
-    /** Changes the source's live tree with the writer, as a record any actor could make. */
     async function change(sourceId: string, edit: (writer: TreeWriter) => void) {
       await treeSeeder(database.current).store.submit({
         lists: [await treeListOfSource(database.current, sourceId)],
@@ -159,7 +157,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
           { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
         ]);
-        // A chat with no Work reads its own lineage's draft view.
         expect(viewed).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
       }
       await change(source, (writer) => writer.delete(LIVE, "system", act));
@@ -193,7 +190,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     ) {
       const db = database.current;
       const documentId = crypto.randomUUID();
-      // The home folder is the account's, made with it.
       const sourceId =
         scheme === "user" ? await accountUserSource(db, u as never) : crypto.randomUUID();
       if (scheme !== "user")
@@ -224,7 +220,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId,
         });
       }
-      // An upload belongs to the chat that received it, spelled by that chat's handle.
       const chatId = crypto.randomUUID();
       await database.current.insert(threads).values({
         id: chatId,
@@ -247,10 +242,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "uploads://@c9/Gate",
         chatThreadId: chatId,
       });
-      // A bare name means the holder chat's file; a document holder has no chat, so it names nothing.
       expect(await resolveUpload("uploads://Gate", chatId)).toMatchObject({ documentId: upload });
       expect(await resolveUpload("uploads://Gate")).toBeNull();
-      // A Work owns no uploads.
       expect(await resolveUpload("uploads://@w3/Gate")).toBeNull();
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
@@ -449,7 +442,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       const live = await add("manuscript", "live");
       const contextSourceId = sourceOf.get(live) as string;
-      // A document that exists only in a Work's draft.
       const hidden = async (name: string, draftId: string) => {
         const id = crypto.randomUUID();
         await treeSeeder(db).document(contextSourceId, name, { id, view: { draft: draftId } });
@@ -508,7 +500,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { state: "document", inDraft: false, document: { id: live } },
         { state: "missing" },
       ]);
-      // Work B's draft created only "elsewhere"; A's creates stay hidden from it.
       expect((await resolveIn(b)).answers).toMatchObject([
         { state: "missing" },
         { state: "document", inDraft: false, document: { id: live } },
@@ -520,10 +511,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const live = await add("manuscript", "live");
       const contextSourceId = sourceOf.get(live) as string;
       const sibling = (name: string) => seedDocument(contextSourceId, name);
-      // The holder the request's base names: pinned, so its ahead answers read its bindings.
       await sibling("holder");
       const deleted = await sibling("deleted");
-      // A discarded draft create is in no view: a row, and nowhere to read it.
       const discarded = crypto.randomUUID();
       await db.insert(documents).values({ id: discarded, projectId: p });
       const secret = await sibling("secret");
@@ -553,7 +542,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           path: "deleted",
           settledDocumentId: deleted,
         },
-        // Rule 4: unsettled, answered by the document at its exact address.
         { aheadId: occupied, projectId: p, scheme: "manuscript", path: "live" },
         {
           aheadId: settled,
@@ -632,7 +620,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveDocument,
         { state: "unresolvable" },
       ]);
-      // Only rule 3 marks an answer settled; a rule-4 occupant is still by address.
       expect(response.answers.map((answer) => "settled" in answer)).toEqual([
         false,
         false,
@@ -650,7 +637,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
-      // A chat's lineage owns its drafts, so its links read the lineage's draft view.
       const root = crypto.randomUUID();
       await db
         .insert(threads)
@@ -665,10 +651,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded" }],
         },
       });
-      // The tombstone stays gone; the chat's links read its lineage's draft view.
       expect(noWorkDraft.answers).toMatchObject([{ state: "gone" }]);
       expect(provisioned).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
-      // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({
         id: foreignWork,

@@ -1,11 +1,3 @@
-/**
- * The two ways to open a document on a draft. `openDraft` opens the plain draft; `openReview` opens
- * it in Review changes, against Live unless the caller names another reference, at the clicked
- * change. Every launcher declares which, by how the writer arrived. Both set
- * the document's view to the draft and open it in the pane `place` picks: in main the route command
- * writes the address (a review pushes); beside, `place` shows it. Latest launch wins.
- */
-
 import { type DocumentId, type DraftId, draftItemKey } from "@meridian/contracts";
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
@@ -33,15 +25,10 @@ export type ItemLaunchTarget = {
   itemKey: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
-  /** Live doesn't hold the document: the draft created it, or live deleted it. */
   draftOnly?: boolean;
-  /** Review changes on, against this; omission opens the plain draft. */
   review?: ReviewTarget;
-  /** The change Review changes opens at. */
   focus?: { id: string };
-  /** The writer just made the document: its text takes the caret, as one made on Live does. */
   made?: true;
-  /** Replace the history entry: the stepper crossing chapters within Review changes. */
   replace?: true;
 };
 
@@ -95,8 +82,6 @@ export function ReviewLaunchProvider({
         });
       const tab = openDocumentFromDraftGroup(target);
       const launch = ++sequence.current;
-      // A launch is an arrival: the document's editor opens at the change, not at the place the
-      // writer last left. The claim holds until the editor has mounted.
       const releaseTarget = claimDocumentTarget(target.documentId);
       try {
         for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -140,19 +125,16 @@ export function ReviewLaunchProvider({
   );
 }
 
-/** Null where no review owner is mounted: a surface that only sometimes launches a review (a link to a draft). */
 function useOptionalOpenEditorReview(): EditorReviewCommand | null {
   return useContext(EditorReviewCommandContext);
 }
 
 const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
 
-/** Opens a draft item's document, on its plain page or in Review changes, in the pane `place` picks. */
 function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
   const place = useOptionalPlaceHere();
   const shell = useShellTreeVersion();
-  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
   const showsWork = shell?.show;
   const workOwner = shell?.draftId;
   return useCallback(
@@ -182,7 +164,6 @@ function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcom
 }
 
 function fileTarget(row: ReviewFileTarget, draftId: string): ItemLaunchTarget | null {
-  // An item with no address yet (still being written) has nothing to open.
   if (!row.contextLocation) return null;
   return {
     draftId,
@@ -196,14 +177,12 @@ function fileTarget(row: ReviewFileTarget, draftId: string): ItemLaunchTarget | 
 
 export function useItemLauncher() {
   const open = useOpenItem();
-  /** The plain draft: the draft chip, the toggle, a tree row, a created document, a link. */
   const openDraft = useCallback(
     (target: ItemLaunchTarget) => {
       void open({ ...target, review: undefined, focus: undefined });
     },
     [open],
   );
-  /** Review changes: `Review N changes`, a Changes or dock row, a turn's edited chapter. */
   const openReview = useCallback(
     (target: ItemLaunchTarget) => {
       void open({ ...target, review: target.review ?? "live" }).then((outcome) => {
@@ -219,7 +198,6 @@ export function useItemLauncher() {
     },
     [openDraft],
   );
-  /** `change`: the change it opens at, named by any of its members (a turn's first changed block). */
   const openReviewFile = useCallback(
     (row: ReviewFileTarget, draftId: string, change?: string) => {
       const target = fileTarget(row, draftId);
@@ -231,20 +209,12 @@ export function useItemLauncher() {
   return { openDraft, openReview, openDraftFile, openReviewFile };
 }
 
-/** A document the writer just made: where the version it was made in puts it. */
 export type CreatedDocument = {
   documentId: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
 };
 
-/**
- * Opens a document the writer just made, at once, in the version they made it in. On Live that is
- * `live`. On Draft it is the Work's draft of it: the create names that draft (`createdDraftId`),
- * so the page opens on it before the server has heard of the create, offline too, as a Changes row
- * opens a listed one. `opened` runs once it opens (the phone's drawer closes then, as a row's click
- * closes it).
- */
 export function useOpenCreatedDocument(): (
   document: CreatedDocument,
   live: () => Promise<void>,
@@ -271,25 +241,12 @@ export function useOpenCreatedDocument(): (
   );
 }
 
-/**
- * Where one followed link goes. `live` is the surface's own opener for a live page, which passes
- * `placeBeside` on to the opener; `workId` is the Work the link names, which a hold beside keeps.
- */
 export type LinkPlacement = (
   document: LinkDocumentRef,
   live: (document: LinkDocumentRef, placeBeside?: () => boolean) => Promise<OpenDocumentOutcome>,
   workId?: string | null,
 ) => Promise<OpenDocumentOutcome>;
 
-/**
- * What a followed link opens: the one rule for links in a chat or a page, a chat's doors and its
- * "Drafted N documents" rows. The pane is `place`'s.
- * - A page only a draft holds (`document.review`) opens on that draft.
- * - A page `draftId` drafted opens on that draft, as the draft strip does.
- * - Any other page opens through `live`. Once the opener knows what it is, a chat's upload opens in
- *   its viewer wherever the link is (no pane holds one), a page in the trash opens in main, and any
- *   other page is placed beside in the link's Work (`placeBeside`) or opens in main.
- */
 export function useLinkPlacement(projectId: string | null, draftId: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, draftId);
   const openItem = useOpenItem();
@@ -324,10 +281,6 @@ export function useLinkPlacement(projectId: string | null, draftId: string | nul
   );
 }
 
-/**
- * Opens a document by id where `useLinkPlacement` puts it: a chip or a mention in a chat's
- * message or composer.
- */
 export function useOpenPlacedDocument(
   projectId: string | undefined,
 ): (documentId: string) => Promise<OpenDocumentOutcome> {
@@ -342,10 +295,6 @@ export function useOpenPlacedDocument(
   );
 }
 
-/**
- * Opening Review changes moves the focus to its stepper (its Close when there is nothing to
- * step), once the document's bar has mounted.
- */
 export function focusReviewControls(documentId: string): void {
   let frames = 30;
   const attempt = () => {

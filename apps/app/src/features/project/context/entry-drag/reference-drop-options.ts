@@ -1,9 +1,3 @@
-/**
- * What a writing surface says about project-tree rows dropped on it: which
- * drag is live, how a row becomes the surface's own chip, and the three labels
- * by the pointer. The editor and the composer build their reference door from
- * this one function, so a row means the same thing in both.
- */
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import type { ReferenceDropOptions } from "@/core/editor/extensions/reference-drop";
 

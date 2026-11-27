@@ -1,10 +1,3 @@
-/**
- * Every source's tree in one project, and where a document is now whichever source holds it: for a
- * reader that has only an id (a tab, a Recent row, the reference browser). A document's id never
- * changes, so a rename, a move or a delete made anywhere shows here at once; a document the list
- * does not show (in Trash, purged, never there) is not found, and `isComplete` says whether that
- * means "gone" or "the list has not synced yet".
- */
 import type { ContextOwner, ContextSource } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
@@ -14,7 +7,6 @@ import { useAccountId } from "@/features/project/context/account-feature-context
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 
-/** The owner a source's documents are opened with. */
 export function ownerOfSource({ owner }: ContextSource): ContextOwner {
   if (owner.kind === "work") return { workId: owner.workId };
   if (owner.kind === "lineage") return { rootThreadId: owner.rootThreadId };
@@ -25,19 +17,12 @@ export function ownerOfSource({ owner }: ContextSource): ContextOwner {
 export type DocumentPlace = { file: TreeFile; source: ContextSource };
 
 export type ProjectTrees = {
-  /**
-   * Both lists and the server's answer of their sources have come, so `find` can place a document.
-   * A list can be read from this browser's copy long before the sources come from the server.
-   */
   ready: boolean;
-  /** Every list asked for has synced or can be stood in for by its copy. */
   isComplete: boolean;
-  /** An account has no access to a list asked for. */
   isError: boolean;
   sources: readonly ContextSource[];
   tree(sourceId: string): TreeView | null;
   find(documentId: string): DocumentPlace | null;
-  /** Where the document stands in the lists, for one `find` doesn't place: in Trash, purged. */
   standing(documentId: string): DocumentStanding;
 };
 
@@ -51,10 +36,6 @@ const WAITING: ProjectTrees = {
   standing: () => ({ kind: "waiting" }),
 };
 
-/**
- * The project's list and the account's own (`user://`, Your files in every project): a document
- * moved between them is still found. `version` reads a Work's tree in place of live.
- */
 export function useProjectTrees(
   projectId: string,
   options?: { version?: TreeVersion },
@@ -64,7 +45,6 @@ export function useProjectTrees(
   return useMemo(() => at(view), [at, view]);
 }
 
-/** `useProjectTrees` in any version, for a reader of several drafts' trees at once. */
 export function useProjectTreesAt(projectId: string): (view: TreeVersion["view"]) => ProjectTrees {
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);

@@ -1,15 +1,3 @@
-/**
- * The editor's own record of the pictures it is waiting on.
- *
- * One plugin state, one storage slot, one way to write to them. Every door
- * (picker, drop, paste, import) reads and writes the same record through this
- * module, so there is one answer to "what is in flight here" and no second
- * registry can appear beside it.
- *
- * Messages carry no steps, so a percent is not an edit: it never reaches the room,
- * the wire, or anyone's undo history.
- */
-
 import type { Editor } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
@@ -31,13 +19,8 @@ import {
 export const IMAGE_INGRESS_NAME = "meridianImageIngress";
 
 export type ImageIngressStorage = {
-  /** Drag state and refusals — the two facts no document node can hold. */
   status: ImageIngressStore;
   host: ImageIngressHost | null;
-  /**
-   * This editor, as the upload store's holder: a picture lands through the editor that sent it,
-   * so its uploads are this editor's alone.
-   */
   holder: string;
   watch: UploadWatch | null;
 };
@@ -67,7 +50,6 @@ export type ImageIngressMessage =
   | { set: PendingImage }
   | { drop: string }
   | { landing: LandingImports | null }
-  /** The upload store changed under a slot: draw it again. */
   | { redraw: true };
 
 export const imageIngressPluginKey = new PluginKey<ImageIngressPluginState>(IMAGE_INGRESS_NAME);
@@ -77,7 +59,6 @@ export const EMPTY_INGRESS_STATE: ImageIngressPluginState = {
   landing: null,
 };
 
-/** One slot in flight as presence carries it: the join, and the shape to reserve. */
 export type AnnouncedUpload = { token: string; frame: PendingImageFrame | null };
 
 export function imageIngressStorage(editor: Editor | null | undefined): ImageIngressStorage | null {
@@ -90,16 +71,10 @@ export function ingressState(editor: Editor | null | undefined): ImageIngressPlu
   return imageIngressPluginKey.getState(editor.state) ?? EMPTY_INGRESS_STATE;
 }
 
-/** Drag state and refusals for this editor's ingress, for the app to render. */
 export function imageIngressStatus(editor: Editor | null): ImageIngressStore | null {
   return imageIngressStorage(editor)?.status ?? null;
 }
 
-/**
- * Give this editor somewhere to put pictures. Returns the release, and until it
- * is called this is the one host: a second registration replaces the first,
- * because one editor belongs to one project.
- */
 export function registerImageIngressHost(
   editor: Editor | null,
   host: ImageIngressHost,
@@ -112,10 +87,6 @@ export function registerImageIngressHost(
   };
 }
 
-/**
- * The pictures this editor is sending, which it announces to peers: the store says which (a failed
- * or stopped one is not), the slot's record says its shape.
- */
 export function uploadsOwnedHere(editor: Editor | null): readonly AnnouncedUpload[] {
   const storage = imageIngressStorage(editor);
   if (!editor || !storage) return [];
@@ -140,11 +111,6 @@ export function patchUpload(
   if (updated !== current) sendIngressMessage(editor, { set: updated });
 }
 
-/**
- * Tell the document about a pending picture. Meta only: no step reaches the room, so
- * a percent is not an edit and never enters anyone's undo history.
- */
-
 export function sendIngressMessage(editor: Editor, message: ImageIngressMessage): void {
   if (editor.isDestroyed) return;
   const transaction = editor.state.tr.setMeta(imageIngressPluginKey, message);
@@ -152,13 +118,6 @@ export function sendIngressMessage(editor: Editor, message: ImageIngressMessage)
   editor.view.dispatch(transaction);
 }
 
-/**
- * Carry a paste's own coordinates across one mapping.
- *
- * Plain numbers rather than a relative anchor: this lives for the length of one
- * task, from the paste's transaction to the settled state that pins its links,
- * and a mapping is exactly the right instrument over that span.
- */
 export function carryLanding(
   landing: LandingImports | null,
   mapping: Mappable,

@@ -37,7 +37,6 @@ function openEditor(content = "<p></p>", schemaType: "document" | "code" = "docu
   return editor;
 }
 
-/** Type character by character the way a browser reports composition-free input. */
 function type(editor: Editor, text: string) {
   for (const character of text) {
     const { from, to } = editor.state.selection;
@@ -49,7 +48,6 @@ function type(editor: Editor, text: string) {
   }
 }
 
-/** One character reported as replacing `[from, to]` rather than landing at the caret. */
 function typeOverRange(editor: Editor, from: number, to: number, character: string): boolean {
   return (
     editor.view.someProp("handleTextInput", (handleTextInput) =>
@@ -76,7 +74,6 @@ function caretAt(editor: Editor, parentOffset: number) {
   );
 }
 
-/** The caret's own block, with `|` standing where the caret is. */
 function shape(editor: Editor): string {
   const { $from } = editor.state.selection;
   const text = $from.parent.textContent;
@@ -93,7 +90,6 @@ function fenceEditor(): Editor {
   return editor;
 }
 
-/** Explicit representative rows guard gesture behavior across editor contexts. */
 type PairRow = {
   context: AutoPairContext;
   open: string;
@@ -143,8 +139,6 @@ describe("typing the closer steps over the one that was written", () => {
     const editor = openEditor();
     type(editor, "[");
 
-    // What every remote collab edit does: the Loro binding rebuilds the document,
-    // so every tracked position is reported deleted and nothing may be stepped.
     editor.commands.setContent("<p>[]</p>");
     caretAt(editor, 1);
     type(editor, "]");

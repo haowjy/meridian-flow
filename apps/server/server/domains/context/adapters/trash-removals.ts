@@ -10,11 +10,6 @@ import { parseActor } from "./context-fs/tree-writes.js";
 
 type Actor = DocumentRemovalRecord["actor"];
 
-/**
- * Names the authors of deletes (`trashed_by`: `user:<id>`, `agent:<chat>/<turn>`) in one read of
- * the accounts and chats they name. An author whose account or chat is gone, or the server's own,
- * has no actor.
- */
 export async function trashActorsOf(
   db: Database,
   authors: Iterable<string | null>,
@@ -65,10 +60,6 @@ export async function trashActorsOf(
   };
 }
 
-/**
- * A document is removed while its node is in Trash, or once its content is purged. A purged
- * document's node is gone, so its record names no one.
- */
 export function createTrashRemovals(db: Database): DocumentRemovals {
   return {
     actors: (authors) => trashActorsOf(db, authors),

@@ -1,16 +1,3 @@
-/**
- * The one copy remap: a stored document's blocks become a new document's
- * content, with every link inside the copied set pointed at its copy and every other
- * link left naming what it named.
- *
- * Stored hrefs are absolute addresses (`storedHref` spells them with no holder), so a
- * relative spelling never leaks past the write that stored it. Copy therefore rewrites
- * only identities it actually copies: a `doc:`/`folder:` ref, an upload's `asset:` src,
- * or — for legacy and address-only spellings — the address the occurrence resolves to
- * from the *source* holder. A ref-less link that resolves to a copied identity becomes
- * that copy; one that resolves elsewhere is written absolute and keeps its target, so
- * relocation cannot retarget it. External and contextual hrefs stay as written.
- */
 import { type OccurrenceAttrs, rebuildOccurrences } from "@meridian/agent-edit/integration";
 import {
   documentRef,
@@ -23,22 +10,16 @@ import {
 import type { PMNode } from "@meridian/markup";
 import { occurrenceIdentity, walkLinkOccurrences } from "@meridian/markup/links";
 
-/** One copied document's new identity and where it lands. */
 export interface CopiedDocument {
   documentId: string;
   uri: string;
 }
 
-/** One copied folder's new identity and where it lands. */
 export interface CopiedFolder {
   folderId: string;
   uri: string;
 }
 
-/**
- * The identities one copy creates, indexed by both the source identity and — for a
- * ref-less spelling that only names an address — the source address.
- */
 export interface CopyIdentityMap {
   documents: ReadonlyMap<string, CopiedDocument>;
   folders: ReadonlyMap<string, CopiedFolder>;
@@ -98,9 +79,7 @@ function indexOnce<Entry, Target>(
 export function remapCopiedBlocks(input: {
   blocks: readonly PMNode[];
   map: CopyIdentityMap;
-  /** The source holder's address: a stored relative spelling was written against it. */
   sourceHolderUri: string | null;
-  /** Where each `ahead:` ref settles now, so a settled ref maps like a `doc:` one. */
   aheadSettlements?: ReadonlyMap<string, string>;
 }): PMNode[] {
   const occurrences = walkLinkOccurrences(input.blocks);
@@ -127,7 +106,6 @@ function remappedAttrs(
       : null;
   }
   if (identity !== null) {
-    // A stored identity: the ref names the copy set exactly, whatever its href spells.
     const parsed = parseLinkRef(identity);
     if (parsed?.kind === "doc") {
       const target = map.documents.get(parsed.documentId);
@@ -137,8 +115,6 @@ function remappedAttrs(
       const target = map.folders.get(parsed.folderId);
       return target ? folderAttrs(target, suffix, attrs.title) : null;
     }
-    // A ref minted before its target existed names that target once it arrives; the copy's
-    // own read resolved the settlement, so it can point at the copy like any other ref.
     if (parsed?.kind === "ahead") {
       const settled = aheadSettlements?.get(identity);
       const target = settled ? map.documents.get(settled) : undefined;
@@ -153,8 +129,6 @@ function remappedAttrs(
     }
     return null;
   }
-  // No identity: a picture's source spells under the manuscript root, which a copy
-  // keeps, so only links are re-read from the source holder.
   if (occurrence.kind !== "link") return null;
   const address = resolveDocumentHref(attrs.href, sourceHolderUri);
   if (!address) return null;

@@ -29,10 +29,8 @@ const SEED = ["Live seed."];
 const ADDED = ["Live seed.", "Added."];
 const reply = { text: "done" };
 
-/** One write call that inserts "Added.", then the closing reply. */
 const oneCall = (path: string) => [{ toolCalls: [insertCall("call-1", path, "Added.")] }, reply];
 
-/** What a takeover process does to a dead one's chat: the orphan sweep, then waiting for it to settle. */
 async function recover(
   start: () => Promise<Child>,
   h: Parameters<typeof state>[0],
@@ -43,7 +41,6 @@ async function recover(
   await waitForAssistantTurn(h, thread);
 }
 
-/** A write killed at `point`; the document and the result block agree afterwards, whichever side of the commit. */
 function killedAt(
   name: string,
   point: string,
@@ -74,7 +71,6 @@ const committed = {
   commands: ["done"],
 };
 
-/** Two responses of one turn each call `call-1` (some adapters number calls per response); the second is killed at `point`. */
 function reusedCallId(
   name: string,
   spec: {
@@ -220,8 +216,6 @@ const cases: ModelEditCase[] = [
       await first.script(oneCall(path));
       await send(first, h, thread);
       await first.at("command.afterClaim");
-      // The session claim drops (a lost connection): the chat can be taken over while this
-      // process is alive and its transaction holds the key.
       await dropRunClaim(h, first);
       const second = await start();
       const swept = second.post({ op: "sweep" });
@@ -230,8 +224,6 @@ const cases: ModelEditCase[] = [
       await second.waitFor((m) => m.id === swept);
       await waitForAssistantTurn(h, thread);
       const after = await state(h, thread, documentId);
-      // The old process may notice its lost claim and abort the edit before its commit, or commit
-      // it; either way the three records say the same thing, once.
       assert.deepEqual(after.turns, ["error"]);
       assert.equal(after.results.length, 1);
       console.log(`  (the held edit ended as ${after.results[0]})`);

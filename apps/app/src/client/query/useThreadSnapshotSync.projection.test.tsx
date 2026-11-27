@@ -77,7 +77,6 @@ const IDLE_RUN_STATE = {
   blocked: null,
 } as const;
 
-/** A read as the server sends it. Reads taken before a chat's frames join it at `nextSeq`. */
 function readResponse(turns: unknown, nextSeq: string, threadId = "thread-1") {
   return {
     thread: { id: threadId, projectId: "project-1", userId: "account-1" },
@@ -97,7 +96,6 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/** Explicit-order listener bus; socket routing and replay are covered by FakeThreadSocket. */
 function controlledListenerBus() {
   const subscriptions: Array<{ handlers: ThreadTransportHandlers; active: boolean }> = [];
   const transport = {
@@ -200,7 +198,6 @@ function card(status: string): AGUIEvent {
   } as AGUIEvent;
 }
 
-/** A completed assistant turn already in the chat's cell, as an earlier mount would leave it. */
 function seedCompleteTurn(store: ReturnType<typeof createThreadStore>, threadId: string) {
   const turn = { id: "turn-1", threadId, role: "assistant", status: "complete", blocks: [] };
   store.setState((state) => ({
@@ -242,7 +239,6 @@ describe("stale acquisition and missing targets", () => {
       return null;
     }
     await scenario.mount(<Probe />);
-    // Read first: the join read opens the stream; the cards then raise the floor past what it held.
     first.resolve(readResponse(structuredClone(actions.turns("thread-1")), "1000"));
     await act(async () => {
       await vi.waitFor(() => expect(bus.subscriptions).toHaveLength(1));
@@ -260,7 +256,6 @@ describe("stale acquisition and missing targets", () => {
     await act(async () => {
       await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(3));
     });
-    // The old terminal read never replaced the join read in Query's cache.
     expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toMatchObject({
       nextSeq: "1000",
     });
@@ -346,10 +341,6 @@ describe("stale acquisition and missing targets", () => {
   });
 
   it("reports history settled only once its turns are in the transcript store", async () => {
-    // A reveal into a chat the page has not loaded asks "is this turn absent?"
-    // the moment history settles. Settling before the turns reach the store
-    // reads as an empty chat, and the reveal gives up on a turn about to arrive.
-    // An error settles the history for that reader even though nothing loaded.
     const held = deferred<unknown>();
     harness.snapshotRequest
       .mockReset()
@@ -406,8 +397,6 @@ describe("stale acquisition and missing targets", () => {
     expect(renders.at(-1)).toEqual({ settled: true, turns: 2 });
     expect(renders.slice(erroredRenders).filter((r) => r.settled && r.turns === 0)).toEqual([]);
 
-    // The cache's read is offered on every mount and the sync decides: a cell holding nothing newer
-    // joins on it; a cell whose last generation wrote past it waits for the mount fetch.
     harness.snapshotRequest.mockReset().mockImplementation(() => new Promise(() => undefined));
     for (const [cursor, joins] of [
       ["1000", true],
@@ -437,10 +426,8 @@ describe("stale acquisition and missing targets", () => {
 
 describe("projection lifetime fencing", () => {
   it("invalidates saved callbacks across StrictMode replay, thread switch, and unmount", async () => {
-    // Each chat's first read joins its stream: nothing is subscribed before it applies.
     harness.snapshotRequest.mockReset().mockImplementation((args) => {
       const { threadId } = (args as { data: { threadId: string } }).data;
-      // The departed chat's own reads (below) never complete.
       if (threadId === "thread-3") return new Promise(() => undefined);
       return Promise.resolve(
         readResponse(
@@ -495,8 +482,6 @@ describe("projection lifetime fencing", () => {
       props: { status: "current" },
     });
 
-    // A fresh read asked for at the moment the chat unmounts is a departed chat's: it starts no
-    // request and writes nothing.
     const departing = mountThreadProjectionScenario();
     departing.client.setQueryData(
       threadQueryKeys.snapshot("thread-3"),
@@ -541,7 +526,6 @@ describe("projection lifetime fencing", () => {
       return null;
     }
     await scenario.mount(<Probe />);
-    // The join read opens the stream; the account then aborts with a read still in flight.
     join.resolve(readResponse([], "0"));
     await act(async () => {
       await vi.waitFor(() => expect(bus.subscriptions).toHaveLength(1));
@@ -567,14 +551,12 @@ describe("projection lifetime fencing", () => {
     });
     await vi.advanceTimersByTimeAsync(300);
     expect(store.getState().syncedByThread["thread-1"]?.durableCursor ?? undefined).toBeUndefined();
-    // The run's start applied before the abort; the durable card after it did not.
     expect(
       store
         .getState()
         .turns("thread-1")
         ?.flatMap((turn) => turn.blocks),
     ).toEqual([]);
-    // Only the join read, taken before the abort, is cached.
     expect(client.getQueryData(threadQueryKeys.snapshot("thread-1"))).toMatchObject({
       nextSeq: "0",
     });

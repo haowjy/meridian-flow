@@ -1,5 +1,3 @@
-/** Normalize continued GFM table rows before positioned Markdown parsing. */
-
 import {
   closesFence,
   isContainerBlockPrefix,

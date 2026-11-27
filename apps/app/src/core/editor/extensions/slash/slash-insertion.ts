@@ -1,5 +1,3 @@
-/** Inserts a selected slash-command result into the document. */
-
 import { HEADING_LEVELS, type HeadingLevel, nestNodes } from "@meridian/prosemirror-schema";
 import type { ChainedCommands, Editor, JSONContent, Range } from "@tiptap/core";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
@@ -17,20 +15,14 @@ import type { SlashCommandCatalog, SlashCommandId, SlashCommandItem } from "./sl
 const TABLE_COLUMNS = 3;
 const TABLE_ROWS = 3;
 
-/** The node a block entry makes, and where its caret lands inside it. */
 type SlashBlock = {
-  /** The node the entry creates, in the schema's own JSON. */
   node: JSONContent;
-  /** `inside` puts the caret at the first text position within the new node. */
   caret: "inside" | "after";
 };
 
-/** What an entry lands, which is the question availability has to ask. */
 type SlashInsertion =
   | ({ strategy: "block" } & SlashBlock)
-  /** The block the trigger is in is retyped in place, or returns to body text: the toolbar's toggle. */
   | { strategy: "toggle"; toggle: SlashToggle }
-  /** A picture, inline where the trigger was. */
   | { strategy: "image" };
 
 type SlashToggle = (chain: ChainedCommands) => ChainedCommands;
@@ -55,7 +47,6 @@ function toggle(apply: SlashToggle): SlashInsertion {
   return { strategy: "toggle", toggle: apply };
 }
 
-/** One row per catalog id, `image` included. */
 const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   ...(Object.fromEntries(
     HEADING_LEVELS.map((level) => [
@@ -75,10 +66,6 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
       ...Array.from({ length: TABLE_ROWS - 1 }, () => tableRow("table_cell")),
     ],
   }),
-  // "Diagram" means the catalog's first provider, and its starter source comes
-  // from the same row ( sole auto-edit: a new diagram has nothing to view
-  // yet, so it opens on something that draws). Other dialects are reached
-  // through the fence's language menu rather than a slash entry each.
   diagram: diagramInsertion(),
   code: block({ type: "code_block" }),
   image: { strategy: "image" },
@@ -94,16 +81,11 @@ function diagramInsertion(): SlashInsertion {
 }
 
 type SlashTarget =
-  /** The block the writer typed `/` in becomes the new node, keeping its id and place. */
   | { mode: "convert"; pos: number; block: SlashBlock }
-  /** The block keeps its text and `node`, already placed, lands after it. */
   | { mode: "insert-after"; pos: number; node: PMNode; block: SlashBlock }
-  /** A picture stands exactly where the trigger was, among the same words. */
   | { mode: "inline"; pos: number }
-  /** The trigger's own block is retyped in place, or returns to body text. */
   | { mode: "toggle"; toggle: SlashToggle };
 
-/** What this entry would do at this position, or null when the schema holds nothing it could make (a surface with no image node, a catalog id whose node type is not in this document's schema). */
 function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
   if (insertion.strategy === "image") return inlineImageTarget(doc, pos);
   if (insertion.strategy === "toggle") {
@@ -114,12 +96,10 @@ function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): Slash
   return blockTarget(doc, pos, insertion);
 }
 
-/** Where a picture goes: exactly where the trigger was, or nowhere. */
 function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
   return acceptsInlineImage(doc, pos) ? { mode: "inline", pos } : null;
 }
 
-/** Where the chosen node goes, decided from the document AFTER the `/` and its filter text are gone — so "is this block empty" is a plain question about the block rather than arithmetic on the trigger's range. */
 function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
   const type = doc.type.schema.nodes[block.node.type as string];
   const $pos = doc.resolve(pos);
@@ -158,7 +138,6 @@ function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget |
   return null;
 }
 
-/** The depth of the cell the caret is in, or 0 outside a table. */
 function cellFloor($pos: ResolvedPos): number {
   for (let level = $pos.depth; level >= 1; level -= 1) {
     const role = $pos.node(level).type.spec.tableRole;
@@ -167,7 +146,6 @@ function cellFloor($pos: ResolvedPos): number {
   return 0;
 }
 
-/** Runs the writer's choice: consume the trigger text, make the node, land the caret. */
 export function applySlashCommand(
   editor: Editor,
   range: Range,
@@ -222,7 +200,6 @@ export function applySlashCommand(
   return applied;
 }
 
-/** one exception: a just-created object has nothing to view yet, so it opens ready to edit. */
 function openNewObject(editor: Editor, pos: number) {
   const landed = editor.state.doc.nodeAt(pos);
   if (landed) engageObject(editor, { node: landed, pos }, "created");

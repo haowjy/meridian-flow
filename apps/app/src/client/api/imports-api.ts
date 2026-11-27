@@ -1,4 +1,3 @@
-/** HTTP client for the import routes. Refusals keep the server's code; the app writes the words. */
 import type {
   ImportDetail,
   ImportFilesResult,
@@ -14,7 +13,6 @@ import { readResponsePayload } from "./http-client";
 export class ImportRequestError extends Error {
   readonly name = "ImportRequestError";
   constructor(
-    /** 0 when the request got no answer. */
     readonly status: number,
     readonly code: ImportRefusalCode | null,
     readonly params: Record<string, number> | undefined,

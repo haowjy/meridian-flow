@@ -1,8 +1,3 @@
-/**
- * What a document row says about itself as a file: tracked (editable text) or binary (bytes in
- * object storage). One mapping serves `ContextFS.stat`, which finds the row by path, and the
- * read route, which finds it by id.
- */
 import { classifyFiletype, type TrackedSchemaType } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { documentMetadataFacts } from "../../document-metadata.js";
@@ -24,7 +19,6 @@ export function trackedSchemaForPersistedFiletype(
   });
 }
 
-/** `path` is the address the caller reached the row at, with its stored leaf. */
 export function fileRefOf(
   doc: ContextDocument,
   path: string,
@@ -59,7 +53,6 @@ export function fileRefOf(
   });
 }
 
-/** A tree-reader row, the way the by-id read route holds one. */
 export function fileRefOfVisible(row: VisibleDocument): Result<AdapterFileRef, AdapterFault> {
   return fileRefOf(mapDocument(row), row.path);
 }

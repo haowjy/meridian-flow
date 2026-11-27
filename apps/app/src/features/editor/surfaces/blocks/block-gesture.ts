@@ -1,5 +1,3 @@
-/** Coordinates block dragging from press through drop. */
-
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
@@ -14,49 +12,30 @@ import {
 } from "./block-geometry";
 import { blockAt, moveBlockToSeamTransaction } from "./block-targets";
 
-/** Which door the press came through. */
 type DragSource = "handle" | "body";
 
-/** A press that may become a drag, from the moment it lands to whatever ends it. */
 type Gesture = {
   pointerId: number;
   source: DragSource;
-  /** Last seen pointer y, the only input the drop seam is computed from. */
   pointerY: number;
-  /** False while the press might still turn out to be a click. */
   lifted: boolean;
-  /** The kernel's closer, once the press became a drag. */
   endDrag: (() => void) | null;
-  /** The element holding the pointer, when the press took capture. */
   capture: HTMLElement | null;
   stop: () => void;
 };
 
-/** What the gesture needs from a press, whether React or the DOM delivered it. */
 export type BlockPress = PressStart & { pointerId: number };
 
 export type BlockGesture = {
-  /** The seam the drop line belongs on, or null while nothing has lifted. */
   seamIndex: number | null;
-  /** True from the press to the finish, lifted or not. */
   active: boolean;
-  /**
-   * The margin handle's press. The object-body door is inside the controller,
-   * because it listens on the prose rather than on chrome this lane renders.
-   */
   pressHandle: (press: BlockPress, pos: number, capture: HTMLElement) => void;
-  /** True while a press owns the pointer. */
   inFlight: () => boolean;
 };
 
 export type BlockGestureOptions = {
   editor: Editor;
-  /** False behind a schema fence or a read-only host: no door opens. */
   editable: boolean;
-  /**
-   * A press on the handle that never travelled. That click is the menu's door;
-   * a body's click belongs to ProseMirror and never reaches here.
-   */
   onHandleClick: (pos: number) => void;
 };
 
@@ -75,7 +54,6 @@ export function useBlockMovementGesture({
   const onHandleClickRef = useRef(onHandleClick);
   onHandleClickRef.current = onHandleClick;
 
-  /** End the gesture, once. */
   const finishGesture = useCallback(
     (commit: boolean) => {
       const gesture = gestureRef.current;
@@ -88,15 +66,10 @@ export function useBlockMovementGesture({
 
       if (commit && held !== null && !editor.isDestroyed) {
         if (gesture.lifted) dropHeldBlock(editor, held, gesture.pointerY);
-        // A press that never travelled is a click. The handle's click opens
-        // the menu; an object's body leaves the click alone, and ProseMirror
-        // is already turning it into the jade ring ().
         else if (gesture.source === "handle") onHandleClickRef.current(held);
       }
 
       if (!editor.isDestroyed) endBlockDrag(editor);
-      // Token-guarded by the kernel: a closer for a drag that was already
-      // abandoned does nothing, so this is safe on every path.
       gesture.endDrag?.();
       setSeamIndex(null);
       setActive(false);
@@ -104,7 +77,6 @@ export function useBlockMovementGesture({
     [editor],
   );
 
-  /** Take the press. */
   const beginGesture = useCallback(
     (
       chrome: EditorChrome,
@@ -169,7 +141,6 @@ export function useBlockMovementGesture({
     };
   }, [editor, finishGesture]);
 
-  /** The object door: a press on the body of an object the registry drags as a block starts the drag the handle starts, on that object's top-level block. */
   useEffect(() => {
     if (!editable || !chrome) return;
     const dom = editor.view.dom;
@@ -215,7 +186,6 @@ export function useBlockMovementGesture({
   return { seamIndex, active, pressHandle, inFlight };
 }
 
-/** Land the held block on whatever seam the pointer is over right now. */
 function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
   const source = blockAt(editor.state.doc, held);
   if (!source) return;

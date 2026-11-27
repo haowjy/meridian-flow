@@ -1,4 +1,3 @@
-/** The one Work `…` menu, shared by the Work page header and Work list rows. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";

@@ -1,5 +1,3 @@
-/** Notice construction for reversal and writer-awareness events. */
-
 import type { DraftId } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
@@ -48,7 +46,6 @@ export interface TurnInverseNoticePort {
     threadId: string;
     turnId: string;
     docId: string;
-    /** The Work's draft whose draft took the reversal, when it landed in one. */
     draftId?: DraftId;
     sweptContent: boolean;
     beforeContentRef: number | null;
@@ -57,7 +54,6 @@ export interface TurnInverseNoticePort {
 
 export function createReversalNoticePort(deps: {
   notices: NoticePort;
-  /** A trashed document is named where it last was: its notice lands all the same. */
   resolveLastDocumentUri: (documentId: string, draftId?: DraftId) => Promise<string | null>;
   diagnostics: ReversalNoticeDiagnostics;
 }): TurnInverseNoticePort {

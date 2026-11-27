@@ -1,10 +1,3 @@
-/**
- * The one drop dispatcher on the project tree. Rows dragged inside the app
- * (`entries`) have a route; the route decides, this file only dispatches,
- * lights the target and says what the drop will do. Desktop files (`files`)
- * have their own route: they always import into the row's folder, never at an
- * edge position.
- */
 import type {
   ContextSiblingPosition,
   ProjectContextTreeScheme,
@@ -27,28 +20,18 @@ import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
-  /** The tree the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
   treeRootId: string;
-  /** The folder row, or null for the tree's top level (the area header). */
   folder: { entryId: string; path: string; uri: string; name: string } | null;
-  /** A sibling edge; absent while the folder/container region owns the target. */
   position?: ContextSiblingPosition;
 };
 
-/**
- * What dropping an internal payload on a target would do. `accept` lights the
- * target and allows the drop; `refuse` leaves it unlit with the no-drop cursor and says why. A
- * null verdict leaves the target quiet (the drop would change nothing).
- */
 export type EntriesVerdict = { kind: "accept" | "refuse"; label: string };
 
 export type EntriesRoute = {
   verdict(target: TreeDropTarget): EntriesVerdict | null;
-  /** `point` is where the pointer let go, in client coordinates, for a route that asks at the drop. */
   drop(target: TreeDropTarget, point: { x: number; y: number }): void;
 };
 
-/** Desktop files: the verdict is `EntriesVerdict`'s shape too, so the hint says what the drop will do. */
 export type FilesRoute = {
   verdict(target: TreeDropTarget): EntriesVerdict | null;
   drop(target: TreeDropTarget, items: DroppedItems): void;
@@ -68,24 +51,19 @@ type Over = { key: string; refused: boolean; target: TreeDropTarget } | null;
 type ScopeValue = {
   routes: TreeDropRoutes;
   over: Over;
-  /** An element of `key` came under the drag; arms the spring for an accepted target. */
   enter(
     key: string,
     target: TreeDropTarget,
     refused: boolean,
     reveal: (() => void) | undefined,
   ): void;
-  /** Re-lights `key` on every `dragover` (its verdict can change while hovering). */
   relight(key: string, target: TreeDropTarget, refused: boolean): void;
-  /** An element of `key` left; the target goes dark once none remain. */
   leave(key: string): void;
-  /** Bumps when a drag ends anywhere; holds from an earlier drag are void. */
   generation(): number;
 };
 
 const ScopeContext = createContext<ScopeValue | null>(null);
 
-/** One key per distinct target: tree, folder and, for an edge, its side and anchor. */
 export function treeDropTargetKey(target: TreeDropTarget): string {
   return `${target.scheme}:${target.folder?.entryId ?? target.treeRootId}:${JSON.stringify(target.position)}`;
 }
@@ -189,12 +167,6 @@ const NO_PROPS: DropProps = {};
  */
 const claimed = new WeakSet<Event>();
 
-/**
- * A row's top and bottom bands are sibling edges: before or after `siblingId`
- * in the row's actual parent (`folder`). `band` is each edge's share of the
- * row's height; `after` is false for an open folder, whose bottom borders its
- * own first child rather than its next sibling.
- */
 export type RowEdges = {
   folder: TreeDropTarget["folder"];
   siblingId: string;
@@ -204,7 +176,6 @@ export type RowEdges = {
 
 export type DropEdge = "before" | "after";
 
-/** The target under the pointer: an edge when it is in an edge band, otherwise the row's own target. */
 function targetAt(target: TreeDropTarget, edges: RowEdges | undefined, event: DragEvent) {
   if (!edges) return target;
   const rect = event.currentTarget.getBoundingClientRect();
@@ -244,7 +215,6 @@ export function useTreeDropTarget(
   const latest = useRef({ target, scope, ...options });
   latest.current = { target, scope, ...options };
 
-  /** Claims the event for this element when the scope owns the payload's route. */
   const claim = useCallback((event: DragEvent): DragPayloadKind | null => {
     if (!latest.current.scope || claimed.has(event.nativeEvent)) return null;
     const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
@@ -253,7 +223,6 @@ export function useTreeDropTarget(
     return kind;
   }, []);
 
-  /** Files ignore edges: an edge band is the row's own folder, so an import never takes a sibling position. */
   const resolve = useCallback((event: DragEvent, kind: DragPayloadKind) => {
     const { target: own, edges } = latest.current;
     const current = kind === "entries" ? targetAt(own, edges, event) : own;
@@ -316,7 +285,6 @@ export function useTreeDropTarget(
       const current = resolve(event, kind);
       const verdict = verdictFor(kind, current.target);
       if (verdict) show(event, kind, current, verdict);
-      // The verdict went quiet while hovering (or the pointer reached a quiet edge): give the target back.
       else release();
     },
     [claim, resolve, verdictFor, show, release],
@@ -342,7 +310,6 @@ export function useTreeDropTarget(
         event.preventDefault();
         event.stopPropagation();
         const routes = latest.current.scope?.routes;
-        // What a drop places is shown by the route that places it (`revealPlaced`).
         if (kind === "entries")
           routes?.entries?.drop(dropped, { x: event.clientX, y: event.clientY });
         else routes?.files?.drop(dropped, captureDrop(event.dataTransfer));

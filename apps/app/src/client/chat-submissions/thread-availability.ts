@@ -1,4 +1,3 @@
-/** Classify only the owner gate's definitive destination-disappearance proof. */
 import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
 import { lookupUserMessageAdmission } from "@/client/api/threads-api";
 import { abortable } from "./lock";
@@ -27,7 +26,6 @@ export function threadAvailability(error: unknown, accountId: string): ThreadAva
   return error.code === "thread_deleted" ? "deleted" : "not-found";
 }
 
-/** Read-only admission lookup checks the owner gate without loading history or minting a record. */
 export async function probeChatDestination(
   accountId: string,
   threadId: string,

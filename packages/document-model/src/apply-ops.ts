@@ -154,9 +154,7 @@ export function applyOps(
   const random = options.random ?? Math.random;
   /** Order keys this call gave, so a later op places after a block an earlier one stored. */
   const placed = new Map<BlockId, string>();
-  /** The fresh id each empty paragraph this call wrote into is stored under. */
   const stored = new Map<BlockId, BlockId>();
-  /** The block an op on `id` writes: `id`, or the paragraph stored in place of its empty one. */
   const store = (id: BlockId): BlockId => {
     const parent = derived(id);
     if (parent === undefined) return id;
@@ -213,7 +211,6 @@ export function applyOps(
     record({ key: op.block, doc, before: start, after: doc.frontiers() });
   }
 
-  /** The last block inserted after each anchor (`parent`, `after`), for chaining. */
   const chained = new Map<string, BlockId>();
   for (const op of of("insert")) {
     const anchor =

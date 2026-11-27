@@ -1,7 +1,3 @@
-/**
- * Archive moves a Work row to the other tab; focus follows to that tab, and
- * comes back to the tab the Work returns to when the command is refused.
- */
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useRef } from "react";
 import { lastInputWasKeyboard, moveFocus, trackInputModality } from "@/lib/focus-follow";
@@ -28,7 +24,6 @@ export function useArchiveFocusFollow(works: readonly Work[] | null) {
     return () => tabList?.removeEventListener("focusout", releaseFocus);
   }, []);
 
-  // The move is optimistic, so this fires as soon as the command starts.
   useEffect(() => {
     const target = intent.current;
     if (!target || works === null) return;
@@ -42,11 +37,6 @@ export function useArchiveFocusFollow(works: readonly Work[] | null) {
     intent.current = null;
   }, [works]);
 
-  /**
-   * Focus the destination tab once this Work shows there. If the command is
-   * refused, the Work returns at once; focus returns with it unless the writer
-   * has already moved on from the destination tab.
-   */
   const follow = useCallback((workId: string, view: ArchiveTab, command: Promise<Error | null>) => {
     const next = { workId, view, ring: lastInputWasKeyboard() };
     focusOwner.current = null;

@@ -1,24 +1,3 @@
-/**
- * ConversationSection — which thread the project currently treats as active,
- * and how that was resolved. Nothing else.
- *
- * Deliberately minimal. Everything richer is delegated to a tool that already
- * does it well, so this section owns only the one signal none of them surface:
- *  - per-turn/block records → alt+click inline inspect (`InlineInspector`).
- *  - lifecycle / `actionRequired` / `runningTurnId` → `./mf thread view`.
- *  - raw WS frames → Chrome DevTools → Network → WS → Messages.
- *
- * Streaming identity and project route identity remain IDs. Project routes
- * show their readable address.
- *
- * Reads only the thread store + router location — neither notifies during
- * another component's render, so this section needs no query-cache subscription
- * and carries none of the setState-in-render hazard the old lifecycle
- * projection did.
- *
- * i18n exception: DEV-only.
- */
-
 import { useRouterState } from "@tanstack/react-router";
 
 import { useThreadStore } from "@/client/stores";

@@ -1,9 +1,3 @@
-/**
- * What the screens read of a project's tree: the replay of its list (`@meridian/project-tree`),
- * cut to one source and shaped as rows with paths and addresses. Placement is read from the
- * replay everywhere, so a rename, a move or a delete shows in the tree, the tabs, the identity
- * bar and the pickers at once.
- */
 import {
   type CanonicalContextAuthority,
   CONTEXT_URI_SCHEME_NAMES,
@@ -31,11 +25,8 @@ import {
   type TreeProjection,
 } from "@meridian/project-tree";
 
-/** A place in a tree: a restore's or a move's destination. */
 export type TreeDestination = Readonly<{
-  /** A folder's id, or the id of a source (the top of its tree). */
   parentId: string;
-  /** Where among its children, when the writer chose a place; the end otherwise. */
   position?: ContextSiblingPosition;
 }>;
 
@@ -48,13 +39,10 @@ type TreeFileBase = {
   /** The stored extension, which `name`'s suffix cannot tell from part of the name (`Vol. 2`). */
   extension: string;
   aliases?: readonly string[];
-  /** A later twin's `~` suffix, when another entry here shares the name (its path segment's end). */
   suffix?: string;
   path: string;
   uri: string;
-  /** The name was given, not chosen ("Untitled"); it ends at the first rename by a person. */
   provisionalName: boolean;
-  /** The document has imported properties to show; they load by document id. */
   hasProperties: boolean;
 };
 
@@ -73,7 +61,6 @@ export type TreeDirectory = {
   entryId: string;
   parentId: string | null;
   name: string;
-  /** As a file's. */
   suffix?: string;
   path: string;
   uri: string;
@@ -81,26 +68,17 @@ export type TreeDirectory = {
 
 export type TreeEntry = TreeDirectory | TreeFile;
 
-/** One source's tree as the replay shows it. */
 export type TreeView = {
-  /** The top of the source. Its `entryId` is the source's id. */
   root: TreeDirectory;
   children(parentId: string): readonly TreeEntry[];
   files(): readonly TreeFile[];
   findPath(path: string): TreeFile | TreeDirectory | null;
-  /**
-   * The folder a path names, every segment read at folder level as a link and the server read
-   * it: `/Kael` is the folder `Kael~dc40` when the plain `Kael` is a document. `/` is the root.
-   */
   findFolder(path: string): TreeDirectory | null;
   findDocument(documentId: string): TreeFile | null;
-  /** A folder or file of this source, shown (not in Trash). */
   entry(id: string): TreeEntry | null;
-  /** The ids of the folders and files below `id`. */
   descendants(id: string): readonly string[];
 };
 
-/** The `~id` that ends a path's last segment: a twin's, which its name doesn't carry (`EntryName`). */
 export function twinSuffix(path: string): string | undefined {
   const leaf = path.split("/").at(-1);
   return leaf ? readSegment(leaf).suffix : undefined;
@@ -112,7 +90,6 @@ function extensionOf(node: TreeNode): string {
   return dot > 0 ? node.name.slice(dot + 1).toLowerCase() : "";
 }
 
-/** The shown node's classification, from its `create`'s type (a document) or its blob (a file). */
 function classification(node: TreeNode) {
   if (node.kind === "file") {
     const mimeType = node.blob?.mime ?? "application/octet-stream";
@@ -137,7 +114,6 @@ function classification(node: TreeNode) {
       fileType: classified.fileType,
       filetype: node.filetype as Filetype,
     };
-  // A type this build does not know (a newer client's): shown as a file it cannot open.
   return {
     editable: false as const,
     disposition: "binary" as const,
@@ -145,9 +121,6 @@ function classification(node: TreeNode) {
   };
 }
 
-/**
- * The tree of one source. The replay's order is the sidebar's order (rank, then id); a node in Trash is not shown.
- */
 export function buildTreeView(input: {
   projection: TreeProjection;
   scheme: ProjectContextTreeScheme;
@@ -210,7 +183,6 @@ export function buildTreeView(input: {
     (projection.children.get(parentId === sourceId ? sourceRoot(sourceId) : parentId) ?? []).filter(
       shown,
     );
-  // Walked by segment, so a twin's `~id` keeps reaching it after the plain twin is renamed.
   const folderAt = (segments: readonly string[]): string | null => {
     let at = sourceId;
     for (const segment of segments) {
@@ -254,7 +226,6 @@ export function buildTreeView(input: {
       if (leaf === undefined) return null;
       const parentId = folderAt(segments);
       if (parentId === null) return null;
-      // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
       const kids = childrenOfParent(parentId);
       const alias = childAtSegment(kids, canonicalLeaf(leaf));
       const found = childAtSegment(kids, leaf) ?? (alias?.kind === "folder" ? undefined : alias);

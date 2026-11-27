@@ -1,34 +1,10 @@
-/**
- * Which characters close themselves as the writer types them, and where.
- *
- * A writer who types `[` almost always means `[…]`, so the editor writes the
- * closer and leaves the caret between the two. Everything that follows from
- * that — inserting the closer, stepping over it when the writer types it
- * anyway, taking both back on Backspace — is one mechanism reading this table
- * ([`AutoPairExtension.ts`](AutoPairExtension.ts)). Adding a pair is one row.
- *
- * **Pairs compose rather than spelling out combinations.** `[[` is not a row:
- * it is the `[` row firing twice, which is what makes `[[` give `[[]]` and
- * `]]` walk back out of both. Every row today is one character on each side
- * for that reason, and the mechanism reads the declared text rather than
- * assuming its length.
- */
-
 import type { Mark, ResolvedPos } from "@tiptap/pm/model";
 
-/**
- * Where a pair is live. Three, because the writer's expectation genuinely
- * differs: a backtick is a delimiter in prose, a quote character in a fence,
- * and the end of the span in inline code.
- */
 export type AutoPairContext = "prose" | "code-fence" | "inline-code";
 
 export type AutoPairSpec = {
-  /** The text the writer types to open the pair; one character today. */
   open: string;
-  /** The text written after the caret, and stepped over later. */
   close: string;
-  /** Contexts the pair is live in. A context left out is a decision. */
   contexts: readonly AutoPairContext[];
 };
 
@@ -64,28 +40,10 @@ export const EDITOR_AUTO_PAIRS: readonly AutoPairSpec[] = [
   // ── a new pair is one row here and nothing else ──────────────────
 ];
 
-/**
- * What may sit immediately after the caret for a closer to be worth writing.
- *
- * Auto-closing in front of a word is how these features earn their bad
- * reputation: a writer putting brackets around a sentence they already wrote
- * types `[` in front of it and does not want `[]The`. Whitespace, the end of
- * the block, another closer, and trailing punctuation are the places where
- * nothing is being wrapped.
- */
 const CLOSER_WELCOME = /[\s)\]}>"'`,.;:!?]/;
 
-/** Letters and digits, in any script — a writer mid-word, not mid-gesture. */
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 
-/**
- * The context the caret sits in, or null where no pair can be live (a gap
- * cursor, a node selection, anything that is not a text block).
- *
- * The schema's own `code` flag answers both source cases, the way
- * `isSourceBlock` does for blocks: nothing else reliably separates a fence
- * from a paragraph or an inline code span from prose.
- */
 export function resolveAutoPairContext(
   $from: ResolvedPos,
   storedMarks: readonly Mark[] | null,
@@ -96,7 +54,6 @@ export function resolveAutoPairContext(
   return marks.some((mark) => mark.type.spec.code === true) ? "inline-code" : "prose";
 }
 
-/** The pair this character opens here, or null where it opens nothing. */
 export function autoPairForOpener(
   character: string,
   context: AutoPairContext,
@@ -107,12 +64,6 @@ export function autoPairForOpener(
   return null;
 }
 
-/**
- * Whether the pair is worth completing at a caret with `before` behind it and
- * `after` in front of it. `null` means the caret is at the edge of the text
- * block; `""` means something that is not text sits there (an inline image),
- * which is a thing being wrapped rather than empty room.
- */
 export function shouldAutoClose(
   spec: AutoPairSpec,
   before: string | null,

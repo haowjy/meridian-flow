@@ -1,5 +1,3 @@
-/** Renders the mobile project workspace. */
-
 import { t } from "@lingui/core/macro";
 import { useBlocker } from "@tanstack/react-router";
 import { Maximize2, MessageSquare } from "lucide-react";
@@ -46,16 +44,10 @@ export function MobileProject(props: MobileProjectProps) {
   const chat = useChatNavigation();
   const onChat = props.chatDisplay !== null;
   const accountId = useAccountId();
-  // The sheet is the phone's side: never open on arrival, except for a first send still
-  // recovering when the phone shell mounts, which needs its chat on screen.
   const [sheetOpen, setSheetOpen] = useState(
     () => !onChat && isThreadAwaitingCreation(accountId, chat.lastShownChatId),
   );
-  // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
-  // not an open, so a recovering first send keeps its sheet.
   useOnOpen(() => setSheetOpen(false));
-  // An item placed in the side (a chat link in a document) shows the sheet, as it opens the side
-  // on the desktop.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {
@@ -64,7 +56,6 @@ export function MobileProject(props: MobileProjectProps) {
     setSheetOpen(true);
   }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // The drawer is the phone's sidebar: an ask to show one of its panes opens it.
   const asked = useSidebarTabs((state) => state.asked);
   useEffect(() => {
     if (asked) setDrawerOpen(true);
@@ -75,7 +66,6 @@ export function MobileProject(props: MobileProjectProps) {
   const crumbs = trashedId
     ? [{ label: trashedName ?? t`Trash` }]
     : contextBreadcrumbSegments(props);
-  // The sheet shows the side's item: a document or a chat, with the desktop's picker.
   const side = useSideItem();
   const sheetChat = useHostChatId();
   const sideChat = side.item?.kind === "chat" ? side.item : null;
@@ -89,7 +79,6 @@ export function MobileProject(props: MobileProjectProps) {
   const sheet = useDismissalFocus(setSheetOpen);
   const closeSheet = () => sheet.onOpenChange(false);
   const sheetVisible = sheetOpen && sheetName !== null;
-  // The sheet is no history entry, so Back while it is open dismisses it and leaves main where it is.
   useBlocker({
     shouldBlockFn: ({ action }) => {
       if (action !== "BACK" || !sheetVisible) return false;
@@ -124,7 +113,6 @@ export function MobileProject(props: MobileProjectProps) {
         }
         chatAction={
           sheetName ? (
-            // Names what the sheet will show: the slot of the kind main is not.
             <button
               type="button"
               aria-label={t`Show ${sheetName}`}
@@ -163,8 +151,6 @@ export function MobileProject(props: MobileProjectProps) {
           <SheetTitle className="sr-only">{sheetName ?? t`Beside`}</SheetTitle>
           <SheetDescription className="sr-only">{t`Beside your current screen`}</SheetDescription>
           {sideTab ? (
-            // The sheet mounts its host only while open: it is always visible, and closing the
-            // sheet ends it.
             <DocumentHost
               key={sideTab.documentId}
               projectId={props.projectId}
@@ -261,7 +247,6 @@ function renderActiveView(props: MobileProjectProps) {
   return <PhoneMain {...props} />;
 }
 
-/** The phone's one view on a document address: main's document host, its status, or Recents. */
 function PhoneMain(props: MobileProjectProps) {
   const main = useMainItem();
   const trashedId = useTrashNavigation().shown;

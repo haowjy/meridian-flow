@@ -1,8 +1,3 @@
-/**
- * Selection is explicit or it is the open row: Ctrl/Cmd-click toggles rows in
- * and out (starting from the open row) without ever re-adding what the writer
- * removed, and a row reselected after a move stays the selection on its own.
- */
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";

@@ -42,7 +42,6 @@ it("a document in no view (deleted after its edit) does not stop another documen
             ctx,
           ),
       ).toMatchObject({ status: "success" });
-    // BETA leaves every view; its edit rows stay.
     await treeSeeder(db).store.submit({
       lists: [await treeListOfSource(db, SOURCE_ID)],
       make: ([{ writer }]) => writer.delete(LIVE, "system", BETA_ID),

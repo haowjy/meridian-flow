@@ -28,7 +28,6 @@ type Harness = Parameters<typeof state>[0];
 
 const reply = { text: "done" };
 
-/** The chat's latest assistant turn's id. */
 async function lastTurn(h: Harness, threadId: string) {
   const [turn] = await h.raw<{ id: string }[]>`
     select id from turns where thread_id=${threadId} and role='assistant'
@@ -37,7 +36,6 @@ async function lastTurn(h: Harness, threadId: string) {
   return turn.id;
 }
 
-/** A chat card's Undo of the turn, as the route sends it. */
 const undoOf = (h: Harness, threadId: string, turnId: string) => ({
   op: "reverse",
   threadId,
@@ -47,7 +45,6 @@ const undoOf = (h: Harness, threadId: string, turnId: string) => ({
   direction: "undo",
 });
 
-/** Waits until `count` of the child's connections wait on a database lock. */
 async function lockWaiters(h: Harness, child: Child, count: number, timeoutMs = 10_000) {
   const until = Date.now() + timeoutMs;
   for (;;) {
@@ -62,10 +59,6 @@ async function lockWaiters(h: Harness, child: Child, count: number, timeoutMs = 
   }
 }
 
-/**
- * `promise`, or a failure once `ms` pass naming `what` and the state of the child's connections:
- * a hang on a process mutex shows as one idle in transaction and one waiting on a lock.
- */
 async function _within<T>(
   h: Harness,
   child: Child,
@@ -86,10 +79,6 @@ async function _within<T>(
   throw new Error(`${what} hung; the child's connections: ${described.join(", ")}`);
 }
 
-/**
- * Holds `lock` on the probe's own connection until `release` is called; resolves once taken.
- * `then` runs in the same transaction after the release, before it commits.
- */
 async function holdLock(
   h: Harness,
   lock: (sql: typeof h.raw) => Promise<unknown>,
@@ -147,7 +136,6 @@ const cases: ModelEditCase[] = [
       await send(child, h, thread);
       await waitForAssistantTurn(h, thread);
       const turnId = await lastTurn(h, thread);
-      // The turn also renamed the other Work: a receipt the card's Undo puts back.
       const [work] = await h.raw<{ name: string; goal: string | null; status: string | null }[]>`
         select name, goal, status from works where id=${other.workId}`;
       if (!work) throw new Error("the Work is missing");
@@ -170,7 +158,6 @@ const cases: ModelEditCase[] = [
               },
             },
           })})`;
-      // Another transaction holds the Work, then wants the document, the order a model edit takes.
       const holder = await holdLock(
         h,
         async (sql) => {

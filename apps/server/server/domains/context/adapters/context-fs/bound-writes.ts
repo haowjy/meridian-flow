@@ -29,22 +29,14 @@ export interface BoundWritesDeps {
   documentSync: Pick<MarkdownDocumentStore, "bindMarkdown">;
   commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   scheme: ContextScheme;
-  /** The project a document created here belongs to. */
   projectId: string;
-  /** The canonical address a document at `path` has, or will have. */
   holderUri(path: string): string;
-  /** The document at `path`, if any, read outside any transaction. */
   findDocument(path: string): Promise<Result<ContextDocument | null, AdapterFault>>;
 }
 
 export class BoundWrites {
   constructor(private readonly deps: BoundWritesDeps) {}
 
-  /**
-   * Bind outside the command transaction, apply inside it. The bound write
-   * names the holder it was bound for; if the path's occupant changed in
-   * between, `apply` answers `stale_target` and the caller decides again.
-   */
   async command<T>(
     bind: () => Promise<Result<BoundWrite, AdapterFault>>,
     apply: (bound: BoundWrite) => Promise<Result<T, AdapterFault>>,
@@ -54,7 +46,6 @@ export class BoundWrites {
     return this.deps.commandExecutor.run(() => apply(bound.value));
   }
 
-  /** Whether `bound` was bound for what occupies its path now (`null`: nothing). */
   boundFor(
     path: string,
     bound: BoundWrite,
@@ -86,10 +77,6 @@ export class BoundWrites {
     return existing;
   }
 
-  /**
-   * Bind written Markdown for `existing` (null: a document about to be
-   * created at `path`), fresh or `against` its current document.
-   */
   async bind(
     path: string,
     existing: ContextDocument | null,

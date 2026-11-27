@@ -1,16 +1,3 @@
-/**
- * SlotGrid renders the desktop project as one flat CSS grid.
- *
- * Every host is a direct child of one grid container for as long as it is mounted, keyed by what
- * it holds. Moving a host between slots changes only its wrapper's grid-area (or parks it
- * offscreen), so a host is never portaled, reparented or remounted by a move. A host wraps its
- * children unconditionally: a wrapper that comes and goes with a condition remounts them. Slot chrome
- * (background, rounding, shadows, borders) is owned by the slot's `className`; this wrapper
- * handles only base layout and the parked state.
- *
- * A host that moves from one slot to another (the panes swapping kinds, by any route) glides from
- * its old rect to its new one (`useGlide`).
- */
 import {
   type CSSProperties,
   type ReactNode,
@@ -40,9 +27,7 @@ const PARKED_SURFACE_STYLE: CSSProperties = {
 };
 
 export type SlotGridHost = {
-  /** What the host holds: its identity across moves. */
   key: string;
-  /** Null parks the host: mounted, off screen. */
   slot: DesktopProjectSlotId | null;
   children: ReactNode;
 };
@@ -114,7 +99,6 @@ function HostWrapper({
 }: {
   hostKey: string;
   slot: SlotDefinition | undefined;
-  /** The box the host had in its last slot. */
   parkedSize: Size | undefined;
   children: ReactNode;
 }) {
@@ -139,13 +123,8 @@ function HostWrapper({
 }
 
 const GLIDE: KeyframeAnimationOptions = { duration: 200, easing: "ease-out" };
-/**
- * A document moving between main and the side waits off screen while main's address loads
- * (`DesktopProject`'s kept host): it still glides from where it was if it is back within this.
- */
 const PARKED_GLIDE_MS = 1000;
 
-/** A host's layout box in the grid, without the transform a running glide adds. */
 type Box = { left: number; top: number; width: number; height: number };
 type Size = { width: number; height: number };
 type Placed = { slot: string; box: Box; leftAt?: number };
@@ -164,7 +143,6 @@ const boxOf = (host: HTMLElement): Box => ({
  */
 function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
   const placed = useRef(new Map<string, Placed>());
-  /** Each host's last slotted size, kept after it parks (`placed` forgets a host after a second). */
   const sizes = useRef(new Map<string, Size>());
   const hostsOf = (node: HTMLDivElement) =>
     node.querySelectorAll<HTMLElement>(":scope > [data-project-host][data-project-slot]");

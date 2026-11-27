@@ -14,7 +14,6 @@ import { accountQueryKeys } from "./account-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { useProjectTrees } from "./useProjectTrees";
 
-/** A recent item with whether the editor can open it: the tree says, or the server list until it loads. */
 export type RecentDocument = AccountRecentItem & { editable: boolean };
 
 export type RecentDocumentsStatus = {
@@ -31,11 +30,6 @@ type RecentListFetch = {
   documents: RecentDocumentItem[];
 };
 
-/**
- * This project's recently opened documents. The device record paints first,
- * including after reload. The server list adds other devices. A payload from
- * another account bind is ignored.
- */
 export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
   const placed = useProjectTrees(projectId);
   const local = useSyncExternalStore(
@@ -63,7 +57,6 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
     return local.items.flatMap((item) => {
       if (item.projectId !== projectId) return [];
       const place = placed.find(item.documentId);
-      // The list has synced and does not show it: in Trash or gone, so it is not Recent.
       if (!place) {
         return placed.isComplete
           ? []

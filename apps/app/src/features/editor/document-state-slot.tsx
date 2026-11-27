@@ -12,7 +12,6 @@ import { createPortal } from "react-dom";
 type Slot = {
   element: HTMLElement | null;
   setElement: Dispatch<SetStateAction<HTMLElement | null>>;
-  /** The toolbar's own place, while something holds it instead of the formatting controls. */
   toolbar: HTMLElement | null;
   setToolbar: Dispatch<SetStateAction<HTMLElement | null>>;
   taken: boolean;
@@ -21,12 +20,6 @@ type Slot = {
 
 const DocumentStateSlotContext = createContext<Slot | null>(null);
 
-/**
- * The page's toolbar row carries the document's state after its formatting
- * controls. The active editor's row registers an element; the page chrome
- * renders the state into it with `DocumentStatePortal`, and can take the
- * formatting controls' place with `DocumentToolbarPortal`.
- */
 export function DocumentStateSlotProvider({ children }: { children: ReactNode }) {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [toolbar, setToolbar] = useState<HTMLElement | null>(null);
@@ -40,12 +33,10 @@ export function DocumentStateSlotProvider({ children }: { children: ReactNode })
   );
 }
 
-/** The toolbar row's end, where the state lands. Only the active editor renders it. */
 export function DocumentStateSlotHost() {
   return <SlotHost which="element" className="flex min-w-0 items-center" />;
 }
 
-/** The toolbar's place while `DocumentToolbarPortal` holds it. */
 export function DocumentToolbarSlotHost() {
   return <SlotHost which="toolbar" className="flex min-w-0 flex-1 items-center" />;
 }
@@ -65,21 +56,15 @@ function SlotHost({ which, className }: { which: "element" | "toolbar"; classNam
   return <div ref={setNode} className={className} />;
 }
 
-/** Renders into the toolbar row when one is up; otherwise in place, so no state is ever lost. */
 export function DocumentStatePortal({ children }: { children: ReactNode }) {
   const element = useContext(DocumentStateSlotContext)?.element;
   return element ? createPortal(children, element) : children;
 }
 
-/** Whether `DocumentToolbarPortal` holds the toolbar's place. */
 export function useToolbarTaken(): boolean {
   return useContext(DocumentStateSlotContext)?.taken ?? false;
 }
 
-/**
- * While mounted, the toolbar row shows `children` in place of the formatting controls (their
- * shortcuts still work). With no toolbar row up they render nowhere.
- */
 export function DocumentToolbarPortal({ children }: { children: ReactNode }) {
   const slot = useContext(DocumentStateSlotContext);
   const setTaken = slot?.setTaken;

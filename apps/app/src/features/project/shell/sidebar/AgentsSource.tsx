@@ -1,9 +1,3 @@
-/**
- * The Agents tab: the project's `.agents/` and the writer's `~/.agents/` as trees, and the
- * built-in Agents and skills, read-only. Each package (a level's own files, an import under
- * `packages/`) ends its heading or folder row with its Save state and Save; each file with what
- * keeps it from use or from the saved version.
- */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
@@ -113,9 +107,7 @@ export function AgentsSource({
         ? { level: at.level, folder: `${at.path}/` }
         : null;
       const status = pkg ? statusOf(packages, pkg) : undefined;
-      // A failing package's problem chip is the row's one mark: a count beside it pushes the name out.
       const inside = open || (status && failsSave(status)) ? null : outOfUseInside(files, at);
-      // The slot takes the row's trailing marks' place, so it is filled only with something to say.
       const save = writable && pkg && saves.shows(pkg, status) ? pkg : null;
       if (!inside && !save) return null;
       return (
@@ -205,12 +197,6 @@ export function AgentsSource({
   );
 }
 
-/**
- * What a level's file row says after its name, the first that applies (`fileTrouble`):
- * Unavailable (no good save is in use; the name is struck through), Not in use (its edit has an
- * Error, its last good save is used instead), Unsaved (it differs from the saved version),
- * Hidden. A package-level Error is said on the package's row, not on each file.
- */
 function levelFileMark(
   files: AgentFiles | null,
   scheme: ProjectContextTreeScheme,
@@ -228,10 +214,6 @@ function levelFileMark(
   return trouble?.kind === "hidden" ? { word: t`Hidden`, gone: false } : null;
 }
 
-/**
- * What a closed folder holds out of use, so closing it hides no problem: the count every level
- * says (`outOfUseWord`), else a package that can't be saved.
- */
 function outOfUseInside(
   files: AgentFiles | null,
   at: AgentsLocation,
@@ -240,7 +222,6 @@ function outOfUseInside(
   const prefix = at.path ? `${at.path}/` : "";
   const out = outOfUseWord(outOfUseUnder(files.files, files.packages, { level: at.level, prefix }));
   if (out) return out;
-  // A package's own row says its problem; a folder above it says it holds one.
   const failing = files.packages.filter(
     (item) =>
       item.level === at.level &&
@@ -257,10 +238,6 @@ function outOfUseInside(
     : null;
 }
 
-/**
- * A closed folder's count. Beside a package's Save it gives way to the name: a dot and the
- * number, the full count its sentence, on a long press too.
- */
 function InsideCount({
   inside,
   short,
@@ -293,7 +270,6 @@ function InsideCount({
   );
 }
 
-/** One level's heading, its New menu, and its rows. */
 function LevelSection({
   level,
   tree,
@@ -463,17 +439,12 @@ function LevelSection({
   );
 }
 
-/** Where an Agent or skill of this name is made, under a level's root. */
 function newFilePath(kind: NewKind, name: string): { folders: string[]; leaf: string } {
   return kind === "agent"
     ? { folders: ["agents"], leaf: `${name}.md` }
     : { folders: ["skills", name], leaf: "SKILL.md" };
 }
 
-/**
- * The name field for a new Agent or skill. The file is made with the folders it needs and a
- * starting text Mars reads cleanly, then opens.
- */
 function NewLevelFileRow({
   kind,
   level,
@@ -532,7 +503,6 @@ function NewLevelFileRow({
   );
 }
 
-/** Appends the folders a new file needs that the level lacks, then the file, to the writer's list. */
 function makeLevelFile(
   list: TreeActions,
   view: TreeView,

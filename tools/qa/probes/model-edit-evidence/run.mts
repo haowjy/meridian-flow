@@ -69,7 +69,6 @@ const cases: ModelEditCase[] = [
     async run({ h, start }) {
       const { thread } = await seedCase(h, "refused-frontier", "direct");
       const child = await start();
-      // Nothing stands at the path, so the delete is refused; a taken name never refuses.
       await child.script([
         {
           toolCalls: [

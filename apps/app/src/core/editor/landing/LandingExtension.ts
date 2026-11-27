@@ -38,9 +38,7 @@ import { droppedSlicePlan, sliceDoor } from "./slice-drop";
 import { viewGeometry } from "./view-geometry";
 
 export type LandingOptions = {
-  /** Project-tree rows. */
   entries?: DropDoor;
-  /** Desktop files. */
   files?: DropDoor;
 };
 
@@ -58,7 +56,6 @@ export const LandingExtension = Extension.create<LandingOptions>({
 
     const landingOf = (view: EditorView, event: DragEvent): Landing =>
       landingAt(view.state, { x: event.clientX, y: event.clientY }, viewGeometry(view, editor));
-    /** The door for this drag, or undefined when the host has none for its payload. */
     const doorOf = (view: EditorView, event: DragEvent): DropDoor | undefined =>
       view.dragging
         ? sliceDoor
@@ -158,7 +155,6 @@ export const LandingExtension = Extension.create<LandingOptions>({
           handleDoubleClick: (view, _pos, event) => claimRepress(view, editor, event, false),
           handleTripleClick: (view, _pos, event) => claimRepress(view, editor, event, true),
 
-          /** A click on inert space (a margin, a gap between blocks) puts the caret where the landing says; presses on text and objects never get here. */
           handleClick: (view, _pos, event) => pressOnInertTarget(view, editor, event),
 
           // Text and nodes: an editor selection moved or copied, or text from
@@ -174,10 +170,6 @@ export const LandingExtension = Extension.create<LandingOptions>({
             return true;
           },
 
-          // A paste at the caret lands by the same inline rule as a drop: a
-          // picture or a chip goes beside a chip or code span it is inside,
-          // and text inside a chip joins its label. Anything else is left to
-          // ProseMirror's own insert.
           handlePaste(view, _event, slice) {
             const { selection, doc } = view.state;
             if (!selection.empty || !view.editable) return false;

@@ -14,7 +14,6 @@ import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-cli
 const CONNECTIONS = "/api/mcp/connections";
 const connectionPath = (id: McpConnectionId) => `${CONNECTIONS}/${encodeURIComponent(id)}`;
 
-/** The account's connections, and with a project that project's, shadows marked. Reading starts the checks that are due. */
 export async function listMcpConnections(
   signal: AbortSignal,
   projectId: string | null,
@@ -23,7 +22,6 @@ export async function listMcpConnections(
   return (await getJson<McpConnectionsList>(`${CONNECTIONS}${query}`, { signal })).connections;
 }
 
-/** Saves the connection and lists its server's tools; a server that does not answer gives `tools: null`. */
 export function addMcpConnection(request: McpAddConnectionRequest) {
   return postJson<McpAddConnectionResponse>(CONNECTIONS, request);
 }
@@ -49,7 +47,6 @@ export async function undoRemoveMcpConnection(id: McpConnectionId) {
   return (await postJson<McpConnectionResponse>(`${connectionPath(id)}/undo`, {})).connection;
 }
 
-/** Try again: the server checks now and answers with what it learned. */
 export async function checkMcpConnection(id: McpConnectionId) {
   return (await postJson<McpConnectionResponse>(`${connectionPath(id)}/check`, {})).connection;
 }

@@ -1,14 +1,3 @@
-/**
- * A picture the clipboard only pointed at.
- *
- * The paste has already landed a link to the address, so the manuscript never
- * holds a `src` the project does not own (`image-workflow.ts`). This is the
- * attempt to do better than that link: read the bytes, put them through the same
- * upload a dropped file takes, and replace the link with the picture. A site
- * that refuses leaves the link exactly where it is, which is the honest end
- * state — so nothing here has anything to undo.
- */
-
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
 import { UploadRefusedError } from "@/client/api/direct-upload";

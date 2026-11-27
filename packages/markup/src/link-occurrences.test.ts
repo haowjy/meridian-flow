@@ -1,8 +1,3 @@
-/**
- * `parseWithSpans` spans and `walkLinkOccurrences` order must name the same
- * occurrences, and every reader of stored or written link attrs takes them the
- * way contracts' rules say.
- */
 import {
   type CatalogDocument,
   isAheadFilename,
@@ -124,7 +119,6 @@ it("aligns parse spans with walk order for links, images, figures and table anch
   const parsed = codec.parseWithSpans(text);
   const occurrences = walkLinkOccurrences(parsed.blocks);
 
-  // Parse is pure syntax: refs never reach the wire, so none come back.
   expect.soft(text, "wire").not.toMatch(/doc:|ahead:/);
   expect
     .soft(
@@ -159,7 +153,6 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     expect.soft(span && text.slice(span.start, span.end), name).toBe(expected);
   });
 
-  // An empty stored ref is no ref: to the walk and the shown facts, as to the codec.
   const emptyRef = [
     paragraph(t("two", [link("manuscript://book/ch2.md", "")]), image("assets/map.png", "")),
   ];
@@ -171,8 +164,6 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     .toEqual([null, null]);
   expect.soft(spelledLinks(emptyRef, scope), "empty ref shows no fact").toEqual([]);
 
-  // A malformed stored ref is still a ref: the walk and the codec keep it, so
-  // the resolver answers gone instead of whatever sits at its address.
   const atAddress = { ...catalog, documentAt: () => documents.get(id.ch2) ?? null };
   const malformed = [
     paragraph(
@@ -205,9 +196,6 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       { ref: "doc:malformed", address: "manuscript://assets/map.png" },
     ]);
 
-  // An uploaded picture carries its identity in `src`: the reader is shown its
-  // path, else its last address in full, and the fact records `asset:<id>` there;
-  // one with no known address shows an empty destination and records nothing.
   const assets = createHolderLinkScope(holder, {
     ...catalog,
     documentFor: () => null,
@@ -241,8 +229,6 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       { ref: `asset:${id.fig}`, address: "" },
     ]);
 
-  // Fresh assignment and address preloading read the one source classifier
-  // and register only at an address with a real extension.
   const fresh = (href: string, grammar: "link" | "source") =>
     assignFreshLink({
       href,
@@ -300,7 +286,6 @@ it("aligns parse spans with walk order for links, images, figures and table anch
   for (const [href, grammar, expected] of assigned) {
     const result = fresh(href, grammar);
     expect.soft(result, `fresh ${grammar} ${href}`).toEqual(expected);
-    // Every ahead address assignment mints is one the registry accepts.
     if (result.kind === "ahead")
       expect
         .soft(isAheadFilename(result.address.slice(result.address.lastIndexOf("/") + 1)), href)

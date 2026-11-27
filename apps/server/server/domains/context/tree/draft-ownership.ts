@@ -12,13 +12,10 @@ import type { TreeList } from "../ports/tree-list-store.js";
 import { ownedByRequest, ownerFrom, sourceOwnerProjectId } from "./source-owner.js";
 import { loadDocumentPlacements } from "./tree-addresses.js";
 
-/** A draft as ownership sees it: its project and the account that owns that project. */
 export type DraftHolder = { projectId: ProjectId; accountId: UserId };
 
-/** A source as ownership sees it: its owner, the account that owner answers to, its scheme. */
 export type SourceOwner = { owner: TreeList; accountId: UserId; scheme: string };
 
-/** The one rule: the draft's project, or its account's home folder. */
 export function draftMayHold(draft: DraftHolder, source: SourceOwner): boolean {
   return ownedByRequest(source.owner, draft);
 }
@@ -51,10 +48,6 @@ export async function loadSourceOwners(
   );
 }
 
-/**
- * The owner of the source a document is placed in (live's row, else any Work's). A document no
- * view places has no source and no owner.
- */
 export async function loadDocumentOwners(
   db: DrizzleDb,
   documentIds: readonly DocumentId[],
@@ -92,7 +85,6 @@ export async function loadDraftHolder(
   return row ?? null;
 }
 
-/** A project's drafts as holders: the project and its owning account. */
 export async function loadProjectHolder(
   db: DrizzleDb,
   projectId: ProjectId,

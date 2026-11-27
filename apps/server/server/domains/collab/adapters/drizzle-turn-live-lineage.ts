@@ -1,4 +1,3 @@
-/** Immutable edit/placement discovery for the retained turn change-viewer read model. */
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import {
   type Database,
@@ -76,23 +75,16 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
       const rows = await currentDrizzleDb(db)
         .select({
           documentId: treeEditReceiptNodes.nodeId,
-          // A folder has no `documents` row.
           folder: sql<boolean>`${documents.id} is null`,
           draft: drafts.id,
           op: treeEditReceipts.op,
-          // The node's own address before the change (a create's: where it was made), so a
-          // folder's delete or a several-move reads as each node's own line.
           shownAt: sql<
             string | null
           >`coalesce(${treeEditReceiptNodes.beforeAt}, ${treeEditReceiptNodes.afterAt})`,
           landedAt: treeEditReceiptNodes.afterAt,
-          // A copy's create names the document it read, so the turn can say it copied.
           copiedFrom: sql<
             string | null
           >`coalesce(${treeEditReceiptNodes.copiedFrom}, ${documents.metadata}->'copiedFrom'->>'uri')`,
-          // The model's own undo has the last word on it: the newest receipt of its chain (an
-          // undo, an undo of that) is an undo no card made. A card's Undo isn't one: the card's
-          // rows still say what the reply did.
           undone: sql<boolean>`coalesce((
             with recursive chain as (
               select r.id, r.kind, r.command_id, 1 as depth from tree_edit_receipts r
@@ -110,7 +102,6 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
         // Folders have no document metadata, but their receipt still carries a tree line.
         .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
-        // A drafted entry's draft, while it stands.
         .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
         .where(
           and(

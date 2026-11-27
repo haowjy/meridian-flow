@@ -1,29 +1,13 @@
-/**
- * Block correspondence: for two versions of a sequence of blocks (top-level blocks, a quote's
- * paragraphs, a table's rows, the atoms of a paragraph), which old block each new block is.
- *
- * Two ways to answer. The content merge, the room writer and review ask by id (`byId`): blocks carry a
- * permanent `id`, so a block is the block with the same id, whatever was done to its text. The rest
- * ask without: the model's write (its Markdown has no ids) and a block with no id. That is guess
- * mode: an unmade pairing costs the writer a deleted and an inserted block, and a wrong one costs a
- * block edited into another. Guess-mode pairs are in order, and only blocks of one type pair,
- * because one element cannot change its type.
- */
 import { DIFF_EQUAL } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
 import { weightedOrderedMatches } from "../ordered-matching.js";
 import { blockKey, contentWords, diffKeys, sharedBound, similarity } from "./tokens.js";
 
 export interface Correspondence {
-  /** Old index to the new index of the first block of its unit, or -1. */
   partner: Int32Array;
-  /** New index to the old index of the first block of its unit, or -1. */
   back: Int32Array;
-  /** Old blocks paired by id out of order: moved, not edited in place. */
   moved: Set<number>;
-  /** Old index to the old block of the unit it was joined into, or -1. */
   oldPiece: Int32Array;
-  /** New index to the new block of the unit it was split from, or -1. */
   nextPiece: Int32Array;
 }
 
@@ -36,23 +20,15 @@ export const emptyCorrespondence = (oldCount: number, nextCount: number): Corres
 });
 
 const TUNE = {
-  /** Share of words two blocks must have in common to be the same block edited. */
   similar: 0.5,
-  /** Share of a block's words that must be in a pair for the block to be a split or a join's piece. */
   piece: 0.5,
-  /** Table cells a gap may score exhaustively; a larger gap is first cut at its similar pairs. */
   cells: 10_000,
-  /** Words per block that look up candidates, rarest first. */
   lookups: 6,
-  /** Candidates of one block that are scored. */
   candidates: 4,
-  /** Entries of a common word's list that are read, nearest the block's place. */
   window: 16,
-  /** Blocks either side of a block's place that are always scored. */
   near: 2,
 };
 
-/** Weight of the least similar pair that clears `TUNE.similar`; weaker pairs weigh under 200. */
 const STRONG = Math.round(TUNE.similar * 100) * 100;
 
 const sameContent = (a: PMNode, b: PMNode) => a.type === b.type && a.content.eq(b.content);
@@ -67,7 +43,6 @@ function contentKey(n: PMNode): string {
   return k;
 }
 
-/** Share of equal attributes and marks: breaks ties between blocks with the same content. */
 function attrShare(a: PMNode, b: PMNode): number {
   const keys = Object.keys(a.attrs);
   let equal =
@@ -76,11 +51,6 @@ function attrShare(a: PMNode, b: PMNode): number {
   return equal / (keys.length + 1);
 }
 
-/**
- * Scores of an old node against new nodes, remembered per `kind` of score: a projection after one
- * keystroke scores only the pairs that touch the new node, because every other block of both sides
- * is the node the last projection saw.
- */
 const scores = new Map<number, WeakMap<object, WeakMap<object, number>>>();
 function scoresOf(kind: number, a: object): WeakMap<object, number> {
   const byOld = scores.get(kind) ?? new WeakMap<object, WeakMap<object, number>>();
@@ -97,11 +67,6 @@ function remembered(memo: WeakMap<object, number>, b: object, score: () => numbe
   return v;
 }
 
-/**
- * Score of pairing two blocks of one type: same content beats similar text beats a weaker overlap
- * beats nothing in common (1: an unrelated rewrite keeps its elements, and a peer's typing in them,
- * by position). Blocks of different types never pair (0).
- */
 const weight = (a: PMNode, b: PMNode) => remembered(scoresOf(0, a), b, () => scoreWeight(a, b));
 
 function scoreWeight(a: PMNode, b: PMNode): number {
@@ -119,7 +84,6 @@ function scoreWeight(a: PMNode, b: PMNode): number {
   return 1 + (longer ? Math.round((100 * sharedBound(a, b)) / longer) : 0);
 }
 
-/** Words in common, in order. A block's own word list is the same array each projection, so it is remembered. */
 const commonWords = (x: readonly string[], y: readonly string[]) =>
   remembered(scoresOf(-2, x), y, () => {
     let n = 0;
@@ -131,11 +95,6 @@ const wordSim = (x: readonly string[], y: readonly string[]) =>
 const contained = (piece: readonly string[], whole: readonly string[]) =>
   piece.length ? commonWords(piece, whole) / piece.length : 0;
 
-/**
- * `byId` pairs by id (the merge). When two blocks are paired out of order and either could be the
- * one that moved, `stays(i)` (0 to 2) says how much old block `i` should stay in place: the highest
- * stays and the other moved.
- */
 export function correspond(
   old: readonly PMNode[],
   next: readonly PMNode[],
@@ -154,18 +113,11 @@ export function correspond(
 
 const idOf = (n: PMNode): string | null => (n.attrs.id as string | null | undefined) ?? null;
 
-/** Blocks of one kind: text blocks with text blocks, others by type. */
 const compatible = (a: PMNode, b: PMNode) => (a.isTextblock ? b.isTextblock : a.type === b.type);
 
-/**
- * The longest run of `pairs` (old index, new index; sorted by old) that is also in order in new, by
- * weight: the pairs in it stay in place. Weights are whole numbers and a run's length dominates, so
- * a weight only breaks a tie between equally long runs.
- */
 function longestInOrder(pairs: Array<[number, number]>, stays: (i: number) => number) {
   const heavy = 2 * pairs.length + 1;
   const weight = (k: number) => heavy + stays(pairs[k][0]);
-  // Fenwick tree over new indexes: best (total, pair) of any run ending before a new index.
   const size = Math.max(0, ...pairs.map(([, j]) => j)) + 2;
   const tree: Array<{ total: number; at: number }> = Array.from({ length: size + 1 }, () => ({
     total: 0,
@@ -192,12 +144,6 @@ function longestInOrder(pairs: Array<[number, number]>, stays: (i: number) => nu
   return stay;
 }
 
-/**
- * Pairing by id. A block pairs with the block of the other side that has its id (the first, when an
- * id repeats) if their kinds agree. Of the pairs, the longest run in order stays and the rest
- * moved. Blocks with no id pair among themselves by guess, inside the gap between two staying pairs.
- * A split's or join's pieces are found beside a pair and never move it: an id pair is final.
- */
 function correspondById(
   old: readonly PMNode[],
   next: readonly PMNode[],
@@ -225,7 +171,6 @@ function correspondById(
     c.back[j] = i;
   }
 
-  // Blocks without an id, paired by guess inside each gap between two staying pairs.
   const bare = (nodes: readonly PMNode[], from: number, to: number) => {
     const out: number[] = [];
     for (let k = from; k < to; k++) if (idOf(nodes[k]) === null) out.push(k);
@@ -252,7 +197,6 @@ function correspondById(
   }
   findPieces(old, next, c, owned);
   rootUnits(old, next, c, new Set(inOrder.map(([i]) => i)));
-  // A pair out of order is a move.
   pairs.forEach(([i, j], k) => {
     if (stay.has(k)) return;
     c.partner[i] = j;
@@ -262,7 +206,6 @@ function correspondById(
   return c;
 }
 
-/** The ends, the anchors, then everything left in each gap at once. */
 function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
   const pairs: Array<[number, number]> = [];
   let [o0, o1, n0, n1] = [0, old.length, 0, next.length];
@@ -270,8 +213,6 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
   while (o0 < o1 && n0 < n1 && blockKey(old[o1 - 1]) === blockKey(next[n1 - 1]))
     pairs.push([--o1, --n1]);
   const anchors = findAnchors(old, next, o0, o1, n0, n1);
-  // A gap that fits the budget is scored whole. A larger one is cut at its similar pairs first, and
-  // each piece between them is treated the same way; one that still does not fit pairs nothing new.
   const pairGap = (a0: number, a1: number, b0: number, b1: number) => {
     const rows = a1 - a0;
     const cols = b1 - b0;
@@ -306,12 +247,6 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[]) {
   return pairs;
 }
 
-/**
- * The longest in-order chain of pairs in a gap that clear the similarity bar. Candidates come from a
- * word index, not from scoring every pair: each block looks up its rarest words, and a word too
- * common to be a clue is read only near the block's own place in the gap. So the cost follows the
- * number of blocks, not their product.
- */
 function similarChain(
   old: readonly PMNode[],
   next: readonly PMNode[],
@@ -384,11 +319,6 @@ function similarChain(
   return chain.reverse();
 }
 
-/**
- * A block whose content occurs once on each side is the same block: an anchor, as in a patience
- * diff. Candidates that cross (either could be the one that stayed) are not anchors; the gap's
- * best in-order pairing keeps one of them.
- */
 function findAnchors(
   old: readonly PMNode[],
   next: readonly PMNode[],
@@ -414,7 +344,6 @@ function findAnchors(
     if (at.length === 1 && other?.length === 1) cand.push([at[0], other[0]]);
   }
   cand.sort((x, y) => x[0] - y[0]);
-  // Length of the longest in-order set ending at, and starting at, each candidate (patience sorting).
   const lengthsEndingAt = (values: number[]) => {
     const tails: number[] = [];
     return values.map((v) => {
@@ -456,7 +385,6 @@ function findPieces(
   old: readonly PMNode[],
   next: readonly PMNode[],
   c: Correspondence,
-  /** Blocks that have a pair of their own by id, so they are nobody's piece. */
   owned?: { old: Uint8Array; next: Uint8Array },
 ) {
   const { partner, back } = c;
@@ -525,12 +453,6 @@ function findPieces(
   }
 }
 
-/**
- * In guess mode a unit's pair is its first old block and its first new block; every other block of
- * the unit is a piece of that one. The first block keeps its identity through a split and a join.
- * A pair made by id stays as it is (`final` lists its old blocks): the id
- * says which block is which, so a piece before it does not take its place.
- */
 function rootUnits(
   old: readonly PMNode[],
   next: readonly PMNode[],

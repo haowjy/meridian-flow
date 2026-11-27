@@ -1,5 +1,3 @@
-/** Browser address resolution and navigation over one authorized, ID-backed project shell. */
-
 import { parseDraftItemKey } from "@meridian/contracts";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import {
@@ -109,10 +107,8 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
             : null,
     go: (next, options) => go(toDestination(next), options),
   });
-  // The Work scope is stored, never read from the address: a Work-scoped page lens, not a place.
   const editorScope = useWorkScopeState(projectId);
   const workId = editorScope.workId;
-  // The draft the scope shows: a Work's picked draft, not only its default.
   const scopeDraft = useScopeDraftOwner(projectId, null).draftId || null;
   const presented = useOptionalPresentedDocuments();
   useBlocker({
@@ -157,8 +153,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     navigation.repairAddress(ticket);
   }, [navigation, location]);
 
-  // Where a document is now, in any source of the project or the account: places a review
-  // launch's document and follows a moved one.
   const trees = useProjectTrees(projectId);
   const documentTree = useMemo(
     () => ({ findDocument: (id: string) => trees.find(id)?.file ?? null }),
@@ -172,8 +166,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     documentTree,
     draftOnlyId: null as string | null,
   });
-  // The document the address resolved to: a review of it stays on this address
-  // through a rename, whatever path the launcher read.
   const addressDocumentIdRef = useRef<string | undefined>(undefined);
   const captureNavigation = useCallback(() => {
     const current = latest.current.navigation;
@@ -181,14 +173,11 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
 
-  // A scheme the Editor never opens (Uploads) shows in its resource view.
   const resourceDestination =
     destination.kind === "document" && !isEditorScheme(destination.scheme);
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
-  // A Scratch address names its own owner, whatever the scope: a chat's lineage, else a Work.
   const lineage = addressLineage(address);
-  // The owner a locator carries is a Scratch note's alone; the scope never is one.
   const scratchWork = addressScratchWorkId(address);
   const locatorOwner: { workId?: string; rootThreadId?: string } =
     documentDestination?.scheme === "scratch"
@@ -215,12 +204,9 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     ? addressTrees[documentDestination.scheme]
     : NO_TREE;
   const draftOwner = addressDraftOwner(address);
-  // A plain address never reads a draft's tree: only an item, whose key names it, reviews one.
   const addressKind = !address.itemKey ? "plain" : draftOwner ? "draft" : "pending";
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const closingDocumentId = address.itemKey ? parseDraftItemKey(address.itemKey)?.documentId : null;
-  // A review's item names its document; a plain address is the document its history entry
-  // last resolved.
   const routePlace = routePlaceKey(documentDestination, locatorOwner);
   const markedId = rememberedRouteDocument(location.state, routePlace);
   const rememberedId = address.itemKey ? null : markedId;
@@ -244,7 +230,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     : abandoned
       ? null
       : rememberedId;
-  // A plain address is resolved by the replay of live; a review's in its Work's tree, below.
   const replayAddress = useMemo(
     () =>
       documentDestination && addressKind === "plain"
@@ -272,10 +257,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const listedOwner = documentDestination ? (draftOwner ?? scopeDraft) : null;
   const listedDrafts = useOwnerDrafts(projectId, listedOwner);
   const isDraftOnly = useDraftOnly(projectId, listedOwner);
-  // A review is read in its Work's tree: the draft the item's own row names, so a page the
-  // draft created, moved or renamed is found by its id wherever the Work puts it. A drafted
-  // delete is absent from that tree, so its review opens the live document. Null once the read
-  // list lacks the item.
   const listRead = listedDrafts.status === "ready" || listedDrafts.status === "empty";
   const draftItem =
     address.itemKey && listRead
@@ -286,9 +267,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const draftTrees = useProjectTrees(draftVersion && !draftDeletes ? projectId : "", {
     version: draftVersion ?? undefined,
   });
-  // A draft gone from its list stays addressed: its document is found where live has it, since
-  // the Work's tree no longer lists the draft, and a page that let go of it then would not have it
-  // to keep.
   const endUndecided = draftItem === null;
   const reviewTree = endUndecided || draftDeletes ? trees : draftTrees;
   const draftAddress = useMemo((): ReplayAddress | undefined => {
@@ -336,11 +314,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       }),
     [presented, projectId],
   );
-  // The route is bound to a document this source's tree lacks, and one decision says what to
-  // show: where the document is now (followed), or its standing once found nowhere (the Trash
-  // view for a deleted or purged one); a stale memory is dropped above (`abandoned`).
-  // The writer's own removal keeps painting while main goes back; it ends, so a hold always has
-  // an exit.
   const coordinator = useContextRemovalCoordinator();
   const holding = replayAddress?.kind === "held" ? boundDocumentId : null;
   const retained = useSyncExternalStore(
@@ -371,7 +344,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     const current = () => !!ticket && !!navigation?.isCurrent(ticket);
     const located = parseContextUri(movedTo.file.uri);
     if (!located) return;
-    // The destination is the found source's: a moved Scratch note has its new owner.
     const owner = ownerOfSource(movedTo.source);
     void openContext(
       contextRouteRequest({
@@ -401,7 +373,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   // Rebuilt from JSON snapshots each render: only its serialized meaning is a change.
   const addressedKey = JSON.stringify(addressedNow);
   const addressed = useMemo(() => addressedNow, [addressedKey]);
-  // Live has no page here: leaving the draft closes the page.
   const draftOnlyId =
     addressed && isDraftOnly(addressed.document.documentId) ? addressed.document.documentId : null;
   latest.current = {
@@ -417,8 +388,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
-  // A review marks its entry too: leaving it keeps the drafted path until admission repairs it
-  // to the live one, and only the remembered id finds the document there.
   useLayoutEffect(() => {
     if (!routePlace || !addressDocumentId || !navigation || markedId === addressDocumentId) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
@@ -429,9 +398,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
         routeDocumentMark(routePlace, addressDocumentId),
       );
   }, [routePlace, addressDocumentId, markedId, navigation, location]);
-  // The Trash view shows in place of the document: nothing of the address is presented.
   const presentedDestination = routeTrashed ? null : documentDestination;
-  // A prerequisite that failed ends the wait: the address stays, with a way to retry.
   const addressFailed = addressKind === "plain" ? addressTree.isError : reviewTree.isError;
   const documentIssue: ProjectRouteIssue | undefined = !presentedDestination
     ? undefined
@@ -442,18 +409,13 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       : documentResult.kind === "unavailable"
         ? "unavailable"
         : undefined;
-  // A review address names its document: when it is unavailable because the
-  // document was removed, the destination shows what its removal left (a Discard's Undo). A plain path names no document once nothing lives there, so
-  // it stays "unavailable".
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
   const removalNow = useRemovalAnswer(projectId, removedDocumentId);
-  // A bare Live address to a page only the scope's draft holds offers that draft.
   const inDraftFile =
     documentIssue === "unavailable" && addressKind === "plain" && documentDestination
       ? draftOnlyAt(documentDestination, boundDocumentId, listedDrafts)
       : undefined;
-  // A link to a draft the project no longer has opens the document on Live, at once.
   const draftStanding = useDraftStanding(projectId, draftOwner);
   const draftGone =
     !!address.itemKey &&
@@ -463,12 +425,10 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   useLayoutEffect(() => {
     if (!draftGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
-    // `draftEnded` lets the document say once that the link's draft has ended.
     if (ticket)
       void navigation.replaceIfCurrent(ticket, withoutDraft(address), { draftEnded: true });
   }, [draftGone, navigation, location, address]);
   const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
-  // The failed reads are what the address waits on; retrying them is the destination's recovery.
   const retryEditorAddress = useCallback(() => {
     editorDrafts.refetch();
     editorScope.retry();
@@ -511,16 +471,12 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     (review: DraftPin | null) => {
       const current = latest.current;
       if (!current.navigation) return;
-      // Main goes back unless it isn't showing the page yet; then the bare address shows
-      // "Only in draft".
       if (!review && current.draftOnlyId) {
         coordinator.leaveDraftOnly(projectId, current.draftOnlyId);
         if (coordinator.isGoingBack(projectId, current.draftOnlyId)) return;
       }
       const ticket = current.navigation.capture();
       const { address } = current;
-      // A draft's item key is part of its link, and names the draft. Review changes is of the
-      // draft it was opened on: another draft, or Live, drops it.
       const next = review
         ? review.itemKey === address.itemKey
           ? address
@@ -531,14 +487,11 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     [coordinator, projectId],
   );
   const { history } = useRouter();
-  // Main's Review changes: the address turns it on, and these move within it or leave it.
   const reviewControls = useMemo<MainReviewControls>(
     () => ({
       close: () => {
         const { navigation, address } = latest.current;
         if (!navigation || !address.review) return;
-        // Back when this entry was pushed from the plain page of the document it shows; a review
-        // that crossed chapters or arrived by a link closes onto its chapter by replace.
         const openedFrom = reviewOpenedFrom(history.location.state);
         if (openedFrom && openedFrom === addressDocumentIdRef.current) {
           history.back();
@@ -596,9 +549,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   );
 
   const routeCommands: ProjectRouteCommands = {
-    // Already on the chooser is a no-op. A local draft is also `/editor`; its history pointer
-    // names it. Navigation clears that pointer. Departure freezes it, so Back returns to the
-    // draft.
     showEditorRecents: (options) => {
       const onChooser =
         destination.kind === "editor" &&
@@ -629,7 +579,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
               href={location.href}
               entryKey={location.state.__TSR_key ?? ""}
               address={address}
-              // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
               result={documentResult}
               draftItemKey={address.itemKey}
               workId={workId}
@@ -644,8 +593,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{
               main: mainIssue,
-              // Loading until the removal lookup answers, so the destination
-              // never says "unavailable" first.
               editor:
                 removedDocumentId !== null && removalNow === undefined ? "loading" : editorIssue,
               unavailable:

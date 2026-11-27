@@ -1,5 +1,3 @@
-/** A plain address resolves against the replay of the list: to a document, to "not there", or to "waiting for the list". */
-
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileEntry,
@@ -18,12 +16,6 @@ export function canonicalDocumentPath(path: string): string {
   return path.replace(/^\/+/, "");
 }
 
-/**
- * Whether the address already names this document. A Scratch document is addressed by its owner,
- * so the target must name that owner; any other document is its path alone, whatever the scope.
- * When both sides know the document, identity alone decides: a reused path never makes two
- * documents one. The path is only the fallback while either identity is unresolved.
- */
 export function projectAddressMatchesContextTarget(
   address: ProjectAddress,
   target: {
@@ -33,7 +25,6 @@ export function projectAddressMatchesContextTarget(
     rootThreadId?: string;
     documentId?: string;
   },
-  /** The document the address resolved to, absent while it is still resolving. */
   addressDocumentId?: string,
 ): boolean {
   const destination = address.destination;
@@ -49,7 +40,6 @@ export function projectAddressMatchesContextTarget(
   return sameDocument(destination, target, addressDocumentId);
 }
 
-/** Identity decides once both sides know the document; the path is only the fallback. */
 function sameDocument(
   destination: DocumentDestination,
   target: { scheme: string; path: string; documentId?: string },
@@ -63,12 +53,10 @@ function sameDocument(
   );
 }
 
-/** What the address found in the replay; `held`: the route's bound document is not in this source's tree. */
 export type ReplayAddress =
   | { kind: "found"; result: DocumentAddressResult; file: TreeFile }
   | { kind: "absent" | "waiting" | "held" };
 
-/** The authority of the document's source: what the address's owner and the file's URI say. */
 function authorityOf(
   file: TreeFile,
   input: {
@@ -116,7 +104,6 @@ function scopeOf(authority: ProjectContextAuthority): CatalogScope {
   return { kind: "project", projectId: authority.projectId };
 }
 
-/** The server's shape of the file, for the answers (canonical address, tab) built from one. */
 function entryOf(file: TreeFile, sourceId: string, authority: ProjectContextAuthority) {
   const classification = file.editable
     ? { editable: true, filetype: file.filetype, schemaType: file.schemaType }
@@ -144,20 +131,11 @@ function entryOf(file: TreeFile, sourceId: string, authority: ProjectContextAuth
   } as unknown as CatalogFileEntry;
 }
 
-/**
- * Where a plain address is in the replay. The document the route is bound to is the route's
- * document wherever its path went (the path is its current label, and admission repairs the URL
- * to it); with no bound identity the path's occupant is. A bound document this source's tree
- * lacks is never answered by the path's occupant: the route holds until it is found elsewhere or
- * gone (`holdsBoundDocument`). An address that finds nothing is "not there" only once the list
- * has synced.
- */
 export function resolveReplayAddress(input: {
   projectId: string;
   accountId: string;
   destination: DocumentDestination;
   workId: string | null;
-  /** The lineage a Scratch address names, in place of a Work. */
   rootThreadId: string | null;
   tree: TreeViewResult;
   boundDocumentId: string | null;
@@ -175,7 +153,6 @@ export function resolveReplayAddress(input: {
   if (resolved.value === "held") return { kind: "held" };
   const file = resolved.value;
   const authority = authorityOf(file, input, input.destination.scheme);
-  // A chat's uploads are files, never editable text: they have no editor address.
   if (!authority || input.destination.scheme === "uploads") return { kind: "absent" };
   return {
     kind: "found",
@@ -192,10 +169,6 @@ export function resolveReplayAddress(input: {
   } as ReplayAddress;
 }
 
-/**
- * The review item's file when live has no view of the document: a page a draft created opens as
- * review, never as a blank live editor.
- */
 export function draftOnlyTarget(
   result: DocumentAddressResult | undefined,
   draftList: { files: ReviewFileTarget[] | null },
@@ -207,11 +180,6 @@ export function draftOnlyTarget(
   return file?.draftOnly ? file : undefined;
 }
 
-/**
- * The draft-only file a plain address names when live has nothing there: the document its entry
- * is bound to, else the file at its path. Read from the draft list the route already holds, so a
- * bare Live address to a page only a draft holds can offer that draft.
- */
 export function draftOnlyAt(
   destination: { scheme: string; path: string },
   boundDocumentId: string | null,

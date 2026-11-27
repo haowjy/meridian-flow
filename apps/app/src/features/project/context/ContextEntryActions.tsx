@@ -1,4 +1,3 @@
-/** What a context entry's row menu offers (its right-click and ⋯ alike), one row or a selection. */
 import { plural } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
@@ -23,8 +22,6 @@ import {
   type SelectionGroup,
   useOptionalEntrySelection,
 } from "./entry-drag/selection";
-
-// ─── Action types ────────────────────────────────────────────────────────────
 
 export type EntryAction =
   | "new-file"
@@ -76,22 +73,16 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   { action: "restore", label: <Trans>Restore</Trans>, icon: ArchiveRestore, group: "manage" },
 ];
 
-/** What every row of a selection is: one kind names it, a mix is "items". */
 function selectionNoun(entries: readonly DragEntry[]): "file" | "folder" | "item" {
   const [first] = entries;
   if (!first || entries.some((entry) => entry.ref.kind !== first.ref.kind)) return "item";
   return first.ref.kind === "folder" ? "folder" : "file";
 }
 
-/**
- * The menu of a selection of two or more rows: only what acts on all of them at once, so no
- * creation and no Rename. A second ordered specification through the same renderers.
- */
 function selectionActions(group: SelectionGroup): EntryActionSpec[] {
   const n = group.entries.length;
   const noun = selectionNoun(group.entries);
   const specs: EntryActionSpec[] = [];
-  // Between the project's files and Your files the action is Copy: each list keeps its own history.
   if (group.grants.includes("move") && group.crossesLists)
     specs.push({
       action: "copy",
@@ -144,14 +135,6 @@ function selectionActions(group: SelectionGroup): EntryActionSpec[] {
 
 const SELECTION_GRANTS = ["move", "delete", "restore"] as const satisfies readonly SelectionGrant[];
 
-/**
- * A row's menu, or none when the row has no actions (even inside a selection). Opened on a row
- * inside a selection of two or more, it is the selection's menu and acts on all of it (`run` gets
- * the selection's rows in screen order); opened on a row outside the selection, it selects that row
- * alone and is the row's own menu (`run` gets null). The selection is read once, as the menu opens,
- * so what it acts on is what it named. The row's actions are also what it grants a selection's menu
- * (Move, Delete, Restore; never Rename or creation).
- */
 export function useEntryMenu(
   entry: DragEntry,
   actions: readonly EntryAction[],
@@ -172,7 +155,6 @@ export function useEntryMenu(
     : ENTRY_ACTIONS.filter((spec) => actions.includes(spec.action));
   return {
     groups: menuGroups(items),
-    // Trash rows restore; every other list's rows move and delete.
     empty:
       group === null || items.length > 0 ? null : actions.includes("restore") ? (
         <Trans>Can't restore all of these</Trans>
@@ -191,7 +173,6 @@ export function useEntryMenu(
   };
 }
 
-/** Create and manage actions in their own runs; the imports gather under one Import… submenu. */
 function menuGroups(specs: readonly EntryActionSpec[]): RowMenuEntry[][] {
   const groups: RowMenuEntry[][] = [];
   let previous: EntryActionSpec | undefined;

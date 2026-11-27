@@ -1,4 +1,3 @@
-/** Retain usable content during document navigation; mask unavailable destinations. */
 import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
@@ -10,7 +9,6 @@ import { useItemLauncher } from "../review-launch";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
-/** Whether the destination body is masked. */
 export function isProjectRouteMasked({
   issue,
   retainWhileLoading = false,
@@ -22,22 +20,14 @@ export function isProjectRouteMasked({
   return !!issue && !retainedPending;
 }
 
-/** What masks a destination's body. Its navigation frame is composed outside the boundary. */
 export type ProjectRouteMask = {
   issue?: ProjectRouteIssue;
   retainWhileLoading?: boolean;
   destinationKey?: string;
-  /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
-  /** Why an unavailable destination is unavailable, when the route knows. */
   unavailable?: UnavailableReason;
 };
 
-/**
- * `removed`: its document was removed; it shows the Discard's notice, with its Undo, while one
- * can bring it back, and a deleted one says nothing of its own. `in-draft`: only a draft holds
- * it; it offers that draft.
- */
 export type UnavailableReason =
   | { kind: "removed"; documentId: string }
   | { kind: "in-draft"; file: ReviewFileTarget; draftId: string };

@@ -1,14 +1,3 @@
-/**
- * Inline edit fields — the one way text is edited in place.
- *
- * The field inherits the font, size, weight, tracking and colour of the text it
- * replaces and has no padding or border, so the words stay exactly where they
- * were. `InlineEditInput` sizes itself to its text (it never stretches across
- * its row); `InlineEditTextarea` fills its column and grows with its content.
- * The visible field edge comes from the `inline-edit-field` utility's
- * box-shadow bleed, which takes no layout space. Pair resting text with the
- * `inline-edit-trigger` utility for the matching hover hint.
- */
 import type * as React from "react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
@@ -24,7 +13,6 @@ export function InlineEditInput({
 }: Omit<React.ComponentProps<"input">, "value"> & { value: string }) {
   return (
     <span className={cn("inline-edit-field inline-grid min-w-[1ch] max-w-full", className)}>
-      {/* Invisible twin that gives the grid cell the text's width. */}
       <span
         aria-hidden
         className="invisible col-start-1 row-start-1 overflow-hidden pr-px whitespace-pre"
@@ -53,7 +41,6 @@ export function InlineEditTextarea({
   ...props
 }: Omit<React.ComponentProps<"textarea">, "value"> & { value: string }) {
   const own = useRef<HTMLTextAreaElement | null>(null);
-  // Height follows content so the field is exactly as tall as the resting text.
   useLayoutEffect(() => {
     const node = own.current;
     if (!node) return;

@@ -1,9 +1,3 @@
-/**
- * The phone's two overlay shells. `PhoneTakeover` is a full-screen dialog with a
- * safe-area header: a leading slot, a centred title and a close button.
- * `PhoneSheet` is a bottom sheet with a grabber, a title and a close button. Callers
- * supply the body and its scrolling.
- */
 import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
@@ -20,7 +14,6 @@ import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
-/** Content of a Radix `Dialog` the caller owns. */
 export function PhoneTakeover({
   title,
   description,
@@ -30,12 +23,9 @@ export function PhoneTakeover({
   children,
 }: {
   title: ReactNode;
-  /** Read by screen readers only. */
   description: ReactNode;
   closeLabel: string;
-  /** A Back button, when the screen has somewhere to go back to. */
   leading?: ReactNode;
-  /** A second header row, such as section navigation. */
   belowTitle?: ReactNode;
   children: ReactNode;
 }) {
@@ -61,7 +51,6 @@ export function PhoneTakeover({
               paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
             }}
           >
-            {/* The empty slot is as wide as the close button, so the title stays centred. */}
             {leading ?? <span className="size-11 shrink-0" aria-hidden />}
             <DialogTitle className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-foreground">
               {title}
@@ -93,7 +82,6 @@ export function PhoneSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
-  /** Read by screen readers only. */
   description: ReactNode;
   closeLabel: string;
   children: ReactNode;

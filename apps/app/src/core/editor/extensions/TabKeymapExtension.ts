@@ -49,13 +49,8 @@ import { isSourceBlock } from "../objects/object-types";
 
 const TAB_KEYMAP_NAME = "meridianTabKeymap";
 
-/** What one press is worth. A tab, because the writer pressed Tab. */
 const TAB = "\t";
 
-/**
- * What one Shift-Tab takes back off a line: the tab this file inserts, or the
- * spaces pasted code arrives with.
- */
 const OUTDENT = /^(\t| {1,4})/;
 
 /**
@@ -74,12 +69,6 @@ function consuming(
   };
 }
 
-/**
- * Runs the walk unless something deeper inside the cell owns the indent key,
- * in which case the key is DECLINED — handed down the kernel ladder, where the
- * fence rung (block scope) or the list sink (document scope) answers, and the
- * unconditional document rung means ownership still never lapses.
- */
 const walking = (verb: (editor: Editor) => void): ((editor: Editor) => KeymapBinding) => {
   return (editor) => (state) => {
     if (cellInteriorOwnsIndent(state)) return false;
@@ -128,10 +117,6 @@ function cellInteriorOwnsIndent(state: EditorState): boolean {
   return false;
 }
 
-/**
- * In a list the key indents the item; when `indentList` refuses (the first item) it does
- * nothing, rather than type a tab into the bullet.
- */
 const indentOrTab = consuming((editor, state, dispatch) => {
   if (insideListItem(state)) {
     editor.commands.indentList();
@@ -171,16 +156,6 @@ function insideListItem(state: EditorState): boolean {
   return isListed(block.attrs.path);
 }
 
-/**
- * Indent or outdent the fence lines the selection touches.
- *
- * A caret takes one tab where it stands. Anything selected is line-wise: a
- * writer who swept three lines means those three lines rather than "replace
- * them with a tab", which is the one place a fence differs from prose.
- *
- * Null when there is nothing to do — a fence selected whole rather than typed
- * into, or a Shift-Tab on lines carrying no indentation.
- */
 function fenceIndentTransaction(state: EditorState, direction: 1 | -1): Transaction | null {
   const { selection } = state;
   if (!(selection instanceof TextSelection)) return null;
@@ -207,7 +182,6 @@ function fenceIndentTransaction(state: EditorState, direction: 1 | -1): Transact
   return transaction.docChanged ? transaction.scrollIntoView() : null;
 }
 
-/** Offsets of the line starts a `from`–`to` range within `text` reaches. */
 function touchedLineStarts(text: string, from: number, to: number): number[] {
   const starts: number[] = [];
 
@@ -245,8 +219,6 @@ export const TabKeymapExtension = Extension.create({
             chrome?.registerKeymap({
               id: "tab-fence",
               scope: "block",
-              // The scope says where it is live; this says which block it is
-              // about, which is the narrowing `appliesTo` exists for.
               appliesTo: (context) => context.chain.includes("source-block"),
               bindings: { Tab: indentFence(1)(editor), "Shift-Tab": indentFence(-1)(editor) },
             }),

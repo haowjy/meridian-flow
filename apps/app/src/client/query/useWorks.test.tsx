@@ -82,7 +82,6 @@ function RenameProbe() {
 const field = <K extends keyof Work>(id: string, key: K) =>
   seen.works?.find((work) => work.id === id)?.[key];
 
-/** What the scripted server answers a command with; a refusal is stored and resolved as `refused`. */
 type Answer = Promise<{ work?: Work } | "refuse">;
 let respond: (request: TransportRequest) => Answer = async () => ({});
 let driver!: CommandDriver;
@@ -188,7 +187,6 @@ describe("Work command projection", () => {
         outcome = await rename;
       });
       await settle(() => expect(field(WORK.id, "name")).toBe("Arc"));
-      // The rename reports its failure through its own promise; no record lingers.
       expect(outcome).toBeInstanceOf(Error);
       respond = async () => "refuse";
       await expect(renameWork("Another title")).rejects.toBeInstanceOf(Error);
@@ -211,7 +209,6 @@ describe("Work command projection", () => {
         void commands.archive({ workId: SECOND.id });
       });
       await settle(() => expect(field(SECOND.id, "archivedAt")).not.toBeNull());
-      // The project's turn: nothing else leaves while the first is unanswered.
       expect(posts().map((request) => request.path)).toEqual([`/api/works/${WORK.id}/archive`]);
 
       await act(async () => first.resolve("refuse"));
@@ -285,7 +282,6 @@ describe("Work command projection", () => {
       expect(field(WORK.id, "name")).toBe("Revised arc");
       expect(driver.getSnapshot().records.map((record) => record.observed)).toEqual([false]);
 
-      // One good read afterwards covers every record settled before it.
       vi.mocked(listProjectWorks).mockResolvedValue(
         snapshot([{ ...WORK, name: "Revised arc" } as Work], "3"),
       );

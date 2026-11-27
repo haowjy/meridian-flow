@@ -1,4 +1,3 @@
-/** Test stand-in for the browser: start an upload, PUT its bytes to the incoming key, finish. */
 import { randomUUID } from "node:crypto";
 import { incomingObjectKey, type ObjectStorePort } from "../../storage/index.js";
 import type { UploadIntake, UploadIntakeOutcome } from "./upload-intake.js";

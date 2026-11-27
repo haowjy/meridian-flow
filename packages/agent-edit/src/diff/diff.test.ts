@@ -17,8 +17,6 @@ const para = (text: string) =>
   schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
 const plain = (...texts: string[]) => texts.map(para);
 
-// Review changes' word diff in the browser and the server's edit excerpts split with this: an
-// engine-dependent split (ICU's `Intl.Segmenter`) once made the two disagree about one edit.
 it("splits words the same on every engine", () => {
   const show = (text: string) =>
     segmentText(text).map(({ segment, space, word }) =>

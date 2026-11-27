@@ -1,21 +1,3 @@
-/**
- * The contents of the row grip, column grip, and table menus.
- *
- * One item component for all of them, because law 5 is one rule: a verb that
- * cannot run here stays where the writer found it, keeps its hover and focus,
- * and says why when the writer reaches it. The greying, the swallowed select,
- * and the tooltip are the shared row's (`chrome/EditorMenuItem`); this file
- * only knows which verb is blocked and by what.
- *
- * The table verbs appear twice on purpose — flat under the selected table's ⋯
- * and as a submenu at the foot of both grip menus. Selecting a whole table is
- * a deliberate act (arrow-walk or Esc out of a cell), and the header toggle
- * should not be behind it: the grips are the surface a writer already found.
- *
- * `TableCaretMenuItems` is the fifth arrangement and adds no verb: a
- * right-click inside a cell now opens the formatting menu, and these are the two submenus it carries so the writer can
- * reach the table without finding a grip first.
- */
 import type { Editor } from "@tiptap/core";
 import {
   AlignCenter,
@@ -64,7 +46,6 @@ import {
 } from "./table-commands";
 import { tableBlockedMessage, tableChromeCopy, tableVerbLabel } from "./table-copy";
 
-/** How an item runs its verb: the menu's target, resolved at the moment it runs. */
 export type RunTableVerb = (id: TableVerbId) => void;
 
 export type VerbProps = {
@@ -222,14 +203,6 @@ export function TableColumnMenuItems({ run, states, ...table }: VerbProps) {
   );
 }
 
-/**
- * What a swept rectangle of cells offers.
- *
- * Deliberately short: merge and split are the verbs a rectangle exists for,
- * alignment applies to the columns it covers, and the row and column verbs
- * already have a home on the grips a few pixels away. A third full copy of
- * them here would be three places to keep saying the same thing.
- */
 export function TableCellMenuItems({ run, states, ...table }: VerbProps) {
   return (
     <>
@@ -253,7 +226,6 @@ export function TableCellMenuItems({ run, states, ...table }: VerbProps) {
   );
 }
 
-/** The table's own verbs, flat. What the selected table's ⋯ shows. */
 export function TableMenuItems({ run, states, alignment, placement }: VerbProps) {
   return (
     <>
@@ -298,15 +270,6 @@ export function TableMenuItems({ run, states, alignment, placement }: VerbProps)
   );
 }
 
-/**
- * Everything the arrangements read, gathered once per open, against the target
- * the menu was opened on. Null once that target is gone: a menu with nothing
- * left to act on closes rather than offering verbs to the selection.
- *
- * Recomputing the verb matrix on every keystroke of the chapter would be a
- * table walk per character; behind an open menu it is free, and Radix keeps
- * menu content unmounted until then.
- */
 export function tableMenuProps(
   editor: Editor,
   target: TableMenuTarget = { kind: "selection" },
@@ -322,11 +285,6 @@ export function tableMenuProps(
   };
 }
 
-/**
- * The table verbs a caret in a cell reaches, as the two lists the grips
- * already own. No third copy: a writer who found the row grip and a writer who
- * right-clicked a cell meet the same rows in the same order.
- */
 export function TableCaretMenuItems({ editor }: { editor: Editor }) {
   const props = tableMenuProps(editor);
   if (!props) return null;
@@ -374,7 +332,6 @@ function TableMenuSub({
 }: {
   label: string;
   icon: ReactNode;
-  /** Names the list for a probe; the label is the writer's. */
   name: string;
   children: ReactNode;
 }) {
@@ -399,11 +356,6 @@ function TableMenuSub({
   );
 }
 
-/**
- * Per-column text alignment. Unset is a real value and shows as no choice
- * made: a column nobody has aligned reads in the reading direction, which is
- * not the same as a column decided to be left.
- */
 function TableAlignmentItems({
   run,
   alignment,

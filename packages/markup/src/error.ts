@@ -1,11 +1,8 @@
-/** Typed parse errors surfaced by the markup codec. */
-
 export interface CodecParseErrorLocation {
   line?: number;
   column?: number;
 }
 
-/** Typed, catchable parse failure for syntactically invalid markdown/MDX input. */
 export class CodecParseError extends Error {
   readonly line?: number;
   readonly column?: number;

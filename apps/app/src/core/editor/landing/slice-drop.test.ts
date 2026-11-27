@@ -1,4 +1,3 @@
-/** Multi-line slice drops preserve valid container structure and source order. */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { type Node as PMNode, Slice } from "@tiptap/pm/model";
 import { EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";

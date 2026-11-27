@@ -1,6 +1,3 @@
-// Pins: a match found in a block's destination-free markdown lands on the same words in the real
-// body. The risk is a match the model's excerpt and the app's door cannot locate; titled links
-// and images broke it twice when the code re-derived link syntax by hand.
 import { markdownCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -33,7 +30,6 @@ describe("bodyRange", () => {
     const body = codec.serializeBlocks(blocks, UNSCOPED_DOCUMENT_LINKS)[0]?.body as string;
     const free = destinationFreeBlocks(codec, blocks)[0] as string;
     const view = markdownTextView(free);
-    // The last occurrence, so a link comes before it.
     const at = view.text.lastIndexOf(target);
     const range = bodyRange(codec, free, body, {
       start: view.start[at] as number,

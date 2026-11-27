@@ -1,8 +1,3 @@
-/**
- * Names the owners a chat's addresses carry by handle, from the project's Works and chats: a
- * Work by its name and, where another Work shares it, its handle (soft-deleted ones too, while restorable), a lineage by its first chat's
- * title, an upload's chat by its title.
- */
 import type { ReactNode } from "react";
 import { useCallback } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";

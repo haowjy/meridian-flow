@@ -1,4 +1,3 @@
-/** Common document-session editor binding and surface chrome. Review composition is external. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
@@ -66,7 +65,6 @@ export type EditorSurfaceOptions = {
   active?: boolean;
   ariaLabel?: string;
   localContentReady?: boolean;
-  /** Warm live editors keep their history but stand down their chrome and navigation. */
   held?: boolean;
 };
 
@@ -74,11 +72,8 @@ type SessionEditorProps = {
   identity: EditorMountIdentity;
   session: DocumentSession;
   surfaceOptions: EditorSurfaceOptions;
-  /** Review's addressed document record; live surfaces derive this from their catalog. */
   holderUri?: string | null;
-  /** The document this editor serves; it claims that document's focus-on-open intent. */
   focusKey?: string;
-  /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
 };
 
@@ -134,7 +129,6 @@ export function SessionEditor(props: SessionEditorProps) {
   return <ActiveSessionEditorView {...props} snapshot={snapshot} />;
 }
 
-/** What the editor view reads of its session: the rest (the save status) is `SyncStatus`'s. */
 type SessionView = Pick<DocumentSessionSnapshot, "connectionState" | "schemaFence" | "access">;
 
 const viewOf = ({
@@ -174,13 +168,10 @@ function ActiveSessionEditorView({
   const accountId = useAccountId();
   const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
-  // A room the server closed as removed (4208) says why while its tab stays open.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
   const removal = useRemovalAnswer(projectId ?? "", removed ? documentId : null);
-  // A document removed elsewhere and still in Trash stays on screen read-only; the pill says so
-  // and restores it.
   const documentInTrash = removal?.kind === "removed" && removal.inTrash;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -217,14 +208,9 @@ function ActiveSessionEditorView({
     return documentSlashCatalog((at) => openImagePicker(editorRef.current, { kind: "insert", at }));
   }, [effectiveEditable, identity.schemaType]);
 
-  // The scope's document index: what this document's relative links resolve
-  // against, and which addresses already hold a document.
   const linkableDocuments = useLinkableDocuments(
     active ? scope : { projectId: null, workId: null },
   );
-  // This document's own address: what its relative links resolve against and
-  // what a link inserted into it is spelled relative to. Null until the tree
-  // carrying it arrives, or while it has no address yet, which spells full URIs.
   const indexedHolderUri = useMemo(
     () =>
       linkableDocuments.documents.find((document) => document.documentId === documentId)?.uri ??
@@ -240,10 +226,6 @@ function ActiveSessionEditorView({
     t`Reference a file`,
     active ? scope.rootThreadId : null,
   );
-  // Where a link to a document nobody has written goes, unless a document is
-  // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
-  // names nothing (with folders, for a path link). Dashed until a follow's
-  // Create makes the document.
   const occupied = useMemo(
     () => new Set(linkableDocuments.documents.map((document) => document.uri)),
     [linkableDocuments],
@@ -255,7 +237,6 @@ function ActiveSessionEditorView({
     },
     [holderUri, occupied],
   );
-  // Read when the `@` menu opens.
   const atReferenceCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
       return null;
@@ -281,10 +262,6 @@ function ActiveSessionEditorView({
       }),
     [sharedReferenceCatalog],
   );
-  // What a pasted `[[Name]]` may name: the Editor's link index (the same one
-  // its links resolve against and link-ahead checks), in Manuscript, KB, User,
-  // and this Work's Scratch, the areas a link names a document in (Uploads
-  // hold files, Unfiled holds untitled documents).
   const pasteTargets = useMemo(
     () =>
       linkableDocuments.documents.flatMap((document) => {
@@ -364,9 +341,6 @@ function ActiveSessionEditorView({
     return () => dom.removeEventListener("focusout", onFocusOut);
   }, [afterPaintRelease, editor]);
 
-  // A document the writer just made takes the caret at its start, and main's editor, editable
-  // or not, joins what main shows (the page load's caret, an open from a sidebar over main),
-  // unless something else (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
     if (!editor || !active) return;
     const made = effectiveEditable && claimEditorFocus(focusKey);
@@ -417,8 +391,6 @@ function ActiveSessionEditorView({
       rootThreadId={scope.rootThreadId}
     >
       <section className="meridian-editor-shell relative flex h-full min-h-0 flex-col">
-        {/* One status pill: the word count, and sync only when there is something
-          to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
           {projectId && documentInTrash ? (
             <InTrashStatus documentId={documentId} />
@@ -444,15 +416,10 @@ function ActiveSessionEditorView({
           }
           scrollRef={scrollContainerRef}
         />
-        {/* The one chrome mount host. Every surface registers in
-          `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
         <EditorChromeHost editor={editor} active={active} />
         <span id={leaveHintId} hidden>
           <Trans>Tab types a tab. To leave the document, press Escape, then Tab.</Trans>
         </span>
-        {/* Where an internal link goes, and where a picture's bytes go. Ports, not
-          surfaces: each renders nothing, and what a writer sees from either lane
-          mounts through the host above. */}
         <ProjectLinkRuntime
           editor={editor}
           documentId={documentId}
@@ -475,8 +442,6 @@ export function PendingEditorShell({
   usePaintPending();
   return (
     <section className="meridian-editor-shell relative flex h-full min-h-0 flex-col">
-      {/* The toolbar is persistent chrome: it holds its place while the
-          document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas
         editor={null}
         active={active && !held}
@@ -502,8 +467,6 @@ function EditorCanvas({
   onScroll?: UIEventHandler<HTMLDivElement>;
 }) {
   const touch = useCoarsePointer();
-  // The page's chrome may hold the toolbar's place (Review changes' bar), even where the
-  // document has no formatting toolbar of its own.
   const taken = useToolbarTaken() && active;
   useEffect(
     () =>
@@ -524,7 +487,6 @@ function EditorCanvas({
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
-      {/* A slow room (a large chapter opening cold) shows the page's skeleton, never a blank. */}
       {editor ? (
         <EditorContent editor={editor} className={editorColumnFill} />
       ) : (

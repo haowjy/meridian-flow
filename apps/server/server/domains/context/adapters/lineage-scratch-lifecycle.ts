@@ -1,7 +1,3 @@
-/**
- * One lifecycle owner for lineage Scratch provisioning and for trash reconciliation of the
- * sources a thread owns: its lineage's Scratch and its own chat's uploads.
- */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
@@ -31,12 +27,10 @@ export interface LineageScratchLifecycle {
 export function createDrizzleLineageScratchLifecycle(
   db: Database,
   arrivals?: Pick<DocumentArrivals, "settle">,
-  /** Who hears that a lineage froze or thawed: its live rooms, and its owner's draft lists. */
   liveness?: {
     fileAccessChanges: Pick<FileAccessChanges, "publish">;
     hints: ProjectHintPort;
   },
-  /** Who hears that a lineage's Scratch began, when the lifecycle has no `liveness`. */
   sourceHints: Pick<ProjectHintPort, "publishSourcesHint"> | undefined = liveness?.hints,
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
@@ -132,7 +126,6 @@ export function createDrizzleLineageScratchLifecycle(
             draft ? [{ type: "draft-hint" as const, projectId, draft }] : [],
           ),
         );
-        // A chat's uploads follow that chat's own trash state, not its lineage's.
         await reconcileSources(
           and(
             eq(contextSources.scope, "chat"),
@@ -144,7 +137,6 @@ export function createDrizzleLineageScratchLifecycle(
       }),
   };
 
-  /** Hide the owner's sources while it is not live and reopen them on restore. */
   async function reconcileSources(owned: SQL | undefined, live: SQLWrapper) {
     const hidden = await currentDrizzleDb(db)
       .select({ id: contextSources.id })
@@ -161,7 +153,6 @@ export function createDrizzleLineageScratchLifecycle(
       (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
     );
     if (arrivals && restored.length) {
-      // Arrivals are live: a draft's hidden documents in a restored source settle nothing.
       const liveTree = visibleDocuments(LIVE_TREE);
       const content = await currentDrizzleDb(db)
         .select({ id: liveTree.id })

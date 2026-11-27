@@ -28,23 +28,6 @@ export function projectThreadsQueryOptions(client: QueryClient, projectId: strin
   };
 }
 
-/**
- * Threads belonging to a single project. Seeded by the project route loader
- * (or by the optimistic-create flow). `null` = not loaded yet, `[]` = loaded empty.
- *
- * Returns `ThreadListItem[]` — the projection adds denormalized `work`,
- * `runningTurnId` and `actionRequired` fields that the workspace UI
- * needs to render row state honestly.
- *
- * The query is suppressed while the project is still pending optimistic
- * creation on the server; otherwise the request races `POST /api/projects` and
- * 404s during a normal flow.
- *
- * Pass `enabled: false` to skip the fetch (e.g. when the caller already has
- * the thread from a local cache).
- *
- * A chat pointed at another draft names it at once (`projectChatDrafts`).
- */
 export function useProjectThreads(
   projectId: string,
   options?: { enabled?: boolean },

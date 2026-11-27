@@ -1,5 +1,3 @@
-/** The host-independent lifecycle for a menu the writer types underneath. */
-
 export type InternalSuggestionSessionId = string;
 export type InternalSuggestionGeneration = Readonly<{
   sessionId: InternalSuggestionSessionId;
@@ -11,18 +9,14 @@ export type SuggestionKey = "ArrowDown" | "ArrowUp" | "Home" | "End" | "Enter" |
 export type SuggestionKeyBindings = Readonly<Partial<Record<SuggestionKey, () => boolean>>>;
 
 export type SuggestionRetreat = {
-  /** Move one level toward the root. False means this session is already at its root. */
   backtrack: () => boolean;
-  /** Close the root suggestion without prescribing which physical key caused it. */
   dismiss: () => void;
 };
 
-/** One host registration owns ordinary keys and semantic retreat together. */
 export type SuggestionHostLease = {
   release: () => void;
 };
 
-/** The host-neutral interaction capability a suggestion adapter consumes. */
 export type SuggestionHost = {
   register: (input: {
     id: string;
@@ -34,7 +28,6 @@ export type SuggestionHost = {
 export type SuggestionMenuSnapshot<TItem, TMeta = null> = {
   open: boolean;
   items: readonly TItem[];
-  /** Stable identity of the highlighted row; array position is presentation only. */
   activeId: string | null;
   activeIndex: number;
   query: string;
@@ -45,7 +38,6 @@ export type SuggestionMenuSnapshot<TItem, TMeta = null> = {
 
 export type InternalSuggestionSession<TItem, TMeta = null> = {
   items: readonly TItem[];
-  /** Stable within the row's domain, including across catalog refreshes. */
   rowId: (item: TItem) => string;
   query: string;
   anchorRect: () => DOMRect | null;
@@ -59,9 +51,7 @@ export type InternalSuggestionSession<TItem, TMeta = null> = {
    * the answer to a bare Enter: with no default row, Enter is the host's.
    */
   defaultActive?: (item: TItem) => boolean;
-  /** Keep loading/empty feedback visible without inventing a selectable row. */
   keepOpenWhenEmpty?: boolean;
-  /** Handles Escape within a hierarchical session; false hands it back to the host. */
   backtrack?: () => boolean;
   dismiss: () => void;
 };
@@ -91,18 +81,14 @@ export type SuggestionMenu<TItem, TMeta = null> = {
   dismiss: () => void;
 };
 
-/** The single session owner, driven by a trigger or another host. */
 export type InternalSuggestionLifecycle<TItem, TMeta = null> = {
   open: (session: InternalSuggestionSession<TItem, TMeta>) => InternalSuggestionGeneration;
-  /** Fence all earlier work before starting an async query/context/container update. */
   nextGeneration: (sessionId: InternalSuggestionSessionId) => InternalSuggestionGeneration | null;
-  /** Returns false without publishing when the identity is stale. */
   update: (
     identity: InternalSuggestionGeneration,
     session: InternalSuggestionSession<TItem, TMeta>,
     selection: SuggestionSelectionPolicy,
   ) => boolean;
-  /** A stale host cannot close a newer session. */
   close: (identity: InternalSuggestionGeneration) => boolean;
 };
 

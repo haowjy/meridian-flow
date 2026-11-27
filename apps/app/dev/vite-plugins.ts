@@ -1,10 +1,6 @@
 import * as babel from "@babel/core";
 import type { Plugin } from "vite";
 
-/**
- * Run `@lingui/babel-plugin-lingui-macro` over source files that import a
- * Lingui macro (`t`, `<Trans>`, `msg`, `plural`, …).
- */
 export function linguiMacroBabelPlugin(): Plugin {
   const FILE_EXT = /\.[mc]?[jt]sx?$/;
   const MACRO_IMPORT = /from\s+['"]@lingui\/(?:core|react)\/macro['"]/;

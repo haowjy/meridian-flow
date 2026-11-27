@@ -1,4 +1,3 @@
-/** Thin CrossWS transport shell for the Loro room server (`lib/loro-ws-handler.ts`). */
 import { defineWebSocketHandler } from "nitro";
 import { runWithEventCorrelation } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";

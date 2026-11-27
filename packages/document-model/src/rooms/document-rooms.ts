@@ -2,25 +2,16 @@ import type { DocumentRoom } from "@meridian/contracts/protocol";
 import type { PeerId } from "../peer.js";
 import type { RoomDocs } from "../room-docs.js";
 
-/**
- * Who sent a batch into a room: a socket's connection id, or `server:<what>` for the server's own
- * writers. A subscriber skips the batches it sent itself. It is never an author: authors are
- * commit messages inside the bytes (design §5).
- */
 export type RoomOrigin = string;
 
-/** A batch a room imported, as its subscribers receive it. */
 export interface RoomBatch {
   room: DocumentRoom;
-  /** The envelope as it arrived: forward it unchanged. */
   batch: Uint8Array;
   origin: RoomOrigin;
 }
 
-/** The room's current version and what a joining copy lacks, both envelopes. */
 export interface RoomSync {
   version: Uint8Array;
-  /** Null when the copy lacks nothing. */
   update: Uint8Array | null;
 }
 
@@ -39,26 +30,10 @@ export interface RoomSync {
  * batch into the room only once it has committed.
  */
 export interface DocumentRooms<Tx> {
-  /**
-   * A private copy of the room's docs, forked under `peer` (default: a fresh server peer), loading
-   * the room if it is not loaded. A fork room's copy carries its own copy of Live's docs
-   * (`docs.live`). The caller owns the copy and calls `free()` on it; nothing it does reaches the
-   * room except through `commit` or `write`.
-   */
   read(room: DocumentRoom, options?: { peer?: PeerId }): Promise<RoomDocs>;
 
-  /** For a Join: the room's version and the update a copy at `version` lacks. */
   sync(room: DocumentRoom, version: Uint8Array): Promise<RoomSync>;
 
-  /**
-   * A client's batch (a keystroke): imported, sent to the other subscribers, forwarded into loaded
-   * forks, and saved on the debounce (2 s after the last batch, 10 s after the first). Resolves
-   * once imported, which is when the socket acks it; `pending` says some ops wait on others not yet
-   * seen, and the batch is acked either way. Rejects for two things only, and then imports none of
-   * the batch: bytes that do not decode or fail Loro's checksum (`EnvelopeError`,
-   * `CorruptDocBytesError`: `LORO_ROOM_ERROR.CORRUPT_UPDATE`), and an update that depends on
-   * history below a doc's shallow cutoff (`HistoryCutoffError`: `LORO_ROOM_ERROR.HISTORY_CUTOFF`).
-   */
   write(room: DocumentRoom, batch: Uint8Array, origin: RoomOrigin): Promise<{ pending: boolean }>;
 
   /**
@@ -74,24 +49,13 @@ export interface DocumentRooms<Tx> {
    */
   commit(tx: Tx, room: DocumentRoom, batch: Uint8Array, origin: RoomOrigin): Promise<void>;
 
-  /**
-   * A first state, as snapshots by doc key (an envelope): a new document, an import. Written in
-   * `tx`; a loaded room imports it after commit.
-   */
   seed(tx: Tx, room: DocumentRoom, snapshots: Uint8Array): Promise<void>;
 
-  /** Every batch the room imports from now on, from any origin, in import order. */
   subscribe(room: DocumentRoom, listener: (batch: RoomBatch) => void): () => void;
 
-  /** Save the room's unsaved docs now (an AI turn's end, a press). */
   flush(room: DocumentRoom): Promise<void>;
 
-  /** Room names loaded now. */
   loaded(): string[];
 
-  /**
-   * Save and drop the room: every doc it holds is freed. Unloading a Live room unloads its loaded
-   * forks first. The adapter also unloads idle rooms, and the least recently used above its bound.
-   */
   unload(room: DocumentRoom): Promise<void>;
 }
