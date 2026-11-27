@@ -41,7 +41,7 @@ export class AccountLifetime {
   private readonly stopTreeListDebugHook: () => void;
   readonly opener;
   readonly linkSettlements = createLinkSettlements();
-  private readonly featureLease;
+  private readonly removalLease;
   private readonly signedIn: () => boolean;
   private readonly accountChanged = (): void => {
     countSignOut(this.accountId);
@@ -95,7 +95,7 @@ export class AccountLifetime {
       registry: this.registry,
       epochSignal: this.epochSignal,
     });
-    this.featureLease = this.removal.createLifetimeLease();
+    this.removalLease = this.removal.createLifetimeLease();
   }
 
   private async signedOutElsewhere(): Promise<void> {
@@ -109,10 +109,10 @@ export class AccountLifetime {
     window.location.assign(this.endSessionHref());
   }
 
-  resumeFeatureLease(): void {
+  mount(): void {
     if (this.epochSignal.aborted) return;
     sendRequestsAs(this.requests);
-    this.featureLease.resume();
+    this.removalLease.resume();
     this.stopWatchingSignOuts ??= watchSignOuts(
       this.signedIn,
       () => void this.signedOutElsewhere(),
@@ -121,8 +121,8 @@ export class AccountLifetime {
     else void this.registry.deliverStoredCopies().catch((error: unknown) => reportError(error));
   }
 
-  suspendFeatureLease(): void {
-    this.featureLease.suspend();
+  unmount(): void {
+    this.removalLease.suspend();
     this.stopWatchingSignOuts?.();
     this.stopWatchingSignOuts = null;
   }
@@ -133,7 +133,7 @@ export class AccountLifetime {
     this.stopTreeListDebugHook();
     this.treeLists.close();
     this.draftCommands.close();
-    this.featureLease.suspend();
+    this.removalLease.suspend();
   }
 
   private endSessionHref(): string {
@@ -169,7 +169,7 @@ export class AccountLifetime {
 
   async finishClose(): Promise<void> {
     this.beginClose();
-    this.featureLease.disposeIfSuspended();
+    this.removalLease.disposeIfSuspended();
     await this.registry.close();
     this.stopWatchingSignOuts?.();
     this.stopWatchingSignOuts = null;
