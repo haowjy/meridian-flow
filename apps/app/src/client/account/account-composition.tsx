@@ -1,15 +1,12 @@
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import type { ProjectId } from "@meridian/contracts/runtime";
 import {
-  createContext,
   type ReactNode,
   useCallback,
-  useContext,
   useEffect,
   useInsertionEffect,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import {
   CommandDriverProvider,
@@ -19,7 +16,6 @@ import {
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { FailureLogProvider } from "@/client/failures/failure-log";
 import { LinkSettlementsProvider } from "@/client/link-settlements";
-import type { ContextRemovalCoordinator } from "@/client/project-shell/context-removal-coordinator";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { chatRenameDomain } from "@/client/query/chat-rename-command";
@@ -29,24 +25,24 @@ import { projectDomain } from "@/client/query/project-commands";
 import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
 import { useRouteProjectId } from "@/client/query/useMcpConnections";
 import { workDomain } from "@/client/query/work-commands";
-import { type OpenDocument, ThreadStoreProvider } from "@/client/stores";
+import { ThreadStoreProvider } from "@/client/stores";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { ProjectDocumentLiveOpenerContext } from "@/core/editor/project-document-live-opener-context";
-import type { ProjectStandings } from "@/core/tree-list/project-standings";
-import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { AccountSettingsProvider } from "./AccountSettingsProvider";
-import { AccountEpochContext, RequestAccountContext, SignOutContext } from "./account-context";
-import { AccountFeatureLifetime } from "./account-lifetime";
-
-const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
-const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
-
-const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
-
-const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
-const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
-const LiveDocumentRegistryAccountContext = createContext<LiveDocumentSessionRegistry | null>(null);
+import {
+  AccountEpochContext,
+  ContextRemovalContext,
+  DraftCommandsContext,
+  LiveDocumentRegistryContext,
+  PresentedContext,
+  ProjectStandingsContext,
+  RequestAccountContext,
+  SignOutContext,
+  TreeListsContext,
+  useDraftCommandOwner,
+  useLiveDocumentSessionRegistry,
+} from "./account-context";
+import { AccountLifetime } from "./account-lifetime";
 
 export function AccountComposition({
   user,
@@ -61,7 +57,7 @@ export function AccountComposition({
   children: ReactNode;
 }) {
   return (
-    <AccountFeatureComposition accountId={user.userId} externalId={user.externalId}>
+    <AccountLifetimeProvider accountId={user.userId} externalId={user.externalId}>
       <AccountCommandDriver>
         <AccountSettingsProvider
           serverValue={user.accountSettings}
@@ -78,7 +74,7 @@ export function AccountComposition({
           </FailureLogProvider>
         </AccountSettingsProvider>
       </AccountCommandDriver>
-    </AccountFeatureComposition>
+    </AccountLifetimeProvider>
   );
 }
 
@@ -113,7 +109,7 @@ function FollowPresses() {
   return null;
 }
 
-export function AccountFeatureComposition({
+export function AccountLifetimeProvider({
   accountId,
   externalId,
   children,
@@ -126,7 +122,7 @@ export function AccountFeatureComposition({
   const desired = useRef({ accountId, externalId });
   desired.current = { accountId, externalId };
   const [lifetime, setLifetime] = useState(
-    () => new AccountFeatureLifetime(accountId, externalId, connectivityHints),
+    () => new AccountLifetime(accountId, externalId, connectivityHints),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
   const transition = useRef<Promise<void> | null>(null);
@@ -143,7 +139,7 @@ export function AccountFeatureComposition({
       .finishClose()
       .then(() => {
         const next = desired.current;
-        setLifetime(new AccountFeatureLifetime(next.accountId, next.externalId, connectivityHints));
+        setLifetime(new AccountLifetime(next.accountId, next.externalId, connectivityHints));
       })
       .catch((error: unknown) => setTeardownError(error))
       .finally(() => {
@@ -161,13 +157,13 @@ export function AccountFeatureComposition({
   );
 
   if (lifetime.accountId !== accountId) return null;
-  return <AccountFeatureProviders lifetime={lifetime}>{children}</AccountFeatureProviders>;
+  return <LifetimeContexts lifetime={lifetime}>{children}</LifetimeContexts>;
 }
-function AccountFeatureProviders({
+function LifetimeContexts({
   lifetime,
   children,
 }: {
-  lifetime: AccountFeatureLifetime;
+  lifetime: AccountLifetime;
   children: ReactNode;
 }) {
   useInsertionEffect(() => {
@@ -179,10 +175,10 @@ function AccountFeatureProviders({
     <AccountEpochContext.Provider value={lifetime.epochSignal}>
       <RequestAccountContext.Provider value={lifetime.requests}>
         <SignOutContext.Provider value={signOut}>
-          <TreeListsAccountContext.Provider value={lifetime.treeLists}>
-            <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-              <ProjectStandingsAccountContext.Provider value={lifetime.standings}>
-                <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
+          <TreeListsContext.Provider value={lifetime.treeLists}>
+            <ContextRemovalContext.Provider value={lifetime.removal}>
+              <ProjectStandingsContext.Provider value={lifetime.standings}>
+                <LiveDocumentRegistryContext.Provider value={lifetime.registry}>
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
@@ -192,71 +188,12 @@ function AccountFeatureProviders({
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
-                </LiveDocumentRegistryAccountContext.Provider>
-              </ProjectStandingsAccountContext.Provider>
-            </ContextRemovalAccountContext.Provider>
-          </TreeListsAccountContext.Provider>
+                </LiveDocumentRegistryContext.Provider>
+              </ProjectStandingsContext.Provider>
+            </ContextRemovalContext.Provider>
+          </TreeListsContext.Provider>
         </SignOutContext.Provider>
       </RequestAccountContext.Provider>
     </AccountEpochContext.Provider>
   );
-}
-
-export function useOptionalTreeLists(): TreeListRegistry | null {
-  return useContext(TreeListsAccountContext);
-}
-
-export function useProjectStandings(): ProjectStandings {
-  const standings = useContext(ProjectStandingsAccountContext);
-  if (!standings) throw new Error("AccountFeatureComposition is required");
-  return standings;
-}
-
-export function useContextRemovalCoordinator(): ContextRemovalCoordinator {
-  const coordinator = useContext(ContextRemovalAccountContext);
-  if (!coordinator) throw new Error("AccountFeatureComposition is required");
-  return coordinator;
-}
-
-export function useOptionalContextRemovalCoordinator(): ContextRemovalCoordinator | null {
-  return useContext(ContextRemovalAccountContext);
-}
-
-export function useLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry {
-  const registry = useContext(LiveDocumentRegistryAccountContext);
-  if (!registry) throw new Error("AccountFeatureComposition is required");
-  return registry;
-}
-
-export function useOptionalLiveDocumentSessionRegistry(): LiveDocumentSessionRegistry | null {
-  return useContext(LiveDocumentRegistryAccountContext);
-}
-
-export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] {
-  const owner = useContext(DraftCommandsContext);
-  if (!owner) throw new Error("AccountFeatureComposition is required");
-  return owner;
-}
-
-export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
-  return useContext(DraftCommandsContext);
-}
-
-export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
-  return useContext(PresentedContext);
-}
-
-const NOTHING_PRESENTED: readonly OpenDocument[] = [];
-
-export function useShownDocuments(projectId: string): readonly OpenDocument[] {
-  const presented = useContext(PresentedContext);
-  return useSyncExternalStore(
-    presented?.subscribe ?? noSubscription,
-    () => presented?.shown(projectId) ?? NOTHING_PRESENTED,
-    () => NOTHING_PRESENTED,
-  );
-}
-
-function noSubscription(): () => void {
-  return () => undefined;
 }

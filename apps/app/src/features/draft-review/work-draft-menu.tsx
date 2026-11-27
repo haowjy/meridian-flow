@@ -5,7 +5,7 @@ import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
   useOptionalPresentedDocuments,
-} from "@/client/account/account-composition";
+} from "@/client/account/account-context";
 import { deleteNoticeKey } from "@/client/draft-commands/draft-notices";
 import { useDraftOnly } from "@/client/query/useOwnerDrafts";
 import type { ShellTreeVersion } from "@/features/project/tree-version";

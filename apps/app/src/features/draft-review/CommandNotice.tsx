@@ -10,7 +10,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useDraftCommandOwner } from "@/client/account/account-composition";
+import { useDraftCommandOwner } from "@/client/account/account-context";
 import type { DraftNotice } from "@/client/draft-commands/draft-notices";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { type ReviewFileTarget, reviewFileTargetName } from "@/client/query/work-draft-files";

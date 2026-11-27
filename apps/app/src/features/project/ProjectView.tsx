@@ -2,10 +2,10 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
+  useAccountId,
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
-} from "@/client/account/account-composition";
-import { useAccountId } from "@/client/account/account-context";
+} from "@/client/account/account-context";
 import type { ContextRemovalRoutePort } from "@/client/project-shell/context-removal-coordinator";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";

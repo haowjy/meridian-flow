@@ -24,7 +24,7 @@ import {
   useOptionalLiveDocumentSessionRegistry,
   useOptionalPresentedDocuments,
   useOptionalTreeLists,
-} from "@/client/account/account-composition";
+} from "@/client/account/account-context";
 import { useCommandDriver } from "@/client/commands/driver-context";
 import type { CommandOutcome, HeldNoticeRows } from "@/client/draft-commands/draft-command-owner";
 import { type NoticeSurface, workNoticeKey } from "@/client/draft-commands/draft-notices";

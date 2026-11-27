@@ -4,7 +4,7 @@ import {
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
   useProjectStandings,
-} from "@/client/account/account-composition";
+} from "@/client/account/account-context";
 import type { ContextRemovalRoutePort } from "@/client/project-shell/context-removal-coordinator";
 import { useEndedSources } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";

@@ -4,7 +4,7 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { Work } from "@meridian/contracts/works";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useOptionalPresentedDocuments } from "@/client/account/account-composition";
+import { useOptionalPresentedDocuments } from "@/client/account/account-context";
 import { placeTab } from "@/client/project-shell/open-document-from-file";
 import type { MountedPlace } from "@/client/project-shell/presented-documents";
 import { contextRouteRequest } from "@/client/project-shell/project-route";

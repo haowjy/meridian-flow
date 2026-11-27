@@ -1,6 +1,5 @@
 import { vi } from "vitest";
-import * as account from "@/client/account/account-composition";
-import * as accountContext from "@/client/account/account-context";
+import * as account from "@/client/account/account-context";
 import { ContextRemovalCoordinator } from "@/client/project-shell/context-removal-coordinator";
 import * as threads from "@/client/query/useProjectThreads";
 import * as trees from "@/client/query/useProjectTrees";
@@ -17,8 +16,8 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   const removal = new ContextRemovalCoordinator();
   const epoch = new AbortController();
   const seams = [
-    vi.spyOn(accountContext, "useAccountId").mockReturnValue("writer"),
-    vi.spyOn(accountContext, "useAccountEpochSignal").mockReturnValue(epoch.signal),
+    vi.spyOn(account, "useAccountId").mockReturnValue("writer"),
+    vi.spyOn(account, "useAccountEpochSignal").mockReturnValue(epoch.signal),
     vi.spyOn(account, "useProjectStandings").mockReturnValue({
       watch: () => () => undefined,
       standing: () => ({ kind: "waiting" }),

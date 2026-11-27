@@ -8,7 +8,7 @@ import { expect, it } from "vitest";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type OpenDocument, ThreadStoreProvider } from "@/client/stores";
-import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
+import { AccountLifetimeTestProvider } from "@/test-support/account-lifetime-provider";
 import { type DocumentReview, useDocumentReview } from "./DocumentReview";
 
 const accountId = "account";
@@ -44,10 +44,10 @@ it("paints a document's draft only in the host that shows it", async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
         <ThreadStoreProvider>
-          <AccountFeatureTestProvider accountId={accountId}>
+          <AccountLifetimeTestProvider accountId={accountId}>
             <Host showing={false} report={(review) => (main = review)} />
             <Host showing report={(review) => (side = review)} />
-          </AccountFeatureTestProvider>
+          </AccountLifetimeTestProvider>
         </ThreadStoreProvider>
       </QueryClientProvider>,
     );

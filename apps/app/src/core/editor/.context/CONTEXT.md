@@ -537,8 +537,8 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   fact, reads each copy beyond its mark before deleting it. A copy with no mark counts as marking
   nothing: all of it counts.
 - What it cannot reach: a document no tab has open keeps its typing in its copy until its next
-  open, its purge, or a sign-out, which opens it to deliver first (Account lifetime in
-  `features/project/context/.context/state-machines.md`).
+  open, its purge, or a sign-out, which opens it to deliver first ([Account
+  lifetime](../../../client/account/.context/state-machines.md)).
 
 ### Undeliverable edits (a room admitted read-only, or ended below its history)
 

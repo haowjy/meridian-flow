@@ -143,7 +143,7 @@ the draft first. A chat started while one of the Work's drafts is showing writes
 
 ## Account command lifetime
 
-`AccountFeatureLifetime.draftCommands` (`DraftCommandOwner`) is shared by editor, chat and Work
+`AccountLifetime.draftCommands` (`DraftCommandOwner`) is shared by editor, chat and Work
 surfaces, and outlives them:
 
 - `followPresses` holds the items of the journal's presses in flight, which hides their rows.

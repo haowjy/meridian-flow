@@ -18,7 +18,7 @@ import {
 import {
   useContextRemovalCoordinator,
   useOptionalPresentedDocuments,
-} from "@/client/account/account-composition";
+} from "@/client/account/account-context";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import {
   type ContextRouteRequest,

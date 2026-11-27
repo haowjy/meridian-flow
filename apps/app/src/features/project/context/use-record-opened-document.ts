@@ -13,8 +13,11 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { useOptionalTreeLists } from "@/client/account/account-composition";
-import { useAccountEpochSignal, useAccountId } from "@/client/account/account-context";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+  useOptionalTreeLists,
+} from "@/client/account/account-context";
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import { accountQueryKeys } from "@/client/query/account-query-keys";
 import { type RecentOpening, touchAccountRecent } from "@/client/recents";

@@ -7,6 +7,6 @@ export const ProjectDocumentLiveOpenerContext = createContext<ProjectDocumentLiv
 
 export function useProjectDocumentLiveOpener(): ProjectDocumentLiveOpener {
   const opener = useContext(ProjectDocumentLiveOpenerContext);
-  if (!opener) throw new Error("AccountFeatureComposition is required");
+  if (!opener) throw new Error("AccountLifetimeProvider is required");
   return opener;
 }
