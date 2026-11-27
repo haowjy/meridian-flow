@@ -1,7 +1,6 @@
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import type { PeerId } from "../peer.js";
 import type { RoomDocs } from "../room-docs.js";
-import type { RoomVersion } from "../version.js";
 
 export type RoomOrigin = string;
 
@@ -14,7 +13,7 @@ export interface RoomBatch {
 export interface RoomSync {
   version: Uint8Array;
   update: Uint8Array | null;
-  // A doc it doesn't name counts as saved at `version`, so a doc never saved is named, empty.
+  // Every doc's saved version, encoded: a doc it doesn't name has nothing saved.
   saved: Uint8Array;
 }
 
@@ -42,7 +41,7 @@ export interface DocumentRooms<Tx> {
 
   subscribe(room: DocumentRoom, listener: (batch: RoomBatch) => void): () => void;
 
-  subscribeSaved(room: DocumentRoom, listener: (saved: RoomVersion) => void): () => void;
+  subscribeSaved(room: DocumentRoom, listener: (saved: Uint8Array) => void): () => void;
 
   flush(room: DocumentRoom): Promise<void>;
 

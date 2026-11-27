@@ -54,8 +54,8 @@ copy, and only what that leaves calls the session's `onUndeliveredTabWrites`, on
 registry gives it its socket back and holds it until saved (`deliverTabWrites`). Reconnecting on `unsaved` alone
 would rejoin on every keystroke typed in another tab. The mark is saved, not received, so it lags
 the writing tab's typing by the server's 2 s save debounce: `TAB_QUIET_MS` sits above that so a
-detached session finds the typing saved at quiet. At 2 s a detached session Joined once per typing
-burst (22 Joins in a two-tab typing minute, against none at 4 s).
+detached session finds the typing saved at quiet; at or below it, a detached session Joins once
+per typing burst.
 
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
@@ -500,7 +500,8 @@ keyboard, pointer, drop, or recovery answer.
   (the room closes, `settleDrainedRoom`), when the account closes
   (the registry's `close`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
   without a save. That cap is for a room that answers but never saves (a failing save, ops the
-  server holds as pending for missing dependencies); the
+  server holds as pending for missing dependencies, even a collaborator's batch relayed into this
+  copy, which then also fails this writer's sign-out); the
   clock runs only while the connection is up and restarts on each drop, so offline time
   never counts and a writer who types on a train gets delivery on reconnect, however
   long it takes. (Elapsed connected time, not a refusal count.)

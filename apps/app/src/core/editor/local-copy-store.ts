@@ -10,7 +10,7 @@ const VERSION = 1;
 const SNAPSHOTS = "snapshots";
 const UPDATES = "updates";
 const META = "meta";
-// Builds before saved frames stored the received version under this key; they read as saved.
+// The key stays "server": renaming it drops every copy's mark.
 export const SAVED_META = "server";
 export const INITIALIZED_META = "content-initialization";
 

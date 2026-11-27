@@ -164,7 +164,6 @@ export function createLoroRoomTransport({
   };
   const server = new Map<DocKey, DocVersion>();
   const saved = new Map<DocKey, DocVersion>();
-  let savedIsReceived = false;
   const emitSaved = () => {
     for (const listener of savedListeners) listener();
   };
@@ -298,12 +297,9 @@ export function createLoroRoomTransport({
         server.clear();
         const joinVersion = decodeRoomVersion(message.version);
         mergeVersion(server, joinVersion);
-        const { readOnlyWhy, saved: lagging } = decodeLoroJoinExtra(message.extra);
-        savedIsReceived = lagging === undefined;
+        // Nothing counts as saved on this connection until the server's saved frame says so.
         saved.clear();
-        mergeVersion(saved, joinVersion);
-        for (const [key, version] of decodeRoomVersion(lagging ?? new Uint8Array()))
-          saved.set(key, version);
+        const { readOnlyWhy } = decodeLoroJoinExtra(message.extra);
         if (message.permission === "write") emitAccess("edit", null);
         else emitAccess("read", readOnlyWhy ?? null);
         if (presence) {
@@ -370,7 +366,6 @@ export function createLoroRoomTransport({
         unacked.delete(message.refId);
         mergeVersion(server, version);
         emitAck();
-        if (savedIsReceived) emitSaved();
         return;
       }
       case MessageType.RoomError: {
@@ -494,7 +489,7 @@ export function createLoroRoomTransport({
       });
     },
     serverVersion: () => server,
-    savedVersion: () => (savedIsReceived ? server : saved),
+    savedVersion: () => saved,
     get synced() {
       return synced;
     },

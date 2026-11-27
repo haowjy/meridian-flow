@@ -9,13 +9,18 @@ The tab still holds it, and its next Join sends what the room's version lacks.
 
 What a room has saved is reported apart from the ack, to sockets whose Join asked (`saved: true` in
 its auth). The room keeps `saved` per doc: the versions its rows hold, as this process last read or
-wrote them. It is set at load and moved only after a save, a command or a seed commits, to versions
-read at the moment each row was exported (`writeSnapshots`), never read back from the room after
-the insert's awaits, because a batch imported during them is in the room but not in the row. The
-Join's answer lists in its `extra` each doc whose saved version lags the Join's version (a doc
-never saved is listed empty); after each save that moved it, every such socket gets a saved frame,
-a `DocUpdate` tagged `LORO_SAVED_CRDT` naming the docs the save wrote and their saved versions, sent
-through the same fragmenting writer as batches. Rows only grow (every save merges the stored rows
+wrote them. It is set at load from the rows (`savedAtLoad`, before `forward()`) and moved only
+after a save, a command or a seed commits, to versions read at the moment each row was exported
+(`writeSnapshots`), never read back from the room after the insert's awaits, because a batch
+imported during them is in the room but not in the row. A draft's room with no structure row of
+its own reads its structure through a fork of Live's in-memory structure, which can hold ops Live
+hasn't saved, so its saved structure is Live's saved structure, and it moves with each Live save
+until the draft writes a structure row (`inheritsStructure`). Straight after the Join's answer
+the socket gets a saved frame, a `DocUpdate` tagged `LORO_SAVED_CRDT`, stating every doc's saved
+version (`RoomSync.saved`, about 26 bytes a doc: 8 KB at 300 docs, 78 KB at 3,000); after each
+save that moved one, a frame naming the docs it moved, encoded once per save. Both go through the
+same fragmenting writer as batches; nothing rides in the unfragmented `JoinResponseOk`, which a
+large room's statement would push past loro-protocol's 256 KiB. Rows only grow (every save merges the stored rows
 first), so a process's `saved` is a lower bound of what Postgres holds, whichever process wrote it.
 The browser's copy decides whether it may delete words from that, not from the ack
 (`apps/app/src/core/transport/.context/CONTEXT.md`).

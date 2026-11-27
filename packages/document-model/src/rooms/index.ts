@@ -5,4 +5,4 @@ export {
   type MemoryRoomTx,
   type SnapshotRow,
 } from "./memory.js";
-export { advanceSaved, savedLag } from "./saved.js";
+export { advanceSaved, savedAtLoad } from "./saved.js";

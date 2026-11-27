@@ -11,9 +11,9 @@ The Join exchange, which the server's handler speaks too (local-first design §4
    vector per doc key) and `encodeLoroJoinAuth({schema, peer, account, saved: true})`. `account`
    is the account the tab's lifetime belongs to; the socket authenticates with the browser's
    cookie, which may have changed account since. `saved` asks for saved versions (below).
-2. The server answers `JoinResponseOk` with the permission and its own room version, its `extra`
-   naming each doc whose saved version lags that version, then sends what the copy lacks as one
-   `DocUpdate` (fragmented when large).
+2. The server answers `JoinResponseOk` with the permission and its own room version, then, to a
+   socket that asked, a saved frame stating every doc's saved version, then what the copy lacks
+   as one `DocUpdate`. Both are fragmented when large.
 3. The client joins presence, sends its presence state, and sends
    `copy.exportSince(serverVersion)` as one `DocUpdate`.
 
@@ -48,18 +48,24 @@ The transport keeps two versions per connection. `serverVersion()` is what the s
 received: the Join's version, each batch it sent, and each acknowledged batch. The server imports
 a batch into memory and acks it, and saves the room 2 to 10 s later
 (`apps/server/server/domains/collab/.context/websocket-concurrency.md`), so a server killed in
-between loses an acked batch. `savedVersion()` is what it has saved: at each `JoinResponseOk` the
-Join's version overlaid with the docs its `extra.saved` lists, then merged with each saved frame,
-a `DocUpdate` tagged `LORO_SAVED_CRDT` whose one update is an encoded room version. A saved frame
-merges into `serverVersion()` too. `subscribeSaved` fires on each saved frame and each Join. The
+between loses an acked batch. `savedVersion()` is what it has saved: emptied at each
+`JoinResponseOk`, then merged with each saved frame, a `DocUpdate` tagged `LORO_SAVED_CRDT` whose
+one update is an encoded room version. The first, sent straight after the answer, names every doc
+the room's rows hold; later ones name what each save moved. Nothing is inferred from absence: a
+doc no frame names has nothing saved on this connection, so a missing or unreadable frame fails
+closed (sign-out waits, a held session stays held), never open. Between the answer and that first
+frame, a few milliseconds on the same socket, the connection reports nothing saved; the waits
+wake on the frame's `subscribeSaved`. A saved frame merges into `serverVersion()` too.
+`subscribeSaved` fires on each saved frame and each Join. The
 typing UI and a press read received; everything that may delete or let go of a copy reads saved
 (`DocumentSession.hasUnsavedEdits`).
 
 A saved frame can be fragmented like a batch (one save may write thousands of block docs), so
 the fragment reassembly dispatches the whole message by its CRDT tag, as an unfragmented
 `DocUpdate` is: a saved frame handed to `copy.importRemote` would be imported as a document
-batch. A server that answers a Join without `extra.saved` is older than saved frames: on that
-connection saved follows received, as before. That fallback can go once no such server answers.
+batch. A server older than saved frames sends none, so against it nothing counts as saved: sign-out
+answers "Couldn't log out" until the server is updated. Protocol 8 forces old tabs to reload; it
+can't force an old server on a new tab.
 
 ## Acknowledgement
 

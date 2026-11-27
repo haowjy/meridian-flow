@@ -3,7 +3,7 @@ import type { Frontiers } from "loro-crdt";
 import { decodeEnvelope, encodeEnvelope } from "../envelope.js";
 import { freshServerPeerId } from "../peer.js";
 import { type Imported, RoomDocs } from "../room-docs.js";
-import type { DocKey, ShapeSchema } from "../shape.js";
+import { type DocKey, type ShapeSchema, STRUCTURE_KEY } from "../shape.js";
 import {
   type DocVersion,
   decodeRoomVersion,
@@ -13,7 +13,7 @@ import {
 } from "../version.js";
 import { encodeChanges } from "../write.js";
 import type { DocumentRooms, RoomBatch, RoomOrigin } from "./document-rooms.js";
-import { advanceSaved, savedLag } from "./saved.js";
+import { advanceSaved, savedAtLoad } from "./saved.js";
 
 export interface SnapshotRow {
   snapshot: Uint8Array;
@@ -37,23 +37,29 @@ interface Loaded {
   docs: RoomDocs;
   dirty: Set<DocKey>;
   saved: Map<DocKey, DocVersion>;
+  inheritsStructure: boolean;
 }
 
 export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRooms {
   const stored = new Map<string, Map<DocKey, SnapshotRow>>();
   const loadedRooms = new Map<string, Loaded>();
   const listeners = new Map<string, Set<(batch: RoomBatch) => void>>();
-  const savedListeners = new Map<string, Set<(saved: RoomVersion) => void>>();
+  const savedListeners = new Map<string, Set<(saved: Uint8Array) => void>>();
 
   const load = (room: DocumentRoom): Loaded => {
     const name = loroRoomName(room);
     const existing = loadedRooms.get(name);
     if (existing) return existing;
-    const live = room.kind === "fork" ? load(liveRoomOf(room)).docs : null;
+    const live = room.kind === "fork" ? load(liveRoomOf(room)) : null;
     const rows = new Map([...(stored.get(name) ?? [])].map(([key, row]) => [key, row.snapshot]));
-    const docs = RoomDocs.load(shape, freshServerPeerId(), rows, live);
-    const saved = docs.version();
-    const loaded = { room, docs, saved, dirty: new Set(docs.forward().changed) };
+    const docs = RoomDocs.load(shape, freshServerPeerId(), rows, live?.docs ?? null);
+    const loaded = {
+      room,
+      docs,
+      saved: savedAtLoad(docs, rows.keys(), live?.saved ?? null),
+      inheritsStructure: live !== null && !rows.has(STRUCTURE_KEY),
+      dirty: new Set(docs.forward().changed),
+    };
     loadedRooms.set(name, loaded);
     return loaded;
   };
@@ -99,9 +105,19 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
   };
 
   const noteSaved = (loaded: Loaded, written: RoomVersion) => {
+    if (written.has(STRUCTURE_KEY)) loaded.inheritsStructure = false;
+    advance(loaded, written);
+  };
+
+  const advance = (loaded: Loaded, written: RoomVersion) => {
     const moved = advanceSaved(loaded.saved, written);
     if (moved.size === 0) return;
-    for (const listener of savedListeners.get(loroRoomName(loaded.room)) ?? []) listener(moved);
+    const encoded = encodeRoomVersion(moved);
+    for (const listener of savedListeners.get(loroRoomName(loaded.room)) ?? []) listener(encoded);
+    const structure = moved.get(STRUCTURE_KEY);
+    if (structure && loaded.room.kind === "live")
+      for (const fork of forks(loaded.room.documentId))
+        if (fork.inheritsStructure) advance(fork, new Map([[STRUCTURE_KEY, structure]]));
   };
 
   const flush = (loaded: Loaded) => {
@@ -126,11 +142,10 @@ export function createMemoryDocumentRooms(shape: ShapeSchema): MemoryDocumentRoo
     async sync(room, version) {
       const { docs, saved } = load(room);
       const update = docs.exportSince(decodeRoomVersion(version));
-      const at = docs.version();
       return {
-        version: encodeRoomVersion(at),
+        version: encodeRoomVersion(docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
-        saved: savedLag(at, saved),
+        saved: encodeRoomVersion(saved),
       };
     },
     async write(room, batch, origin) {

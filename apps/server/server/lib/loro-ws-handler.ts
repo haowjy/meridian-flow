@@ -17,16 +17,7 @@ import {
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
-import {
-  CorruptDocBytesError,
-  type DocKey,
-  type DocVersion,
-  EnvelopeError,
-  encodeRoomVersion,
-  HistoryCutoffError,
-  mergeVersion,
-  type RoomVersion,
-} from "@meridian/document-model";
+import { CorruptDocBytesError, EnvelopeError, HistoryCutoffError } from "@meridian/document-model";
 import type { DocumentRooms } from "@meridian/document-model/rooms";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -276,18 +267,17 @@ export function createLoroGateway(services: LoroGatewayServices) {
       if (cause instanceof JoinRefused) return refuse(cause.refusal);
       throw cause;
     }
-    const sendSaved = (saved: RoomVersion) =>
-      sendBatch(connection, name, encodeRoomVersion(saved), LORO_SAVED_CRDT);
+    const sendSaved = (saved: Uint8Array) => sendBatch(connection, name, saved, LORO_SAVED_CRDT);
     // Subscribe before the sync, so no batch falls between the copy's catch-up and the stream.
     const unsubscribeBatches = services.rooms.subscribe(room, (batch) => {
       if (batch.origin === connection.id) return;
       if (joined.held) joined.held.push({ batch: batch.batch });
       else sendBatch(connection, name, batch.batch);
     });
-    const heldSaved = new Map<DocKey, DocVersion>();
+    const heldSaved: Uint8Array[] = [];
     const unsubscribeSaved = auth.saved
       ? services.rooms.subscribeSaved(room, (saved) => {
-          if (joined.held) mergeVersion(heldSaved, saved);
+          if (joined.held) heldSaved.push(saved);
           else sendSaved(saved);
         })
       : () => {};
@@ -328,16 +318,14 @@ export function createLoroGateway(services: LoroGatewayServices) {
       roomId: name,
       permission: admission.permission,
       version: sync.version,
-      extra: encodeLoroJoinExtra({
-        readOnlyWhy: admission.readOnlyWhy,
-        ...(auth.saved ? { saved: sync.saved } : {}),
-      }),
+      extra: encodeLoroJoinExtra({ readOnlyWhy: admission.readOnlyWhy }),
     });
+    if (auth.saved) sendSaved(sync.saved);
     if (sync.update) sendBatch(connection, name, sync.update);
     const held = joined.held ?? [];
     joined.held = null;
     for (const { batch } of held) sendBatch(connection, name, batch);
-    if (heldSaved.size > 0) sendSaved(heldSaved);
+    for (const saved of heldSaved) sendSaved(saved);
     emitEvent(services.eventSink, {
       level: "info",
       source: "collab.rooms",

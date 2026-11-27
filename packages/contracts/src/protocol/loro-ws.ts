@@ -129,13 +129,12 @@ export function loroAccessChangedReason(why?: ClosedOwnerWhy): string {
   return why ? `${reason}:${why}` : reason;
 }
 
-export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string; saved?: Uint8Array };
+export type LoroJoinExtra = { readOnlyWhy?: ClosedOwnerWhy; list?: string };
 
 export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
   const value = {
     ...(extra.readOnlyWhy ? { readOnlyWhy: extra.readOnlyWhy } : {}),
     ...(extra.list ? { list: extra.list } : {}),
-    ...(extra.saved ? { saved: toBase64(extra.saved) } : {}),
   };
   return Object.keys(value).length > 0
     ? new TextEncoder().encode(JSON.stringify(value))
@@ -145,7 +144,6 @@ export function encodeLoroJoinExtra(extra: LoroJoinExtra): Uint8Array {
 const joinExtraSchema = z.object({
   readOnlyWhy: z.enum(CLOSED_OWNER_WHYS).optional(),
   list: z.string().optional(),
-  saved: z.string().optional(),
 });
 
 export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtra {
@@ -156,21 +154,10 @@ export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtr
     return {
       ...(parsed.data.readOnlyWhy ? { readOnlyWhy: parsed.data.readOnlyWhy } : {}),
       ...(parsed.data.list ? { list: parsed.data.list } : {}),
-      ...(parsed.data.saved !== undefined ? { saved: fromBase64(parsed.data.saved) } : {}),
     };
   } catch {
     return {};
   }
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-function fromBase64(text: string): Uint8Array {
-  return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 }
 
 export function loroRoomErrorOf(message: string) {

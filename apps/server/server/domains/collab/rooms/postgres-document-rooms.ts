@@ -33,13 +33,14 @@ import {
   RoomDocs,
   type RoomVersion,
   type ShapeSchema,
+  STRUCTURE_KEY,
 } from "@meridian/document-model";
 import {
   advanceSaved,
   type DocumentRooms,
   type RoomBatch,
   type RoomOrigin,
-  savedLag,
+  savedAtLoad,
 } from "@meridian/document-model/rooms";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { LoroDoc, PeerID } from "loro-crdt";
@@ -108,6 +109,7 @@ interface Loaded {
   dirty: Set<DocKey>;
   // Moved only after the save's commit, to versions taken at its export.
   saved: Map<DocKey, DocVersion>;
+  inheritsStructure: boolean;
   firstDirtyAt: number;
   saveTimer: ReturnType<typeof setTimeout> | null;
   settleSave: (() => void) | null;
@@ -194,7 +196,7 @@ export function createPostgresDocumentRooms(input: {
   const rooms = new Map<string, Loaded>();
   const loading = new Map<string, Promise<Loaded>>();
   const listeners = new Map<string, Set<(batch: RoomBatch) => void>>();
-  const savedListeners = new Map<string, Set<(saved: RoomVersion) => void>>();
+  const savedListeners = new Map<string, Set<(saved: Uint8Array) => void>>();
   let closed = false;
 
   const lockRoom = (tx: DrizzleDb, room: DocumentRoom) => lockDocumentMutation(tx, room.documentId);
@@ -265,20 +267,24 @@ export function createPostgresDocumentRooms(input: {
       if (existing?.unloading) await Promise.allSettled([existing.unloading]);
       const again = rooms.get(name);
       if (again && !again.unloading) return again;
-      const live = room.kind === "fork" ? (await load(liveRoomOf(room))).docs : null;
+      const live = room.kind === "fork" ? await load(liveRoomOf(room)) : null;
       const rows = await runOutsideDrizzleTransaction(() => readRows(db, name));
       const docs = RoomDocs.load(
         shape,
         freshServerPeerId(),
         new Map(rows.map((row) => [row.docKey, row.snapshot])),
-        live,
+        live?.docs ?? null,
       );
-      const saved = docs.version();
       const loaded: Loaded = {
         room,
         name,
         docs,
-        saved,
+        saved: savedAtLoad(
+          docs,
+          rows.map((row) => row.docKey),
+          live?.saved ?? null,
+        ),
+        inheritsStructure: live !== null && !rows.some((row) => row.docKey === STRUCTURE_KEY),
         dirty: new Set(docs.forward().changed),
         firstDirtyAt: 0,
         saveTimer: null,
@@ -340,12 +346,23 @@ export function createPostgresDocumentRooms(input: {
   }
 
   function noteSaved(loaded: Loaded, stored: RoomVersion) {
-    emitSaved(loaded.name, advanceSaved(loaded.saved, stored));
+    if (stored.has(STRUCTURE_KEY)) loaded.inheritsStructure = false;
+    advance(loaded, stored);
+  }
+
+  function advance(loaded: Loaded, stored: RoomVersion) {
+    const moved = advanceSaved(loaded.saved, stored);
+    emitSaved(loaded.name, moved);
+    const structure = moved.get(STRUCTURE_KEY);
+    if (structure && loaded.room.kind === "live")
+      for (const fork of forksOf(loaded.room.documentId))
+        if (fork.inheritsStructure) advance(fork, new Map([[STRUCTURE_KEY, structure]]));
   }
 
   function emitSaved(name: string, saved: RoomVersion) {
     if (saved.size === 0) return;
-    for (const listener of savedListeners.get(name) ?? []) listener(saved);
+    const encoded = encodeRoomVersion(saved);
+    for (const listener of savedListeners.get(name) ?? []) listener(encoded);
   }
 
   function imported(
@@ -800,11 +817,10 @@ export function createPostgresDocumentRooms(input: {
     async sync(room, version) {
       const loaded = await load(room);
       const update = loaded.docs.exportSince(decodeRoomVersion(version));
-      const at = loaded.docs.version();
       return {
-        version: encodeRoomVersion(at),
+        version: encodeRoomVersion(loaded.docs.version()),
         update: update.size > 0 ? encodeEnvelope(update) : null,
-        saved: savedLag(at, loaded.saved),
+        saved: encodeRoomVersion(loaded.saved),
       };
     },
 
