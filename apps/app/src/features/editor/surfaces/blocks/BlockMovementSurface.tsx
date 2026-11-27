@@ -56,9 +56,15 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   const targetPos = (menuHold ?? anchorHold)?.from ?? null;
   const targetPosRef = useRef<number | null>(null);
   targetPosRef.current = targetPos;
+  const handleRef = useRef<HTMLButtonElement | null>(null);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   const openMenu = useCallback(
-    (pos: number) => openBlockMenuAt(editor, pos, takeMenu),
+    (pos: number) => {
+      if (!handleRef.current) return;
+      setMenuAt(handleAnchorPoint(handleRef.current));
+      openBlockMenuAt(editor, pos, takeMenu);
+    },
     [editor, takeMenu],
   );
 
@@ -136,7 +142,6 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   const { handle, line } = useBlockChromePlacement(editor, targetPos, gesture.seamIndex);
   const overlay = manuscriptOverlay(editor);
-  const [handleElement, setHandleElement] = useState<HTMLButtonElement | null>(null);
 
   if (!editable || !chrome || !overlay || typeof document === "undefined") return null;
 
@@ -152,7 +157,7 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
       {handle
         ? createPortal(
             <button
-              ref={setHandleElement}
+              ref={handleRef}
               type="button"
               className="meridian-block-handle"
               data-block-handle
@@ -191,11 +196,11 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
           )
         : null}
 
-      {target && menuHold !== null && handleElement ? (
+      {target && menuHold !== null && menuAt ? (
         <BlockMenu
           editor={editor}
           target={target}
-          at={handleAnchorPoint(handleElement)}
+          at={menuAt}
           open
           onOpenChange={(open) => {
             if (!open) takeMenu(null);
