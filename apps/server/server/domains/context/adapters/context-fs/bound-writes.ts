@@ -8,6 +8,7 @@
 import { classifyFiletype, documentFilenameAt } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import { restartsTransaction } from "../../../../shared/tree-owners.js";
 import type { BoundWrite, MarkdownDocumentStore } from "../../../collab/index.js";
 import { LinkBindingInsideTransactionError } from "../../../collab/index.js";
 import { splitPath } from "../../context/paths.js";
@@ -100,7 +101,8 @@ export class BoundWrites {
         }),
       );
     } catch (error) {
-      if (error instanceof LinkBindingInsideTransactionError) throw error;
+      if (error instanceof LinkBindingInsideTransactionError || restartsTransaction(error))
+        throw error;
       return Err({
         code: "io_error",
         message: error instanceof Error ? error.message : String(error),

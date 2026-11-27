@@ -28,10 +28,8 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../domains/threads/index.js";
-import {
-  isRetryableTransactionError,
-  runInDrizzleSavepoint,
-} from "../shared/drizzle-transaction.js";
+import { runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
+import { restartsTransaction } from "../shared/tree-owners.js";
 import type { AppServices } from "./compose.js";
 import { getDb } from "./db.js";
 
@@ -161,7 +159,7 @@ export async function reverseWorkReceipts(
       return applied;
     });
   } catch (error) {
-    if (isRetryableTransactionError(error)) throw error;
+    if (restartsTransaction(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
       result(receipt, context.thread.projectId, receipt.inverse.command, "failed", message),

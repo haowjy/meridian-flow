@@ -103,23 +103,35 @@ const commandStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
 const COMMAND_CHECKS = process.env.NODE_ENV !== "production";
 
+const COMMAND_ATTEMPTS = 3;
+
 export async function runInCommandTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
 ): Promise<T> {
   if (activeTransaction())
     throw new Error("A command opens its own transaction; it cannot join one");
-  return runInDrizzleTransaction(db, () => {
-    const context = activeTransaction() as DrizzleTransactionContext;
-    context.locals.set(joinsRoots, true);
-    return commandStorage.run(context, operation);
-  });
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await runInDrizzleTransaction(db, () => {
+        const context = activeTransaction() as DrizzleTransactionContext;
+        context.locals.set(joinsRoots, true);
+        return commandStorage.run(context, operation);
+      });
+    } catch (cause) {
+      if (attempt === COMMAND_ATTEMPTS || !isRetryableTransactionError(cause)) throw cause;
+    }
+  }
+}
+
+export function isInCommandTransaction(): boolean {
+  const command = commandStorage.getStore();
+  return command !== undefined && !command.closed;
 }
 
 export function assertOutsideCommandTransaction(what: string): void {
-  if (!COMMAND_CHECKS) return;
-  const command = commandStorage.getStore();
-  if (command && !command.closed) throw new Error(`${what} inside a command transaction`);
+  if (COMMAND_CHECKS && isInCommandTransaction())
+    throw new Error(`${what} inside a command transaction`);
 }
 
 export async function runInRootDrizzleTransaction<T>(
@@ -275,11 +287,12 @@ export function deferUntilDrizzleRollback(callback: () => void | Promise<void>):
 }
 
 export function isRetryableTransactionError(error: unknown): boolean {
-  for (let cause = error; cause instanceof Error; cause = cause.cause) {
-    const code = (cause as { code?: unknown }).code;
-    if (code === "40P01" || code === "40001") return true;
-  }
-  return false;
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  if (code === "40P01" || code === "40001") return true;
+  if (error instanceof AggregateError && error.errors.some(isRetryableTransactionError))
+    return true;
+  return isRetryableTransactionError(error.cause);
 }
 
 export function sqlState(cause: unknown): string | null {

@@ -49,6 +49,7 @@ export function createDrizzleModelEdits(
             digest: ids.digest,
           },
           async () => {
+            refusedEvidence = undefined;
             signal.throwIfAborted();
             const done = await effect();
             // A call the runtime stopped waiting for must not land after it stored `never`.
