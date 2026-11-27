@@ -1,19 +1,18 @@
-import type { CommandId, ProjectId } from "@meridian/contracts";
+import type { CommandId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { requireThreadOwner, setOwnedThreadTrashState } from "../../../../domains/threads/index.js";
+import { findTrashTarget, setOwnedThreadTrashState } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { runRouteCommand, splitCommandBody } from "../../../../lib/command-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const threadId = getRouterParam(event, "threadId") ?? "";
   const { commandId, body } = splitCommandBody(await readBody(event));
-  const thread = await requireThreadOwner(
-    { threads: app.threadRepos.threads },
-    threadId,
+  const { threadId, thread, projectId } = await findTrashTarget(
+    { threads: app.threadRepos.threads, projects: app.projectRepo },
+    getRouterParam(event, "threadId") ?? "",
     user.userId,
-    { includeDeleted: true },
+    body.projectId,
   );
   const result = await runRouteCommand<{
     status: "done";
@@ -24,12 +23,13 @@ export default defineEventHandler(async (event) => {
     {
       commandId: commandId as CommandId,
       userId: user.userId,
-      projectId: thread.projectId as ProjectId,
+      projectId,
       kind: "chat_restore",
-      selectors: { threadId: thread.id },
+      selectors: { threadId },
       body,
     },
     async () => {
+      if (!thread) return { status: "done", changed: false, keptWith: null };
       const { changed, keptWith } = await setOwnedThreadTrashState(
         {
           repos: app.threadRepos,
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
           works: app.workRepo,
           stopThreads: app.stopThreads,
         },
-        thread.id,
+        threadId,
         user.userId,
         "visible",
       );
@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
     },
     () => undefined,
   );
-  if (result.changed) await app.workContextNotices.materializeIdle(thread.id);
-  app.projectWakeHub.publish({ type: "project-chats-hint", projectId: thread.projectId });
+  if (result.changed) await app.workContextNotices.materializeIdle(threadId);
+  app.projectWakeHub.publish({ type: "project-chats-hint", projectId });
   return serializeTransport(result);
 });

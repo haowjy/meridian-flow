@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useAccountId } from "@/client/account/account-context";
 import { useCommandDriver } from "@/client/commands/driver-context";
+import { useThreadActions } from "@/client/stores";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { ChatDeletes } from "./chat-deletes";
 
@@ -26,8 +27,9 @@ export function ChatDeleteProvider({
   const accountId = useAccountId();
   const driver = useCommandDriver();
   const navigation = useChatNavigation();
-  const latest = useRef({ navigation, driver });
-  latest.current = { navigation, driver };
+  const actions = useThreadActions();
+  const latest = useRef({ navigation, driver, actions });
+  latest.current = { navigation, driver, actions };
   const [deletes] = useState(
     () =>
       new ChatDeletes({
@@ -35,6 +37,7 @@ export function ChatDeleteProvider({
         accountId,
         projectId,
         driver: () => latest.current.driver,
+        actions: () => latest.current.actions,
         navigation: () => latest.current.navigation,
       }),
   );

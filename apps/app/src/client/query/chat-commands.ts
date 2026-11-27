@@ -162,12 +162,20 @@ export function chatCommandDomain(client: QueryClient): CommandDomain {
       (projectId) => [feeds(projectId)],
     ),
     [CHAT_DELETE_KIND]: kind(
-      (body) => ({ method: "DELETE", path: apiThreadPath(body.threadId), body: {} }),
+      (body) => ({
+        method: "DELETE",
+        path: apiThreadPath(body.threadId),
+        body: { projectId: body.projectId },
+      }),
       (projectId) => [threads(projectId), feeds(projectId)],
       removal,
     ),
     [CHAT_RESTORE_KIND]: kind(
-      (body) => ({ method: "POST", path: apiThreadRestorePath(body.threadId), body: {} }),
+      (body) => ({
+        method: "POST",
+        path: apiThreadRestorePath(body.threadId),
+        body: { projectId: body.projectId },
+      }),
       (projectId) => [threads(projectId), feeds(projectId)],
       removal,
     ),

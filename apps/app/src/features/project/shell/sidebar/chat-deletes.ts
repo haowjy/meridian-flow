@@ -6,6 +6,7 @@ import {
   cleanDeletedChat,
   restoreOwnDeletedChatWords,
 } from "@/client/chat-submissions/deleted-chat";
+import { rerecordSubmissions } from "@/client/chat-submissions/owner";
 import { readLastShownChat, writeLastShownChat } from "@/client/project-shell/store";
 import {
   CHAT_DELETE_KIND,
@@ -15,6 +16,7 @@ import {
 } from "@/client/query/chat-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { whenRead } from "@/client/query/when-read";
+import type { ThreadStoreActions } from "@/client/stores";
 import type { ChatNavigation } from "../../routing/chat-navigation";
 
 export type ChatDeleteNotice = {
@@ -33,6 +35,7 @@ export type ChatDeleteRefusal = { threadId: string; title: string };
 type Ports = {
   client: QueryClient;
   driver: () => CommandDriver | null;
+  actions: () => ThreadStoreActions;
   accountId: string;
   projectId: string;
   navigation(): ChatNavigation;
@@ -70,7 +73,7 @@ export class ChatDeletes {
     if (this.closed) return;
     this.end();
     this.refusal = null;
-    const { accountId, projectId } = this.ports;
+    const { projectId } = this.ports;
     const taken = this.takeAway(threadId);
     const moved = this.moveWords(threadId, title);
     const notice: ChatDeleteNotice = {
@@ -87,7 +90,7 @@ export class ChatDeletes {
       },
       () => {
         if (this.held === held) this.held = null;
-        void moved.then(() => restoreOwnDeletedChatWords(accountId, threadId));
+        void moved.then(() => this.restoreWords(threadId));
         if (!this.closed) {
           this.putBack(threadId, taken);
           this.refusal = { threadId, title };
@@ -113,18 +116,16 @@ export class ChatDeletes {
     this.update(held, "restoring");
     const { threadId, title } = held.notice;
     await held.moved;
-    restoreOwnDeletedChatWords(this.ports.accountId, threadId);
-    if (!held.ended) this.putBack(threadId, held.taken);
     const restored = await this.restored(threadId);
     if (restored === true) {
+      this.restoreWords(threadId);
+      if (!held.ended) this.putBack(threadId, held.taken);
       if (this.held === held) this.held = null;
       this.publish();
       announce(t`${title} restored`);
       return true;
     }
     if (held.ended) return false;
-    this.takeAway(threadId);
-    held.moved = this.moveWords(threadId, title);
     if (restored) {
       const work = restored.keptWith;
       held.notice = { ...held.notice, status: "kept", keptWith: work };
@@ -154,6 +155,13 @@ export class ChatDeletes {
     this.held = null;
     held.ended = true;
     this.publish();
+  }
+
+  private restoreWords(threadId: string) {
+    const { accountId } = this.ports;
+    restoreOwnDeletedChatWords(accountId, threadId, (entries) =>
+      rerecordSubmissions(accountId, entries, this.ports.actions()),
+    );
   }
 
   private moveWords(threadId: string, title: string) {

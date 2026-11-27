@@ -167,7 +167,9 @@ export function ChatsBody({
       {groups.helpers.get(thread.id)?.map((helper) => row(helper, true))}
     </div>
   );
-  const othersCount = groups.othersPinned.length + groups.others.length;
+  const others = chatLists(`${projectId}:others`);
+  const othersHoldUndo =
+    deleted !== null && Object.values(others).includes(deleted.notice.place?.list ?? "");
   const openOther =
     [...groups.othersPinned, ...groups.others].find((chat) => chat.id === currentThreadId) ?? null;
 
@@ -213,7 +215,7 @@ export function ChatsBody({
                 empty={<Trans>No chats here yet.</Trans>}
               />
             </div>
-            {othersCount > 0 ? (
+            {groups.othersPinned.length + groups.others.length > 0 || othersHoldUndo ? (
               <ListSection
                 label={t`Other chats`}
                 fold={othersFold}
@@ -232,8 +234,15 @@ export function ChatsBody({
                 />
               </ListSection>
             ) : null}
-            {openOther && !othersFold.open ? (
-              <div className="px-2">{withHelpers(openOther)}</div>
+            {!othersFold.open && (openOther || othersHoldUndo) ? (
+              <div className="px-2" data-chat-list={others.page}>
+                {withDeleted(
+                  Object.values(others),
+                  openOther ? [openOther] : [],
+                  deleted,
+                  withHelpers,
+                )}
+              </div>
             ) : null}
           </>
         )}
@@ -244,15 +253,20 @@ export function ChatsBody({
 
 type DeletedChat = { notice: ChatDeleteNotice; row: () => ReactNode } | null;
 
+const chatLists = (listKey: string) => ({
+  pinned: `chats:${listKey}:pinned`,
+  page: `chats:${listKey}`,
+});
+
 function withDeleted<T extends RowChat>(
-  list: string,
+  lists: readonly string[],
   chats: readonly T[],
   deleted: DeletedChat,
   render: (chat: T) => ReactNode,
 ): ReactNode[] {
   const place = deleted?.notice.place;
   const gone =
-    deleted && place?.list === list
+    deleted && place && lists.includes(place.list)
       ? [{ key: deleted.notice.threadId, row: deleted, after: place.after }]
       : [];
   return withGone(chats, chatKey, gone).map((item) =>
@@ -293,10 +307,9 @@ function PagedChats({
   const page = chats.slice(0, shown);
   const open = chats.find((chat) => chat.id === openId);
   const openPastPage = open !== undefined && !page.includes(open);
-  const pinnedKey = `chats:${listKey}:pinned`;
-  const pageKey = `chats:${listKey}`;
-  const pinnedRows = withDeleted(pinnedKey, pinned, deleted, render);
-  const pageRows = withDeleted(pageKey, page, deleted, (chat) => (
+  const { pinned: pinnedKey, page: pageKey } = chatLists(listKey);
+  const pinnedRows = withDeleted([pinnedKey], pinned, deleted, render);
+  const pageRows = withDeleted([pageKey], page, deleted, (chat) => (
     <div key={chat.id} data-paged-chat>
       {render(chat)}
     </div>
@@ -365,7 +378,7 @@ function FeedRows({
   deleted: DeletedChat;
   empty: ReactNode;
 }) {
-  const rows = withDeleted("chats:search", feed.items, deleted, row);
+  const rows = withDeleted(["chats:search"], feed.items, deleted, row);
   if (feed.isPending)
     return (
       <ListLine status>

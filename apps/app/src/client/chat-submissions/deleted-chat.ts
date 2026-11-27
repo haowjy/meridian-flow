@@ -38,11 +38,14 @@ type OwnMove = {
   before: ComposerDraftSnapshot | null;
   after: ComposerDraftSnapshot | null;
   snapshots: ComposerDraftSnapshot[];
+  unmade: ChatSubmission[];
+  box: ComposerDraftSnapshot | null;
 };
 const ownMoves = new Map<string, OwnMove>();
 export function restoreOwnDeletedChatWords(
   accountId: string,
   threadId: string,
+  rerecord: (entries: ChatSubmission[]) => boolean,
   draft: DeletedChatPorts["draft"] = composerSessionDraft,
 ) {
   const key = surfaceKey(accountId, threadId);
@@ -50,9 +53,20 @@ export function restoreOwnDeletedChatWords(
   if (!move) return;
   ownMoves.delete(key);
   const target = draft(accountId, { kind: "new-chat", id: move.projectId });
-  if (!target.holds(move.after)) return;
-  if (draft(accountId, { kind: "chat", id: threadId }).prependSnapshots(move.snapshots))
-    target.withdraw(threadId, move.before);
+  const source = draft(accountId, { kind: "chat", id: threadId });
+  if (!move.unmade.length) {
+    if (target.holds(move.after) && source.prependSnapshots(move.snapshots))
+      target.withdraw(threadId, move.before);
+    return;
+  }
+  if (!rerecord(move.unmade)) return;
+  const keep =
+    !target.holds(move.after) || (move.box !== null && !source.prependSnapshots([move.box]));
+  target.withdraw(
+    threadId,
+    keep ? target.initialDraft : move.before,
+    move.unmade.map((entry) => entry.recordId),
+  );
 }
 const surfaces = new Map<string, Set<DeletedChatSurface>>();
 const surfaceKey = (accountId: string, threadId: string) => JSON.stringify([accountId, threadId]);
@@ -120,8 +134,11 @@ export async function cleanDeletedChat(
       (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
     );
     const receipts = unsent.map((entry) => entry.recordId);
-    const box = source.initialDraft;
-    if (box && serializeComposerDraft(box.doc).text) snapshots.push(box);
+    const box =
+      source.initialDraft && serializeComposerDraft(source.initialDraft.doc).text
+        ? source.initialDraft
+        : null;
+    if (box) snapshots.push(box);
     let moved = false;
     if (snapshots.length) {
       if (!project) return false;
@@ -135,7 +152,14 @@ export async function cleanDeletedChat(
       });
       if (!moved) return false;
       if (own)
-        ownMoves.set(key, { projectId: project, before, after: target.initialDraft, snapshots });
+        ownMoves.set(key, {
+          projectId: project,
+          before,
+          after: target.initialDraft,
+          snapshots,
+          unmade: records.some((entry) => entry.creation) ? records : [],
+          box,
+        });
     }
     source.handoff();
     for (const entry of records) {

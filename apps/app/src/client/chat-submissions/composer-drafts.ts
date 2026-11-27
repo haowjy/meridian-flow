@@ -173,9 +173,9 @@ export class ComposerSessionDraft {
     return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
   }
 
-  withdraw(threadId: string, before: ComposerDraftSnapshot | null): void {
+  withdraw(threadId: string, before: ComposerDraftSnapshot | null, returned: string[] = []): void {
     this.commit(before, {
-      received: this.received,
+      received: new Set([...this.received].filter((recordId) => !returned.includes(recordId))),
       notices: this.notices.filter((notice) => notice.threadId !== threadId),
       handBacks: this.handBacksPending,
     });
