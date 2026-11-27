@@ -196,6 +196,16 @@ schedules a derive (`onLiveSaved`); a compaction rewrites rows without bumping i
 sent but the room has not saved yet can be in a cut, and that save makes the cut stale. Recovery
 sweeps stale rooms and retries failures without advancing certification.
 
+Only a document with text is derived. A stored file (an uploaded, imported or copied binary)
+has no Live text; the store's `stale` leaves it out with `storage_url IS NULL`, so it never gets
+a room row. Both `storage_url` and the file's tree `file_type` come from its blob, and the
+projection never gives a stored file a tracked type ([context](../../context/.context/CONTEXT.md#document-content-and-filetype-rules)),
+so the filter and "tracked `file_type`" select the same documents; the filter stays on
+`documents` because a draft-only document has no `tree_nodes` row. Dropping the filter, or
+letting a stored file be derived as "no text", breaks silently: "no room" selects the file,
+it derives to zero blocks, and certify writes a room row and sets the file's `size_bytes` to 0,
+which chips, the viewer and chat attachments then read.
+
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
 `document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its block id: `text`,
