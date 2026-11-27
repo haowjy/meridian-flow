@@ -1,28 +1,24 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseSource, sourceComments } from "./source-comments.mjs";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
-const BASELINE_PATH = resolve(ROOT, "tools/ci/comment-baseline.json");
-const BASELINE_NAME = "tools/ci/comment-baseline.json";
-const ACCEPT_COMMAND = "pnpm check:comments --accept";
+const BASELINE_NAME = "tools/ci/comment-baseline.txt";
+const BASELINE_PATH = resolve(ROOT, BASELINE_NAME);
+const UPDATE_COMMAND = "pnpm check:comments --update-baseline";
 const EXCLUDED =
   /(^|\/)(node_modules|dist|build|vendor|migrations|locales)\/|\.(gen|generated)\.[cm]?[jt]sx?$/;
 const TOOL_READ =
-  /^\/\/\/\s*<reference|@vitest-environment|@jest-environment|@vite-ignore|[@#]__PURE__|@jsxImportSource|@jsxRuntime|@ts-check|slop-lint:\s*allow|prettier-ignore|^\/\*\s*(v8|c8|istanbul) ignore|webpack[A-Z]\w+:|^\/\/\s*@(refresh|generated)/;
-const SUPPRESSION =
-  /\bbiome-ignore(?:-all)?\b|@ts-(?:ignore|expect-error|nocheck)\b|eslint-disable/;
-const JS_TYPE_TAG = /@(type|param|returns?|typedef|template|satisfies|callback|property|import)\b/;
+  /^(@vitest-environment|@jest-environment|@vite-ignore|[@#]__PURE__|@jsxImportSource|@jsxRuntime|@ts-check|slop-lint:\s*allow|prettier-ignore|(v8|c8|istanbul) ignore|webpack[A-Z]\w+:|@refresh|@generated)\b/;
+const SUPPRESSION = /^(biome-ignore(-all)?|@ts-(ignore|expect-error|nocheck))\b/;
 
-const accept = process.argv.slice(2).includes("--accept");
+const update = process.argv.slice(2).includes("--update-baseline");
 
 function sourcePaths() {
-  const patterns = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"].flatMap((extension) =>
-    ["apps", "packages", "tools"].map((area) => `${area}/**/*.${extension}`),
-  );
+  const patterns = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"].map((ext) => `*.${ext}`);
   return execFileSync(
     "git",
     ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ...patterns],
@@ -30,27 +26,28 @@ function sourcePaths() {
   )
     .toString()
     .split("\0")
-    .filter((path) => path && !EXCLUDED.test(path));
+    .filter((path) => path && existsSync(resolve(ROOT, path)) && !EXCLUDED.test(path));
 }
 
-function isProse(comment, path) {
-  return !(
-    SUPPRESSION.test(comment) ||
-    TOOL_READ.test(comment) ||
-    (/\.[cm]?jsx?$/.test(path) && JS_TYPE_TAG.test(comment))
-  );
+function bodyLines(comment) {
+  return comment
+    .split("\n")
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^(\/\/+|\/\*+|\*+(?!\/))/, "")
+        .replace(/\*+\/$/, "")
+        .trim(),
+    )
+    .filter(Boolean);
 }
 
-function firstWords(comment) {
-  for (const line of comment.split("\n")) {
-    const words = line
-      .trim()
-      .replace(/^(\/\/+|\/\*+|\*+\/|\*+)/, "")
-      .replace(/\*+\/$/, "")
-      .trim();
-    if (words) return words;
-  }
-  return "";
+function proseText(comment, path) {
+  if (/^\/\/\/\s*<reference/.test(comment)) return "";
+  const lines = bodyLines(comment);
+  if (lines.length > 0 && (TOOL_READ.test(lines[0]) || SUPPRESSION.test(lines[0]))) return "";
+  const prose = /\.[cm]?jsx?$/.test(path) ? lines.filter((line) => !line.startsWith("@")) : lines;
+  return prose.length === 0 ? "" : lines.join(" ").replace(/\s+/g, " ");
 }
 
 function fileComments(path) {
@@ -62,153 +59,100 @@ function fileComments(path) {
   const found = [];
   let previous;
   for (const comment of sourceComments(sourceFile, text)) {
-    if (!isProse(comment.text, path)) {
+    const prose = proseText(comment.text, path);
+    if (!prose) {
       previous = undefined;
       continue;
     }
     const lineComment = comment.text.startsWith("//") && ownLine(comment);
     if (lineComment && previous && lineOf(comment.start) === previous.endLine + 1) {
       previous.endLine = lineOf(comment.end);
+      previous.text = `${previous.text} ${prose}`;
       continue;
     }
-    previous = lineComment ? { endLine: lineOf(comment.end) } : undefined;
-    found.push({ line: firstWords(comment.text), lineNumber: lineOf(comment.start), path });
+    const record = {
+      endLine: lineOf(comment.end),
+      lineNumber: lineOf(comment.start),
+      path,
+      text: prose,
+    };
+    found.push(record);
+    previous = lineComment ? record : undefined;
   }
   return found;
 }
 
-function keyOf(path, line) {
-  return `${path}\0${line}`;
+function entryOf(comment) {
+  return `${comment.path}\t${comment.text}`;
 }
 
 function readBaseline() {
-  let text;
-  let parsed;
-  try {
-    text = readFileSync(BASELINE_PATH, "utf8");
-    parsed = JSON.parse(text);
-  } catch (error) {
-    if (accept && error.code === "ENOENT") return { entries: [], text: "" };
-    throw new Error(`cannot read ${BASELINE_NAME}: ${error.message}`);
+  if (!existsSync(BASELINE_PATH)) {
+    if (update) return [];
+    throw new Error(`${BASELINE_NAME} is missing; create it with ${UPDATE_COMMAND}`);
   }
-  if (parsed.version !== 1 || !Array.isArray(parsed.comments)) {
-    throw new Error(`${BASELINE_NAME} must have version 1 and a comments array`);
-  }
-  for (const entry of parsed.comments) {
-    if (
-      typeof entry?.path !== "string" ||
-      typeof entry.line !== "string" ||
-      !Number.isInteger(entry.count) ||
-      entry.count < 1
-    ) {
-      throw new Error(`invalid ${BASELINE_NAME} entry ${JSON.stringify(entry)}`);
-    }
-  }
-  return { entries: parsed.comments, text };
+  return readFileSync(BASELINE_PATH, "utf8").split("\n").filter(Boolean);
 }
 
-function serialize(comments) {
+function countTexts(entries) {
   const counts = new Map();
-  for (const { path, line } of comments) {
-    const key = keyOf(path, line);
-    counts.set(key, { path, line, count: (counts.get(key)?.count ?? 0) + 1 });
+  for (const entry of entries) {
+    const text = entry.slice(entry.indexOf("\t") + 1);
+    counts.set(text, (counts.get(text) ?? 0) + 1);
   }
-  const entries = [...counts.values()].sort(
-    (left, right) => left.path.localeCompare(right.path) || left.line.localeCompare(right.line),
-  );
-  return `${JSON.stringify({ version: 1, comments: entries }, null, 2)}\n`;
+  return counts;
 }
 
-function unaccepted(comments, baseline) {
-  const exact = new Map();
-  for (const entry of baseline) {
-    const key = keyOf(entry.path, entry.line);
-    exact.set(key, (exact.get(key) ?? 0) + entry.count);
+function excess(current, baseline) {
+  const left = countTexts(baseline);
+  const extra = [];
+  for (const entry of current) {
+    const text = entry.slice(entry.indexOf("\t") + 1);
+    const count = left.get(text) ?? 0;
+    left.set(text, count - 1);
+    if (count < 1) extra.push(entry);
   }
-  const pending = comments.filter((comment) => {
-    const key = keyOf(comment.path, comment.line);
-    const left = exact.get(key) ?? 0;
-    exact.set(key, left - 1);
-    return left < 1;
-  });
+  return extra;
+}
 
-  const pathsByWords = new Map();
-  const freeByPath = new Map();
-  for (const [key, count] of exact) {
-    const [path, line] = key.split("\0");
-    for (let index = 0; index < count; index += 1) {
-      pathsByWords.set(line, [...(pathsByWords.get(line) ?? []), path]);
-    }
-    if (count > 0) freeByPath.set(path, (freeByPath.get(path) ?? 0) + count);
-  }
-  const unmoved = pending.filter((comment) => {
-    const from = pathsByWords.get(comment.line)?.pop();
-    if (from === undefined) return true;
-    freeByPath.set(from, freeByPath.get(from) - 1);
-    return false;
-  });
-
-  const files = new Map();
-  for (const comment of unmoved) {
-    const file = files.get(comment.path) ?? { comments: [], count: 0 };
-    file.comments.push(comment);
-    const free = freeByPath.get(comment.path) ?? 0;
-    if (free > 0) freeByPath.set(comment.path, free - 1);
-    else file.count += 1;
-    files.set(comment.path, file);
-  }
-  return [...files.entries()].filter(([, file]) => file.count > 0);
+function clip(text) {
+  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
 }
 
 function main() {
   const started = performance.now();
   const comments = sourcePaths().flatMap(fileComments);
-  const current = serialize(comments);
-  const { entries: baseline, text: written } = readBaseline();
+  const current = comments.map(entryOf).sort();
+  const baseline = readBaseline();
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
 
-  if (accept) {
-    if (current !== written) writeFileSync(BASELINE_PATH, current);
+  if (update) {
+    const added = excess(current, baseline);
+    const removed = excess(baseline, current).length;
+    writeFileSync(BASELINE_PATH, current.map((entry) => `${entry}\n`).join(""));
     console.log(
-      `Comment baseline records ${comments.length} comments; commit ${BASELINE_NAME} with the change.`,
+      `Comment baseline records ${current.length} comments (${added.length} added, ${removed} removed).`,
     );
+    for (const entry of added) console.log(`  + ${clip(entry.replace("\t", "  "))}`);
     return;
   }
 
-  const rejected = unaccepted(comments, baseline);
-  if (rejected.length > 0) {
-    const files = rejected.map(([, file]) => {
-      const lines = file.comments.map(
-        (comment) => `  ${comment.path}:${comment.lineNumber}  ${comment.line}`,
-      );
-      if (file.comments.length > file.count) {
-        lines.push(
-          `    (${file.count} of these ${file.count === 1 ? "is" : "are"} new; the rest replace comments this file lost)`,
-        );
-      }
-      return lines.join("\n");
-    });
+  const fresh = new Set(excess(current, baseline));
+  if (fresh.size > 0) {
+    const lines = comments
+      .filter((comment) => fresh.delete(entryOf(comment)))
+      .map((comment) => `  ${comment.path}:${comment.lineNumber}  ${clip(comment.text)}`);
     console.error(
-      `Comment check failed: new comments.\n${files.join("\n")}\n\n` +
+      `Comment check failed: new or changed comments.\n${lines.join("\n")}\n\n` +
         "A comment is for a rule the code must obey where breaking it fails somewhere else or later\n" +
         "and nothing at the spot shows it, or for behavior an outside system forces. Never for what\n" +
         "the code does or why the product behaves as it does: delete it, or move the words into names.\n" +
-        `If it is that kind of comment, accept it and commit the baseline line: ${ACCEPT_COMMAND}`,
+        `If it is that kind of comment, record it with ${UPDATE_COMMAND} and commit the baseline line.`,
     );
     process.exitCode = 1;
     return;
   }
-
-  if (current !== written) {
-    writeFileSync(BASELINE_PATH, current);
-    const before = baseline.reduce((sum, entry) => sum + entry.count, 0);
-    console.log(
-      `Comment check passed (${comments.length} comments; ${seconds}s). ` +
-        `Updated ${BASELINE_NAME} from ${before}; commit it with the change.`,
-    );
-    return;
-  }
-  console.log(`Comment check passed (${comments.length} comments; ${seconds}s).`);
+  console.log(`Comment check passed (${current.length} comments; ${seconds}s).`);
 }
 
 try {

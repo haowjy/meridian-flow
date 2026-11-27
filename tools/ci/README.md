@@ -265,7 +265,7 @@ This keeps the check focused on new code without hiding the old debt, and
 prevents the baseline from growing. After removing findings, run:
 
 ```sh
-pnpm check:slop-lint -- --update-baseline
+pnpm check:slop-lint --update-baseline
 ```
 
 The refresh refuses to write when it sees a new finding, so a baseline can
@@ -289,33 +289,43 @@ finding has no exception: rewrite the text.
 
 ## Comment check
 
-`pnpm check:comments` fails when a change adds a prose comment to a source file
-(`.ts`, `.tsx`, `.js`, `.mjs` and the other script extensions) under `apps`, `packages`
-or `tools`. Adding one is allowed but deliberate:
+`pnpm check:comments` fails when a change adds a prose comment, or changes the words of one,
+in any tracked script file (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`).
+Adding one is allowed but deliberate:
 
 ```sh
-pnpm check:comments --accept
+pnpm check:comments --update-baseline
 ```
 
-records the tree in `tools/ci/comment-baseline.json`, and the reviewer questions the new line
-there. The failure names each new comment and states the rule from `AGENTS.md`.
+records the tree in `tools/ci/comment-baseline.txt` and prints the lines it added; the
+reviewer questions each one. The failure names each new comment and states the rule from
+`AGENTS.md`.
 
 It counts what the TypeScript parse tree calls a comment (the walk it shares with slop lint
 in `source-comments.mjs`), so `//` inside a string, template or URL is not one, and adjacent
-whole-line `//` comments are one comment. It skips comments a tool reads
-(`@vitest-environment`, `/// <reference`, `@__PURE__`, `slop-lint: allow`, JSDoc type tags in
-JavaScript and the like), suppressions (slop lint counts those), and generated, vendored,
-migration and locale files.
+whole-line `//` comments are one comment. Skipped:
 
-The baseline names each comment by its file and its first line of words, with a count.
-A comment passes when the baseline has its file and words, or its words in a file that lost
-them (a moved file or function), or when its own file lost a comment (a reworded comment).
-Per-comment entries let the failure name the comment and the reviewer read it; per-file or
-per-area counts would be smaller but let one comment hide behind another's deletion and
-could not say which comment is new.
+- a comment that starts with a directive a tool reads: `/// <reference`, `@vitest-environment`,
+  `@jest-environment`, `@vite-ignore`, `@__PURE__`, `@jsxImportSource`, `@jsxRuntime`,
+  `@ts-check`, `slop-lint: allow`, `prettier-ignore`, `v8`/`c8`/`istanbul ignore`, webpack magic
+  comments, `@refresh`, `@generated`. Mentioning one later in a sentence doesn't skip it;
+- a comment that starts with a suppression (`biome-ignore`, `@ts-ignore`, `@ts-expect-error`,
+  `@ts-nocheck`): slop lint counts those;
+- in a JavaScript file, a JSDoc block made only of tag lines (`@type`, `@param` and the rest),
+  which TypeScript reads as types. A block with any other line is prose, tags included;
+- `node_modules`, `dist`, `build`, `vendor`, `migrations` and `locales` directories, and
+  `.gen` and `.generated` files.
 
-Falling is free: when the check passes and the tree differs from the baseline, it rewrites
-the baseline to match and says so; commit it with the change. That tightening keeps a
-deleted comment's entry from later admitting a new one. When two branches conflict on the
-baseline, run `pnpm check:comments --accept` on the merged tree, then check that the baseline's
-diff against each parent adds only comments the other parent had accepted.
+The baseline has one line per comment, `path<TAB>words`, with the words whitespace-collapsed
+and the comment markers stripped, sorted. A comment passes when its exact words are in the
+baseline as often as the tree has them, in any file, so a moved file or function passes and
+an edited comment is a new one. The check never writes: deleting a comment passes and leaves
+its line behind, which can only admit those exact words again; the next
+`--update-baseline` drops it. Per-file or per-area counts would be smaller but let one comment
+grow or stand in for another without a baseline diff.
+
+`.gitattributes` merges the baseline with `merge=union`, so two branches' additions merge
+without a conflict. A union merge never drops a line either side added. It can keep a line
+one side deleted (a stale line, harmless as above) and can collapse the same line added by
+both sides into one, which makes the check fail and ask for a refresh. After any merge, run
+`pnpm check:comments`.
