@@ -24,7 +24,7 @@ export interface ConversationSummarizer {
     writerInstructions?: string;
     incomingAgentName?: string;
     changedDocuments?: readonly string[];
-    requestInHand: GenerateRequest | null;
+    requestInHand: GenerateRequest;
     knownTooLarge?: boolean;
     retainedMessages?: readonly Message[];
     projection: ProjectedActiveHistory;

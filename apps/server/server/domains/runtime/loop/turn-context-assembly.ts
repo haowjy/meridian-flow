@@ -1,7 +1,7 @@
 import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, PromptBake, Thread, ThreadOverrides, Turn } from "@meridian/contracts/threads";
+import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
@@ -19,6 +19,7 @@ import type {
 import type { ConnectionBake, ConnectionsPort } from "../ports/connections.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
 import {
+  followedThreadBinding,
   type ResolveAgentThreadTurnContextInput,
   resolveAgentThreadTurnContext,
 } from "../tools/agent-thread-context.js";
@@ -197,51 +198,41 @@ function turnGatewayParams(
   thread: Pick<Thread, "overrides">,
   agentParams: Pick<GenerateRequest, "model" | "reasoning">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
-  const model = threadModelId(gateway, thread.overrides, agentParams.model);
+  const override = thread.overrides.model;
+  const model =
+    override && gateway.listModels().some((model) => model.id === override)
+      ? override
+      : agentParams.model;
   const effort = thread.overrides.effort;
   return effort ? { ...agentParams, model, reasoning: effort } : { ...agentParams, model };
 }
 
-export function threadModelId(
-  gateway: Pick<Gateway, "listModels">,
-  overrides: ThreadOverrides,
-  agentModel: string | undefined,
-): string | undefined {
-  const override = overrides.model;
-  return override && gateway.listModels().some((model) => model.id === override)
-    ? override
-    : agentModel;
-}
-
-function modelOf(
+export function requestModel(
   gateway: AssembleNextTurnContextInput["gateway"],
-  params: Pick<GenerateRequest, "model">,
+  request: Pick<GenerateRequest, "model">,
 ): ModelInfo | undefined {
-  const modelId = params.model ?? gateway.getDefaultModel();
+  const modelId = request.model ?? gateway.getDefaultModel();
   return gateway.listModels().find((model) => model.id === modelId);
 }
 
-export function lazyThreadModel(
+export async function threadModel(
   input: Pick<
     AssembleNextTurnContextInput,
-    | "thread"
-    | "agentRevisions"
-    | "agentCatalog"
-    | "threads"
-    | "toolRegistry"
-    | "gateway"
-    | "baseTools"
+    "thread" | "agentRevisions" | "agentCatalog" | "gateway"
   >,
+): Promise<ModelInfo | undefined> {
+  const binding = await followedThreadBinding(input);
+  return requestModel(
+    input.gateway,
+    turnGatewayParams(input.gateway, input.thread, { model: binding.configuration.model }),
+  );
+}
+
+export function lazyThreadModel(
+  input: Parameters<typeof threadModel>[0],
 ): () => Promise<ModelInfo | undefined> {
   let model: Promise<ModelInfo | undefined> | undefined;
-  return () =>
-    (model ??= resolveAgentThreadTurnContext({ ...input, baseTools: input.baseTools }).then(
-      (context) =>
-        modelOf(
-          input.gateway,
-          turnGatewayParams(input.gateway, input.thread, context.gatewayParams),
-        ),
-    ));
+  return () => (model ??= threadModel(input));
 }
 
 export async function assembleNextTurnContext(
@@ -303,7 +294,7 @@ export async function prepareNextTurnContext(
   }
 
   const gatewayParams = turnGatewayParams(input.gateway, thread, agentContext.gatewayParams);
-  const resolvedModel = modelOf(input.gateway, gatewayParams);
+  const resolvedModel = requestModel(input.gateway, gatewayParams);
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,

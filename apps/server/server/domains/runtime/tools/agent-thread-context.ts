@@ -7,7 +7,11 @@ import {
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
-import type { AgentRevisionStore, BoundAgentCatalog } from "../../packages/index.js";
+import type {
+  AgentRevisionBinding,
+  AgentRevisionStore,
+  BoundAgentCatalog,
+} from "../../packages/index.js";
 import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import { bindingNamesSkills } from "../loop/available-skills.js";
@@ -51,17 +55,23 @@ export function agentGatewayMetaToGenerateParams(
   return params;
 }
 
-export async function resolveAgentThreadTurnContext(
-  input: ResolveAgentThreadTurnContextInput,
-): Promise<AgentThreadTurnContext> {
+export async function followedThreadBinding(
+  input: Pick<ResolveAgentThreadTurnContextInput, "thread" | "agentRevisions" | "agentCatalog">,
+): Promise<AgentRevisionBinding> {
   const stored = await input.agentRevisions.readThreadBinding(input.thread.id);
   if (!stored) throw new Error("Conversation has no retained Agent binding");
-  const binding = await input.agentCatalog.followRemovedModel(
+  return input.agentCatalog.followRemovedModel(
     input.thread.userId,
     input.thread.projectId,
     input.thread,
     stored,
   );
+}
+
+export async function resolveAgentThreadTurnContext(
+  input: ResolveAgentThreadTurnContextInput,
+): Promise<AgentThreadTurnContext> {
+  const binding = await followedThreadBinding(input);
   if (binding.revision) {
     const reasons = agentDefinitionUnsupportedReasons(binding.revision.definition);
     if (reasons.length) throw new Error(reasons.join(" "));

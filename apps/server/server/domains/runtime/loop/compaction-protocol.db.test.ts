@@ -699,8 +699,6 @@ else
       const realSummarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
-        agentRevisions: rig.deps.agentRevisions,
-        threads: rig.deps.repos.threads,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
@@ -796,8 +794,6 @@ else
       const real = createConversationSummarizer({
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
-        agentRevisions: rig.deps.agentRevisions,
-        threads: rig.deps.repos.threads,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
@@ -886,8 +882,6 @@ else
         rig.deps.summarizer = createConversationSummarizer({
           gateway: rig.deps.gateway,
           eventSink: rig.deps.eventSink,
-          agentRevisions: rig.deps.agentRevisions,
-          threads: rig.deps.repos.threads,
           prefixCacheStateFor: createPrefixCacheStateService({ repos: rig.repos })
             .prefixCacheStateFor,
           modelRequestDebug: rig.deps.modelRequestDebug,
@@ -1980,8 +1974,6 @@ else
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
-        agentRevisions: rig.deps.agentRevisions,
-        threads: rig.deps.repos.threads,
         prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
