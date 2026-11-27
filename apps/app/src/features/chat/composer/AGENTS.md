@@ -1,7 +1,9 @@
 # Composer document model
 
 Authored text, reference and skill atoms, and pending or failed uploads. This
-is the authoring boundary; admission and server authority live outside it.
+is the authoring boundary; admission and server authority live outside it. The
+model itself is `client/chat-submissions/composer-document.ts`, beside the
+submission journal that persists it.
 
 - A reference is a standard Markdown link to a canonical URI. Rich HTML on the
   clipboard keeps identity but is untrusted: admission, not clipboard metadata,
