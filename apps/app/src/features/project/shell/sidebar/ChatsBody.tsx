@@ -31,15 +31,13 @@ import { useChatGroups } from "./use-chat-groups";
 type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
 
-function placeOf(id: string): ChatPlace | null {
-  const row = document.querySelector(chatSelector(id));
-  const list = row?.closest<HTMLElement>("[data-chat-list]");
-  const key = list?.dataset.chatList;
-  if (!row || !list || !key) return null;
-  const ids = [...list.querySelectorAll<HTMLElement>("[data-chat-id]")].map(
+function placeOf(chat: RowChat, pinned: boolean): ChatPlace {
+  const list = document.querySelector(chatSelector(chat.id))?.closest("[data-chat-list]");
+  const ids = [...(list?.querySelectorAll<HTMLElement>("[data-chat-id]") ?? [])].map(
     (each) => each.dataset.chatId ?? "",
   );
-  return { list: key, after: ids.slice(0, ids.indexOf(id)).reverse() };
+  const work = chat.workId !== undefined ? chat.workId : (chat.work?.id ?? null);
+  return { work, pinned, after: ids.slice(0, ids.indexOf(chat.id)).reverse() };
 }
 
 const PAGE = 20;
@@ -107,9 +105,14 @@ export function ChatsBody({
       if (restored) setFocusRow({ id: notice.threadId });
     });
   };
+  const scoped = chatLists(`${projectId}:scoped`);
+  const others = chatLists(`${projectId}:others`);
+  const home =
+    notice && (notice.place.work ?? noWorkId) === (scopeWorkId ?? noWorkId) ? scoped : others;
   const deleted: DeletedChat = notice
     ? {
         notice,
+        list: search ? SEARCH_LIST : notice.place.pinned ? home.pinned : home.page,
         row: () => (
           <DeletedRow
             key={notice.id}
@@ -167,7 +170,7 @@ export function ChatsBody({
       {groups.helpers.get(thread.id)?.map((helper) => row(helper, true))}
     </div>
   );
-  const othersCount = groups.othersPinned.length + groups.others.length;
+  const othersHoldUndo = deleted !== null && Object.values(others).includes(deleted.list);
   const openOther =
     [...groups.othersPinned, ...groups.others].find((chat) => chat.id === currentThreadId) ?? null;
 
@@ -213,7 +216,7 @@ export function ChatsBody({
                 empty={<Trans>No chats here yet.</Trans>}
               />
             </div>
-            {othersCount > 0 ? (
+            {groups.othersPinned.length + groups.others.length > 0 || othersHoldUndo ? (
               <ListSection
                 label={t`Other chats`}
                 fold={othersFold}
@@ -232,8 +235,15 @@ export function ChatsBody({
                 />
               </ListSection>
             ) : null}
-            {openOther && !othersFold.open ? (
-              <div className="px-2">{withHelpers(openOther)}</div>
+            {!othersFold.open && (openOther || othersHoldUndo) ? (
+              <div className="px-2" data-chat-list={others.page}>
+                {withDeleted(
+                  others.page,
+                  openOther ? [openOther] : [],
+                  othersHoldUndo ? { ...deleted, list: others.page } : null,
+                  withHelpers,
+                )}
+              </div>
             ) : null}
           </>
         )}
@@ -242,7 +252,14 @@ export function ChatsBody({
   );
 }
 
-type DeletedChat = { notice: ChatDeleteNotice; row: () => ReactNode } | null;
+type DeletedChat = { notice: ChatDeleteNotice; list: string; row: () => ReactNode } | null;
+
+const SEARCH_LIST = "chats:search";
+
+const chatLists = (listKey: string) => ({
+  pinned: `chats:${listKey}:pinned`,
+  page: `chats:${listKey}`,
+});
 
 function withDeleted<T extends RowChat>(
   list: string,
@@ -250,10 +267,9 @@ function withDeleted<T extends RowChat>(
   deleted: DeletedChat,
   render: (chat: T) => ReactNode,
 ): ReactNode[] {
-  const place = deleted?.notice.place;
   const gone =
-    deleted && place?.list === list
-      ? [{ key: deleted.notice.threadId, row: deleted, after: place.after }]
+    deleted?.list === list
+      ? [{ key: deleted.notice.threadId, row: deleted, after: deleted.notice.place.after }]
       : [];
   return withGone(chats, chatKey, gone).map((item) =>
     item.gone ? item.row.row() : render(item.row),
@@ -293,8 +309,7 @@ function PagedChats({
   const page = chats.slice(0, shown);
   const open = chats.find((chat) => chat.id === openId);
   const openPastPage = open !== undefined && !page.includes(open);
-  const pinnedKey = `chats:${listKey}:pinned`;
-  const pageKey = `chats:${listKey}`;
+  const { pinned: pinnedKey, page: pageKey } = chatLists(listKey);
   const pinnedRows = withDeleted(pinnedKey, pinned, deleted, render);
   const pageRows = withDeleted(pageKey, page, deleted, (chat) => (
     <div key={chat.id} data-paged-chat>
@@ -365,7 +380,7 @@ function FeedRows({
   deleted: DeletedChat;
   empty: ReactNode;
 }) {
-  const rows = withDeleted("chats:search", feed.items, deleted, row);
+  const rows = withDeleted(SEARCH_LIST, feed.items, deleted, row);
   if (feed.isPending)
     return (
       <ListLine status>
@@ -382,7 +397,7 @@ function FeedRows({
   if (!rows.length && !feed.hasNextPage && !feed.isPlaceholderData)
     return empty ? <ListLine>{empty}</ListLine> : null;
   return (
-    <div aria-busy={feed.isFetching || undefined} data-chat-list="chats:search">
+    <div aria-busy={feed.isFetching || undefined} data-chat-list={SEARCH_LIST}>
       {rows}
       {feed.isFetchNextPageError ? (
         <InlineErrorRow
@@ -444,7 +459,12 @@ function DeletedRow({
   );
 }
 
-type RowChat = { id: string; title: string | null };
+type RowChat = {
+  id: string;
+  title: string | null;
+  workId?: string | null;
+  work?: { id: string } | null;
+};
 
 const ChatRow = memo(function ChatRow({
   ctx: { projectId, deletes, refused, touch, onOpenChat, onMoved },
@@ -482,7 +502,7 @@ const ChatRow = memo(function ChatRow({
       },
     );
   const onDelete = () =>
-    replying ? setAsking(true) : deletes.delete(chat.id, title, placeOf(chat.id));
+    replying ? setAsking(true) : deletes.delete(chat.id, title, placeOf(chat, pinned));
   return (
     <div data-chat-id={chat.id}>
       <TitleEditSlot
@@ -510,7 +530,7 @@ const ChatRow = memo(function ChatRow({
                   word={<Trans>Retry</Trans>}
                   label={t`Retry deleting ${title}`}
                   sentence={t`Couldn't delete`}
-                  onAction={() => deletes.delete(chat.id, title, placeOf(chat.id))}
+                  onAction={() => deletes.delete(chat.id, title, placeOf(chat, pinned))}
                 />
               ) : null
             }
@@ -554,7 +574,7 @@ const ChatRow = memo(function ChatRow({
                   onKeep={() => setAsking(false)}
                   onConfirm={() => {
                     setAsking(false);
-                    deletes.delete(chat.id, title, placeOf(chat.id));
+                    deletes.delete(chat.id, title, placeOf(chat, pinned));
                   }}
                 />
               ) : null

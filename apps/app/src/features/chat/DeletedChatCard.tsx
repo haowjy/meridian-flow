@@ -3,11 +3,19 @@ import type { DeletedChatCard as Notice } from "@/client/chat-submissions/compos
 import { FailureCard } from "@/components/app/FailureCard";
 
 export function DeletedChatCard({ notice, onDismiss }: { notice: Notice; onDismiss(): void }) {
-  const { title, count, own } = notice;
+  const { title, count, own, backInChat } = notice;
   return (
     <FailureCard tone="info" onDismiss={onDismiss}>
       <p className="min-w-0 flex-1 break-words">
-        {own ? (
+        {backInChat ? (
+          title ? (
+            <Trans>
+              <strong>{title}</strong> is back with these words. A copy stays below.
+            </Trans>
+          ) : (
+            <Trans>The chat is back with these words. A copy stays below.</Trans>
+          )
+        ) : own ? (
           title ? (
             <Trans>
               Your unsent words from <strong>{title}</strong> are below.

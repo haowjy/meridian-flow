@@ -6,6 +6,7 @@ import {
   cleanDeletedChat,
   restoreOwnDeletedChatWords,
 } from "@/client/chat-submissions/deleted-chat";
+import { rerecordSubmissions } from "@/client/chat-submissions/owner";
 import { readLastShownChat, writeLastShownChat } from "@/client/project-shell/store";
 import {
   CHAT_DELETE_KIND,
@@ -15,6 +16,7 @@ import {
 } from "@/client/query/chat-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { whenRead } from "@/client/query/when-read";
+import type { ThreadStoreActions } from "@/client/stores";
 import type { ChatNavigation } from "../../routing/chat-navigation";
 
 export type ChatDeleteNotice = {
@@ -23,16 +25,17 @@ export type ChatDeleteNotice = {
   title: string;
   status: "ready" | "restoring" | "failed" | "kept";
   keptWith?: string;
-  place: ChatPlace | null;
+  place: ChatPlace;
 };
 
-export type ChatPlace = { list: string; after: readonly string[] };
+export type ChatPlace = { work: string | null; pinned: boolean; after: readonly string[] };
 
 export type ChatDeleteRefusal = { threadId: string; title: string };
 
 type Ports = {
   client: QueryClient;
   driver: () => CommandDriver | null;
+  actions: () => ThreadStoreActions;
   accountId: string;
   projectId: string;
   navigation(): ChatNavigation;
@@ -44,6 +47,7 @@ type Held = {
   notice: ChatDeleteNotice;
   taken: Taken;
   moved: Promise<unknown>;
+  landed: Promise<unknown>;
   ended: boolean;
 };
 
@@ -66,11 +70,11 @@ export class ChatDeletes {
   notice = (): ChatDeleteNotice | null => this.held?.notice ?? null;
   refused = (): ChatDeleteRefusal | null => this.refusal;
 
-  delete(threadId: string, title: string, place: ChatPlace | null = null): void {
+  delete(threadId: string, title: string, place: ChatPlace): void {
     if (this.closed) return;
     this.end();
     this.refusal = null;
-    const { accountId, projectId } = this.ports;
+    const { projectId } = this.ports;
     const taken = this.takeAway(threadId);
     const moved = this.moveWords(threadId, title);
     const notice: ChatDeleteNotice = {
@@ -80,14 +84,14 @@ export class ChatDeletes {
       status: "ready",
       place,
     };
-    const held: Held = { notice, taken, moved, ended: false };
-    void trashChat(this.ports.driver(), CHAT_DELETE_KIND, projectId, threadId).then(
+    const held: Held = { notice, taken, moved, landed: Promise.resolve(), ended: false };
+    held.landed = trashChat(this.ports.driver(), CHAT_DELETE_KIND, projectId, threadId).then(
       (done) => {
         if (done) announce(t`Chat deleted`);
       },
       () => {
         if (this.held === held) this.held = null;
-        void moved.then(() => restoreOwnDeletedChatWords(accountId, threadId));
+        void moved.then(() => this.restoreWords(threadId, Promise.resolve()));
         if (!this.closed) {
           this.putBack(threadId, taken);
           this.refusal = { threadId, title };
@@ -113,8 +117,9 @@ export class ChatDeletes {
     this.update(held, "restoring");
     const { threadId, title } = held.notice;
     await held.moved;
-    restoreOwnDeletedChatWords(this.ports.accountId, threadId);
-    if (!held.ended) this.putBack(threadId, held.taken);
+    void this.restoreWords(threadId, held.landed).then(() => {
+      if (!held.ended) this.putBack(threadId, held.taken);
+    });
     const restored = await this.restored(threadId);
     if (restored === true) {
       if (this.held === held) this.held = null;
@@ -154,6 +159,13 @@ export class ChatDeletes {
     this.held = null;
     held.ended = true;
     this.publish();
+  }
+
+  private restoreWords(threadId: string, landed: Promise<unknown>) {
+    const { accountId } = this.ports;
+    return restoreOwnDeletedChatWords(accountId, threadId, (entries) =>
+      landed.then(() => rerecordSubmissions(accountId, entries, this.ports.actions())),
+    );
   }
 
   private moveWords(threadId: string, title: string) {

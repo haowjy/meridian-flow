@@ -140,6 +140,21 @@ export function recordAndProjectSubmission(
   return true;
 }
 
+export function rerecordSubmissions(
+  accountId: string,
+  entries: ChatSubmission[],
+  actions: ThreadStoreActions,
+): boolean {
+  return [...entries].sort(compareSubmissions).every((entry) =>
+    entry.control
+      ? recordChatSubmission(accountId, entry)
+      : recordAndProjectSubmission(accountId, entry, actions, {
+          kind: "chat",
+          id: entry.threadId,
+        }),
+  );
+}
+
 type OwnerOptions = {
   failureLog?: FailureLog;
   accountId: string;

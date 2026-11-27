@@ -253,16 +253,29 @@ the trees' folders), holding every other Work's chats, their pinned ones first, 
 with a mark while folded when one of them waits on the writer or is working. Each chat is listed
 once, in its own Work's list, and opening it does not move it; all come from the project's thread
 list (`chat-groups.ts`). Each row renames in place, pins or unpins from
-its ⋯ menu, and deletes with an Undo line in the list. The API and the client state still call a
-pin `favorite` (`isFavorite`).
+its ⋯ menu, and deletes with an Undo line in the list. The Undo line stays on screen until it
+settles or is dismissed. Its place is the chat's home, its Work and whether it was pinned, not the
+list it was clicked in: while a search is shown it sits in the results; otherwise in the scoped list
+when its Work is the scope, else in "Other chats" (below the heading when that is folded). A group
+holding the line is shown even when it has no other chat left (the last chat deleted, or another
+tab deleting its Work). The API and the client state still call a pin `favorite` (`isFavorite`).
 
 A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.ts`, mounted by
 `ChatDeleteProvider` in `ProjectView`): its notice survives switching the sidebar's source, closing
 the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
 project, signing out or a reload. The delete takes main to `/chats` and forgets it as the current
-chat at once; the chat's unsent words move into New chat at once (`cleanDeletedChat` with `own-delete`), and Undo
-moves them back into the chat's box (`restoreOwnDeletedChatWords`) and out of New chat, but only if the
-writer has not typed in New chat since: then the one copy stays in New chat with its note. Undo returns main to
+chat at once; the chat's unsent words move into New chat at once (`cleanDeletedChat` with `own-delete`),
+and Undo moves them back into the chat's box (`restoreOwnDeletedChatWords`) and out of New chat at
+the click. A chat whose creation was still in the chat-submission journal (its first message never
+reached the server) comes back as it was: Undo writes its journal records back once the delete has
+landed (written earlier, the create would land before the queued delete, which would then delete
+it), so the chat is created and its message sent. One rule for both kinds: when the writer has typed
+in New chat since the delete, New chat keeps the words, since taking them would take the writer's
+typing, and its note stays and says where they are; a never-created chat gets all of them back
+(its unsent messages re-recorded, its box text back in its box), so the note says the chat is back
+with these words and a copy stays below. Undo's restore doesn't wait for the chat's creation the way
+rename and pin do: its delete is ahead of it on the lane, and a re-recorded create that failed would
+hold the Undo line until the writer pressed Retry. Undo returns main to
 the chat only if main is still on `/chats`, and the chat slot only if nothing has replaced it since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
 restart it. The delete and Undo's restore are command-driver kinds on the chat's lane

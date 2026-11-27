@@ -38,21 +38,35 @@ type OwnMove = {
   before: ComposerDraftSnapshot | null;
   after: ComposerDraftSnapshot | null;
   snapshots: ComposerDraftSnapshot[];
+  unmade: ChatSubmission[];
+  box: ComposerDraftSnapshot | null;
 };
 const ownMoves = new Map<string, OwnMove>();
 export function restoreOwnDeletedChatWords(
   accountId: string,
   threadId: string,
+  rerecord: (entries: ChatSubmission[]) => Promise<boolean>,
   draft: DeletedChatPorts["draft"] = composerSessionDraft,
-) {
+): Promise<void> {
   const key = surfaceKey(accountId, threadId);
   const move = ownMoves.get(key);
-  if (!move) return;
+  if (!move) return Promise.resolve();
   ownMoves.delete(key);
-  const target = draft(accountId, { kind: "new-chat", id: move.projectId });
-  if (!target.holds(move.after)) return;
-  if (draft(accountId, { kind: "chat", id: threadId }).prependSnapshots(move.snapshots))
-    target.withdraw(threadId, move.before);
+  const target = () => draft(accountId, { kind: "new-chat", id: move.projectId });
+  const source = draft(accountId, { kind: "chat", id: threadId });
+  if (!move.unmade.length) {
+    if (target().holds(move.after) && source.prependSnapshots(move.snapshots))
+      target().withdraw(threadId, move.before);
+    return Promise.resolve();
+  }
+  const returned = move.unmade.map((entry) => entry.recordId);
+  return rerecord(move.unmade).then((back) => {
+    if (!back) return;
+    const into = target();
+    const boxBack = move.box === null || source.prependSnapshots([move.box]);
+    if (boxBack && into.holds(move.after)) into.withdraw(threadId, move.before, returned);
+    else into.keepCopy(threadId, returned, boxBack);
+  });
 }
 const surfaces = new Map<string, Set<DeletedChatSurface>>();
 const surfaceKey = (accountId: string, threadId: string) => JSON.stringify([accountId, threadId]);
@@ -120,8 +134,11 @@ export async function cleanDeletedChat(
       (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
     );
     const receipts = unsent.map((entry) => entry.recordId);
-    const box = source.initialDraft;
-    if (box && serializeComposerDraft(box.doc).text) snapshots.push(box);
+    const box =
+      source.initialDraft && serializeComposerDraft(source.initialDraft.doc).text
+        ? source.initialDraft
+        : null;
+    if (box) snapshots.push(box);
     let moved = false;
     if (snapshots.length) {
       if (!project) return false;
@@ -135,7 +152,14 @@ export async function cleanDeletedChat(
       });
       if (!moved) return false;
       if (own)
-        ownMoves.set(key, { projectId: project, before, after: target.initialDraft, snapshots });
+        ownMoves.set(key, {
+          projectId: project,
+          before,
+          after: target.initialDraft,
+          snapshots,
+          unmade: records.some((entry) => entry.creation) ? records : [],
+          box,
+        });
     }
     source.handoff();
     for (const entry of records) {
