@@ -17,6 +17,10 @@ stateDiagram-v2
   closing --> closed: the registry's close retires every session
 ```
 
+- **Mounting signed in delivers what stored copies hold.** `resumeFeatureLease` runs the
+  registry's stored-copy pass (`deliverStoredCopies`): words a held session had not delivered
+  when its page went away (a reload, a closed tab) reach the server on the next load in any tab
+  of the account, without the writer reopening the document.
 - **`closing` refuses new work and lets go of what is held.** The registry refuses `admit`, `get`,
   `retain`, `restartUnavailableRoom`, `whenSentAcknowledged` and `clearLocalCopy`
   once the signal is aborted, but `release` still runs, so a view unmounting during the close

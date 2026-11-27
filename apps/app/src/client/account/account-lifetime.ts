@@ -118,6 +118,7 @@ export class AccountLifetime {
       () => void this.signedOutElsewhere(),
     );
     if (!this.signedIn()) void this.signedOutElsewhere();
+    else void this.registry.deliverStoredCopies().catch((error: unknown) => reportError(error));
   }
 
   suspendFeatureLease(): void {

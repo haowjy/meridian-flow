@@ -76,7 +76,7 @@ its slot holds the session, the copy it opened (key, incarnation, Web Lock hold)
 ```mermaid
 stateDiagram-v2
   [*] --> none: admit
-  none --> open: get, retain, or sign-out opening a stored copy to deliver it
+  none --> open: get, retain, or the stored-copy pass opening a copy to deliver it
   open --> grace: nothing retains it (for Live, no fork has a session); 3 s timer
   grace --> open: get, retain, or a restart (which starts the grace again if still unretained)
   grace --> holding: the timer fires, unretained, with unsaved edits the room can still take
@@ -99,6 +99,23 @@ stateDiagram-v2
   none --> [*]: clearLocalCopy or account close
 ```
 
+- **A stored copy that lags its saved mark is delivered** (`deliverStoredCopies`). A session
+  lives only as long as the page: a hold in progress when the tab reloads, closes or crashes
+  leaves its words only in the stored copy, and so does a hold that ends because its room ended
+  or after 10 minutes connected without a save. The stored-copy pass reads each current copy no
+  session has open, one at a time, for ops beyond its saved mark (`storedOpsBeyondMark`), and
+  opens a session on each, a fork's Live room first. Nothing retains it, so it takes the usual
+  path: grace, `holding` while its transport reconnects and sends, then `none` once saved. The
+  account lifetime runs the pass each time it mounts signed in (`resumeFeatureLease`), and
+  sign-out's wait runs the same scan (`openStoredUnsent`). It opens nothing while the account is
+  closing or after a sign-out was counted. A copy the pass can't read (a newer build's database,
+  any IndexedDB error) is reported and skipped, and the scan goes on to the next; sign-out counts
+  it as unsent and refuses. A room that refuses for good (access removed, the document purged,
+  bytes the server can't read) is opened once per pass: it ends, its hold ends and it retires,
+  and the words stay in the copy until the next pass. A copy the server's history has moved past
+  (`history-cutoff`) is the exception: the replacement path drops its words with "Couldn't save",
+  moves the room to a fresh copy, and so the toast can appear on load with the document not open
+  and not named.
 - **`none` after a retirement is not available until the destroy finishes.** `retire` and
   `retireRoom` take the session out of the slot and hand it to the teardown owner, which calls
   `destroy` at once. Until that finishes, `admit` and opening the room throw (`assertAvailable`)
