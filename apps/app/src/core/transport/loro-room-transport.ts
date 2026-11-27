@@ -31,6 +31,7 @@ import {
   MessageType,
   type ProtocolMessage,
   RoomErrorCode,
+  UpdateStatusCode,
 } from "loro-protocol";
 import type { DocumentSessionAccess } from "@/core/editor/document-session";
 import type { ConnectivityHintsPort } from "./connectivity-hints";
@@ -70,6 +71,7 @@ export type LoroRoomTransportOptions = {
 
 export type LoroRoomTransport = {
   send(batch: Uint8Array): void;
+  sendLacking(): void;
   /**
    * Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or
    * signed out) is waited for until it joins and its Join's batch (what the server lacks, the
@@ -234,6 +236,13 @@ export function createLoroRoomTransport({
     unacked.set(sendBatch(CrdtType.Loro, bytes), batchEnd(bytes));
     emitAck();
   };
+  const sendLacking = () => {
+    if (!joined) return;
+    const carried = new Map(server);
+    for (const version of unacked.values()) mergeVersion(carried, version);
+    const lacking = copy.exportSince(carried);
+    if (lacking) sendDoc(lacking);
+  };
 
   const receiveBatch = (bytes: Uint8Array) => {
     const received = batchEnd(bytes);
@@ -276,8 +285,7 @@ export function createLoroRoomTransport({
           const local = presence.encodeAll();
           if (local.length > 0) sendBatch(CrdtType.LoroEphemeralStore, local);
         }
-        const lacking = copy.exportSince(server);
-        if (lacking) sendDoc(lacking);
+        sendLacking();
         if (!synced) catchUp = { want: joinVersion, handed: new Map(copy.version()) };
         settleSynced();
         emitStatus({ kind: "connected" });
@@ -290,7 +298,7 @@ export function createLoroRoomTransport({
           return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
         if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
           return end({ kind: "terminal", reason: message.appCode });
-        socket?.close(1000, "rejoin");
+        socket?.close(1000, "join-refused");
         return;
       }
       case MessageType.DocUpdate:
@@ -318,7 +326,8 @@ export function createLoroRoomTransport({
       }
       case MessageType.Ack: {
         const version = unacked.get(message.refId);
-        if (!version) return;
+        // A refused batch stays outstanding: the next Join sends what the server lacks.
+        if (!version || message.status !== UpdateStatusCode.Ok) return;
         unacked.delete(message.refId);
         mergeVersion(server, version);
         emitAck();
@@ -416,6 +425,7 @@ export function createLoroRoomTransport({
 
   return {
     send: sendDoc,
+    sendLacking,
     whenSentAcknowledged() {
       if (destroyed || ended() || acknowledged()) return Promise.resolve();
       return new Promise<void>((resolve) => {

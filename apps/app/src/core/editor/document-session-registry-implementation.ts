@@ -17,20 +17,21 @@ import type {
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import {
   type CopyHold,
+  copiesOpenSince,
   documentSessionPersistenceKey,
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
-import { storedWordsBeyond } from "./unsent-words";
+import { storedOpsBeyondMark, storedWordsBeyond } from "./unsent-words";
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 const KEPT_FOR_UNDO_CAP = 8;
 
 type RoomState = {
+  room: DocumentRoom;
   session: DocumentSession | null;
-  lease: DocumentSessionLease;
   hold: Promise<CopyHold> | null;
 };
 
@@ -41,6 +42,7 @@ type RetainedLiveDocument = { lease: DocumentSessionLease; detached: boolean };
 export class DocumentSessionRegistry {
   private closeAttempt: Promise<void> | null = null;
   private readonly copies: LocalDocumentCopies;
+  private readonly copiesOpen: () => boolean;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     () => new Error("Live session teardown is unfinished"),
   );
@@ -69,6 +71,7 @@ export class DocumentSessionRegistry {
     private readonly transportFactory: DocumentSessionTransportFactory,
   ) {
     this.copies = new LocalDocumentCopies(accountId);
+    this.copiesOpen = copiesOpenSince(accountId);
   }
 
   admit(projectId: ProjectId, documentId: DocumentId, draftId?: DraftId): DocumentSessionLease {
@@ -79,9 +82,7 @@ export class DocumentSessionRegistry {
     const key = sessionRoomKey(room);
     this.teardownOwner.assertAvailable(key);
     const lease = Object.freeze({ accountId: this.accountId, projectId, documentId, room });
-    const state = this.rooms.get(key);
-    if (state) state.lease = lease;
-    else this.rooms.set(key, { session: null, lease, hold: null });
+    if (!this.rooms.has(key)) this.rooms.set(key, { room, session: null, hold: null });
     return lease;
   }
 
@@ -92,7 +93,7 @@ export class DocumentSessionRegistry {
   /** The rooms of one document: its forks first, then its Live room, the order they are torn down in. */
   private roomsOf(documentId: DocumentId): string[] {
     const keys = [...this.rooms.keys()].filter(
-      (key) => this.rooms.get(key)?.lease.documentId === documentId,
+      (key) => this.rooms.get(key)?.room.documentId === documentId,
     );
     return keys.sort((a, b) => Number(a === documentId) - Number(b === documentId));
   }
@@ -118,27 +119,78 @@ export class DocumentSessionRegistry {
     await this.copies.clear(documentId, () => this.dropWords());
   }
 
-  async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
-    const sessions = [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : []));
-    const pending = (session: DocumentSession) =>
-      session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
-    const settled = sessions.map(
-      (session) =>
-        new Promise<boolean>((resolve) => {
-          if (!pending(session)) return resolve(true);
-          const timer = setTimeout(() => {
-            stop();
-            resolve(false);
-          }, timeoutMs);
-          const stop = session.subscribe(() => {
-            if (pending(session)) return;
-            clearTimeout(timer);
-            stop();
-            resolve(true);
-          });
-        }),
+  async settleUnsentEdits(timeoutMs: number, { storedCopies = true } = {}): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    const seen = new Set<DocumentSession>();
+    let scanDue = storedCopies;
+    let waited = false;
+    for (;;) {
+      if (scanDue) {
+        const stored = await this.openStoredUnsent(deadline);
+        if (!stored || stored.some((room) => !this.openSession(room))) return false;
+        scanDue = false;
+      }
+      if (this.accountClosing.aborted) return false;
+      const open = new Set(
+        [...this.rooms.values()].flatMap(({ session }) => (session ? [session] : [])),
+      );
+      for (const session of seen)
+        if (!open.has(session) && !session.replaced && session.hasUnacknowledgedEdits())
+          return false;
+      const pending = [...open].filter(
+        (session) => session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits(),
+      );
+      if (pending.length === 0) {
+        if (storedCopies && waited) {
+          waited = false;
+          scanDue = true;
+          continue;
+        }
+        return true;
+      }
+      if (Date.now() >= deadline) return false;
+      for (const session of pending) seen.add(session);
+      await nextEmit(pending, deadline);
+      waited = true;
+    }
+  }
+
+  private async openStoredUnsent(deadline: number): Promise<DocumentRoom[] | null> {
+    const unsent: DocumentRoom[] = [];
+    // One at a time: holding every copy's bytes at once costs their sum.
+    for (const { name, room } of await this.copies.currentCopies())
+      if (!this.openSession(room) && (await this.copies.holds(name, storedOpsBeyondMark)))
+        unsent.push(room);
+    const rooms = unsent.flatMap((room): DocumentRoom[] =>
+      room.kind === "fork" ? [{ kind: "live", documentId: room.documentId }, room] : [room],
     );
-    return (await Promise.all(settled)).every(Boolean);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const drained = await Promise.race([
+      Promise.all(rooms.map((room) => this.teardownOwner.drainRoom(sessionRoomKey(room)))).then(
+        () => true,
+        (error: unknown) => {
+          reportError(error);
+          return false;
+        },
+      ),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), deadline - Date.now());
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!drained || this.accountClosing.aborted) return null;
+    for (const room of rooms) this.openToDeliver(room);
+    return unsent;
+  }
+
+  private openToDeliver(room: DocumentRoom): void {
+    const key = sessionRoomKey(room);
+    const state = this.rooms.get(key) ?? { room, session: null, hold: null };
+    if (state.session || this.teardownOwner.retiring(key)) return;
+    if (room.kind === "fork" && !this.rooms.get(room.documentId)?.session) return;
+    this.rooms.set(key, state);
+    this.getOrCreateLiveSession(state, true);
+    this.scheduleTeardownIfUnretained(key);
   }
 
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
@@ -147,8 +199,7 @@ export class DocumentSessionRegistry {
 
   get(lease: DocumentSessionLease): DocumentSession {
     this.requireAccountOpen();
-    const state = this.requireLease(lease);
-    return this.getOrCreateLiveSession(lease, state, true);
+    return this.getOrCreateLiveSession(this.requireLease(lease), true);
   }
 
   openRoomVersion(documentId: DocumentId): Uint8Array | null {
@@ -163,7 +214,7 @@ export class DocumentSessionRegistry {
     const copies = await this.copies.currentCopies();
     const forks = new Map<string, DocumentRoom>();
     for (const room of [
-      ...[...this.rooms.values()].map(({ lease }) => lease.room),
+      ...[...this.rooms.values()].map(({ room }) => room),
       ...copies.map(({ room }) => room),
     ])
       if (
@@ -181,10 +232,10 @@ export class DocumentSessionRegistry {
       await Promise.all(
         rooms.map(async (room) => {
           const key = sessionRoomKey(room);
-          const state = this.rooms.get(key);
-          if (state?.session) return state.lease;
-          const copy = copies.find((each) => sessionRoomKey(each.room) === key);
-          if (!copy || !(await this.copies.wordsBeyondMark(copy.name))) return null;
+          if (!this.rooms.get(key)?.session) {
+            const copy = copies.find((each) => sessionRoomKey(each.room) === key);
+            if (!copy || !(await this.copies.holds(copy.name, storedOpsBeyondMark))) return null;
+          }
           return this.admit(
             projectId,
             room.documentId,
@@ -321,12 +372,8 @@ export class DocumentSessionRegistry {
     return state;
   }
 
-  private getOrCreateLiveSession(
-    lease: DocumentSessionLease,
-    state: RoomState,
-    attach: boolean,
-  ): DocumentSession {
-    const key = sessionRoomKey(lease.room);
+  private getOrCreateLiveSession(state: RoomState, attach: boolean): DocumentSession {
+    const key = sessionRoomKey(state.room);
     this.cancelPendingTeardown(key);
     this.teardownOwner.assertAvailable(key);
     if (state.session) {
@@ -336,8 +383,8 @@ export class DocumentSessionRegistry {
       return state.session;
     }
     const { session, hold } = this.openCopy(
-      lease.room,
-      documentSessionPersistenceKey(lease.accountId, lease.room),
+      state.room,
+      documentSessionPersistenceKey(this.accountId, state.room),
     );
     state.hold = hold;
     state.session = session;
@@ -368,7 +415,11 @@ export class DocumentSessionRegistry {
     const hold = this.copies.hold(name);
     const session = this.createSession(
       room,
-      { kind: "indexeddb", key: name },
+      {
+        kind: "indexeddb",
+        key: name,
+        granted: hold.then(() => this.copiesOpen()),
+      },
       replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
@@ -431,9 +482,10 @@ export class DocumentSessionRegistry {
       if (snapshot.holdsUndeliverableEdits)
         this.requestReplacement(session, historyCutOff(snapshot.connectionState));
     });
-    session.subscribe(() => {
+    session.subscribe((snapshot) => {
       this.settleDrainedRoom(session);
       this.settleRetainedTransport(session);
+      if (snapshot.undeliveredTabWrites) queueMicrotask(() => this.deliverTabWrites(session));
     });
     return session;
   }
@@ -544,7 +596,7 @@ export class DocumentSessionRegistry {
   }
 
   private async dropCopy(name: string): Promise<void> {
-    if (await this.copies.wordsBeyondMark(name)) this.dropWords();
+    if (await this.copies.holds(name, storedWordsBeyond)) this.dropWords();
   }
 
   private dropWords(): void {
@@ -589,33 +641,41 @@ export class DocumentSessionRegistry {
   }
 
   private reconcileRetainedSessions(): void {
-    const keep = new Map<string, RetainedLiveDocument>();
-    const add = (key: string, owner: RetainedLiveDocument) => {
-      const prior = keep.get(key);
-      keep.set(key, { lease: owner.lease, detached: (prior?.detached ?? true) && owner.detached });
+    const keep = new Map<string, { state: RoomState; detached: boolean }>();
+    const add = (state: RoomState, detached: boolean) => {
+      const key = sessionRoomKey(state.room);
+      keep.set(key, { state, detached: (keep.get(key)?.detached ?? true) && detached });
     };
     for (const retained of this.retainedByOwner.values())
-      for (const [key, owner] of retained) {
-        add(key, owner);
-        if (owner.lease.room.kind === "fork") {
-          const live = this.rooms.get(owner.lease.documentId);
-          if (live) add(owner.lease.documentId, { lease: live.lease, detached: owner.detached });
-        }
+      for (const { lease, detached } of retained.values()) {
+        add(this.requireLease(lease), detached);
+        const live = lease.room.kind === "fork" && this.rooms.get(lease.documentId);
+        if (live) add(live, detached);
       }
     // Live rooms first: a fork's session is made over its Live room's.
-    const ordered = [...keep].sort(
-      ([, a], [, b]) => Number(a.lease.room.kind === "fork") - Number(b.lease.room.kind === "fork"),
+    const ordered = [...keep.values()].sort(
+      (a, b) => Number(a.state.room.kind === "fork") - Number(b.state.room.kind === "fork"),
     );
-    for (const [, owner] of ordered) {
-      const state = this.requireLease(owner.lease);
-      const session = this.getOrCreateLiveSession(owner.lease, state, !owner.detached);
-      if (owner.detached) this.detachUnwantedTransport(session);
+    for (const { state, detached } of ordered) {
+      const session = this.getOrCreateLiveSession(state, !detached);
+      if (detached) this.detachUnwantedTransport(session);
     }
     for (const [key, state] of this.rooms) {
       if (state.session && !keep.has(key) && !this.isRetained(key)) {
         this.scheduleTeardown(key);
       }
     }
+  }
+
+  private deliverTabWrites(session: DocumentSession): void {
+    const key = session.roomKey;
+    const state = this.rooms.get(key);
+    if (state?.session !== session || this.accountClosing.aborted) return;
+    if (session.getSnapshot().status !== "detached" || !this.mustKeepForUnsentEdits(session))
+      return;
+    this.cancelPendingTeardown(key);
+    this.attachSessionTransport(session);
+    if (!this.isRetained(key)) this.releaseUnheld(key, state, session);
   }
 
   private detachUnwantedTransport(session: DocumentSession): void {
@@ -755,4 +815,28 @@ export class DocumentSessionRegistry {
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
   }
+}
+
+function nextEmit(sessions: readonly DocumentSession[], deadline: number): Promise<void> {
+  return new Promise((resolve) => {
+    const stops: (() => void)[] = [];
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      for (const stop of stops) stop();
+      resolve();
+    };
+    const timer = setTimeout(finish, Math.max(0, deadline - Date.now()));
+    for (const session of sessions) {
+      let first = true;
+      stops.push(
+        session.subscribe(() => {
+          if (first) first = false;
+          else finish();
+        }),
+      );
+    }
+  });
 }

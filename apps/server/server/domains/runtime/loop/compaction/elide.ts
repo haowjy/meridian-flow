@@ -17,27 +17,28 @@ export type RecordedDocuments = ReadonlyMap<
 >;
 export type ModelElisions = NonNullable<CompactionMetadata["elisions"]>;
 
-function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies) {
+const bySequence = (blocks: readonly Block[]) =>
+  [...blocks].sort((a, b) => a.sequence - b.sequence);
+
+function documentPairs(ordered: readonly Block[], policies: DocumentTextPolicies) {
   const calls = new ToolCallPairing<Block>();
-  return [...blocks]
-    .sort((a, b) => a.sequence - b.sequence)
-    .flatMap((result) => {
-      if (result.blockType === "tool_use") {
-        calls.call((result.content as JsonObject).toolCallId as string, result);
-        return [];
-      }
-      if (result.blockType !== "tool_result") return [];
-      const content = result.content as JsonObject;
-      if (isNotesStepHeldResult(content.result)) return [];
-      if (content.isError && !showsDocumentText(content.result as JsonObject)) return [];
-      const call = calls.answer(content.toolCallId as string);
-      if (!call) return [];
-      const tool = call.content as JsonObject;
-      const policy = policies(tool.toolName as string);
-      const input = (tool.input ?? {}) as JsonObject;
-      const kind = showsDocumentText(content.result as JsonObject) ? "read" : policy?.kind;
-      return policy ? [{ call, result, input, policy, kind }] : [];
-    });
+  return ordered.flatMap((result) => {
+    if (result.blockType === "tool_use") {
+      calls.call((result.content as JsonObject).toolCallId as string, result);
+      return [];
+    }
+    if (result.blockType !== "tool_result") return [];
+    const content = result.content as JsonObject;
+    if (isNotesStepHeldResult(content.result)) return [];
+    if (content.isError && !showsDocumentText(content.result as JsonObject)) return [];
+    const call = calls.answer(content.toolCallId as string);
+    if (!call) return [];
+    const tool = call.content as JsonObject;
+    const policy = policies(tool.toolName as string);
+    const input = (tool.input ?? {}) as JsonObject;
+    const kind = showsDocumentText(content.result as JsonObject) ? "read" : policy?.kind;
+    return policy ? [{ call, result, input, policy, kind }] : [];
+  });
 }
 
 export function collectRecordedDocuments(
@@ -46,7 +47,8 @@ export function collectRecordedDocuments(
 ): RecordedDocuments {
   const recorded = new Map<string, readonly DocumentRevisionEvidence[] | undefined>();
   for (const { turn, blocks } of slices) {
-    for (const { result } of documentPairs(blocks, policies)) {
+    const ordered = bySequence(blocks);
+    for (const { result } of documentPairs(ordered, policies)) {
       const metadata = (result.content as JsonObject).metadata as JsonObject | undefined;
       recorded.set(
         result.id,
@@ -54,7 +56,7 @@ export function collectRecordedDocuments(
       );
     }
     // Insert compaction evidence in reverse Map order; the recent picker reverses insertion order
-    const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
+    const referenceBlocks = turn.role === "compaction" ? [...ordered].reverse() : ordered;
     for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);
       if (reference?.kind === "document" && reference.read)
@@ -114,7 +116,7 @@ export function planModelElisions(input: {
   const elisions: ModelElisions = [];
   for (const { blocks } of retainedSuffix) {
     for (const { call, result, input: toolInput, policy, kind } of documentPairs(
-      blocks,
+      bySequence(blocks),
       policies,
     )) {
       const elision = elisionOf(recorded.get(result.id), current, reshown);

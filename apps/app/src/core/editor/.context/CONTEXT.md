@@ -40,8 +40,16 @@ batch another tab posts merges in its own end, so a keystroke costs no pass over
 answer is whether the server's version covers `pending`, and each doc key goes once it does. The
 transport merges a server batch, or an acknowledged one, into `serverVersion()` before handing it
 on, and the session recounts after, so a sign-out waiting on another tab's typing wakes when that
-tab's delivery comes back. Another tab's typing that tab never delivers (it closed offline) stays
-pending here until this tab's next Join sends it.
+tab's delivery comes back. Another tab's typing that tab never delivers (it closed offline) is
+sent from here once the tabs have been quiet for `TAB_QUIET_MS` (2 s, restarted by each batch):
+a connected session asks its transport to send what the server still lacks (`sendLacking`). The
+writing tab normally delivers first and the server's relay covers `pending` here, so nothing is
+sent; with a third tab, or a relay slower than 2 s, each extra tab may resend the undelivered part
+once per quiet period, which the server takes as a no-op. A session off its socket (kept for Undo,
+or detached) never sees the relay: at quiet it reads the server mark the writing tab keeps in the
+copy, and only what that leaves sets `undeliveredTabWrites`, on which the registry gives it its
+socket back and holds it until acknowledged (`deliverTabWrites`). Reconnecting on `pending` alone
+would rejoin on every keystroke typed in another tab.
 
 The browser's local copy of a room is the IndexedDB database
 `documentSessionPersistenceKey(accountId, room)` (`local-document-copies.ts`, store layout in
@@ -504,19 +512,27 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
 - **What the server has.** Each copy keeps the room version the server is known to hold
   (`SERVER_META` in the copy's `meta` store). The transport knows it per connection: the
   server's Join version, merged with each batch the server acked or sent
-  (`serverVersion()`); the session writes it to the copy each time the server has acknowledged
-  everything, merging by per-peer maximum. Ops the copy holds beyond it are all the server can
-  lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
+  (`serverVersion()`); the session writes it to the copy as it grows: a batch the server sent is
+  stored with the mark that covers it in one transaction, and each time the server has
+  acknowledged everything the mark is written at once, as at detach and destroy. A tab closed or
+  reloaded right after typing or receiving a peer's edit leaves a current mark (an unload-time
+  write did not land reliably). The write merges into the stored mark by per-peer maximum
+  (`LocalCopyStore.markServer`): tabs write their own views, and none may roll another's back.
+  The mark is what the server acknowledged, which is not what it saved: a room saves 2 to 10 s
+  after a batch, and a server that stops in that window loses ops the mark already covers (a Join
+  sends them again, but a copy deleted meanwhile, as at sign-out, does not). Beyond that gap, ops
+  the copy holds beyond the mark are all the server can lack. Whether those hold words is `unsent-words.ts`: it reads the text inserted beyond the
   version in each text doc; a change with no words is dropped silently.
 - **Who drops.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s `retiring`)
-  reads its copy beyond its mark (`LocalDocumentCopies.wordsBeyondMark`); the copy has every
+  reads its copy beyond its mark (`LocalDocumentCopies.holds` with `storedWordsBeyond`); the copy has every
   write of the session's by then. Not at the reset: a session kept on screen still shows that
   text, and a restore that restarts it delivers it. An access change (`RejoinSuggested`,
   `access-changed`) is no reset: the room rejoins and keeps its typing. `LocalDocumentCopies.clear`, the only deletion on a final
   fact, reads each copy beyond its mark before deleting it. A copy with no mark counts as marking
   nothing: all of it counts.
 - What it cannot reach: a document no tab has open keeps its typing in its copy until its next
-  open or its purge.
+  open, its purge, or a sign-out, which opens it to deliver first (Account lifetime in
+  `features/project/context/.context/state-machines.md`).
 
 ### Undeliverable edits (a room admitted read-only, or ended below its history)
 

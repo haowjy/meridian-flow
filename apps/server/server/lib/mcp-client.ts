@@ -1,8 +1,11 @@
 import { isIP } from "node:net";
 import { MCP_SESSIONS_PER_ACCOUNT, mcpAddressProblem } from "@meridian/contracts/mcp";
 import { createMcpClient, type McpClient, type McpEvent } from "@meridian-flow/runtime/mcp";
-import { fetch as undiciFetch } from "undici";
-import { isPublicAddress, publicAddressDispatcher } from "./public-address-dispatcher.js";
+import {
+  isPublicAddress,
+  type PublicFetchPolicy,
+  publicFetch,
+} from "./public-address-dispatcher.js";
 
 // The one SSRF rule, applied at add and on every request; a name that only resolves to a private address is refused later by the dispatcher
 export function addressRefusal(url: URL): string | null {
@@ -21,24 +24,22 @@ export function addressRefusal(url: URL): string | null {
   return null;
 }
 
-const publicFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(input instanceof Request ? input.url : input);
-  const refusal = addressRefusal(url);
-  if (refusal) throw new Error(refusal);
-  // Redirects are not followed: a hop could change the scheme or the port
-  const response = await undiciFetch(url, {
-    ...(init as Parameters<typeof undiciFetch>[1]),
-    dispatcher: publicAddressDispatcher,
-    redirect: "manual",
-  });
-  if (response.status >= 300 && response.status < 400) {
-    void response.body?.cancel();
-    throw new Error(
-      `The server redirected (HTTP ${response.status}); Flow does not follow redirects`,
-    );
-  }
-  return response;
-}) as unknown as typeof fetch;
+const MCP_FETCH: PublicFetchPolicy = {
+  check(url) {
+    const refusal = addressRefusal(url);
+    if (refusal) throw new Error(refusal);
+  },
+  maxRedirects: 0,
+  redirectRefusal: (status) =>
+    new Error(`The server redirected (HTTP ${status}); Flow does not follow redirects`),
+};
+
+const mcpFetch = (async (input: string | URL | Request, init?: RequestInit) =>
+  publicFetch(
+    new URL(input instanceof Request ? input.url : input),
+    MCP_FETCH,
+    init as Parameters<typeof publicFetch>[2],
+  )) as unknown as typeof fetch;
 
 export const sessionKey = (accountId: string, connectionId: string, settingsVersion: number) =>
   `${accountId}/${connectionId}/${settingsVersion}`;
@@ -83,7 +84,7 @@ export function createProcessMcpClient(onEvent?: (event: McpEvent) => void): Mcp
 
   const inner = createMcpClient({
     clientInfo: { name: "meridian-flow", version: "1" },
-    fetch: publicFetch,
+    fetch: mcpFetch,
     onEvent(event) {
       onEvent?.(event);
       if (event.type === "session_started") {

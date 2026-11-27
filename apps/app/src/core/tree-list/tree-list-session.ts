@@ -80,6 +80,7 @@ export class TreeListSession {
   constructor(
     readonly accountId: string,
     readonly list: TreeListRef,
+    private readonly copiesOpen: () => boolean,
   ) {
     const doc = freshDoc();
     this.current = { doc, version: 0, status: "waiting" };
@@ -90,7 +91,7 @@ export class TreeListSession {
   }
 
   private async load(name: string): Promise<void> {
-    if (typeof indexedDB !== "undefined") {
+    if (typeof indexedDB !== "undefined" && this.copiesOpen()) {
       try {
         const store = await LocalCopyStore.open(indexedDB, name);
         if (this.isClosed) {
