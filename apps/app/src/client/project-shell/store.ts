@@ -72,10 +72,6 @@ export function writeTreeVersionChoice(
 
 export type ShownWorkDraft = { workId: string; draftId: string };
 
-export function readShownWorkDraft(accountId: string, projectId: string): ShownWorkDraft | null {
-  return decodeWorkDraft(readRememberedId("work-draft", accountId, projectId));
-}
-
 function decodeWorkDraft(stored: string | null): ShownWorkDraft | null {
   const at = stored?.indexOf(":") ?? -1;
   if (!stored || at < 1) return null;
@@ -91,10 +87,6 @@ export function writeShownWorkDraft(
   if (readRememberedId("work-draft", accountId, projectId) === next) return;
   writeRememberedId("work-draft", accountId, projectId, next);
   notify(accountId, projectId);
-}
-
-export function readLastShownDocument(accountId: string, projectId: string): ShownDocument | null {
-  return decodeDocument(readRememberedId("document", accountId, projectId));
 }
 
 export function writeLastShownDocument(

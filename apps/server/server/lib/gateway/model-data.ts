@@ -58,9 +58,6 @@ const modelData = z.strictObject({
 
 export type ModelFacts = z.infer<typeof modelFacts>;
 export type ProviderData = z.infer<typeof providerData> & { id: string };
-export type PriceOverride = z.infer<typeof price>;
-export type Provenance = { source: string; checked: string; note?: string };
-
 const parsed = modelData.parse(modelDataJson);
 
 export const DEFAULT_MODEL_ID = parsed.defaultModel;

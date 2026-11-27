@@ -1,14 +1,11 @@
-import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import { draftItemKey } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DraftItem } from "@meridian/contracts/drafts";
 import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
 import type { LoroDoc } from "loro-crdt";
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
-import {
-  useAccountId,
-  useOptionalTreeLists,
-} from "@/features/project/context/account-feature-context";
+import { useAccountId } from "@/features/project/context/account-feature-context";
 import { parseContextUri } from "@/lib/context-uri";
 import { useTreeList } from "./useProjectTree";
 import { useProjectTreesAt } from "./useProjectTrees";
@@ -67,29 +64,4 @@ function createdDocuments(doc: LoroDoc, draftId: string): string[] {
   if (created.size === 0) return [];
   const { nodes } = replayView(doc, { draft: draftId });
   return [...created].filter((id) => nodes.get(id)?.trashed === false);
-}
-
-export function useCreatesDraft(projectId: string): (itemKey: string) => boolean {
-  const accountId = useAccountId();
-  const lists = useOptionalTreeLists();
-  return useCallback(
-    (itemKey) => {
-      const item = parseDraftItemKey(itemKey);
-      if (!item || !lists) return false;
-      const refs = [
-        { kind: "project", projectId },
-        { kind: "account", userId: accountId },
-      ] as const;
-      return refs.some((ref) => {
-        const handle = lists.acquire(ref);
-        try {
-          const doc = handle.session.getSnapshot().doc;
-          return createdDocuments(doc, item.draftId).includes(item.documentId);
-        } finally {
-          handle.release();
-        }
-      });
-    },
-    [lists, projectId, accountId],
-  );
 }

@@ -41,62 +41,6 @@ export type WorkSwitchedNoticeData = {
 
 export type WorkSwitchedNotice = Extract<NoticeInput, { kind: "work_switched" }>;
 
-export function parseNoticeInput(value: unknown): NoticeInput {
-  if (!isRecord(value) || !isRecord(value.scope) || value.scope.kind !== "thread") {
-    throw new Error("Invalid model notice");
-  }
-  const { kind, scope, message, data } = value;
-  if (typeof scope.threadId !== "string" || typeof message !== "string" || !isRecord(data)) {
-    throw new Error("Invalid model notice");
-  }
-  if (kind === "undo") {
-    return { kind, scope: { kind: "thread", threadId: scope.threadId }, message, data };
-  }
-  if (
-    kind === "awareness_degraded" &&
-    Array.isArray(data.documentIds) &&
-    data.documentIds.every((id) => typeof id === "string") &&
-    Array.isArray(data.documentNames) &&
-    data.documentNames.every((name) => typeof name === "string")
-  ) {
-    return {
-      kind,
-      scope: { kind: "thread", threadId: scope.threadId },
-      message,
-      data,
-    };
-  }
-  if (
-    kind === "work_switched" &&
-    typeof data.previousWorkId === "string" &&
-    typeof data.previousWorkName === "string" &&
-    typeof data.workId === "string" &&
-    typeof data.workName === "string" &&
-    (data.actor === "writer" || data.actor === "model")
-  ) {
-    return {
-      kind,
-      scope: { kind: "thread", threadId: scope.threadId as ThreadId },
-      message,
-      data: {
-        previousWorkId: data.previousWorkId as WorkId,
-        previousWorkName: data.previousWorkName,
-        workId: data.workId as WorkId,
-        workName: data.workName,
-        actor: data.actor,
-        ...(typeof data.previousScratchUri === "string"
-          ? { previousScratchUri: data.previousScratchUri }
-          : {}),
-      },
-    };
-  }
-  throw new Error("Invalid model notice");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function createWorkSwitchedNotice(input: {
   threadId: ThreadId;
   previousWorkId: WorkId;

@@ -39,51 +39,6 @@ msgstr "正在等待 {0}"
 msgid "Reporting back…"
 msgstr "正在汇报…"
 
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Added a passage"
-msgstr "新增了一段内容"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Replaced a passage"
-msgstr "替换了一段内容"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Deleted a passage"
-msgstr "删除了一段内容"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Collaborator edited text"
-msgstr "协作者编辑了文本"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Show change details for {label}"
-msgstr "显示{label}的更改详情"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "AI"
-msgstr ""
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "{agentName} added a passage"
-msgstr ""
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "{agentName} replaced a passage"
-msgstr ""
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "{agentName} deleted a passage"
-msgstr ""
-
 #: src/features/chat/ask/AskReceipt.tsx
 msgid ", "
 msgstr "，"
@@ -416,7 +371,6 @@ msgstr ""
 msgid "{full}, summary"
 msgstr ""
 
-#: src/features/agents/AgentFileState.tsx
 #: src/features/agents/PackageSave.tsx
 msgid "{head} and {last}"
 msgstr ""
@@ -2868,7 +2822,6 @@ msgstr ""
 msgid "Files can't be dropped into Uploads"
 msgstr ""
 
-#: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Files…"
@@ -2930,7 +2883,6 @@ msgstr ""
 msgid "Folder not found"
 msgstr ""
 
-#: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Folder…"
@@ -5661,10 +5613,6 @@ msgstr ""
 msgid "the built-in {slug}"
 msgstr ""
 
-#: src/features/agents/AgentFileState.tsx
-msgid "the built-in one"
-msgstr ""
-
 #: src/features/agents/AgentPicker.tsx
 msgid "the default model"
 msgstr ""
@@ -5675,10 +5623,6 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
-msgstr ""
-
-#: src/features/agents/AgentFileState.tsx
-msgid "the project's"
 msgstr ""
 
 #: src/features/chat/script-copy.ts
@@ -5880,10 +5824,6 @@ msgstr ""
 
 #: src/features/connections/ConnectionRow.tsx
 msgid "This project's own {shadowName} is used here."
-msgstr ""
-
-#: src/features/agents/AgentFileState.tsx
-msgid "This project's own; it hides {below}."
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
@@ -6596,10 +6536,6 @@ msgstr ""
 msgid "Your own answer"
 msgstr "你自己的回答"
 
-#: src/features/agents/AgentFileState.tsx
-msgid "Your own; it hides {below}."
-msgstr ""
-
 #: src/features/home/ProjectLibrary.tsx
 msgid "Your projects"
 msgstr ""
@@ -6614,10 +6550,6 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
-msgstr ""
-
-#: src/features/agents/AgentFileState.tsx
-msgid "yours"
 msgstr ""
 
 #: src/features/agents/AgentFileState.tsx

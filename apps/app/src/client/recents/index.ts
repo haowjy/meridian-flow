@@ -98,12 +98,3 @@ export function patchAccountRecentsFromDocuments(
 ): void {
   if (browserStore()?.patchFromTabs(accountId, projectId, tabs)) publish();
 }
-
-export function followAccountRecentIdentity(
-  accountId: string,
-  projectId: string,
-  from: string,
-  to: string,
-): void {
-  if (browserStore()?.followIdentity(accountId, projectId, from, to)) publish();
-}

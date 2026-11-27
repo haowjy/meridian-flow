@@ -112,8 +112,6 @@ export interface InvocationOverlay {
   overrides?: InvocationPatch;
 }
 
-export type AgentSource = "builtin" | "package" | "user";
-
 export const GENERIC_SUBAGENT_SLUG = "subagent";
 export const GENERIC_SUBAGENT_NAME = "Subagent";
 export const GENERIC_AGENT_BODY = "";

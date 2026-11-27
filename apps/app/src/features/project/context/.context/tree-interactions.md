@@ -208,8 +208,8 @@ Trees span areas, so menu lookups check source identity as well as entry identit
 different areas remain distinct destinations.
 
 Move… and dragging share every step. Refusal is judged by identity from the trees the list
-shows (`moveRefusal` in `entry-drag/move-plan.ts`: a folder over itself or its own subtree, a row
-already in the parent), so the picker and a hover agree even while a peer moves rows. A ready
+shows (`resolveDrop` and `planMove` in `entry-drag/move-plan.ts`: a folder over itself or its own
+subtree, a row already in the parent), so the picker and a hover agree even while a peer moves rows. A ready
 plan holds its rows and one `TreeDestination` (`{ parentId, position? }`, the folder's id or the
 source's id at the top); hover prediction and `moveRows` consume it without resolving the
 destination again. `moveRows` (`entry-drag/execute-move.ts`) appends the rows' `move` records as

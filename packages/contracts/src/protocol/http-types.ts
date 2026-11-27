@@ -272,8 +272,6 @@ export const setThreadOverridesRequestSchema = z.strictObject({
   commandId: z.uuid(),
   overrides: threadOverridesSchema,
 });
-export type SetThreadOverridesRequest = z.infer<typeof setThreadOverridesRequestSchema>;
-
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
   draftId: z.string().refine(isDraftId).optional(),

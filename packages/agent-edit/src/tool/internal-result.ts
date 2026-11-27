@@ -30,12 +30,6 @@ export function documentNotFound(
 
 export const DOCUMENT_NOT_FOUND_MESSAGE = "File not found.";
 
-export function internalResultError(result: InternalWriteResult): Error {
-  return new Error(
-    result.model?.message ? `${result.status}: ${result.model.message}` : result.status,
-  );
-}
-
 function status(code: Exclude<WriteStatus, "success">, message?: string): InternalWriteResult {
   return { status: code, ...(message ? { model: { message } } : {}) };
 }

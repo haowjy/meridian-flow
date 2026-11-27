@@ -34,10 +34,10 @@ import {
   type Work,
 } from "@meridian/contracts/protocol";
 import { threadSchema } from "@meridian/contracts/threads";
-import type { CreateWorkRequest, UpdateWorkRequest, WorkAnswer } from "@meridian/contracts/works";
+import type { UpdateWorkRequest, WorkAnswer } from "@meridian/contracts/works";
 import { workAnswerSchema, workSchema, worksSnapshotSchema } from "@meridian/contracts/works";
 
-import { deleteRequest, getJson, patchJson, postJson } from "./http-client";
+import { getJson, patchJson, postJson } from "./http-client";
 
 type RequestInitOptions = {
   origin?: string;
@@ -108,18 +108,6 @@ export async function listProjectWorks(
   });
 }
 
-export function createProjectWork(
-  projectId: string,
-  data: CreateWorkRequest,
-  init?: RequestInitOptions,
-): Promise<Work> {
-  return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), withCommandId(data), {
-    headers: init?.headers,
-    schema: workSchema,
-    signal: init?.signal,
-  });
-}
-
 export function updateWork(
   workId: string,
   data: UpdateWorkRequest,
@@ -128,29 +116,6 @@ export function updateWork(
   return patchJson<WorkAnswer>(urlFor(`/api/works/${workId}`, init), withCommandId(data), {
     headers: init?.headers,
     schema: workAnswerSchema,
-    signal: init?.signal,
-  });
-}
-
-export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(urlFor(`/api/works/${workId}/archive`, init), withCommandId({}), {
-    headers: init?.headers,
-    schema: workSchema,
-    signal: init?.signal,
-  });
-}
-
-export function unarchiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
-  return postJson<Work>(urlFor(`/api/works/${workId}/unarchive`, init), withCommandId({}), {
-    headers: init?.headers,
-    schema: workSchema,
-    signal: init?.signal,
-  });
-}
-
-export function deleteWork(workId: string, init?: RequestInitOptions): Promise<void> {
-  return deleteRequest(urlFor(`/api/works/${workId}`, init), {
-    body: withCommandId({}),
     signal: init?.signal,
   });
 }

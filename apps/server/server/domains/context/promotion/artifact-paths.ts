@@ -3,12 +3,6 @@ import {
   canonicalContextUri,
 } from "@meridian/contracts/context-uri";
 
-export function parentSourcePath(sourcePath: string): string {
-  const normalized = sourcePath.replace(/^\/+|\/+$/g, "");
-  const idx = normalized.lastIndexOf("/");
-  return idx <= 0 ? "." : normalized.slice(0, idx);
-}
-
 export function resultsUriForSourcePath(
   authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }>,
   rootThreadId: string,

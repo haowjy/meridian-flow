@@ -39,51 +39,6 @@ msgstr "Waiting on {0}"
 msgid "Reporting back…"
 msgstr "Reporting back…"
 
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Added a passage"
-msgstr "Added a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Replaced a passage"
-msgstr "Replaced a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Deleted a passage"
-msgstr "Deleted a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Collaborator edited text"
-msgstr "Collaborator edited text"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "Show change details for {label}"
-msgstr "Show change details for {label}"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "AI"
-msgstr "AI"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "{agentName} added a passage"
-msgstr "{agentName} added a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "{agentName} replaced a passage"
-msgstr "{agentName} replaced a passage"
-
-#. js-lingui-explicit-id
-#: src/core/editor/change-mark-labels.ts
-msgid "{agentName} deleted a passage"
-msgstr "{agentName} deleted a passage"
-
 #: src/features/chat/ask/AskReceipt.tsx
 msgid ", "
 msgstr ", "
@@ -416,7 +371,6 @@ msgstr "{files} and {folders}"
 msgid "{full}, summary"
 msgstr "{full}, summary"
 
-#: src/features/agents/AgentFileState.tsx
 #: src/features/agents/PackageSave.tsx
 msgid "{head} and {last}"
 msgstr "{head} and {last}"
@@ -2868,7 +2822,6 @@ msgstr "Files attached in chat, grouped by Work."
 msgid "Files can't be dropped into Uploads"
 msgstr "Files can't be dropped into Uploads"
 
-#: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Files…"
@@ -2930,7 +2883,6 @@ msgstr "Folder name"
 msgid "Folder not found"
 msgstr "Folder not found"
 
-#: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Folder…"
@@ -5661,10 +5613,6 @@ msgstr "The AI saw this file."
 msgid "the built-in {slug}"
 msgstr "the built-in {slug}"
 
-#: src/features/agents/AgentFileState.tsx
-msgid "the built-in one"
-msgstr "the built-in one"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "the default model"
 msgstr "the default model"
@@ -5676,10 +5624,6 @@ msgstr "The header row does not merge into the body."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
 msgstr "The header row stays first."
-
-#: src/features/agents/AgentFileState.tsx
-msgid "the project's"
-msgstr "the project's"
 
 #: src/features/chat/script-copy.ts
 msgid "the script runner failed"
@@ -5881,10 +5825,6 @@ msgstr "this project's {slug}"
 #: src/features/connections/ConnectionRow.tsx
 msgid "This project's own {shadowName} is used here."
 msgstr "This project's own {shadowName} is used here."
-
-#: src/features/agents/AgentFileState.tsx
-msgid "This project's own; it hides {below}."
-msgstr "This project's own; it hides {below}."
 
 #: src/features/chat/AssistantTurn.tsx
 msgid "This reply’s edits couldn’t load."
@@ -6596,10 +6536,6 @@ msgstr "Your messages are below."
 msgid "Your own answer"
 msgstr "Your own answer"
 
-#: src/features/agents/AgentFileState.tsx
-msgid "Your own; it hides {below}."
-msgstr "Your own; it hides {below}."
-
 #: src/features/home/ProjectLibrary.tsx
 msgid "Your projects"
 msgstr "Your projects"
@@ -6615,10 +6551,6 @@ msgstr "Your unsent words from the chat you deleted are below."
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
 msgstr "Your WorkOS profile, as seen by Meridian."
-
-#: src/features/agents/AgentFileState.tsx
-msgid "yours"
-msgstr "yours"
 
 #: src/features/agents/AgentFileState.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx

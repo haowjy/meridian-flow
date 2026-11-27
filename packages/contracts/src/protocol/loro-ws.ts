@@ -145,8 +145,6 @@ export function decodeLoroJoinExtra(bytes: Uint8Array | undefined): LoroJoinExtr
   }
 }
 
-export type LoroRoomErrorReason = (typeof LORO_ROOM_ERROR)[keyof typeof LORO_ROOM_ERROR]["reason"];
-
 export function loroRoomErrorOf(message: string) {
   return Object.values(LORO_ROOM_ERROR).find(
     (entry) => message === entry.reason || message.startsWith(`${entry.reason}:`),

@@ -11,11 +11,7 @@ import {
   type Principal,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
-import {
-  HTTP_INTERRUPT_ENVELOPE_KEY,
-  isHttpInterruptEnvelope,
-  throwHttpInterrupt,
-} from "../shared/interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export { containerTarget, documentTarget } from "./file-targets.js";
@@ -48,25 +44,6 @@ export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">):
     case "ai_access_denied":
       throw createError({ statusCode: 403, message: denial.reason });
   }
-}
-
-export function isFileAccessRefusal(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) return false;
-  const { statusCode, message } = cause as { statusCode?: unknown; message?: unknown };
-  if (statusCode === 404) return true;
-  if (statusCode !== 403) return false;
-  if (
-    message === "agent_read_only" ||
-    message === "uploads_read_only" ||
-    message === "ai_access_denied"
-  )
-    return true;
-  const data = (cause as { data?: Record<string, unknown> }).data;
-  const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
-  return (
-    isHttpInterruptEnvelope(envelope) &&
-    (envelope.error.code === "work_archived" || envelope.error.code === "chat_frozen")
-  );
 }
 
 export async function requireFileGrant<N extends FileNeed>(

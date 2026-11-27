@@ -99,8 +99,6 @@ export function deriveToolbarView(state: NavigationState): ToolbarView {
     ? { kind: "inline", controlId, session }
     : { kind: "overflow", page: { kind: "panel", controlId, session } };
 }
-export const visibleContentCount = (view: ToolbarView) => (view.kind === "closed" ? 0 : 1);
-
 function reconcileInput(state: NavigationState, input: ToolbarNavigationInput): NavigationState {
   if (state.input.revision === input.revision) return state;
   const ids = new Set(input.controls.map(({ id }) => id));

@@ -29,21 +29,6 @@ export type SideResolution =
 
 export type SideFailure = { retry: () => void };
 
-export function sameItem(a: Item | null, b: Item | null): boolean {
-  if (!a || !b || a.kind !== b.kind) return false;
-  return a.kind === "document"
-    ? a.documentId === (b as Extract<Item, { kind: "document" }>).documentId
-    : a.chatId !== null && a.chatId === (b as Extract<Item, { kind: "chat" }>).chatId;
-}
-
-export function mainItem(main: MainForSide): Item | null {
-  return main.kind === "document"
-    ? { kind: "document", documentId: main.documentId }
-    : main.kind === "chat"
-      ? { kind: "chat", chatId: main.chatId }
-      : null;
-}
-
 export function mainMode(main: MainForSide): Item["kind"] | null {
   if (main.kind === "opening") return null;
   return main.kind === "chat" || main.kind === "new-chat" || main.kind === "chat-recents"

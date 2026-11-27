@@ -6,14 +6,10 @@ import {
   type HandoffFailureOutcome,
   HandoffFailureOutcomeCodec,
   HandoffSeedMetadataCodec,
-  handoffSeedMetadata,
 } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-
-export const handoffBriefUnavailableCopy =
-  "This conversation was handed off. No brief is available.";
 
 export function handoffSeedBlock(
   seed: Turn,
@@ -102,14 +98,4 @@ export async function recordHandoffSeedOutcome(
   };
   await deps.repos.turns.updateStatus(turn.id, { status: turn.status, metadata });
   return { ...turn, metadata };
-}
-
-export function handoffSeedMetadataFrom(seed: Turn): ReturnType<typeof handoffSeedMetadata> {
-  const metadata = HandoffSeedMetadataCodec.parse(seed.metadata);
-  return handoffSeedMetadata({
-    sourceThreadId: metadata.sourceThreadId,
-    sourceRef: metadata.sourceRef,
-    sourceTitle: metadata.sourceTitle,
-    cutoffTurnId: metadata.cutoffTurnId,
-  });
 }

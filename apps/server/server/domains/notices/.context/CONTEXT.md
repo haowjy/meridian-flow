@@ -18,7 +18,7 @@ hidden Work context.
 
 Failure policy belongs to the producer. Collaboration notices are best-effort
 after the underlying edit commits; the composition layer catches and logs
-failures and may enqueue `awareness_degraded`. A Work rebind records
+failures. A Work rebind records
 `work_switched` in the same transaction as the binding transition, so notice
 failure rolls the transition back rather than committing a silent switch.
 

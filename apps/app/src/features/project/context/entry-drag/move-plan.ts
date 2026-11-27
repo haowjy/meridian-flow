@@ -67,10 +67,6 @@ export function placeEntryRef(view: PlacementView, ref: EntryRef): PlacedEntry |
   return null;
 }
 
-export function entryNameNow(view: PlacementView, ref: EntryRef): string | null {
-  return placeEntryRef(view, ref)?.name ?? null;
-}
-
 export function within(area: MoveArea, parentId: string, folderId: string): boolean {
   const seen = new Set<string>();
   let current: string | null = parentId;
@@ -99,25 +95,8 @@ export function outermost<T extends { ref: EntryRef }>(
     .map(({ item }) => item);
 }
 
-export function parentName(area: MoveArea, parentId: string): string | null {
-  if (parentId === area.tree.root.entryId) return schemeLabel(area.scheme);
-  return area.tree.entry(parentId)?.name ?? null;
-}
-
 function insideItself(source: PlacedEntry, into: string): boolean {
   return source.ref.kind === "folder" && within(source.area, into, source.ref.id);
-}
-
-export function moveRefusal(
-  view: PlacementView,
-  ref: EntryRef,
-  into: string,
-  position?: ContextSiblingPosition,
-): "inside-itself" | "already-there" | null {
-  const placed = placeEntryRef(view, ref);
-  if (!placed) return null;
-  if (insideItself(placed, into)) return "inside-itself";
-  return placed.parentId === into && !position ? "already-there" : null;
 }
 
 export type PlacedSource = PlacedEntry & { view: CopyContextEntryView };

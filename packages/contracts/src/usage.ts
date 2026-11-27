@@ -16,19 +16,3 @@ export const OpenAIUsageBreakdown = z.object({
   reasoning: z.number().finite().optional(),
 });
 export type OpenAIUsageBreakdown = z.infer<typeof OpenAIUsageBreakdown>;
-
-export function parseUsageBreakdown(_provider: string, raw: unknown): UsageBreakdown {
-  if (raw === null || raw === undefined) {
-    return {};
-  }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    return {};
-  }
-  const out: UsageBreakdown = {};
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      out[key] = value;
-    }
-  }
-  return out;
-}

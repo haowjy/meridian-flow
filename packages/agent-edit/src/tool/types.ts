@@ -20,7 +20,6 @@ export type {
   WriteCommand,
   WriteCommandName,
 } from "./command-schema.js";
-export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
 export type WriteOutcome = WriteOutcomeBase & { status: WriteStatus };
 
 interface WriteOutcomeBase {
