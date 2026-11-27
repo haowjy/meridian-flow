@@ -11,6 +11,8 @@ apps/app/src/client/api/direct-upload.ts	A failed or expired PUT cannot be told 
 apps/app/src/client/api/direct-upload.ts	XMLHttpRequest rather than fetch: only it reports bytes sent.
 apps/app/src/client/api/figures-api.ts	A refusal keeps its status: a 404 is the route saying the document is gone (or unreadable, which it does not tell apart), not a failure.
 apps/app/src/client/api/figures-api.ts	The server route that saves a stored file under its own name. A store's signed URL can't be relied on for that: browsers ignore `download=` on another origin.
+apps/app/src/client/api/http-client.ts	Another origin's URL (signed storage, a pasted web address) is never named: the header would cost it a CORS preflight it can't answer
+apps/app/src/client/api/http-client.ts	Kept until the next lifetime mounts, not cleared on unmount: a request sent between one account's close and the next one's mount must be refused, not sent as the cookie's account
 apps/app/src/client/api/imports-api.ts	XHR exposes upload bytes; Fetch does not. Errors share the ordinary command contract.
 apps/app/src/client/api/meridian-error.ts	Nitro/H3 serializes `createError({ data: envelope })` under `data` while retaining its own status/message fields at the top level.
 apps/app/src/client/api/ssr-api-request.ts	Server-only AppServerConfig is not imported here: this module is isomorphic (route loaders import it from client paths) and may run in the browser where process.env server vars are undefined.
@@ -34,7 +36,6 @@ apps/app/src/client/chat-submissions/store.ts	Best effort.
 apps/app/src/client/chat-submissions/store.ts	Best effort: the held records still order this append.
 apps/app/src/client/chat-submissions/store.ts	Delete an entry only for the current bind. `expectedEpoch` fences an A→B→A return: a live send that completes after the account re-bound must not delete the entry the new session still needs to reconcile.
 apps/app/src/client/chat-submissions/store.ts	Per-chat `seq` counters. Outside the record prefix, so enumerating records never sees them.
-apps/app/src/client/commands/browser-ports.ts	Every request names the account this tab believes it is, so a sign-in switch elsewhere cannot make it act for another.
 apps/app/src/client/commands/browser-ports.ts	One tab at a time delivers for an account. Holding the lock is pending on a promise.
 apps/app/src/client/commands/driver-context.tsx	A page in the back-forward cache or frozen keeps a lock it cannot use.
 apps/app/src/client/copilot/ThreadRunController.ts	Pair provider effect setup with disposal; construction is render-pure.
@@ -864,7 +865,6 @@ apps/server/server/domains/runtime/loop/compaction/elide.ts	Insert compaction ev
 apps/server/server/domains/runtime/loop/compaction/important-files.ts	Sort object keys before labeling; jsonb can reorder them and change pricing or replay bytes
 apps/server/server/domains/runtime/loop/delivery/delivery-service.ts	Do not take a thread lock from Work mutations; it inverts thread-to-Work lock order
 apps/server/server/domains/runtime/loop/execution-finalizer.ts	Lock asks before threads everywhere; deletion and archive settlement use the same order
-apps/server/server/domains/runtime/loop/orchestrator.ts	Helper result delivery is flushed by callers after their live-turn registry is cleared. Draining here would race queued helper system turns into a still-running parent thread.
 apps/server/server/domains/runtime/loop/orchestrator.ts	The next request starts only after its boundary commits.
 apps/server/server/domains/runtime/model-request-debug/adapters/noop/noop-model-request-debug-store.ts	intentionally empty
 apps/server/server/domains/runtime/spawn/child-run-coordinator.ts	Write parent journal rows before taking child membership's Work locks

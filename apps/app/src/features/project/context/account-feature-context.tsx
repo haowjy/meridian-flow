@@ -16,13 +16,13 @@ import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 import type { ProjectStandings } from "./project-standings";
+import { RequestAccountContext } from "./request-account-context";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
 const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
 const AccountEpochContext = createContext<AbortSignal | null>(null);
-const AccountIdContext = createContext<string | null>(null);
 const SignOutContext = createContext<(() => Promise<string>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
@@ -93,7 +93,7 @@ function AccountFeatureProviders({
   const signOut = useCallback(() => lifetime.clearForSignOut(), [lifetime]);
   return (
     <AccountEpochContext.Provider value={lifetime.epochSignal}>
-      <AccountIdContext.Provider value={lifetime.accountId}>
+      <RequestAccountContext.Provider value={lifetime.requests}>
         <SignOutContext.Provider value={signOut}>
           <TreeListsAccountContext.Provider value={lifetime.treeLists}>
             <ContextRemovalAccountContext.Provider value={lifetime.removal}>
@@ -113,7 +113,7 @@ function AccountFeatureProviders({
             </ContextRemovalAccountContext.Provider>
           </TreeListsAccountContext.Provider>
         </SignOutContext.Provider>
-      </AccountIdContext.Provider>
+      </RequestAccountContext.Provider>
     </AccountEpochContext.Provider>
   );
 }
@@ -127,6 +127,7 @@ export function useOptionalTreeLists(): TreeListRegistry | null {
 }
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
+export { useAccountId, useRequestAccount } from "./request-account-context";
 
 export function useProjectStandings(): ProjectStandings {
   const standings = useContext(ProjectStandingsAccountContext);
@@ -158,12 +159,6 @@ export function useAccountEpochSignal(): AbortSignal {
   const signal = useContext(AccountEpochContext);
   if (!signal) throw new Error("AccountFeatureComposition is required");
   return signal;
-}
-
-export function useAccountId(): string {
-  const accountId = useContext(AccountIdContext);
-  if (!accountId) throw new Error("AccountFeatureComposition is required");
-  return accountId;
 }
 
 export function useOptionalAccountEpochSignal(): AbortSignal | null {

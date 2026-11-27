@@ -7,7 +7,11 @@ export const DEFAULT_WS_REPLAY_DEADLINE_MS = 20_000;
 export const DEFAULT_WS_ASK_ANSWER_DEADLINE_MS = 20_000;
 
 export function isTerminalWsClose(event: SocketClose): boolean {
-  return event.code === WS_CLOSE.AUTH_FAILED.code || event.code === WS_CLOSE.PERMISSION_DENIED.code;
+  return (
+    event.code === WS_CLOSE.AUTH_FAILED.code ||
+    event.code === WS_CLOSE.PERMISSION_DENIED.code ||
+    event.code === WS_CLOSE.ACCOUNT_CHANGED.code
+  );
 }
 
 export function formatWsCloseReason(event: SocketClose): string {

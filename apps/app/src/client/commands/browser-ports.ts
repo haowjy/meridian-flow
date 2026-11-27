@@ -1,7 +1,6 @@
 import type { ChangeChannel, DeliveryLock, Transport } from "@meridian/command-driver";
-import { EXPECTED_ACCOUNT_HEADER } from "@meridian/contracts/commands";
 import { deserializeTransport } from "@meridian/contracts/protocol";
-import { readResponsePayload } from "@/client/api/http-client";
+import { apiFetch, type RequestAccount, readResponsePayload } from "@/client/api/http-client";
 import { meridianApiErrorFromPayload } from "@/client/api/meridian-error";
 
 /** One tab at a time delivers for an account. Holding the lock is pending on a promise. */
@@ -45,18 +44,18 @@ export function createBroadcastChannel(accountId: string): ChangeChannel {
   };
 }
 
-/** Every request names the account this tab believes it is, so a sign-in switch elsewhere cannot make it act for another. */
-export function createFetchTransport(accountId: string): Transport {
+export function createFetchTransport(account: RequestAccount): Transport {
   return async ({ method, path, body }, signal) => {
-    const response = await fetch(path, {
-      method,
-      signal,
-      headers: {
-        [EXPECTED_ACCOUNT_HEADER]: accountId,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+    const response = await apiFetch(
+      path,
+      {
+        method,
+        signal,
+        headers: body === undefined ? {} : { "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+      account,
+    );
     const payload = await readResponsePayload(response);
     if (!response.ok)
       return {

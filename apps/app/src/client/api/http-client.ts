@@ -1,3 +1,4 @@
+import { EXPECTED_ACCOUNT_HEADER, WRONG_ACCOUNT_CODE } from "@meridian/contracts/commands";
 import { deserializeTransport } from "@meridian/contracts/protocol";
 
 import { isMeridianApiError, meridianApiErrorFromPayload } from "./meridian-error";
@@ -22,6 +23,54 @@ export class InvalidResponseError extends HttpResponseError {
   constructor(response: Response) {
     super("Unexpected server response.", response.status, undefined, response.headers);
   }
+}
+
+export type RequestAccount = { id: string; changed: () => void };
+
+let requestAccount: RequestAccount | null = null;
+
+// Kept until the next lifetime mounts, not cleared on unmount: a request sent between one account's close and the next one's mount must be refused, not sent as the cookie's account
+export function sendRequestsAs(account: RequestAccount): void {
+  requestAccount = account;
+}
+
+// Another origin's URL (signed storage, a pasted web address) is never named: the header would cost it a CORS preflight it can't answer
+export function accountFor(
+  url: string,
+  account: RequestAccount | null = requestAccount,
+): RequestAccount | null {
+  return account && new URL(url, location.href).origin === location.origin ? account : null;
+}
+
+export function accountHeaders(account: RequestAccount | null): Record<string, string> {
+  return account ? { [EXPECTED_ACCOUNT_HEADER]: account.id } : {};
+}
+
+export function answeredFor(
+  account: RequestAccount | null,
+  status: number,
+  payload: unknown,
+): void {
+  if (
+    account &&
+    status === 409 &&
+    meridianApiErrorFromPayload(payload, status)?.code === WRONG_ACCOUNT_CODE
+  )
+    account.changed();
+}
+
+export async function apiFetch(
+  url: string,
+  init: RequestInit = {},
+  account: RequestAccount | null = requestAccount,
+): Promise<Response> {
+  const named = accountFor(url, account);
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(accountHeaders(named))) headers.set(name, value);
+  const response = await fetch(url, { ...init, headers });
+  if (named && response.status === 409)
+    answeredFor(named, 409, await readResponsePayload(response.clone()));
+  return response;
 }
 
 type JsonSchema<T> = {
@@ -91,7 +140,7 @@ export async function getJson<T>(url: string, init?: JsonOptions<T>): Promise<T>
     requestInit.signal = init.signal;
   }
 
-  const response = await fetch(url, requestInit);
+  const response = await apiFetch(url, requestInit);
   const payload = await readResponsePayload(response);
 
   if (!response.ok) {
@@ -112,7 +161,7 @@ export async function postJson<T>(
   body: unknown,
   options?: PostJsonOptions<T>,
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
@@ -133,7 +182,7 @@ export async function putJson<T>(
   body: unknown,
   options?: PostJsonOptions<T>,
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
@@ -154,7 +203,7 @@ export async function patchJson<T>(
   body: unknown,
   options?: PostJsonOptions<T>,
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
@@ -174,7 +223,7 @@ export async function deleteRequest(
   url: string,
   init?: { body?: unknown; signal?: AbortSignal },
 ): Promise<void> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "DELETE",
     ...(init?.body === undefined
       ? {}
@@ -190,7 +239,7 @@ export async function deleteRequest(
 }
 
 export async function deleteJson<T>(url: string, options?: JsonOptions<T>): Promise<T> {
-  const response = await fetch(url, { method: "DELETE", signal: options?.signal });
+  const response = await apiFetch(url, { method: "DELETE", signal: options?.signal });
   const payload = await readResponsePayload(response);
   if (!response.ok) throw errorFromResponse(payload, response);
   return decodeResponse(payload, response, options?.schema);

@@ -8,6 +8,7 @@ import {
 import { fileTooLargeMessage } from "@/lib/upload-limit";
 
 import { UploadRefusedError, uploadFileDirect } from "./direct-upload";
+import { apiFetch } from "./http-client";
 import { jsonPost, uploadResponse } from "./upload-request";
 
 type ContextUploadTarget = {
@@ -37,7 +38,7 @@ export function startContextUpload(
     // The signed PUT carries the type exactly; the server answers with the header to send.
     mimeType: file.type || "application/octet-stream",
   };
-  return uploadResponse<UploadStart>(fetch(url(target), { ...jsonPost(body), signal }));
+  return uploadResponse<UploadStart>(apiFetch(url(target), { ...jsonPost(body), signal }));
 }
 
 export function uploadContextFile(
@@ -53,7 +54,7 @@ export function uploadContextFile(
     start: (signal) => startContextUpload(target, signal),
     finish: (signal) =>
       uploadResponse<UploadIntakeResult>(
-        fetch(url(target, "/finish"), { ...jsonPost({ intakeId: target.intakeId }), signal }),
+        apiFetch(url(target, "/finish"), { ...jsonPost({ intakeId: target.intakeId }), signal }),
       ),
   });
 }
