@@ -1,11 +1,6 @@
 import type { BlockRef } from "../handles.js";
 import type { DocumentModel, ProjectedBlock } from "../ports/model.js";
 
-/**
- * The one projection the resolver indexes into. Projecting repairs the document (an element
- * the schema can't build is deleted), so resolver code holds only this list, never the raw
- * document: no block index can come from before the repair.
- */
 export interface HashLocateContext {
   model: DocumentModel;
   projected: readonly ProjectedBlock[];

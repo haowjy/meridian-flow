@@ -64,7 +64,6 @@ export function createDocumentRenderer(deps: { model: AgentEditModel }): Documen
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection {
-    // Projecting repairs the document, so it runs before any scope takes an index.
     const projected = model.projectBlocks(doc);
     const scopeContext = hashLocateContext(model, projected);
     const scopeSelection = (result: ScopeResult): ReadBlockSelection => {

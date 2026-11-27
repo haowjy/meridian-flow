@@ -44,9 +44,6 @@ address is a snapshot miss (`undefined`), never an invented location.
 
 ## `AgentEditModel`
 
-The resolver projects once, first (`projectBlocks`); its scopes, hashes and anchors index that
-list, and a whole-document write takes its scope from it, never from a count taken earlier.
-
 `key` names the block in this document: its block id. `hash` and `fullHash` come from the same id
 (`fullHashForBlockId`); hash lookup matches `fullHash`.
 
