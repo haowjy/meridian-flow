@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getAuthMe } from "@/client/api/auth-api";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { Button } from "@/components/ui/button";
 import {
   AccountFeatureLifetime,
@@ -41,9 +42,9 @@ function signOutOfThisBrowser(setFailed: (failed: boolean) => void): () => Promi
     running = true;
     setFailed(false);
     try {
-      const me = await getAuthMe().catch(() => null);
+      const me = await signedInAccount();
       if (!me) return window.location.replace("/end-session");
-      lifetime ??= new AccountFeatureLifetime(me.user.userId, me.user.externalId);
+      lifetime ??= new AccountFeatureLifetime(me.userId, me.externalId);
       window.location.replace(await lifetime.clearForSignOut());
     } catch (error) {
       if (!(error instanceof SignOutIncomplete)) reportError(error);
@@ -51,4 +52,13 @@ function signOutOfThisBrowser(setFailed: (failed: boolean) => void): () => Promi
       setFailed(true);
     }
   };
+}
+
+async function signedInAccount() {
+  try {
+    return (await getAuthMe()).user;
+  } catch (error) {
+    if (httpErrorStatus(error) === 401) return null;
+    throw error;
+  }
 }
