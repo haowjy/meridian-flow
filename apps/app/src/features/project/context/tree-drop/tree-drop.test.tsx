@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MERIDIAN_ENTRIES_MIME } from "@/core/editor/landing/drag-payload";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import type { EntryDrag } from "../entry-drag/entry";
 import {
   type EntriesVerdict,
   TreeDropScope,
@@ -10,6 +11,9 @@ import {
 } from "./tree-drop";
 
 afterEach(() => vi.useRealTimers());
+
+const drag: EntryDrag = { entries: [], source: "list-row" };
+vi.mock("../entry-drag/drag-session", () => ({ entryDragOf: () => drag }));
 
 const folder: TreeDropTarget = {
   scheme: "manuscript",
@@ -26,7 +30,11 @@ function Row({ id, target, reveal }: { id: string; target: TreeDropTarget; revea
 
 function scope(verdict: (target: TreeDropTarget) => EntriesVerdict | null, children: ReactNode) {
   return (
-    <TreeDropScope routes={{ entries: { verdict, drop: () => {} } }}>{children}</TreeDropScope>
+    <TreeDropScope
+      routes={{ entries: { verdict: (_drag, target) => verdict(target), drop: () => {} } }}
+    >
+      {children}
+    </TreeDropScope>
   );
 }
 

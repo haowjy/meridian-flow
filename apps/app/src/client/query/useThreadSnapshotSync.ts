@@ -7,6 +7,7 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
+import { afterCurrentDispatch } from "@/lib/after-current-dispatch";
 import { threadQueryKeys } from "./thread-query-keys";
 import {
   type DeserializedThreadSnapshot,
@@ -74,11 +75,10 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     retryDelay: SNAPSHOT_RETRY_MS,
   });
 
-  // Asked in a microtask, as the cache port defers: a request can come from inside a write.
   binding.bind((kind) => {
     const mounted = binding.epoch;
     const live = () => !accountSignal.aborted && binding.epoch === mounted;
-    queueMicrotask(() => {
+    afterCurrentDispatch(() => {
       if (!live()) return;
       if (kind === "any") {
         void refetch({ cancelRefetch: false });

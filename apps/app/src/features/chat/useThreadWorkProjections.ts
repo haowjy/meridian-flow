@@ -6,7 +6,7 @@ import {
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import {
   convergeThreadWorkBinding,
@@ -16,6 +16,7 @@ import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { singleFlight } from "@/lib/single-flight";
 
 function decodeWorkProjection(
   threadId: string,
@@ -73,18 +74,11 @@ export function useThreadWorkProjections({
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   const queryClient = useQueryClient();
   const accountSignal = useOptionalAccountEpochSignal();
-  // Bump generation only on thread change/unmount, never per trigger; per-trigger bumps cancel the previous request so a burst of gaps leaves the binding stale.
-  const generation = useRef(0);
-  const bindingInFlight = useRef(false);
-  const bindingAgain = useRef(false);
-  const resyncBinding = useCallback(
-    async (requestGeneration: number) => {
-      if (!projectId || generation.current !== requestGeneration) return;
-      if (bindingInFlight.current) {
-        bindingAgain.current = true;
-        return;
-      }
-      bindingInFlight.current = true;
+  useEffect(() => {
+    if (isPendingCreation) return;
+    let active = true;
+    const resyncBinding = singleFlight(async () => {
+      if (!projectId || !active) return;
       try {
         await readStableThreadWorkBinding(
           queryClient,
@@ -93,27 +87,12 @@ export function useThreadWorkProjections({
         );
       } catch {
         // Best effort: the next acknowledgment or gap re-runs the resync.
-      } finally {
-        bindingInFlight.current = false;
       }
-      if (generation.current !== requestGeneration) return;
-      if (bindingAgain.current) {
-        bindingAgain.current = false;
-        void resyncBinding(requestGeneration);
-      }
-    },
-    [accountSignal, projectId, queryClient, threadId],
-  );
-
-  useEffect(() => {
-    if (isPendingCreation) return;
-    bindingInFlight.current = false;
-    bindingAgain.current = false;
-    const threadGeneration = ++generation.current;
+    });
     const unsubscribe = transport.subscribe(threadId, {
       onLiveState: () => {
         if (accountSignal?.aborted) return;
-        void resyncBinding(threadGeneration);
+        resyncBinding();
       },
       onEvent: ({ seq, event }) => {
         if (accountSignal?.aborted) return;
@@ -137,20 +116,12 @@ export function useThreadWorkProjections({
       },
       onGap: () => {
         if (accountSignal?.aborted) return;
-        void resyncBinding(threadGeneration);
+        resyncBinding();
       },
     });
     return () => {
-      generation.current += 1;
+      active = false;
       unsubscribe();
     };
-  }, [
-    accountSignal,
-    projectId,
-    queryClient,
-    resyncBinding,
-    threadId,
-    transport,
-    isPendingCreation,
-  ]);
+  }, [accountSignal, projectId, queryClient, threadId, transport, isPendingCreation]);
 }

@@ -1,5 +1,5 @@
 import { type DragEvent, useMemo, useState } from "react";
-import { activeDragSession } from "../../context/entry-drag/drag-session";
+import { entryDragOf } from "../../context/entry-drag/drag-session";
 import { useDeleteContextEntries } from "../../context/use-delete-context-entries";
 import type { SourceDrop } from "./SourcePane";
 
@@ -9,7 +9,7 @@ export function useTrashDrop(projectId: string): SourceDrop {
   const dropProps = useMemo(() => {
     // Accepting on enter as well as over: a drag released right after it arrives sends no `dragover`.
     const accept = (event: DragEvent) => {
-      const drag = activeDragSession();
+      const drag = entryDragOf(event);
       if (!drag || drag.source === "trash") return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
@@ -23,8 +23,7 @@ export function useTrashDrop(projectId: string): SourceDrop {
       },
       onDrop(event: DragEvent) {
         setOver(false);
-        // Read before the drag session ends with the drop.
-        const drag = activeDragSession();
+        const drag = entryDragOf(event);
         if (!drag || drag.source === "trash") return;
         event.preventDefault();
         deleteEntries(drag.entries);

@@ -26,8 +26,8 @@ import { extentOf, nestNodes } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import { type EditorState, Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-
 import { carryAnchor, holdBlock, type NodeHold, resolveBlockHold } from "../anchors";
+import { EXTENSION_PRIORITY } from "../extension-priority";
 
 const BLOCK_DRAG_NAME = "meridianBlockDrag";
 
@@ -72,7 +72,7 @@ export function draggedBlockPos(state: EditorState): number | null {
 
 export const BlockDragExtension = Extension.create({
   name: BLOCK_DRAG_NAME,
-  priority: 1030,
+  priority: EXTENSION_PRIORITY.blockDrag,
 
   addProseMirrorPlugins() {
     return [

@@ -1,3 +1,4 @@
+import { afterCurrentDispatch } from "@/lib/after-current-dispatch";
 import { type LinkAnswerCache, type LinkKey, linkCacheKey } from "./link-resolution";
 
 export type LinkRequester = {
@@ -7,18 +8,10 @@ export type LinkRequester = {
 export function createLinkRequester(resolution: LinkAnswerCache): LinkRequester {
   const watched = new Map<string, { link: LinkKey; count: number }>();
   let unsubscribe: (() => void) | null = null;
-  let scheduled = false;
-
-  // Deferred: asking publishes, and a publish answered by asking again from
-  // inside the listener loop would re-enter it.
-  const ask = () => {
-    if (scheduled) return;
-    scheduled = true;
-    queueMicrotask(() => {
-      scheduled = false;
-      if (watched.size > 0) resolution.request([...watched.values()].map(({ link }) => link));
-    });
+  const request = () => {
+    if (watched.size > 0) resolution.request([...watched.values()].map(({ link }) => link));
   };
+  const ask = () => afterCurrentDispatch(request);
 
   return {
     watch(link) {
