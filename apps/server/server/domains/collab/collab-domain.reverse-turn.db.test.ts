@@ -1,10 +1,3 @@
-/**
- * Public collab-domain reverseTurn coverage over Drizzle draft infrastructure.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - the certified projection as the sole publisher of stored Markdown
- */
-
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";

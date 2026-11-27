@@ -1,10 +1,3 @@
-/**
- * Postgres regression for #290: a non-UUID id (e.g.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - manifest-before-catalog provisioning and case-insensitive active Work uniqueness
- */
-
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-work-draft-pending.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";

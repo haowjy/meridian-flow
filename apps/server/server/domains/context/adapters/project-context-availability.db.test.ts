@@ -1,11 +1,3 @@
-/**
- * What a project's placement answers show a writer: the project's own documents and the writer's
- * own `user://` documents, and nothing of another writer's.
- *
- * Pins implementation decisions: the fence is `classifySourceIdentity`, shared by `placed`,
- * `held` and the destination-folder resolver; callers add no filter.
- */
-
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, projects, users, works } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";

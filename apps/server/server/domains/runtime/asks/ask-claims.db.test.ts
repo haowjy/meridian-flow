@@ -1,22 +1,3 @@
-/**
- * PostgreSQL race of an ask's three resolvers: the writer's answer, its deadline and Stop's
- * lineage cancellation, all claiming the same ask row while the cancellation also takes thread
- * locks; and the stopped thread's fence: its queued machine messages go, and an execution admitted
- * before the Stop can't message it, while a later one can.
- *
- * Also the question timeout: a presence message and the expiry sweep racing for an ask at its
- * deadline (one wins cleanly), a stranger's presence refused, and a walk-away resolved from the
- * held answers.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a continuation's state is `asks.continuation`, and lineage cancellation claims it in one
- *   transaction (apps/server/server/domains/runtime/.context/spawn.md)
- * - an answered ask with NULL `continuation` (resolved by a server from before migration 0108)
- *   still owes its continuation, and exactly one claim admits it (shared/ask-continuation-owed.ts)
- * - the machine-wake fence is `threads.wake_fence_at` compared with the sender lease's
- *   `acquired_at`, both on the database clock, and the delivery enqueue checks it
- */
-
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";

@@ -1,12 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The Editor's `@` with link-ahead: a sentence after `@` that names no document
- * still ends in a new paragraph on Enter, and the link-ahead row stays one
- * arrow away.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - reference-menu Enter key ownership
- */
 import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 

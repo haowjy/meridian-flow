@@ -1,10 +1,4 @@
 import { NO_OVERRIDES } from "@meridian/contracts/threads";
-/**
- * PostgreSQL contract for an independent brief settling outside the source run.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - destination-claim-gated seed settlement, Retry, and orphan repair (kb/wiki/agents/conversations.md)
- */
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

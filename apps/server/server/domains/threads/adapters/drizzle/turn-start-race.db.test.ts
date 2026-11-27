@@ -1,10 +1,3 @@
-/**
- * Postgres regression coverage for cross-instance turn-start serialization.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - domain-conflict translation and row-locked expected-leaf turn admission (kb/wiki/chat/turns.md)
- */
-
 import type { TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 

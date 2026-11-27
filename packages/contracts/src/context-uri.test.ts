@@ -1,10 +1,3 @@
-/**
- * Tests context uri behavior.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Context URI canonicalization and titles (kb/wiki/documents/addresses.md#handles-name-owners-names-are-labels)
- */
-
 import { describe, expect, it } from "vitest";
 
 import {

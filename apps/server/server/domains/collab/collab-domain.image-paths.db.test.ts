@@ -1,10 +1,3 @@
-/**
- * Document-link scopes across doors: images in search and in the model's read.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - one captured link scope per search operation
- */
-
 import { createDb } from "@meridian/database";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";

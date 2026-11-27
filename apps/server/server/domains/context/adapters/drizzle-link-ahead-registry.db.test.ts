@@ -1,12 +1,3 @@
-/**
- * PostgreSQL proof for ahead registration, settlement CAS, refs written in a draft (registered
- * globally and left unbound until a live document arrives, 12a), and the writer's own links
- * registered when the document's derivation runs (L-3).
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/documents/links.md#what-a-link-shows)
- */
-
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {

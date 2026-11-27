@@ -1,9 +1,3 @@
-/**
- * Real-Postgres contracts for migration refusal, catch-up, and serialization.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - single-snapshot migration bytes recorded before lock acquisition (packages/database/.context/CONTEXT.md#baseline-inputs)
- */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -1,9 +1,3 @@
-/**
- * Postgres file facts: ownership, lifecycle and the ancestor chain.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - ordered ancestor, owner-Work, and draft-Work fact assembly (kb/wiki/documents/access.md)
- */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, projects, users, works } from "@meridian/database/schema";
 import { LIVE } from "@meridian/project-tree";

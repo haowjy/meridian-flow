@@ -1,15 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Contract tests for the account preference command (P1).
- *
- * Authority is the server account-settings row (absolute-set PATCH); the route
- * loader remains the read owner. These tests hold, fail, and reorder the write
- * so the projection, rejection-vs-ambiguity behavior, latest-intent fence, and
- * account fence are proven rather than assumed.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - account-settings confirmed snapshot and optimistic overlay (kb/wiki/architecture/state-tier-contract.md#account-and-device-settings)
- */
 
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";

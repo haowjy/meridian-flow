@@ -1,9 +1,3 @@
-/**
- * PostgreSQL transaction-boundary coverage for transcript reads and orphan repair.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - ambient-transaction orphan repair (kb/wiki/chat/turns.md)
- */
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";

@@ -1,13 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The view's shell with real React and an injected API, transport and journal: what Undo
- * announces, and when; how the record's delivery state words a pending switch; and when a
- * change in the record's switches marks the Works reads stale. The display itself is
- * `switch-view.test.ts`.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - write-mode switch delivery presentation
- */
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({

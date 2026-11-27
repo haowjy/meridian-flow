@@ -1,10 +1,3 @@
-/**
- * PostgreSQL guards and epoch-transition behavior for immutable prompt bakes.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - reusing identical prompt bytes while still journaling an epoch boundary (kb/wiki/chat/turns.md)
- */
-
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";

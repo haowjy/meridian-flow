@@ -1,14 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Hook contract for the thread rename. The rename command file
- * (`thread-rename-command.test.ts`) owns projection, the stale-list fence,
- * superseded settlement, and abort; this file proves which outcomes reject the
- * returned `rename` (so the title field reopens) and that a completion landing
- * after an A→B→A account replacement does not confirm into the new lifetime.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - stale-list rename fence
- */
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useState } from "react";

@@ -1,10 +1,3 @@
-/**
- * Query-plan contract at scale: one 5,000-turn fixture with a per-case mutable tail.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - bounded keyset and partial-index reads plus ambient-transaction orphan repair (kb/wiki/chat/turns.md)
- */
-
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 

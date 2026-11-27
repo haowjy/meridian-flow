@@ -1,9 +1,3 @@
-/** thread_message authority: background is project-wide, foreground is subtree.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Project-wide background and subtree-only foreground messaging policy
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";

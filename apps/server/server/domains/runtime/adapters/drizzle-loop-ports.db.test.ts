@@ -1,10 +1,3 @@
-/**
- * PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - durable delivery sweeps, token-fenced leases, physical claims, and usage-block lifecycle (kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim)
- */
-
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

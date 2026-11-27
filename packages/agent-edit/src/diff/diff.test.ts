@@ -1,10 +1,3 @@
-/**
- * The diff core's named risks: one text split into words differently by the browser and the server,
- * and a diff cut short by a deadline and cached.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Where the tokenizer splits words (`segmentText`)
- */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { expect, it, vi } from "vitest";
