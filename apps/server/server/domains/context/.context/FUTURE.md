@@ -32,3 +32,21 @@ query or adding a held-candidate cursor.
 A 200-document copy spends most of its time before the lock: reading each document's room
 one after another takes about 18 ms each. Reading four at a time would cut it, at the price of
 more pool connections per copy; measure under concurrent copies first.
+
+## A kept file's extension is guessed from its name
+
+The tree's records carry a name, not an extension. The app's rows and the
+`tree_nodes.extension` column (written from `packages/project-tree/src/rows.ts` by
+`adapters/tree-list-rows.ts`, with the generated `stem` beside it) derive it with
+`entryExtension` (contracts): exact for a document, through `parseDocumentFilename`, but
+the last dot of the name for a kept file (kind `file`). A kept file named `Ver 1.2` with no
+real extension therefore reads as extension `2`, and renaming it to `Ver 2` stores
+`Ver 2.2`. Carrying the extension on the tree record at upload would remove the guess.
+
+## Renaming a kept file to another type is skipped silently
+
+Renaming `backup.zip` to `backup.png` in the tree sends a rename with filetype `image`.
+Replay skips any rename that sets a filetype that is not tracked text
+(`type-not-editable` in `packages/project-tree/src/replay.ts`), so the tree keeps
+`backup.zip`, offers Undo, and says nothing. Either the rename keeps the name and drops
+the type change, or the writer is told the type stays.

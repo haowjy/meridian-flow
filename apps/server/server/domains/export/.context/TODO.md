@@ -10,3 +10,9 @@ Delete an entry when it ships.
   outside-link counts once per preview session (or cache them by document
   version) and recombine per option, so a toggle reads nothing; measure on a
   2,000-document project first.
+
+- **Numbering can push an exported name past 255 bytes.** `buildExportLayout`
+  appends ` (n)` to a name that may already be at the limit (84 three-byte
+  characters plus `.md` is 255 bytes; its twin is 259), and some filesystems
+  refuse such a name on unpack. Follow-up: shorten the name, on a character
+  boundary, before `numberedName` adds the number.

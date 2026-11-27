@@ -3,9 +3,10 @@ import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, threads, works } from "@meridian/database/schema";
 import { compareCatalogSiblings } from "@meridian/project-tree";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { loadDocumentAddresses } from "./tree-addresses.js";
+import { sourceOwnerProjectId } from "./source-owner.js";
+import { loadDocumentAddresses, loadFolderAddresses } from "./tree-addresses.js";
 import { LIVE_TREE, visibleDocuments, visibleFolders } from "./tree-relations.js";
 
 type Sibling<Document> = {
@@ -16,7 +17,17 @@ type Sibling<Document> = {
   document?: Document;
 };
 
-export async function loadLiveProjectExportDocuments(db: Database, projectId: string) {
+type ExportFolderRow = {
+  uri: string;
+  path: string;
+  scheme: string;
+  workId: string | null;
+  workName: string | null;
+  rootThreadId: string | null;
+  chatTitle: string | null;
+};
+
+export async function loadLiveProjectExportEntries(db: Database, projectId: string) {
   const tx = currentDrizzleDb(db);
   const vd = visibleDocuments(LIVE_TREE);
   const rows = await tx
@@ -51,20 +62,34 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
     return address ? [{ ...row, address }] : [];
   });
 
-  const sourceIds = [...new Set(live.map((row) => row.sourceId))];
   const vf = visibleFolders(LIVE_TREE);
-  const folderRows = sourceIds.length
-    ? await tx
-        .select({
-          id: vf.id,
-          sourceId: vf.contextSourceId,
-          parentId: vf.parentId,
-          name: vf.name,
-          rank: vf.rank,
-        })
-        .from(vf)
-        .where(inArray(vf.contextSourceId, sourceIds))
-    : [];
+  const folderRows = await tx
+    .select({
+      id: vf.id,
+      sourceId: vf.contextSourceId,
+      parentId: vf.parentId,
+      name: vf.name,
+      rank: vf.rank,
+      workName: works.name,
+      chatTitle: threads.title,
+    })
+    .from(vf)
+    .innerJoin(contextSources, eq(vf.contextSourceId, contextSources.id))
+    .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(threads, eq(contextSources.rootThreadId, threads.id))
+    .where(eq(sourceOwnerProjectId, projectId));
+  const folderAddresses = new Map(
+    (
+      await loadFolderAddresses(
+        db,
+        folderRows.map((row) => row.id),
+      )
+    )
+      .filter(
+        (row) => !row.deleted && row.owner.kind === "project" && row.owner.projectId === projectId,
+      )
+      .map((row) => [row.folderId as string, row]),
+  );
 
   const parentKey = (sourceId: string, folderId: string | null) => `${sourceId}/${folderId ?? ""}`;
   const children = new Map<string, Sibling<(typeof live)[number]>[]>();
@@ -92,26 +117,51 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
   }
 
   const ordered: typeof live = [];
+  const folders: ExportFolderRow[] = [];
+  const folderById = new Map(folderRows.map((row) => [row.id, row]));
   const walk = (sourceId: string, folderId: string | null) => {
     const key = parentKey(sourceId, folderId);
     for (const child of (children.get(key) ?? []).sort(compareCatalogSiblings)) {
       if (child.document) ordered.push(child.document);
-      else walk(sourceId, child.entryId);
+      else {
+        const address = folderAddresses.get(child.entryId);
+        const row = folderById.get(child.entryId);
+        if (!address || !row) continue;
+        folders.push({
+          uri: address.uri.slice(0, -1),
+          path: address.path.slice(0, -1),
+          scheme: address.scheme,
+          workId: address.workId,
+          workName: row.workName,
+          rootThreadId: address.rootThreadId,
+          chatTitle: row.chatTitle,
+        });
+        walk(sourceId, child.entryId);
+      }
     }
   };
-  const uriBySource = new Map(
-    live.map((row) => [row.sourceId, row.address.uri.slice(0, -row.address.path.length)]),
-  );
+  const uriBySource = new Map([
+    ...[...folderAddresses.values()].map(
+      (row) => [row.contextSourceId as string, row.uri.slice(0, -row.path.length)] as const,
+    ),
+    ...live.map(
+      (row) =>
+        [row.sourceId as string, row.address.uri.slice(0, -row.address.path.length)] as const,
+    ),
+  ]);
   const bySourceUri = [...uriBySource].sort(([, left], [, right]) =>
     left < right ? -1 : left > right ? 1 : 0,
   );
   for (const [sourceId] of bySourceUri) walk(sourceId, null);
-  return ordered.map((row) => {
-    const parsed = parseDocumentFilename(row.name);
-    return {
-      ...row,
-      name: parsed.ok ? parsed.value.name : row.name,
-      extension: parsed.ok ? parsed.value.extension : "",
-    };
-  });
+  return {
+    folders,
+    documents: ordered.map((row) => {
+      const parsed = parseDocumentFilename(row.name);
+      return {
+        ...row,
+        name: parsed.ok ? parsed.value.name : row.name,
+        extension: parsed.ok ? parsed.value.extension : "",
+      };
+    }),
+  };
 }

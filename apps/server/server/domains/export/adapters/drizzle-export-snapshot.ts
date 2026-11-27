@@ -7,14 +7,14 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import { sourceAuthority } from "../../context/adapters/context-file-entry.js";
-import { loadLiveProjectExportDocuments } from "../../context/tree/export-inventory.js";
+import { loadLiveProjectExportEntries } from "../../context/tree/export-inventory.js";
 import type { ExportSnapshotStore, ExportSourceRoot } from "../ports/export-snapshot.js";
 
 export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotStore {
   return {
     read: (projectId) =>
       runInRootDrizzleReadSnapshot(db, async () => {
-        const rows = await loadLiveProjectExportDocuments(db, projectId);
+        const { documents, folders } = await loadLiveProjectExportEntries(db, projectId);
         const settlements = await currentDrizzleDb(db)
           .select({
             id: linkAheadRefs.aheadId,
@@ -66,11 +66,12 @@ export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotSt
           }
         });
         return {
+          folders,
           sources,
           settlements: new Map(
             settlements.flatMap((row) => (row.documentId ? [[row.id, row.documentId]] : [])),
           ),
-          documents: rows.map(({ address, ...row }) => ({
+          documents: documents.map(({ address, ...row }) => ({
             ...row,
             uri: address.uri,
             path: address.path,

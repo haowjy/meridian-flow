@@ -11,6 +11,7 @@ import {
   classifyFiletype,
   type DocumentFileType,
   documentFileTypeFor,
+  entryExtension,
   type Filetype,
   type ProjectContextTreeScheme,
   readSegment,
@@ -81,12 +82,6 @@ export type TreeView = {
 export function twinSuffix(path: string): string | undefined {
   const leaf = path.split("/").at(-1);
   return leaf ? readSegment(leaf).suffix : undefined;
-}
-
-function extensionOf(node: TreeNode): string {
-  if (node.kind === "folder") return "";
-  const dot = node.name.lastIndexOf(".");
-  return dot > 0 ? node.name.slice(dot + 1).toLowerCase() : "";
 }
 
 function classification(node: TreeNode) {
@@ -165,7 +160,7 @@ export function buildTreeView(input: {
             parentId: parentIdOf(node),
             documentId: node.id,
             name: node.name,
-            extension: extensionOf(node),
+            extension: entryExtension(node),
             ...(node.aliases ? { aliases: node.aliases } : {}),
             ...(node.suffix ? { suffix: node.suffix } : {}),
             path,

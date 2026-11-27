@@ -142,6 +142,7 @@ function fixture() {
       async read() {
         return {
           documents: docs.map((doc) => ({ ...doc })),
+          folders: [],
           sources: [],
           settlements: new Map([[uuid("lore-ahead"), uuid("lore")]]),
         };
