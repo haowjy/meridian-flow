@@ -132,7 +132,6 @@ export {
 } from "./ports/link-ahead-registry.js";
 export type {
   HeldContextNode,
-  HeldContextNodeAddress,
   ProjectContextAvailabilityPort,
 } from "./ports/project-context-availability.js";
 export type { ProjectHint, ProjectHintPort, ProjectWakePort } from "./ports/project-hints.js";
