@@ -22,7 +22,7 @@ import { draftOwnerSql, mergeOwnerLocks, type OwnerLocks } from "../../../shared
 import {
   currentDrizzleDb,
   type DrizzleDb,
-  deferUntilDrizzleCommit,
+  runAfterDrizzleCommit,
   runInDrizzleSavepoint,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -207,7 +207,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const deliver = async () => {
       for (const delivery of deliveries) await delivery();
     };
-    if (!deferUntilDrizzleCommit(deliver)) await deliver();
+    await runAfterDrizzleCommit(deliver);
     return result;
   }
 

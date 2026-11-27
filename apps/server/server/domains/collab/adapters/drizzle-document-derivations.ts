@@ -13,7 +13,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import {
   currentDrizzleDb,
   type DrizzleDb,
-  deferUntilDrizzleCommit,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
@@ -252,7 +252,7 @@ export function createDrizzleDocumentDerivationStore(
       };
       // Inside create or push completion the rows are not committed yet; registration takes
       // namespace keys in its own root transaction, so it waits for this commit (§6.1, O6).
-      if (!deferUntilDrizzleCommit(register)) await register();
+      await runAfterDrizzleCommit(register);
     },
     recoverAheads: (after) => page(undefined, after),
     capture(documentId) {

@@ -252,23 +252,18 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
   return true;
 }
 
-export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
+export function runAfterDrizzleCommit(callback: () => void | Promise<void>): Promise<void> {
   const active = activeTransaction();
-  if (!active) {
-    void processDetachedWork
-      .track(Promise.resolve(runOutsideWrite(callback)), "after-commit callback")
-      .catch((cause) => process.emitWarning(`after-commit callback failed: ${String(cause)}`));
-    return false;
+  if (active) {
+    active.afterCommit.push(callback);
+    return Promise.resolve();
   }
-  active.afterCommit.push(callback);
-  return true;
-}
-
-export function deferUntilDrizzleCommit(callback: () => void | Promise<void>): boolean {
-  const active = activeTransaction();
-  if (!active) return false;
-  active.afterCommit.push(callback);
-  return true;
+  const run = processDetachedWork.track(
+    Promise.resolve(runOutsideWrite(callback)),
+    "after-commit callback",
+  );
+  run.catch((cause) => process.emitWarning(`after-commit callback failed: ${String(cause)}`));
+  return run;
 }
 
 export function deferUntilDrizzleRollback(callback: () => void | Promise<void>): boolean {

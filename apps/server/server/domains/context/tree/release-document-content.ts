@@ -27,7 +27,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 
 const liveRoomKey = (documentId: DocumentId) => loroRoomName({ kind: "live", documentId });
 
@@ -59,7 +59,7 @@ export async function releaseDocumentContent(
     .where(and(inArray(documents.id, [...documentIds]), isNull(documents.contentPurgedAt)));
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
-  deferUntilDrizzleCommit(() => collab.endRooms(list));
+  runAfterDrizzleCommit(() => collab.endRooms(list));
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
   await tx
     .delete(documentSnapshots)

@@ -1,9 +1,9 @@
 import type { FailureRecord } from "@meridian/contracts/failures";
 import {
   type DrizzleTransactionParticipant,
-  deferUntilDrizzleCommit,
   enlistDrizzleTransactionParticipant,
   isInDrizzleTransaction,
+  runAfterDrizzleCommit,
 } from "./drizzle-transaction.js";
 import type { InMemoryTransactionOwner } from "./in-memory-transaction.js";
 
@@ -21,7 +21,7 @@ const participant: DrizzleTransactionParticipant<FailureState> = {
     if (state.pending.size === 0) return;
     const batch = [...state.pending.values()];
     state.pending.clear();
-    deferUntilDrizzleCommit(() => {
+    runAfterDrizzleCommit(() => {
       for (const { record, emit } of batch) emit(record);
     });
   },
