@@ -245,10 +245,11 @@ export function createLoroGateway(services: LoroGatewayServices) {
     const auth = decodeLoroJoinAuth(message.auth);
     const parsedSchema = auth ? parseCollabSchemaVersion(auth.schema) : null;
     if (!auth || !parsedSchema) return refuse(LORO_JOIN_ERROR.BAD_AUTH);
+    const { userId } = connection.peer;
+    if (auth.account !== userId) return refuse(LORO_JOIN_ERROR.ACCOUNT_CHANGED);
     const room = parseLoroRoomName(name);
     if (!room || loroRoomName(room) !== name) return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
     drop(connection, name);
-    const { userId } = connection.peer;
     if (room.kind === "tree") return joinTree(connection, message, room.list, refuse);
     let admission: Admission;
     try {
@@ -326,8 +327,11 @@ export function createLoroGateway(services: LoroGatewayServices) {
   ) {
     const name = message.roomId;
     const { userId } = connection.peer;
-    const listId = await services.trees.open(list, userId);
-    if (listId === null) return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
+    const opening = await services.trees.open(list, userId);
+    // A project made in the browser has its list joined before its create lands: that retries.
+    if (opening === "unknown") return refuse(LORO_JOIN_ERROR.DOCUMENT_UNKNOWN);
+    if (opening === "denied") return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
+    const { listId } = opening;
     const joined: Joined = {
       documentId: null,
       permission: "write",
@@ -345,7 +349,8 @@ export function createLoroGateway(services: LoroGatewayServices) {
     connection.joined.set(name, joined);
     access.register(joined.registration, [name]);
     // A deletion between the open and the registration reached no room: ask once more.
-    if ((await services.trees.open(list, userId)) !== listId) {
+    const settled = await services.trees.open(list, userId);
+    if (typeof settled !== "object" || settled.listId !== listId) {
       drop(connection, name);
       return refuse(LORO_JOIN_ERROR.PERMISSION_DENIED);
     }

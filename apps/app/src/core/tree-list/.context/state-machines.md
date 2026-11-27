@@ -20,7 +20,7 @@ stateDiagram-v2
   synced --> unauthenticated: close 4401
   offline --> unauthenticated: close 4401
   unauthenticated --> synced: it rejoins once the writer has signed in again
-  waiting --> broken: a bad-auth Join error ends the room
+  waiting --> broken: a bad-auth or account-changed Join error ends the room
   synced --> broken: the server ended the room (a corrupt update)
   offline --> broken: the same, on rejoining
   denied --> [*]
@@ -32,6 +32,15 @@ stateDiagram-v2
   The session reads the transport's `synced`; it keeps no rule of its own.
 - `JoinResponseOk.extra` names the list (`LoroJoinExtra.list`). A stored copy of another list (a
   reset database, a recreated account list) is replaced by an empty one, which carries nothing:
-  its records name nodes that are gone. The old copy's doc is freed when the session closes.
+  its records name nodes that are gone. The old copy's doc is freed when the session closes. A
+  copy that has never joined (no list id stored) is not another list's: it holds only what this
+  browser wrote to this list before its first Join, such as a file made while its new project's
+  create was still on its way, so it takes the list's id and keeps its records, which the Join
+  then sends. Replacing it lost such a file: the server never had it, and its page said "This
+  destination is unavailable".
 - `broken` keeps the copy and the writer's records on the device; nothing connects again.
+- `denied` is final, and the project's list observer reads it as every document in the list gone.
+  So the server answers `permission-denied` only for a project or account that exists and isn't
+  this account's (or a project deleted); a project with no row yet (made in this browser, its
+  create not landed) answers `document-unknown`, and the list stays `waiting` and retries.
 

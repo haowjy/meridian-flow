@@ -80,7 +80,6 @@ export type DocumentSessionSnapshot = {
   contentHeld: boolean;
   schemaFence: SchemaFence | null;
   holdsUndeliverableEdits: boolean;
-  undeliveredTabWrites: boolean;
 };
 
 export type DocumentSessionAccess = "edit" | "read";
@@ -109,6 +108,7 @@ export type DocumentSessionOptions = {
   transportFactory?: DocumentSessionTransportFactory;
   persistSchemaFence?: (fence: SchemaFence) => void;
   access?: DocumentSessionAccess | null;
+  onUndeliveredTabWrites?: () => void;
 };
 
 const noop = () => {};
@@ -143,7 +143,7 @@ export class DocumentSession {
   private transportAcknowledged = false;
   private readonly pending = new Map<DocKey, DocVersion>();
   private tabQuietTimer: ReturnType<typeof setTimeout> | undefined;
-  private undeliveredTabWrites = false;
+  private readonly onUndeliveredTabWrites: () => void;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private emittedKey = "";
@@ -185,11 +185,13 @@ export class DocumentSession {
     transportFactory,
     persistSchemaFence,
     access = null,
+    onUndeliveredTabWrites = noop,
   }: DocumentSessionOptions) {
     if ((room.kind === "fork") !== (live !== undefined))
       throw new Error("a fork session takes its Live session, and only a fork session does");
     this.roomKey = sessionRoomKey(room);
     this.access = access;
+    this.onUndeliveredTabWrites = onUndeliveredTabWrites;
     this.room = room;
     this.documentId = room.documentId;
     this.docs = live
@@ -392,8 +394,8 @@ export class DocumentSession {
     const mark = await this.store?.readMeta(SERVER_META);
     if (this.destroyed || this.transportProvider) return;
     if (mark instanceof Uint8Array) mergeVersion(this.server, decodeRoomVersion(mark));
-    this.undeliveredTabWrites = this.hasUnacknowledgedEdits();
     this.recomputeStatus();
+    if (this.hasUnacknowledgedEdits()) this.onUndeliveredTabWrites();
   }
 
   private stopTabs(): void {
@@ -444,7 +446,6 @@ export class DocumentSession {
       presence: this.localPresence.store,
     });
     this.transportAttachmentPending = false;
-    this.undeliveredTabWrites = false;
     this.transportProvider = provider;
     this.resolveTransportAttached();
     this.unsubscribers.push(
@@ -610,7 +611,6 @@ export class DocumentSession {
       contentHeld: this.contentHeld,
       schemaFence: this.schemaFence,
       holdsUndeliverableEdits: this.holdsUndeliverable,
-      undeliveredTabWrites: this.undeliveredTabWrites,
     };
   }
 
@@ -775,7 +775,7 @@ export class DocumentSession {
     const acknowledged =
       next === "synced" &&
       (this.access === "read" ? !this.holdsUndeliverable : this.transportAcknowledged);
-    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnacknowledgedEdits()}|${this.undeliveredTabWrites}`;
+    const key = `${next}|${acknowledged}|${this.holdsUndeliverable}|${this.hasUnacknowledgedEdits()}`;
     if (key === this.emittedKey && this.transportState === this.lastEmittedState) return;
     this.emittedKey = key;
     this.lastEmittedState = this.transportState;

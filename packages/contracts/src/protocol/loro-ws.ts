@@ -5,6 +5,9 @@ import type { DocumentId, DraftId } from "../ids.js";
 
 export const LORO_WS_PATH = "/ws/loro";
 
+/** A room socket's ping, outside the Loro protocol: a text frame the client never decodes. */
+export const LORO_PING = "ping";
+
 export type TreeListRef =
   | { kind: "project"; projectId: string }
   | { kind: "account"; userId: string };
@@ -54,6 +57,7 @@ export const PEER_ID_LIMIT = 1n << 64n;
 export interface LoroJoinAuth {
   schema: string;
   peer: string;
+  account: string;
 }
 
 const joinAuthSchema = z.object({
@@ -63,6 +67,7 @@ const joinAuthSchema = z.object({
     .string()
     .regex(/^\d{1,20}$/)
     .refine((peer) => BigInt(peer) >= SERVER_PEER_LIMIT && BigInt(peer) < PEER_ID_LIMIT),
+  account: z.string().min(1),
 });
 
 export function encodeLoroJoinAuth(auth: LoroJoinAuth): Uint8Array {
@@ -77,7 +82,9 @@ export function decodeLoroJoinAuth(bytes: Uint8Array): LoroJoinAuth | null {
     return null;
   }
   const parsed = joinAuthSchema.safeParse(value);
-  return parsed.success ? { schema: parsed.data.schema, peer: parsed.data.peer } : null;
+  if (!parsed.success) return null;
+  const { schema, peer, account } = parsed.data;
+  return { schema, peer, account };
 }
 
 export const LORO_JOIN_ERROR = {
@@ -87,6 +94,7 @@ export const LORO_JOIN_ERROR = {
     appCode: "permission-denied",
     terminal: true,
   },
+  ACCOUNT_CHANGED: { code: JoinErrorCode.AuthFailed, appCode: "account-changed", terminal: true },
   DOCUMENT_UNKNOWN: { code: JoinErrorCode.AppError, appCode: "document-unknown", terminal: false },
   DOCUMENT_DELETED: { code: JoinErrorCode.AppError, appCode: "document-deleted", terminal: true },
   CLIENT_SCHEMA_SUPERSEDED: {

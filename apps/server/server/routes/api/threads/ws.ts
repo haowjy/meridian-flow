@@ -1,4 +1,8 @@
-import { encodeWsServerMessage, WS_CLOSE } from "@meridian/contracts/protocol";
+import {
+  encodeWsServerMessage,
+  SOCKET_PING_INTERVAL_MS,
+  WS_CLOSE,
+} from "@meridian/contracts/protocol";
 import { defineWebSocketHandler } from "nitro";
 import { getProcessEventSink } from "../../../lib/observability.js";
 import {
@@ -8,7 +12,6 @@ import {
 } from "../../../lib/ws-thread-handler.js";
 import { resolveWsUpgradeAuth, type WsDeferredClose } from "../../../lib/ws-upgrade-auth.js";
 
-const PING_INTERVAL_MS = 30_000;
 const sessions = new WeakMap<WsPeer, ReturnType<typeof createThreadWebSocketSession>>();
 const pingIntervals = new WeakMap<WsPeer, ReturnType<typeof setInterval>>();
 
@@ -94,7 +97,7 @@ export default defineWebSocketHandler(() => ({
         } catch {
           disposePeer(authenticatedPeer, "error");
         }
-      }, PING_INTERVAL_MS),
+      }, SOCKET_PING_INTERVAL_MS),
     );
   },
 

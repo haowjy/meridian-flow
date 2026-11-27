@@ -8,7 +8,9 @@ the same name with the ephemeral-store CRDT tag.
 The Join exchange, which the server's handler speaks too (local-first design §4):
 
 1. The client sends `JoinRequest` with its room version (`encodeRoomVersion`, one version
-   vector per doc key) and `encodeLoroJoinAuth({schema, peer})`.
+   vector per doc key) and `encodeLoroJoinAuth({schema, peer, account})`. `account` is the
+   account the tab's lifetime belongs to; the socket authenticates with the browser's cookie,
+   which may have changed account since.
 2. The server answers `JoinResponseOk` with the permission and its own room version, then
    sends what the copy lacks as one `DocUpdate` (fragmented when large).
 3. The client joins presence, sends its presence state, and sends
@@ -67,9 +69,13 @@ press of a whole draft or Work, the Live room of a document only the draft holds
 ## Errors
 
 - `JoinError` with `document-deleted`, `client-schema-superseded` or `document-schema-stale`
-  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, and `bad-auth` (a
-  Join this build formed wrong) ends it `terminal`;
-  any other app code (`document-unknown`: the server hasn't seen this browser's `create` yet, or
+  resets the room (`resetState`); `permission-denied` ends it `unauthorized`, `bad-auth` (a
+  Join this build formed wrong) ends it `terminal`, and `account-changed` (the cookie is another
+  account's) ends it `terminal` and calls `onAccountChanged`, which ends the account's lifetime.
+  `loro-protocol` carries `appCode` only on an `AppError`, so an `AuthFailed` refusal
+  (`permission-denied`, `bad-auth`, `account-changed`) is read from `message`;
+  any other app code (`document-unknown`: the server hasn't seen this browser's `create` yet, a
+  document's or a new project's for its list, or
   the draft is gone for good) closes and rejoins with backoff.
 - `RoomError` `document-deleted` resets the room. `RejoinSuggested` rejoins: for an access
   change (`access-changed:<why>` names the cause) the room shows read-only at once and the new
@@ -107,5 +113,16 @@ App `onGap` consumers refetch snapshots, and a gap burst coalesces into one resy
 ## Shared connectivity hints
 
 Retry hints restart aggressive backoff, so repeated wakes against a down server cost at
-most one attempt per cooldown. A `suspect-offline` hint closes the room socket through the
-normal close path; `retry-now` connects at once when no socket is open.
+most one attempt per cooldown. A `suspect-offline` hint drops the room socket (closed at once,
+not waiting for the browser's close event); `retry-now` connects at once when no socket is open.
+
+## Liveness
+
+A room socket that stops carrying frames without closing (a half-open connection: a dropped NAT
+mapping, a sleep, a server that vanished without a reset) would stay `connected` for minutes, and
+the batches it sent but never had acknowledged are resent only by a new Join. So the server sends
+a text frame `LORO_PING` every `SOCKET_PING_INTERVAL_MS` (30 s) on each room socket, outside the Loro
+protocol, and the transport drops a socket that has carried no frame for `SOCKET_PING_TIMEOUT_MS`
+(45 s) and joins again on the usual backoff. The thread socket uses the same two constants, and
+the same rule bounds how long typing, a press or a sign-out's wait can be stuck
+on a dead socket. `./mf` ignores the text frames.

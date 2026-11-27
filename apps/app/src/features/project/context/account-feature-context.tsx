@@ -23,7 +23,7 @@ const PresentedContext = createContext<AccountFeatureLifetime["presented"] | nul
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
-const SignOutContext = createContext<(() => Promise<void>) | null>(null);
+const SignOutContext = createContext<(() => Promise<string>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
@@ -31,16 +31,18 @@ const LiveDocumentRegistryAccountContext = createContext<LiveDocumentSessionRegi
 
 export function AccountFeatureComposition({
   accountId,
+  externalId,
   children,
 }: {
   accountId: string;
+  externalId: string;
   children: React.ReactNode;
 }) {
   const connectivityHints = useConnectivityHints();
-  const desired = useRef({ accountId });
-  desired.current = { accountId };
+  const desired = useRef({ accountId, externalId });
+  desired.current = { accountId, externalId };
   const [lifetime, setLifetime] = useState(
-    () => new AccountFeatureLifetime(accountId, connectivityHints),
+    () => new AccountFeatureLifetime(accountId, externalId, connectivityHints),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
   const transition = useRef<Promise<void> | null>(null);
@@ -57,7 +59,7 @@ export function AccountFeatureComposition({
       .finishClose()
       .then(() => {
         const next = desired.current;
-        setLifetime(new AccountFeatureLifetime(next.accountId, connectivityHints));
+        setLifetime(new AccountFeatureLifetime(next.accountId, next.externalId, connectivityHints));
       })
       .catch((error: unknown) => setTeardownError(error))
       .finally(() => {
@@ -116,7 +118,7 @@ function AccountFeatureProviders({
   );
 }
 
-export function useOptionalSignOutCleanup(): (() => Promise<void>) | null {
+export function useOptionalSignOutCleanup(): (() => Promise<string>) | null {
   return useContext(SignOutContext);
 }
 
