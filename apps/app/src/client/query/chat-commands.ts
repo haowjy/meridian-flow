@@ -118,12 +118,13 @@ export function chatCommandDomain(client: QueryClient): CommandDomain {
     request: (body: ChatBody) => HttpRequest,
     reads: (projectId: string) => { queryKey: readonly unknown[]; exact?: boolean }[],
     settled?: (record: CommandRecord) => void,
+    { awaitsCreation } = { awaitsCreation: true },
   ): CommandKind => ({
     version: 1,
     migrate: (body) => body as ChatBody,
     request: ({ body }) => request(body as ChatBody),
     ready: (record, signal) =>
-      bound
+      bound && awaitsCreation
         ? untilCreated(bound.accountId, (record.body as ChatBody).threadId, signal)
         : Promise.resolve(),
     onSettled: (record) => {
@@ -178,6 +179,7 @@ export function chatCommandDomain(client: QueryClient): CommandDomain {
       }),
       (projectId) => [threads(projectId), feeds(projectId)],
       removal,
+      { awaitsCreation: false },
     ),
   };
   return {

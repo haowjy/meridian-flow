@@ -14,7 +14,7 @@ export type DeletedChatCard = {
   title: string | null;
   count: number;
   own?: boolean;
-  sentAgain?: boolean;
+  backInChat?: boolean;
 };
 
 export type PendingHandBack = HandBackCommand;
@@ -182,11 +182,11 @@ export class ComposerSessionDraft {
     });
   }
 
-  keepSentAgain(threadId: string, returned: string[]): void {
+  keepCopy(threadId: string, returned: string[], backInChat: boolean): void {
     this.commit(this.current, {
       received: this.withoutReceipts(returned),
       notices: this.notices.map((notice) =>
-        notice.threadId === threadId ? { ...notice, sentAgain: true } : notice,
+        notice.threadId === threadId ? { ...notice, backInChat } : notice,
       ),
       handBacks: this.handBacksPending,
     });
@@ -340,7 +340,7 @@ export class ComposerSessionDraft {
               typeof item.count === "number" &&
               item.count > 0 &&
               (item.own === undefined || typeof item.own === "boolean") &&
-              (item.sentAgain === undefined || typeof item.sentAgain === "boolean"),
+              (item.backInChat === undefined || typeof item.backInChat === "boolean"),
           )
         )
           return undefined;

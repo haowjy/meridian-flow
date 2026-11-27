@@ -63,9 +63,9 @@ export function restoreOwnDeletedChatWords(
   return rerecord(move.unmade).then((back) => {
     if (!back) return;
     const into = target();
-    if (into.holds(move.after) && (move.box === null || source.prependSnapshots([move.box])))
-      into.withdraw(threadId, move.before, returned);
-    else into.keepSentAgain(threadId, returned);
+    const boxBack = move.box === null || source.prependSnapshots([move.box]);
+    if (boxBack && into.holds(move.after)) into.withdraw(threadId, move.before, returned);
+    else into.keepCopy(threadId, returned, boxBack);
   });
 }
 const surfaces = new Map<string, Set<DeletedChatSurface>>();

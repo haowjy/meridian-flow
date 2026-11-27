@@ -271,8 +271,11 @@ reached the server) comes back as it was: Undo writes its journal records back o
 landed (written earlier, the create would land before the queued delete, which would then delete
 it), so the chat is created and its message sent. One rule for both kinds: when the writer has typed
 in New chat since the delete, New chat keeps the words, since taking them would take the writer's
-typing, and its note stays and says where they are; for a never-created chat it says the chat is
-back sending them as its first message and that a copy stays below. Undo returns main to
+typing, and its note stays and says where they are; a never-created chat gets all of them back
+(its unsent messages re-recorded, its box text back in its box), so the note says the chat is back
+with these words and a copy stays below. Undo's restore doesn't wait for the chat's creation the way
+rename and pin do: its delete is ahead of it on the lane, and a re-recorded create that failed would
+hold the Undo line until the writer pressed Retry. Undo returns main to
 the chat only if main is still on `/chats`, and the chat slot only if nothing has replaced it since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
 restart it. The delete and Undo's restore are command-driver kinds on the chat's lane
