@@ -74,6 +74,15 @@ export type CreateEditorExtensionsOptions = {
   history: DocumentHistory;
   schemaType?: TrackedSchemaType;
   filetype?: Filetype;
+  /**
+   * This client's presence, held by whatever decides when it is on the wire —
+   * normally the `DocumentSession`'s (`local-presence.ts`).
+   *
+   * The editor's only reach into awareness, deliberately. The caret's provider,
+   * the peer list a cursor color is picked against, and the image-upload
+   * announcement all come from here, so nothing assembled below can publish a
+   * local field the session cannot suspend.
+   */
   presence: LocalPresenceFields;
   user?: EditorUser;
   assetRenderContext?: AssetRenderContext;
@@ -93,6 +102,10 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 
 const lowlight = createLowlight(common);
 
+/**
+ * The lowlight grammar a filetype paints with, where its name differs: lowlight's `shell` is a
+ * terminal session (`#` is a prompt), and CSV has no grammar, so it would be detected as code.
+ */
 const GRAMMAR_FOR_FILETYPE: Partial<Record<Filetype, string>> = {
   shell: "bash",
   csv: "plaintext",
@@ -123,6 +136,8 @@ function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
 const EDITOR_CHROME_EXTENSIONS: Extensions = [
   ChromeKernelExtension,
   ObjectPhysicsExtension,
+  // Not lanes: the editor's own Tab and the cell's own Enter. Both need the
+  // kernel's registry to reach a scope, so they mount exactly where it does.
   TabKeymapExtension,
   TableEnterKeymapExtension,
   BlockDragExtension,
@@ -343,9 +358,15 @@ export function createStandaloneEditorExtensions({
       : []),
     ...(wikilinkPaste ? [WikilinkPasteExtension.configure(wikilinkPaste)] : []),
     MarkdownAutoformatExtension,
+    // Below the autoformat, which owns the delimiters this deliberately does
+    // not pair (`**`, `__`, `~~`, and the backtick outside a fence).
     AutoPairExtension,
     PassageHighlightExtension,
     ReviewChangesExtension,
+    // The one door a picture comes in through — picker, drop, pasted file,
+    // pasted address — and the owner of the clipboard's asset translation,
+    // which is why the markdown text parser is its prop rather than a
+    // view-level default here (a view prop would shadow the plugin's).
     ImageIngressExtension,
     FileDropExtension,
     LandingExtension.configure({
@@ -375,6 +396,8 @@ export function createEditorConfig({
   editorProps,
 }: CreateEditorConfigOptions): Partial<EditorOptions> {
   const resolvedSchemaType = schemaType ?? "document";
+  // Sanitization runs last so a caller transform can never reintroduce markup
+  // the schema would otherwise accept.
   const callerTransformPastedHTML = editorProps?.transformPastedHTML;
   const sanitizedEditorProps = {
     ...editorProps,

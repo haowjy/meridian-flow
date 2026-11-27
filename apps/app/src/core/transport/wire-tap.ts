@@ -1,3 +1,8 @@
+/**
+ * Late-bound observer seams for the thread WebSocket and the Loro room sockets. The transports
+ * call a tap inline, so a tap catches its own failures and never throws.
+ */
+
 import type { ProtocolMessage } from "loro-protocol";
 
 export type WireDirection = "client_to_server" | "server_to_client";

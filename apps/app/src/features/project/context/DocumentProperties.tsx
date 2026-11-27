@@ -47,6 +47,7 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
 
   if (properties && !properties.unreadable && properties.entries.length === 0) return null;
 
+  // The container measures this pane, so the side's narrow width reaches the geometry below.
   return (
     <div className="@container shrink-0 border-b border-border-subtle">
       <div className={editorColumnChrome}>

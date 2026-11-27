@@ -27,6 +27,7 @@ export function createScopedDocumentLinks(input: {
     async registerAhead(mints) {
       if (mints.length === 0) return;
       const registrations = aheadRegistrations(mints);
+      // A model edit mints under its lock, on its command's connection.
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },

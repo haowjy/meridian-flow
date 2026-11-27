@@ -63,7 +63,9 @@ export interface UploadReservation {
   actorUserId: string;
   documentId: string;
   filename: string;
+  /** The type the writer's browser declared; the signed PUT carries exactly this. */
   mimeType: string;
+  /** The length the writer declared; the signed PUT carries exactly this. */
   sizeBytes: number;
   objectKey: string;
   state: "reserved" | "object_stored" | "finalized";
@@ -107,6 +109,7 @@ export type ClaimUploadResult =
   | { kind: "claimed" | "existing"; reservation: UploadReservation }
   | { kind: "gone" };
 
+/** SQL lifecycle owner. Transactions must join the process ambient DB transaction. */
 export interface UploadIntakeRepository {
   reserve(input: {
     intakeId: string;
@@ -205,6 +208,11 @@ function decodeText(bytes: Uint8Array): string | null {
   }
 }
 
+/**
+ * What the stored bytes say the file is: its type, the name it takes, and the bytes read whole.
+ * Text and convertible pictures are read whole within a cap, so a NUL late in a text file and the
+ * picture preview see every byte. Throws when the object cannot be read back.
+ */
 async function classifyStored(
   objectStore: ObjectStorePort,
   upload: Pick<UploadReservation, "objectKey" | "filename" | "mimeType" | "sizeBytes">,
@@ -366,9 +374,13 @@ export function createUploadIntake<Bound>(deps: {
 
       const incomingKey = incomingObjectKey(projectId, current.documentId);
       if (current.state === "reserved") {
+        // Copy first, then read only the final key: a PUT through the signed URL after this
+        // point changes the incoming object, not the final one. Two finishes overlapping can
+        // still copy over the final key after the other read it (known limit, see CONTEXT.md).
         const copied = await deps.objectStore.copy(incomingKey, current.objectKey);
         if (!copied.ok) {
           if (copied.error.code !== "not_found") return storageFailed;
+          // Another finish may have moved the intake on and removed the incoming object.
           current = await read();
           if (!current) return conflict;
           if (current.state === "finalized") return finalized(current);
@@ -378,6 +390,7 @@ export function createUploadIntake<Bound>(deps: {
 
       const stored = await deps.objectStore.readHead(current.objectKey, HEAD_BYTES);
       if (!stored.ok) {
+        // The sweep releases the final object with its row, and then there is nothing to read.
         const after = stored.error.code === "not_found" ? await read() : current;
         return after ? storageFailed : conflict;
       }
@@ -474,6 +487,8 @@ export function createUploadIntake<Bound>(deps: {
         await deps.release.keys(tracked ? [incomingKey, claimed.objectKey] : [incomingKey]);
         return { ok: true, value: resultOf(outcome.reservation, source) };
       } catch (error) {
+        // Nothing is undone: the row is `object_stored` and the object is in place, so a retry
+        // reclassifies from it and resumes.
         emitEvent(deps.eventSink, {
           level: "warn",
           source: "context.upload-intake",
@@ -494,6 +509,9 @@ export function createUploadIntake<Bound>(deps: {
       for (;;) {
         const rows = await deps.repository.listAbandoned(cutoff, SWEEP_BATCH);
         for (const row of rows) {
+          // The row goes first. Its conditional delete is atomic against claim and finalize, so
+          // only the sweep that wins it releases: a finish or start that touched the row after
+          // the list leaves it and its objects alone.
           if (!(await deps.repository.dropAbandoned(row.projectId, row.intakeId, cutoff))) continue;
           dropped += 1;
           await deps.release.keys([

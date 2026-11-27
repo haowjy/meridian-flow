@@ -133,6 +133,7 @@ export function SpawnReportCard({
       ) : null}
     </div>
   );
+  // A background child outlives the reply that started it, so the composer's Stop can't reach it.
   if (running && !foreground && childThreadId && stopScope) {
     return (
       <SubagentStop
@@ -167,6 +168,7 @@ function ReportBody({
   );
 }
 
+/** Mounted only on expansion, so collapsed cards never fetch. */
 function SavedReportBody({ source }: { source: SavedReportSource }) {
   const saved = useQuery({
     queryKey: ["thread-execution-report", source.threadId, source.childThreadId, source.execution],
@@ -189,6 +191,7 @@ function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource 
         subagentBodyIndent,
       )}
     >
+      {/* One message, so a translation can put the source's name first. */}
       <Trans>
         <span className="shrink-0">From </span>
         <SourceChatLink threadId={threadId} title={source.title} trashed={source.trashed} />

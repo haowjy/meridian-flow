@@ -16,6 +16,11 @@ export type LinkHint = {
 
 export type LinkFormRequest = {
   at: LinkPoint;
+  /**
+   * Bumped on every open so a form summoned twice at the same coordinates is
+   * still a new form. Radix positions against a fixed anchor through
+   * floating-ui, which never sees one move, so the surface is keyed on this.
+   */
   seq: number;
 };
 

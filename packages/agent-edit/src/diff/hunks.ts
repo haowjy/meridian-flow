@@ -3,7 +3,7 @@ import type { Tok } from "./tokens.js";
 export interface Hunk {
   from: number;
   to: number;
-  sfrom: number;
+  sfrom: number; // side token range this hunk came from: set where the hunk is made, never by a filter
   sto: number;
   ins: Tok[];
   sidx?: number[];

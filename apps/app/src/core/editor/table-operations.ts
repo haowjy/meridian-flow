@@ -54,6 +54,14 @@ export function tableSelection(state: EditorState): TableSelection | null {
   };
 }
 
+/**
+ * Turn the table's header row on or off (law 6: one control, both directions).
+ *
+ * prosemirror-tables' `toggleHeaderRow` toggles header-ness of whatever ROWS
+ * are selected, so with the table selected it makes every row a header, and
+ * with the caret in the last row it makes THAT row a header. "Header row" names
+ * one row — the first — and means the same thing from wherever it is pressed.
+ */
 export const toggleTableHeaderRow: Command = (state, dispatch) => {
   const selection = tableSelection(state);
   if (!selection) return false;
@@ -76,6 +84,14 @@ export const toggleTableHeaderRow: Command = (state, dispatch) => {
   return true;
 };
 
+/**
+ * Whether row zero is a header row.
+ *
+ * The header is a real toggleable thing (§5.4 requirement 3), not a structural
+ * given: plenty of status screens have none. Transforms that must not disturb
+ * it ask this rather than assuming row zero is sacred, or a headerless table's
+ * first row becomes unreachable to insert-above and to moves.
+ */
 export function hasHeaderRow(table: ProseMirrorNode): boolean {
   const first = table.firstChild?.firstChild;
   return first?.type.spec.tableRole === "header_cell";
@@ -244,6 +260,8 @@ export function addTableRow(direction: "above" | "below"): Command {
         top: insertedRow,
         bottom: insertedRow + 1,
       })) {
+        // A rowspan from above reaches into the new row without belonging to
+        // it; only cells that BEGIN here are the row this insert created.
         const rect = map.findCell(cellPos);
         if (rect.top !== insertedRow) continue;
         const cell = table.nodeAt(cellPos);
@@ -290,6 +308,15 @@ export const resetTableColumnWidths: Command = (state, dispatch) => {
   return true;
 };
 
+/**
+ * Would this merge swallow the header row into the body?
+ *
+ * prosemirror-tables merges any rectangle and keeps the FIRST cell's type, so
+ * a whole-column merge on a headed table yields one header cell spanning every
+ * row: the header stops being a row and the table stops having one. Merging
+ * the header row across itself is a different thing and stays allowed — that
+ * is a title row.
+ */
 export function mergeCrossesHeader(state: EditorState): boolean {
   if (!isInTable(state) || !(state.selection instanceof CellSelection)) return false;
   const rect = selectedRect(state);

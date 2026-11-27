@@ -8,6 +8,11 @@ export type ReferenceSubject = Omit<DragEntry, "view"> & { view?: CopyContextEnt
 
 const NOT_A_DRAG = {};
 
+/**
+ * The start every reference source goes through, whatever element it is: it defaults the view,
+ * keeps a source inside another draggable (a chip in a row) from also starting the outer drag,
+ * and publishes the drag with `source: "reference"`.
+ */
 function startReferenceDrag(
   event: Pick<globalThis.DragEvent, "dataTransfer" | "stopPropagation">,
   subject: ReferenceSubject,

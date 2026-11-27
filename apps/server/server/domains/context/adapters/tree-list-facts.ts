@@ -1,3 +1,8 @@
+/**
+ * What only the server knows about a connection to a tree list (`Connection` in
+ * `@meridian/project-tree`), read inside the admission's transaction under the list's lock. A
+ * Work's close, archive or delete takes that lock first, so the Works read here are current.
+ */
 import type { Database } from "@meridian/database";
 import type { Connection } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";

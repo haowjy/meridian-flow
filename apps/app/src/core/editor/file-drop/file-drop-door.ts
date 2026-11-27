@@ -1,3 +1,17 @@
+/**
+ * The files door: what dropping files on a document does.
+ *
+ * `LandingExtension` owns the caret, the hint and the event; this decides what
+ * a file at a landing means. A picture goes through the picture lane and keeps
+ * its behaviour. Any other file becomes a chip at the caret, a plain Markdown
+ * link to a file that is uploading into `assets/` of the document's own
+ * source. Files land in the order the drop lists them, each after the one
+ * before; a run of chips is one edit, so one undo takes it back.
+ *
+ * A browser hides a dragged file's name until the drop, so the drag decides
+ * from the types it can read, and the drop decides again from the files.
+ */
+
 import { t } from "@lingui/core/macro";
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import { ASSETS_FOLDER, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
@@ -75,6 +89,7 @@ function chipFor(
   documentId: string,
   scheme: ContextUriScheme,
 ): PMNode | null {
+  // A dropped file's name is the writer's: `@notes.png` is no address segment.
   let uri: string;
   try {
     uri = canonicalContextUri(scheme, `${ASSETS_FOLDER}/${name}`);
@@ -154,6 +169,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
     if (!placed) {
       status?.refuse(t`Can’t drop here`);
     } else {
+      // The entries exist before the chips do, so no chip ever draws a gap.
       for (const { documentId, file } of ready)
         uploads.begin(documentId, host.hostDocumentId, sendRun(host, documentId, file));
       placed.commit(editor.view);

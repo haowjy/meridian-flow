@@ -34,6 +34,7 @@ import type {
   SerializeContext,
 } from "./types.js";
 
+/** Not a thematic break after any list marker, `*` included. */
 const STUB_RULE = "___";
 
 const NON_CODEC_SCHEMA_NODES = new Set(["doc", "text", "table_row", "table_header", "table_cell"]);

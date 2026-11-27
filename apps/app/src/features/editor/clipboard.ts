@@ -91,6 +91,12 @@ function browserClipboard(): Clipboard | undefined {
   return typeof navigator === "undefined" ? undefined : navigator.clipboard;
 }
 
+/**
+ * The clipboard's payload for one flavour, verbatim. Emptiness is tested on a
+ * trimmed copy and never on the payload itself: a pasted code line's leading
+ * indentation and a paragraph's trailing newline are content, and trimming
+ * them is a silent edit of what the writer copied.
+ */
 async function firstClipboardFlavour(
   items: readonly ClipboardItem[],
   type: string,

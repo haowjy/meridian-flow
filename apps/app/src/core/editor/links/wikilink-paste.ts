@@ -72,6 +72,8 @@ function wikilinkResolver(
     else byName.set(name, [located]);
   }
   const holder = catalog.holderUri ? locate(catalog.holderUri, null) : null;
+  // Ranking ignores case, so its answer is cached under the lowercased path;
+  // a link-ahead address keeps the writer's casing, so it is asked each time.
   const matches = new Map<string, Located | null>();
   const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {

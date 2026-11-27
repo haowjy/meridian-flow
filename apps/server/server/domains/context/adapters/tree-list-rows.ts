@@ -563,6 +563,9 @@ export async function syncRows(
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadDrafts(tx, listId);
+  // A draft row reads live's rows on its node and its parent (a move's place),
+  // so a live change there changes the owner's list even when the draft's own rows don't.
+  // `writeLive` names every node under a changed folder, so the parent covers deeper folders.
   const liveIds = new Set(changed);
   const liveChangedUnder = [...new Set([...prev.keys(), ...next.keys()])].filter((draftId) =>
     [prev.get(draftId), next.get(draftId)].some(
@@ -573,6 +576,8 @@ export async function syncRows(
         ),
     ),
   );
+  // A live change to a document a draft has pending text in changes the Work's list (a move's place),
+  // and a trash or restore its count, though the Work has no row there.
   const holding = await draftsWithText(tx, kept, [...liveIds].filter(isUuid));
   const changedDrafts: string[] = [...holding];
   liveChangedUnder.push(...holding.filter((draftId) => !liveChangedUnder.includes(draftId)));

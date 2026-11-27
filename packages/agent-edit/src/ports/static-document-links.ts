@@ -28,12 +28,19 @@ export interface StaticCatalogDocument extends CatalogDocument {
 
 export interface StaticDocumentCatalog {
   projectId: string;
+  /** Read at every call, so replacing an entry moves, deletes or creates a document. */
   documents: readonly StaticCatalogDocument[];
+  /** Read at every call, so replacing an entry moves or removes a folder. */
   folders?: readonly CatalogFolder[];
   settlements?: ReadonlyMap<string, string>;
 }
 
 export interface StaticDocumentLinksOptions {
+  /**
+   * Answer every lookup as loaded. Only for compositions whose doors never
+   * prepare through this port (the server's in-memory scopes); tests keep the
+   * default, so a door that forgot to prepare a key sees a real snapshot miss.
+   */
   preloaded?: boolean;
 }
 
@@ -254,6 +261,11 @@ function catalogTree(
   };
 }
 
+/**
+ * The cut's room version, holder and the whole catalog: coarser than the server's digest
+ * (any catalog change counts), never finer, so a move always changes it.
+ * FNV-1a, because this package also runs in the browser.
+ */
 function cutRevision(state: Uint8Array, scope: HolderLinkScope, catalog: StaticDocumentCatalog) {
   let hash = 0x811c9dc5;
   const feed = (bytes: Uint8Array) => {

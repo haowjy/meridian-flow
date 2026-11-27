@@ -33,6 +33,7 @@ type EditorMountBase = {
   viewingOwner?: string;
   schemaType: TrackedSchemaType;
   filetype?: Filetype;
+  /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
 };
 

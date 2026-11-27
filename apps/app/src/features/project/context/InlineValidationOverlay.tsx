@@ -25,6 +25,7 @@ export function InlineValidationOverlay({
       setAnchor({ top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 140) });
     };
     place();
+    // Capture phase catches the tree's own scroll container, not just window.
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => {

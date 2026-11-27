@@ -35,6 +35,7 @@ export function startContextUpload(
     intakeId,
     filename: file.name,
     sizeBytes: file.size,
+    // The signed PUT carries the type exactly; the server answers with the header to send.
     mimeType: file.type || "application/octet-stream",
   };
   return uploadResponse<UploadStart>(fetch(url(target), { ...jsonPost(body), signal }));

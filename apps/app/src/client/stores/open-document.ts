@@ -13,6 +13,7 @@ export type OpenDocumentOwner =
   | (LineageOwnerRef & { rootThreadRef: string })
   | ChatOwnerRef;
 
+/** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
 export function replaceOwner(owner: OpenDocumentOwner): OpenDocumentOwner {
   const absent = { chatThreadId: undefined, chatRef: undefined } as const;
   if (owner.chatThreadId !== undefined)

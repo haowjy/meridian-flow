@@ -2,6 +2,10 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 
 import { PROSE_TRIGGER_BLOCKS } from "../suggestion";
 
+/**
+ * `from` is the position of the `/` itself, which is what
+ * `@tiptap/suggestion` hands its `allow` predicate as `range.from`.
+ */
 export function allowsSlashTrigger(doc: PMNode, from: number): boolean {
   if (from < 0 || from > doc.content.size) return false;
 

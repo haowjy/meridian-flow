@@ -1,3 +1,15 @@
+/**
+ * The one frontmatter policy: which stored YAML Meridian reads and which aliases
+ * it names. Import (link aliases, the unreadable finding) and the properties
+ * display both read through here, so they never disagree about either.
+ *
+ * The text is untrusted (it arrives from imports), so parsing is bounded: a
+ * size cap before the parser runs, the core schema only (a tag it does not
+ * know makes the text unreadable), and a document-wide budget on the nodes and
+ * depth the converter will visit. Aliases are resolved by that converter
+ * rather than by the library, so a cycle or an expanding alias stops at the
+ * budget. Every failure is `unreadable`, never an error.
+ */
 import type { JsonValue } from "@meridian/contracts/threads";
 import YAML from "yaml";
 
@@ -38,6 +50,8 @@ export function frontmatterAliases(text: string): string[] {
 
 function parseBounded(text: string): ReadFrontmatter | null {
   const document = YAML.parseDocument(text, { version: "1.2", schema: "core" });
+  // Errors include duplicate keys, which stay as written instead of one silently winning.
+  // Warnings include a tag the core schema does not know, whose meaning we would lose.
   if (document.errors.length > 0 || document.warnings.length > 0) return null;
   if (document.contents === null) return { readable: true, entries: [], aliases: [], document };
   if (!YAML.isMap(document.contents)) return null;

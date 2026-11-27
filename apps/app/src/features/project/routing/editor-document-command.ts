@@ -87,6 +87,8 @@ export function createEditorDocumentCommand({
         sameDocument &&
         !opensReview
       ) {
+        // The address already carries this review: the owner that settles its path may have
+        // moved the URL since this command read it, and writing the stale path back would flip it.
         const carriesReview =
           !!itemKey &&
           itemKey === current.address.itemKey &&

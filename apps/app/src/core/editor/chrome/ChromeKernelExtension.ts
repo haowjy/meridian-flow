@@ -145,6 +145,9 @@ export const ChromeKernelExtension = Extension.create({
           document.addEventListener("pointerdown", readPointer, { passive: true });
           document.addEventListener("pointerleave", forgetPointer, { passive: true });
 
+          // Scroll and reflow are pointer moves with no pointer event: the hand
+          // is still and what is under it is not. Asking again is what keeps
+          // chrome off a target the writer has scrolled away from.
           const stopWatchingLayout = watchManuscriptLayout(editor, [], () => {
             if (!chrome.suppressed) controller.hoverAnchors.remeasure();
           });
@@ -301,6 +304,7 @@ export const ChromeKernelExtension = Extension.create({
   },
 });
 
+/** The claim decision, synchronous inside the event because `preventDefault` is worthless after it returns. */
 function routeContextMenu(view: EditorView, chrome: EditorChrome, event: MouseEvent): boolean {
   const element = event.target;
   if (!(element instanceof Element)) return false;

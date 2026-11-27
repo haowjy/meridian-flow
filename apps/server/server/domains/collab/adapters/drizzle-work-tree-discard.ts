@@ -38,6 +38,7 @@ export async function discardTreeRecords(
         });
         const discarded = new Set(done.discarded);
         trashed.push(...done.trashed);
+        // A discarded delete had what it covered in the Work's view, not what its author saw.
         return pending
           .filter((record) => discarded.has(record.id))
           .map((record) => ({

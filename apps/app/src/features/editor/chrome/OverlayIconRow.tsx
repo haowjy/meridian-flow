@@ -89,6 +89,11 @@ function OverlayIconChip({
   label: string;
   onSelect?: () => void;
   asTrigger?: boolean;
+  /**
+   * The tooltip is portalled out of the row, so it carries the row's mark
+   * itself — a surface watching the pointer must read it as part of the same
+   * chrome rather than as a step off the object.
+   */
   chromeAttributes: Record<string, string>;
   children: ReactNode;
 }) {

@@ -83,6 +83,7 @@ type WriteSources = {
   catalogs: Record<TreeKey, TreeViewResult>;
   writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
+  /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
   changesCommands: WorkDraftCommands;
 };
 
@@ -151,6 +152,7 @@ const SOURCES: Record<SourceKey, Source> = {
           scopeWorkId={scopeWorkId}
           noWorkId={noWork?.id ?? null}
           currentThreadId={chatThreadId}
+          // The drawer closes once the navigation commits: a rejected one leaves it open.
           onOpenChat={(threadId) => void chat.openChat(threadId).then(() => onPicked?.())}
           onNewChat={() => void chat.openNewChat().then(() => onPicked?.())}
         />
@@ -203,10 +205,12 @@ const SOURCES: Record<SourceKey, Source> = {
       const shownDraft = useShownDraft(projectId, chatThreadId);
       return (
         <ChangesSource
+          // A question asked of one Work must not be answered for the next one picked.
           key={changes.drafts.map((draft) => draft.id).join()}
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
+          // Two drafts may change one document: the row of the draft main paints is the open one.
           isOpen={(file) =>
             file.documentId === activeDocumentId &&
             shownDraft(file.documentId)?.draftId === file.item.draftId
@@ -492,6 +496,7 @@ export function SourcesBody({
   );
 }
 
+/** The shown source's pane; keyed by source, so each source's drop hook keeps its own place. */
 function SourceView({ source }: { source: SourceKey }) {
   const { useDrop, Body } = SOURCES[source];
   const drop = useDrop();

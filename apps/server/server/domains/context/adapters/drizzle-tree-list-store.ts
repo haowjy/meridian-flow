@@ -78,6 +78,10 @@ function inOneTransaction<T>(
 
 const unchanged = (doc: LoroDoc, before: DocVersion) => docCovers(before, docVersion(doc));
 
+/**
+ * A copy of the list as `snapshot` holds it, writing as a fresh server peer: the server's writers
+ * take peer ids below `SERVER_PEER_LIMIT`, and no two copies share one.
+ */
 function copyOf(snapshot: Uint8Array | null): Copy {
   const doc = new LoroDoc();
   doc.setPeerId(freshServerPeerId());
@@ -176,6 +180,7 @@ export function createDrizzleTreeListStore(deps: {
     mode: "take" | "held",
   ): Promise<{ ids: string[]; owner: Ownership }> {
     const owner = enlistDrizzleTransactionParticipant(ownership);
+    // Work rows and lifecycle locks come before any advisory key.
     if (mode === "take") await lockSeamWorks(tx, []);
     const ids: string[] = [];
     for (const list of lists) {
@@ -246,6 +251,7 @@ export function createDrizzleTreeListStore(deps: {
     await claimNodeIds(tx, listId, claimed);
     const update = withVector(before, (from) => copy.doc.export({ mode: "update", from }));
     await writeSnapshots(tx, [{ roomKey: roomKeyOf(listId), docKey: LIST_DOC, doc: copy.doc }]);
+    // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
     const { changedDrafts, liveChangedUnder, reassigned } = await syncRows(
@@ -344,12 +350,17 @@ export function createDrizzleTreeListStore(deps: {
             earlier: readRecords(all.slice(0, mark.ops)),
           };
         });
+        // Settlements gain nothing in the records: the version is what says a copy changed.
         const changes = gained.filter(
           ({ held: each, before }) => !unchanged(each.copy.doc, before),
         );
+        // Marked in this tick, before the first await: a read in this process then reloads
+        // instead of seeing a copy ahead of the stored list.
         for (const { held: each } of changes) each.copy.pending = owner;
         const done = new Map<Held, CommittedTreeUpdate>();
         for (const { held: each, before, added, earlier } of changes) {
+          // A node's id is claimed by its first create: a copy of a create (Apply's live copy of
+          // a drafted one, a restored Discard's) names a node the list holds already.
           const known = new Set(earlier.filter(isCreate).map((record) => record.node));
           const claimed = added.filter(isCreate).filter((record) => {
             const first = !known.has(record.node);

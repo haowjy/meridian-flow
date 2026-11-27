@@ -87,6 +87,11 @@ function matchSerializedText(
 
 const documentEntriesCache = new WeakMap<readonly ProjectedBlock[], SerializedBlock[]>();
 
+/**
+ * Every block of the document as it sits there: the prefixes of its containers, the gap before
+ * it and the `open` its neighbours' content parses under. Whole, because a block's prefix
+ * depends on the blocks around it; once per projection, since the document is not changing.
+ */
 export function documentEntries(ctx: FindContext): readonly SerializedBlock[] {
   let entries = documentEntriesCache.get(ctx.projected);
   if (!entries) {

@@ -39,6 +39,8 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       return row ?? null;
     },
   };
+  // One text parameter, not one per block: a long conversation has thousands. Compared as text,
+  // so a block id that is not a UUID matches nothing instead of failing the cast.
   const amongBlocks = (blockIds: readonly string[]) =>
     sql`${frontiers.sourceBlockId}::text = ANY(string_to_array(${blockIds.join(",")}, ','))`;
 
@@ -108,6 +110,7 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
 
     async latestFrontier(documentId, blockIds) {
       if (blockIds.length === 0) return null;
+      // Inside a transaction a savepoint, so a failed lookup leaves the caller's usable.
       const [row] = await runIsolatedFromAmbientTransaction(db, () =>
         db_()
           .select({ room: frontiers.roomKey, snapshot: frontiers.snapshot })
@@ -141,6 +144,8 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
 
     async forDocument(threadId, documentId) {
       const segments = (await shownLinkLineage(threadId as ThreadId, lineage)).map((segment) =>
+        // Each segment selects its eligible rows on its own index prefix; the cutoff applies
+        // there, before the latest showing per key is chosen.
         segment.maxPosition === null
           ? sql`SELECT l.ref, l.address, l.holder_uri, l.view, l.seq
               FROM ${links} l

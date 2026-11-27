@@ -132,6 +132,12 @@ export type MainDocument = Readonly<{
   document: OpenDocument | null;
   draftOnly: boolean;
   catalogResolved: boolean;
+  /**
+   * The readable address's own verdict on its document. It is the only evidence for or
+   * against a document the live tree lacks, such as a pending new-document draft's, so
+   * absence proves nothing until the address is `settled`. `failed` is a verdict the route
+   * boundary shows with its retry; the host neither waits on it nor rejects the route.
+   */
   addressState: AddressState;
   isError: boolean;
 }>;
@@ -142,6 +148,11 @@ export function resolveMainDocument(input: {
   path: string | null;
   workId: string | null;
   rootThreadId?: string | null;
+  /**
+   * The document this route is bound to. A rename of it or a folder above it changes its path
+   * at once, so the host finds it by identity while the readable route repairs the URL to the
+   * same path.
+   */
   boundDocumentId?: string | null;
   addressed?: AddressedDocument | null;
   addressState?: AddressState;

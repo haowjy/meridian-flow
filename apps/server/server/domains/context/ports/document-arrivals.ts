@@ -1,9 +1,18 @@
 import type { ContextSourceId, DocumentId } from "@meridian/contracts/runtime";
 
 export interface DocumentArrivals {
+  /**
+   * Namespace keys of the sources these documents occupy and of any explicit sources (an
+   * Apply's final locations), in one sorted acquisition, namespace only. For arrivals that are
+   * not authored writes (Apply, Work restore): after Work locks, before holder locks.
+   */
   lockNamespaces(
     documentIds: readonly DocumentId[],
     sourceIds?: readonly ContextSourceId[],
   ): Promise<void>;
+  /**
+   * Inside the caller's transaction, which already holds every arrival's namespace key. Settles
+   * against the transaction's current tree; draft-only and deleted rows are not arrivals.
+   */
   settle(documentIds: readonly DocumentId[]): Promise<number>;
 }

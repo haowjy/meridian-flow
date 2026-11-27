@@ -21,6 +21,13 @@ export const linkMarkCodec: MarkCodec<LinkAst> = {
   },
 };
 
+/**
+ * A destination the parser reads back as written. Bare when it can be;
+ * enclosed in `<…>` for whitespace, unbalanced parentheses, angle brackets, or
+ * a backslash (a bare backslash before punctuation is an escape and would be
+ * eaten). Neither form may span lines, so a line ending travels
+ * percent-encoded, which the document href resolver decodes back.
+ */
 export function markdownLinkDestination(href: string): string {
   const value = href.replace(/\r/g, "%0D").replace(/\n/g, "%0A");
   let depth = 0;

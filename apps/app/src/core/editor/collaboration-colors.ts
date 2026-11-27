@@ -9,6 +9,7 @@ export const COLLABORATION_CURSOR_COLORS = [
   "var(--color-collab-cursor-8)",
 ] as const;
 
+/** Resolve a theme token before it crosses the presence JSON boundary. */
 export function resolveCollaborationColor(token: string): string {
   if (typeof document === "undefined") return token;
   const match = /^var\((--[^)]+)\)$/.exec(token);

@@ -46,6 +46,7 @@ export function useCreateProject() {
         });
         return id;
       });
+      // Kept after a success: the dialog is on its way out. A failure frees the next press.
       submitting.current = submit;
       const release = () => {
         submitting.current = null;
@@ -117,6 +118,10 @@ export function useSettleConfirmedCreation(projectId: string, hasRouteData: bool
   }, [confirmed, driver, hasRouteData, projectId, router]);
 }
 
+/**
+ * For imperative reads (`fetchQuery` ignores `enabled`); query hooks use
+ * `projectReadEnabled` instead.
+ */
 export function useIsProjectPendingCreation(projectId: string | null | undefined): boolean {
   const records = useCommands({ kind: PROJECT_CREATE_KIND });
   const state = projectId ? projectCreationFor(records, projectId)?.state : undefined;

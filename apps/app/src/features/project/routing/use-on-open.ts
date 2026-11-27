@@ -12,6 +12,13 @@ export function withoutOpen<T>(navigate: () => Promise<T>): Promise<T> {
   });
 }
 
+/**
+ * Runs `onOpen` each time the writer goes somewhere, so what lies over main (the phone's sheet,
+ * a narrow window's sidebar) folds to show where they went. Arriving is not an open. The history
+ * position, not the entry's key: an address repair (a rename, a stripped param) replaces the
+ * entry in place. Settings (`?settings=`) is an overlay above everything, not a place, and a
+ * mode switch (`withoutOpen`) is the sidebar's own navigation: neither is an open.
+ */
 export function useOnOpen(onOpen: () => void) {
   const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
   const settings = useRouterState({

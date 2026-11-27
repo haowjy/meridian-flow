@@ -2,6 +2,8 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+// Straight at the primitive: the chrome barrel also carries the surface
+// registry this lane is listed in, and the round trip is a module cycle.
 import { ReasonLines, ReasonTooltip } from "../../chrome/ReasonTooltip";
 
 export type ToolbarButtonProps = Omit<

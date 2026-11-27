@@ -179,6 +179,7 @@ function ActiveSessionEditorView({
   const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
   effectiveEditableRef.current = effectiveEditable;
 
+  // Links belong to their holder, never to the route's or a chat's Work.
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const holder = useProjectTrees(projectId ?? "").find(documentId);
   const holderOwner = holder?.source.owner;
@@ -216,6 +217,8 @@ function ActiveSessionEditorView({
       null,
     [linkableDocuments, documentId],
   );
+  // A draft-only holder takes its address from the review row. An ordinary review can outlive
+  // that row, so its live catalog address remains the fallback and continues to follow renames.
   const holderUri = reviewHolderUri ?? indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
@@ -269,6 +272,8 @@ function ActiveSessionEditorView({
       }),
     [linkableDocuments],
   );
+  // Read at paste time. An index still loading converts nothing, rather than
+  // turning every link dashed.
   const wikilinkPasteCatalog = useCallback(
     () =>
       identity.schemaType === "document" && linkableDocuments.complete
@@ -277,6 +282,9 @@ function ActiveSessionEditorView({
     [holderUri, identity.schemaType, linkAhead, linkableDocuments.complete, pasteTargets],
   );
 
+  // Surface config: applied to the running editor, never a reason to rebuild it.
+  // Only the prose node's own attributes live here; a lane that answers a press
+  // does it in its own extension, where the state it reads already is.
   const leaveHintId = useId();
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({

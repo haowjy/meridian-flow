@@ -44,6 +44,7 @@ export function boundCommandId(): string | undefined {
   return getDrizzleTransactionLocal<string>(modelEditCommand);
 }
 
+/** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");

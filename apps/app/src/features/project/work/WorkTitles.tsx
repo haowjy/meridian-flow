@@ -6,6 +6,8 @@ import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
 
+// The heading shrinks beside the status; it clips nothing itself, so a refused
+// rename's message can hang below it. The text inside truncates instead.
 const headingClass = cn("relative flex min-w-0", role.pageHeading);
 
 const renameFailure = (cause: unknown) => workUpdateFailure(cause, t`Couldn’t rename this Work`);

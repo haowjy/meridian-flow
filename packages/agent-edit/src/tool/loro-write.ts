@@ -500,6 +500,9 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
         };
         let planDoc = planned.doc;
         let { assigner, resolved } = await resolveOn(planDoc);
+        // A find names text, not blocks: when the view doesn't hold it (the writer typed or
+        // restored it since), or what it matched there is gone from the room, it matches the room
+        // as it is now.
         if (
           planDoc !== copy &&
           "find" in command &&
@@ -819,6 +822,7 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
   ) {
     const ordinal = await options.ordinals.reserveWriteOrdinal(docId, session.threadId);
     const toolCallId = commandToolUseId ?? context.tool_use_id;
+    // Scoped to the turn so the same tool-call id in another turn is another write.
     const durableId =
       (toolCallId && context.turnId ? `turn:${context.turnId}:tool:${toolCallId}` : toolCallId) ??
       globalThis.crypto?.randomUUID?.() ??

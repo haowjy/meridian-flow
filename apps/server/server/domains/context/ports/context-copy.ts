@@ -94,6 +94,7 @@ export type PlannedCopyNode = PlannedCopyFolder | PlannedCopyFile;
 export interface CopyPlan {
   dir: readonly string[];
   roots: readonly PlannedCopyNode[];
+  /** Every identity this copy creates, old→new: complete before the first bind. */
   map: CopyIdentityMap;
   documents: readonly PlannedCopyFile[];
 }

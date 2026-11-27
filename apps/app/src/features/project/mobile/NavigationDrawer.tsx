@@ -43,7 +43,11 @@ export function NavigationDrawer({
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
   const manageWorks = useManageWorks();
-  const dismissal = useDismissalFocus(onOpenChange, focusContentOnOpen);
+  const dismissal = useDismissalFocus(
+    onOpenChange,
+    // iOS Safari paints :focus-visible on Radix's programmatic focus of the first nav item.
+    focusContentOnOpen,
+  );
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,

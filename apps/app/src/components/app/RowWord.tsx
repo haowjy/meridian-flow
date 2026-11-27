@@ -126,6 +126,12 @@ export function RowWord({
   );
 }
 
+/**
+ * Called as an action starts, with what has the focus: returns where to send the focus once the
+ * action brings its row back, which waits for the row and gives it the focus unless the writer
+ * moved it meanwhile. Focus still on `from`, or on a box that held it (where the browser or a
+ * dialog's trap puts it when `from` leaves), is the action's to move.
+ */
 export function followFocusFrom(from: Element): (back: () => HTMLElement | null) => void {
   const around = new Set<Element>();
   for (let at = from.parentElement; at; at = at.parentElement) around.add(at);

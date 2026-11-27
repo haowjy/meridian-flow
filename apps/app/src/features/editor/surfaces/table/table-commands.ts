@@ -208,6 +208,9 @@ export function tableVerbStates(
     deleteColumn: map.width <= 1 ? blocked("single-column") : RUNS,
 
     mergeCells: mergeTableCells(state) ? RUNS : blocked(mergeRefusal(state, cellCount)),
+    // Upstream refuses a multi-cell selection BEFORE it looks for a span, so
+    // "this cell is not merged" would be a lie about a selection that contains
+    // a merged cell.
     splitCell: splitCell(state)
       ? RUNS
       : blocked(cellCount > 1 ? "many-cells-selected" : "not-merged"),
@@ -232,6 +235,20 @@ export function runTableVerb(editor: Editor, id: TableVerbId): boolean {
   return ran;
 }
 
+/**
+ * What a table menu acts on, held rather than read back from the selection.
+ *
+ * A menu outlives the arrangement that opened it, and that arrangement is the
+ * one thing a remote write cannot carry: the Loro binding restores the writer's
+ * place as a caret, so the rectangle a writer swept has stopped being selected
+ * by the time they reach "Merge cells". A target names its cells in terms only
+ * their disappearance can change (`core/editor/anchors.ts`), and the selection
+ * is materialized from it every time the menu is read or run.
+ *
+ * `selection` is the shape for the arrangements the writer is standing in — a
+ * caret in a cell, a selected table. Nothing is held because there is nothing
+ * to hold: that arrangement mounts the menu and unmounting it is how it ends.
+ */
 export type TableMenuTarget =
   | { kind: "axis"; cell: NodeHold; axis: "row" | "column" }
   | { kind: "cells"; anchor: NodeHold; head: NodeHold }
@@ -262,6 +279,13 @@ function targetSelection(state: EditorState, target: TableMenuTarget): Selection
   return CellSelection.create(state.doc, $anchor.pos, $head.pos);
 }
 
+/**
+ * The state a menu reads its verbs from: its own target, materialized. Null
+ * once the target is gone, which is a menu with nothing left to offer.
+ *
+ * Applied rather than dispatched: what a verb WOULD do is a question, and
+ * asking it must not move the writer's own selection.
+ */
 export function tableTargetState(editor: Editor, target: TableMenuTarget): EditorState | null {
   if (editor.isDestroyed) return null;
   const { state } = editor;
@@ -280,6 +304,13 @@ export function runTableVerbOn(editor: Editor, target: TableMenuTarget, id: Tabl
   return runTableVerb(editor, id);
 }
 
+/**
+ * The pointer sits inside one of the cells the selection covers.
+ *
+ * Not the selection's `from`..`to` range: a rectangle two columns wide in a
+ * four-column table spans cells it does not contain, and aiming at one of
+ * those is not aiming at what was swept.
+ */
 function pointerInsideCellSelection(state: EditorState, docPos: number | null): boolean {
   const { selection } = state;
   if (docPos === null || !(selection instanceof CellSelection)) return false;

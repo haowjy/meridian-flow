@@ -73,6 +73,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   const shell = useShellTreeVersion();
   const changed = shell?.draftId === draftId && draftId ? shell.changeCount : null;
   const workDrafts = picked && shell?.work?.id === picked.id ? shell.workDrafts?.drafts : null;
+  // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
     const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
     const drafts =
@@ -150,6 +151,7 @@ export function ChangesSource({
   const draftIds = useMemo(() => (draftsKey ? draftsKey.split(",") : []), [draftsKey]);
   const lists = useDraftLists(projectId, draftIds);
   const shell = useShellTreeVersion();
+  // The shown draft's tree changes are the shell's; the others' are replayed here.
   const ownTree = shell?.draftId ?? null;
   const replayedVersions = useMemo(
     () => draftIds.filter((id) => id !== ownTree).map((id) => draftTreeVersion(id)),

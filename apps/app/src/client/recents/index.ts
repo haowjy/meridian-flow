@@ -25,6 +25,7 @@ const listeners = new Set<() => void>();
 function browserStore(): DeviceAccountRecentsStore | null {
   if (typeof window === "undefined") return null;
   store ??= new DeviceAccountRecentsStore({
+    // Access the browser getter inside the store's storage-error boundary too.
     getItem: (key) => window.localStorage.getItem(key),
     setItem: (key, value) => window.localStorage.setItem(key, value),
     removeItem: (key) => window.localStorage.removeItem(key),

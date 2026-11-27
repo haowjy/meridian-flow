@@ -1,3 +1,15 @@
+/**
+ * Review changes on the one editor of a draft page (design §6, "Three page states, one editor"):
+ * the reference's text of each changed paragraph as read-only DOM above the draft's (Inline) or
+ * beside every paragraph (Side by side), the words each side alone has marked, and in the right
+ * margin the change's `×` / `✓` pair against Live, or `Take` against another draft. All of it is
+ * decorations: the draft's text stays the editor's, editable, with its one Ctrl+Z history. Only
+ * `takeRow` writes, as an edit.
+ *
+ * The rows are read from the fork's copy and the reference's after the document settles, never
+ * inside a keystroke: decorations map through typing and are rebuilt once the writer pauses, so a
+ * 10,000-word chapter types as fast with Review changes on as off.
+ */
 import { type RoomDocs, readDocument, type ShapeBlock } from "@meridian/document-model";
 import { blocksOf, inlineNodes, loroSyncKey, nodeOf } from "@meridian/loro-prosemirror";
 import { Extension } from "@tiptap/core";
@@ -236,6 +248,7 @@ function pairElement(row: ReviewRow, config: ReviewChangesConfig): HTMLElement |
     element.setAttribute("aria-label", label);
     element.title = label;
     element.dataset.glyph = glyph;
+    // The caret stays where the writer left it: the press is not an edit at the click.
     element.addEventListener("mousedown", (event) => event.preventDefault());
     element.addEventListener("click", (event) => {
       event.preventDefault();

@@ -67,6 +67,12 @@ export type PeerCaretsOptions = {
   user: PeerUser;
 };
 
+/**
+ * Peers' carets and selections, and this editor's own caret on the wire. A peer's selection is a
+ * highlight; its caret is drawn on a layer over the prose (not a widget in the line, which would
+ * split the browser's selection anchor around it), and its name shows while the pointer is on or
+ * beside its line, read from the editor's one pointer source.
+ */
 export const PeerCarets = Extension.create<PeerCaretsOptions>({
   name: "peerCarets",
   addOptions: () => ({ docs: null, presence: null, user: {} }),

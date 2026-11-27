@@ -12,6 +12,24 @@ const EVERYWHERE: readonly AutoPairContext[] = ["prose", "code-fence", "inline-c
 const SOURCE_ONLY: readonly AutoPairContext[] = ["code-fence", "inline-code"];
 const FENCE_ONLY: readonly AutoPairContext[] = ["code-fence"];
 
+/**
+ * The pairs, and the decisions that shaped the list.
+ *
+ * **`*`, `_` and `~` are deliberately absent.** Their completion path is the
+ * markdown autoformat: a writer types `**bold**` and the input rule converts
+ * the whole run to a mark. Auto-closing them would put the closing run in the
+ * document before the rule could see it typed, so the rule would never fire
+ * and the writer would be left holding literal asterisks. Same reasoning, same
+ * decision: see `MarkdownAutoformatExtension`.
+ *
+ * **The backtick pairs in a fence and nowhere else.** In prose `` `code` `` is
+ * the code mark's input rule, for the reason above. Inside an inline code span
+ * a backtick is how the writer ends the span, so completing it would be a
+ * closer they have to delete every time.
+ *
+ * **`'` is absent from prose** because an apostrophe is a letter there:
+ * "don't" is not an unclosed quote.
+ */
 export const EDITOR_AUTO_PAIRS: readonly AutoPairSpec[] = [
   { open: "[", close: "]", contexts: EVERYWHERE },
   { open: "(", close: ")", contexts: EVERYWHERE },

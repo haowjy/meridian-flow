@@ -13,6 +13,7 @@ export type DerivationWatermark = {
 export type DocumentDerivationCut = {
   documentId: DocumentId;
   watermark: DerivationWatermark;
+  /** A copy of the Live room as the cut read it; whoever captured the cut frees it. */
   doc: LoroDocument;
   holderUri: string | null;
 };

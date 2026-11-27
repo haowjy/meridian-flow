@@ -78,6 +78,8 @@ export function blockSourceMap(
         parts.some((part) => !pmNodeMarksEqual(part.node, child))
       )
         valid = false;
+      // PM coalesces adjacent equally marked text. Keep the original runs as
+      // subranges of that node, rather than granting authority across syntax gaps.
       let offset = 0;
       for (const part of parts) {
         runs.push({

@@ -1,3 +1,17 @@
+/**
+ * How big is this thing, really?
+ *
+ * The viewer measures its transform host's layout box, which means the caller
+ * has to give that host a size — and the natural size of a rendered SVG is not
+ * something CSS will tell you. Mermaid emits `width="100%"` with the real
+ * dimensions in the `viewBox`, so a wrapper left to itself collapses to zero
+ * and the diagram fits to nothing.
+ *
+ * Reading the `viewBox` answers it without touching the SVG, which is the
+ * whole point of owning the viewer (svg-pan-zoom stripped the attribute to get
+ * the same number).
+ */
+
 import type { ViewerSize } from "./viewer-math";
 
 export function intrinsicContentSize(element: Element): ViewerSize | null {

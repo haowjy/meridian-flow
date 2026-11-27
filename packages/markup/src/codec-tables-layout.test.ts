@@ -93,6 +93,9 @@ describe("tables and Layout round-trip corpus", () => {
   });
 
   it("carries a resized column across a merged cell, which spans two grid slots", () => {
+    // What the editor produces: merge a header row, then drag the boundary of
+    // its second grid column. prosemirror-tables sizes `colwidth` to the cell's
+    // colspan and leaves the untouched slots at zero.
     const cell = (type: "table_header" | "table_cell", text: string, attrs = {}) =>
       schema.node(type, attrs, [paragraph(t(text))]);
     const table = schema.node("table", null, [
@@ -695,6 +698,8 @@ describe("tables and Layout round-trip corpus", () => {
       'widths="174"',
     );
 
+    // Zero is not malformed: it is prosemirror-tables' "this column has no
+    // width", which a resize leaves in every slot it did not touch.
     expect(codec.serializeBlock(withColwidth([0]), UNSCOPED_DOCUMENT_LINKS)).not.toContain(
       "widths=",
     );

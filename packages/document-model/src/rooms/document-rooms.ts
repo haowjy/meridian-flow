@@ -15,6 +15,20 @@ export interface RoomSync {
   update: Uint8Array | null;
 }
 
+/**
+ * The one door to a document room on the server (design §4). Every server read or write of a
+ * document goes through it: the socket handler (`write`, `sync`, `subscribe`), commands, presses,
+ * derivations, agent-edit and `./mf doc` (`read`, `commit`, `seed`).
+ *
+ * A fork room `fork:<draft>:<doc>` is loaded with its document's Live room and kept forwarded:
+ * every Live batch is sent to Live's subscribers first and then imported into each loaded fork of
+ * that document, and a fork loaded cold imports Live first. So a caller never forwards; whatever it
+ * reads from a fork is already up to Live. (Design §4 lists `forward` and `load` as methods; both
+ * are inside `read`, `write` and `commit` here.)
+ *
+ * `Tx` is the host's transaction; the adapter writes snapshot rows in it and imports a commit's
+ * batch into the room only once it has committed.
+ */
 export interface DocumentRooms<Tx> {
   read(room: DocumentRoom, options?: { peer?: PeerId }): Promise<RoomDocs>;
 

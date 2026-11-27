@@ -1,3 +1,11 @@
+/**
+ * The project's one live subscription to the server's wake hints. A hint carries no state: it says
+ * a read is stale, and the read comes again. The tree itself is not read this way (the project's
+ * list arrives as Loro updates), so the hints left are the chat list, a draft's list (and, for a
+ * Work's draft, its row in the Works list: its count and its lifecycle), the project's sources, and
+ * what Mars reads of the Agent files, and the writer's connections.
+ * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
+ */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";

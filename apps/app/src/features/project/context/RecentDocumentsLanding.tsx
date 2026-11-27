@@ -183,6 +183,7 @@ function RecentDocumentRow({
     },
     address?.scheme === "user" ? "account" : "project",
   );
+  // A link can't be pressed; `ListRow` names a selected link instead.
   const { "aria-pressed": _pressed, ...selectionProps } = row.rowProps;
   const listRow = (
     <ListRow

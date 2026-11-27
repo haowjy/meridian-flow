@@ -48,10 +48,19 @@ export interface AgentWriteRecord {
 export interface AgentEditRooms {
   readRoom(documentId: string): Promise<AgentRoomRead>;
 
+  /**
+   * Store one write's batch, and its record, in the host's command: its docs' snapshots and the
+   * record in the command's transaction, the import into the room after it commits.
+   */
   save(room: DocumentRoom, batch: Uint8Array, record: AgentWriteRecord | null): Promise<void>;
 }
 
 export interface AgentEditRoomsHost<Tx> {
+  /**
+   * The room a read of `documentId` goes to for this call's chat: the draft's fork room for a
+   * Draft chat, whether or not the draft has written there, and the Live room for a Live chat or a
+   * document only the draft holds. Never "does the fork exist".
+   */
   roomFor(documentId: string): Promise<DocumentRoom>;
   transaction(): Tx;
   origin: RoomOrigin;

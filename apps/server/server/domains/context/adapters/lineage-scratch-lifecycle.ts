@@ -33,6 +33,8 @@ export function createDrizzleLineageScratchLifecycle(
   },
   sourceHints: Pick<ProjectHintPort, "publishSourcesHint"> | undefined = liveness?.hints,
 ): LineageScratchLifecycle {
+  // Use the Scratch namespace boundary already held by context commands. Taking
+  // a second lineage lock after that boundary would invert catalog lock order.
   async function lock() {
     await lockContextNamespaces(db, [{ scheme: "scratch", workId: null }]);
   }
@@ -89,8 +91,12 @@ export function createDrizzleLineageScratchLifecycle(
           .select({ id: threads.rootThreadId, projectId: threads.projectId })
           .from(threads)
           .where(inArray(threads.id, [...threadIds]));
+        // Draft writes decide liveness under the lineage lock, ahead of the namespaces, so a
+        // trash or restore waits for a write in flight and the next write sees the new state.
         const rootIds = [...new Set(roots.map((root) => root.id))].sort();
         await lockLineageOwners(db, rootIds);
+        // The project's tree list next: a chat's end changes which sources the list's admissions
+        // may write, and they read that under this key.
         const projectIds = [...new Set(roots.map((root) => root.projectId))].sort();
         for (const projectId of projectIds) await lockProjectTreeList(db, projectId);
         await lockContextNamespaces(db, [
@@ -157,6 +163,8 @@ export function createDrizzleLineageScratchLifecycle(
             restored.map((source) => source.id),
           ),
         );
+      // The registry filters deleted ancestors and only settles once.
+      // Reconciliation already holds the namespaces in this transaction.
       await arrivals.settle(content.map((document) => document.id as DocumentId));
     }
   }

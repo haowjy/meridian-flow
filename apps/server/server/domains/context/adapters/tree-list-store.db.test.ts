@@ -444,6 +444,7 @@ describe("the tree list store (postgres)", () => {
       const dir = mkdtempSync(path.join(tmpdir(), "tree-list-kill-"));
       const ready = path.join(dir, "ready");
       const child = spawn(
+        // Node itself, not the `tsx` wrapper: SIGKILL on the wrapper would leave the writer alive.
         process.execPath,
         [
           "--import",

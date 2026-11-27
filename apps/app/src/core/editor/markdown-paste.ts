@@ -1,3 +1,27 @@
+/**
+ * The markdown door for clipboard text.
+ *
+ * Everything in a Meridian document is markdown, so text arriving on the
+ * clipboard is read as the document it describes rather than the characters it
+ * contains: a writer, or the AI relay they are working with, who pastes
+ * headings, lists, fences, tables and links gets headings, lists, fences,
+ * tables and links. `@meridian/markup`'s `markdownCodec` is the same GFM parser
+ * the wire uses, so nothing here has to know what markdown looks like. Pasted
+ * `[[Name]]` parses as text here. The wikilink paste extension, where it is
+ * mounted, contributes a parse extension that keeps an escaped `\[[` visible
+ * to its transform, which spells it out again (`links/WikilinkPasteExtension.ts`).
+ *
+ * `markdownCodec` and not `mdxCodec`: the clipboard carries text from anywhere,
+ * and MDX reads `<` and `{` as syntax. Fiction contains both.
+ *
+ * The door only opens when it has something to offer. ProseMirror's own
+ * plain-text paste already produces paragraphs of literal text, so a parse that
+ * amounts to those same paragraphs is declined and the default runs instead:
+ * ordinary pasted prose never takes a detour through a parser that could
+ * re-spell it. `markdownPasteAddsStructure` is that decision, made on the
+ * parsed blocks rather than on a guess about the raw text.
+ */
+
 import { markdownCodec, mdxCodec, type SerializedBlock } from "@meridian/markup";
 import { isBodyText } from "@meridian/prosemirror-schema";
 import {
@@ -79,6 +103,8 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
 ) => {
   const schema = view.state.schema;
   let content = copied.content;
+  // A cell selection's slice is open around its table. The text codec needs the enclosing
+  // blocks too; throwing here also prevents ProseMirror from copying the parallel HTML slice.
   if (content.firstChild?.type.spec.tableRole === "row") {
     content = Fragment.from(schema.nodes.table.create(null, content));
   }

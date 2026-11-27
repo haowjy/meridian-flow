@@ -85,6 +85,10 @@ export interface BindCopiedBlocksInput {
 }
 
 export interface LinkBinder {
+  /**
+   * Outside any transaction: open the holder's scope, parse, prepare, assign
+   * (fresh, or against the current document) and register minted ahead refs.
+   */
   bindMarkdown(input: BindMarkdownInput): Promise<BoundWrite>;
   bindCopiedBlocks(input: BindCopiedBlocksInput): BoundWrite;
   bindStatic(markdown: string, filetype?: string | null): BoundWrite;

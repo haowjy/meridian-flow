@@ -83,6 +83,11 @@ type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: Hunk[] };
 const units: UnitMemo = { next: new WeakMap() };
 const sideBoundary = {};
 
+/**
+ * The ordered base nodes, a boundary, then the ordered draft nodes identify one unit. A weak trie
+ * retains small multi-paragraph runs without retaining old documents; the boundary distinguishes
+ * [a] → [b, c] from [a, b] → [c]. Cached offsets belong to the unit, not its place in the document.
+ */
 function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   let memo = units;
   const step = (node: object) => {
@@ -147,6 +152,12 @@ function keyHunks(B: Side, S: Side, out: Hunk[]): void {
   }
 }
 
+/**
+ * An unmatched interval may include a paragraph's changed tail and whole removed/added blocks.
+ * Keep complete blocks independent of partial edge blocks; pair complete replacements in order and
+ * detach excess blocks. Refinement can expose a partial edge by retaining a leading block token,
+ * so normalization runs after refinement. Splits/joins with no complete block stay whole.
+ */
 function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
   const blockAt = (side: Side, pos: number) =>
     pos === side.toks.length ? side.blocks.length : side.blockOf[pos];
@@ -201,6 +212,12 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
   return out;
 }
 
+/**
+ * Token diff of one gap. Content (words, punctuation, inline and whole-block atoms) is aligned first;
+ * a paragraph start then pairs with the start of the side paragraph its first aligned word landed in.
+ * Every paragraph start has the same token, so aligning them as ordinary tokens lets a diff pair
+ * unrelated paragraphs, or read a split as "this word left the paragraph".
+ */
 function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   const bt = B.toks;
   const st = S.toks;

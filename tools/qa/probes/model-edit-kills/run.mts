@@ -337,6 +337,9 @@ const cases: ModelEditCase[] = [
       await child.script(oneCall(path));
       await send(child, h, thread);
       await child.at("command.afterClaim");
+      // Past the timeout the runtime resolves the key and waits on the held claim. With the
+      // pool at 2 (the claim's transaction and the session lock hold both connections) it waits
+      // for a connection, so no database lock waiter shows; wait out the timeout instead.
       await new Promise((done) => setTimeout(done, 2000));
       await child.release("command.afterClaim");
       await waitForAssistantTurn(h, thread);

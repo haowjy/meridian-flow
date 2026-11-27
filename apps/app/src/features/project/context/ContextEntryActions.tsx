@@ -143,6 +143,7 @@ export function useEntryMenu(
 ): RowMenu | undefined {
   const selection = useOptionalEntrySelection();
   const [group, setGroup] = useState<SelectionGroup | null>(null);
+  // Joined so a caller's fresh array of the same actions doesn't re-register every render.
   const grants = SELECTION_GRANTS.filter((grant) => actions.includes(grant)).join(" ");
   useLayoutEffect(
     () => selection?.grant(entry, grants ? (grants.split(" ") as SelectionGrant[]) : [], list),

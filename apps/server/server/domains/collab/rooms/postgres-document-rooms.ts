@@ -76,6 +76,14 @@ const FORK_RETIRE_BATCH = 200;
 
 export interface PostgresDocumentRooms extends DocumentRooms<DrizzleDb> {
   close(): Promise<void>;
+  /**
+   * Ends the documents' loaded rooms, Live and forks, without saving: timers stop, unsaved
+   * batches are dropped and the docs are freed. A purge calls it after its transaction commits
+   * (a rollback leaves the rooms as they were); until then a save writes nothing for a purged
+   * document (`writeRows`). It also deletes the Live rows of documents that never got a
+   * `documents` row (an import that stopped wrote their first states ahead of their creates); a
+   * document with a row keeps its rows here: its row's delete, or the purge, takes them.
+   */
   end(documentIds: readonly DocumentId[]): Promise<void>;
   endRooms(rooms: readonly DocumentRoom[]): Promise<void>;
   retireEmptyForks(now?: Date): Promise<number>;
@@ -102,6 +110,11 @@ type Written = { bytes: number; docs: number; stored: RoomVersion };
 const NOTHING_WRITTEN: Written = { bytes: 0, docs: 0, stored: new Map() };
 type ForkRoom = Extract<DocumentRoom, { kind: "fork" }>;
 
+/**
+ * Writes a fork's row, or sets what it says from a read of the fork now (`docs`, a draft copy):
+ * whether it is pending, Live's version under its removals, and whether the writer typed in it.
+ * Under the document's lock. Answers whether the pending flag changed: the draft's count moves.
+ */
 export async function markFork(tx: DrizzleDb, room: ForkRoom, docs: RoomDocs): Promise<boolean> {
   const changes = changedBlocks(docs);
   const pending = changes.length > 0;
@@ -152,6 +165,22 @@ function writerWrote(docs: RoomDocs, changes: readonly { blocks: readonly string
   );
 }
 
+/**
+ * `DocumentRooms` on Postgres (design §4): a room's docs live in this process, loaded together from
+ * their `document_snapshots` rows, saved (the rows of the docs that changed) on the debounce or on
+ * `flush`, forwarded into loaded forks, and freed together on unload.
+ *
+ * Every save, whoever asks for it, runs under the document's advisory lock and first imports any
+ * stored row this process's copy lacks (a debounced save racing a command's commit, or a deploy
+ * overlap where two processes save one room), sending what that brings to the room's subscribers
+ * and loaded forks like any other batch, so a save never writes a row older than the one it
+ * replaces.
+ *
+ * The cache is filled only outside a transaction: a read or commit inside one, for a room this
+ * process has not loaded, builds its copy from the rows the transaction sees, so no loaded room
+ * ever holds state a rolled-back transaction wrote. A read inside a transaction also imports the
+ * rows the room lacks, which is how a command reads its own seed or commit back.
+ */
 export function createPostgresDocumentRooms(input: {
   db: Database;
   shape: ShapeSchema;
@@ -171,6 +200,11 @@ export function createPostgresDocumentRooms(input: {
 
   const lockRoom = (tx: DrizzleDb, room: DocumentRoom) => lockDocumentMutation(tx, room.documentId);
 
+  /**
+   * Runs a commit or seed on the caller's ambient transaction, which is what `tx` names when the
+   * caller is in one, or on one of its own: its lock and rows must be one transaction's, and its
+   * import into the room waits for that transaction's commit.
+   */
   const inTransaction = <T>(given: DrizzleDb, work: (tx: DrizzleDb) => Promise<T>) =>
     isInDrizzleTransaction()
       ? work(currentDrizzleDb(given))
@@ -228,6 +262,7 @@ export function createPostgresDocumentRooms(input: {
 
   const subscribed = (name: string) => (listeners.get(name)?.size ?? 0) > 0;
 
+  /** The loaded room, loading it (and, for a fork, its Live room first) outside any transaction. */
   async function load(room: DocumentRoom): Promise<Loaded> {
     if (closed) throw new Error("Document rooms are closed");
     const name = loroRoomName(room);
@@ -332,6 +367,7 @@ export function createPostgresDocumentRooms(input: {
       if (loaded.dirty.size === 0) cancelSave(loaded);
     }
     if (changed.length === 0) {
+      // Ops held for dependencies this copy lacks: another tab may hold them, so it gets the batch.
       if (pending && batch) emitTo(loaded.room, batch, origin);
       return;
     }
@@ -489,6 +525,7 @@ export function createPostgresDocumentRooms(input: {
         runInDrizzleTransaction(db, async () => {
           const tx = currentDrizzleDb(db);
           await lockRoom(tx, loaded.room);
+          // The room ended while this save waited for the lock.
           if (loaded.docs.isFreed) return;
           const merge = await mergeStored(tx, loaded.name, loaded.docs);
           if (merge) {
@@ -627,6 +664,8 @@ export function createPostgresDocumentRooms(input: {
             }
           }
           for (const [docKey, mark] of marks) {
+            // Kept at its mark, and ripe again only `historyMs` from now: each unload until the
+            // fork moves on would otherwise rebuild Live and its forks for nothing.
             if (held.has(docKey)) {
               await tx
                 .update(documentSnapshots)
@@ -661,6 +700,13 @@ export function createPostgresDocumentRooms(input: {
     });
   }
 
+  /**
+   * Rewrites one row as `doc` cut at `mark`, and moves the mark to where the doc stands now, so
+   * the next compaction cuts there. Returns the bytes the row lost: 0 for no cut (no mark, or one
+   * the doc lacks), and 0 where the cut would not shrink the row (a doc little changed since its
+   * mark), which keeps its history. Either way the row holds the doc as it is now: a fork's doc was
+   * forwarded to Live before its cut, and a row left behind Live's cut could never forward again.
+   */
   async function cutRow(
     tx: DrizzleDb,
     roomKey: string,
@@ -703,6 +749,7 @@ export function createPostgresDocumentRooms(input: {
       loaded.dirty = new Set();
       cancelSave(loaded);
       if (rooms.get(loaded.name) === loaded) rooms.delete(loaded.name);
+      // A save already running finishes with the docs it started on.
       await loaded.queue;
       loaded.docs.free();
       settleIfIdle(loaded);
@@ -730,6 +777,7 @@ export function createPostgresDocumentRooms(input: {
     const live = await copyInTransaction(tx, liveRoomOf(room), freshServerPeerId());
     try {
       const docs = await build(tx, room, live, peer);
+      // A copy owns the Live copy it reads through; `fork` makes one that does.
       const copy = docs.fork(peer);
       docs.free();
       return copy;

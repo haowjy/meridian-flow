@@ -52,6 +52,8 @@ export function FormattingMenu({ editor }: { editor: Editor }) {
 
   useFormattingMenuDoors(editor, setAnchor);
 
+  // Held through the close so the menu fades out with its contents rather than
+  // emptying a frame before it goes.
   const lastModel = useRef<FormattingMenuModel | null>(null);
   if (anchor) lastModel.current = formattingMenuModel(editor);
   const model = lastModel.current;

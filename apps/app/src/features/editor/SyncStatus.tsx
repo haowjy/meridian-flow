@@ -57,6 +57,7 @@ export function SyncStatus({ session }: { session: DocumentSession }) {
   useEffect(
     () =>
       session.subscribe((next) => {
+        // Read with the snapshot it belongs to, not when React runs the updater.
         const deliverable = session.canDeliverUnsentEdits();
         setStored((current) =>
           current.session === session

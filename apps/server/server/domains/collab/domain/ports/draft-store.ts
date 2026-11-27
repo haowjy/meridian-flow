@@ -19,8 +19,10 @@ export type DraftOwnerView = {
 export interface DraftStore {
   ownerOf(draftId: DraftId): Promise<DraftOwnerView | null>;
   ofOwner(owner: DraftOwner): Promise<Draft | null>;
+  /** Caller's transaction, after the owner locks: `FOR NO KEY UPDATE`; null when missing. */
   lock(draftId: DraftId): Promise<Draft | null>;
   byIds(draftIds: readonly DraftId[]): Promise<Draft[]>;
+  /** Purge only: a Work's drafts, deleted ones included, and those these lineages' roots name. */
   namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
 }
 

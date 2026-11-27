@@ -26,6 +26,7 @@ export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
   const projectSources = useProjectContextSources(projectId);
   const accountSources = useAccountContextSources();
   const versions = [project, account].map((list) => list.snapshot?.version);
+  // The replay's input is each list's version.
   return useMemo(() => {
     if (!projectSources || !accountSources) return null;
     if (![project, account].every(({ session, snapshot }) => session && snapshot)) return null;
@@ -77,6 +78,7 @@ export function useDocumentTrash(projectId: string) {
     [query.data],
   );
   const { refetch } = query;
+  // `rows` changes with the lists, not with the facts: an unanswered row asks again per change.
   useEffect(() => {
     if (rows?.some((row) => !kept.has(row.nodeId))) void refetch({ cancelRefetch: false });
   }, [rows, refetch]);

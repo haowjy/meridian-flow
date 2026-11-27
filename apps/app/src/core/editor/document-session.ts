@@ -56,6 +56,11 @@ export type DocumentSessionStatus =
   | "access-lost"
   | "destroyed";
 
+/**
+ * The key a room's session goes by in this tab (registry, replacement, reading position, fence
+ * quarantine): the bare document id for Live, which keeps what earlier builds stored under it,
+ * and the room's name for a fork.
+ */
 export function sessionRoomKey(room: DocumentRoom): string {
   return room.kind === "live" ? room.documentId : loroRoomName(room);
 }
@@ -308,6 +313,8 @@ export class DocumentSession {
         void store.close();
         return;
       }
+      // Through the binding like a peer's batch: past the bind horizon an editor may show the
+      // copy already.
       if (loaded.snapshots.size > 0) this.importRemote(encodeEnvelope(loaded.snapshots), false);
       for (const batch of loaded.updates) this.importRemote(batch, false);
       this.forwardFromLive();

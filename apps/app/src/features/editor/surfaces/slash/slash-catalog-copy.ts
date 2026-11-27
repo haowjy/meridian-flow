@@ -28,6 +28,14 @@ function headingItem(level: HeadingLevel): SlashCommandItem {
   };
 }
 
+/**
+ * The rows, in the order a writer meets them (§5.7): retype this block first,
+ * make a new object second.
+ *
+ * Built per call rather than held as a constant, because the `t` macros must
+ * resolve against whatever locale is active when the menu OPENS — a locale
+ * switch has to relabel the menu without touching the editor's lifetime.
+ */
 export function documentSlashCatalog(
   requestImageUpload: (at: EditorAnchor) => void,
 ): SlashCommandCatalog {

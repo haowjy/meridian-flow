@@ -20,6 +20,8 @@ export function ProjectRouteBootstrap({
   const queryClient = useQueryClient();
   const committedRef = useRef<Committed | null>(null);
   const [committed, setCommitted] = useState<Committed | null>(null);
+  // A layout commit, not render: cache writes notify other subscribers, and
+  // this still lands before the shell's queries subscribe.
   useLayoutEffect(() => {
     const current = committedRef.current;
     if (current?.projectId === project.id && (current.seeded || !data)) return;

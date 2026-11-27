@@ -8,6 +8,10 @@ export interface Drafts {
   lockForWrite(owner: DraftOwner, draftId: DraftId, options?: WorkWriteOptions): Promise<Draft>;
   ownerOf(draftId: DraftId): Promise<DraftOwnerView | null>;
   ofOwner(owner: DraftOwner): Promise<Draft | null>;
+  /**
+   * Caller's transaction, after its Work row locks: `FOR NO KEY UPDATE` on the draft; null when
+   * missing. The press and purge take this.
+   */
   lock(draftId: DraftId): Promise<Draft | null>;
   byIds(draftIds: readonly DraftId[]): Promise<Draft[]>;
   namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;

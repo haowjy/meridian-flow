@@ -11,6 +11,11 @@
   pointer-events: none;
 }
 
+/* Clickable only once it is legible. `step-end` holds the hit target off for
+   the whole fade, so a reveal that lands under a resting pointer cannot eat the
+   click the writer aimed at the prose it is fading in over. Leaving is the
+   other way round — the base rule has no `pointer-events` transition, so a
+   closing surface stops taking clicks on the frame it starts to fade. */
 .meridian-table-chrome[data-state="open"] {
   opacity: 1;
   pointer-events: auto;
@@ -52,6 +57,11 @@
   height: 11px;
 }
 
+/* The resize widget is a real DOM sibling inside the cell, so the moment a
+   boundary is hovered the cell's paragraph stops being the last child, its
+   bottom margin comes back, and every row in the column grows by it. Anchoring
+   the rule to the last PARAGRAPH ignores the widget and holds the row still —
+   measured: 41px cells with the hairline up and down. */
 .meridian-editor .ProseMirror td > p:last-of-type,
 .meridian-editor .ProseMirror th > p:last-of-type {
   margin-bottom: 0;

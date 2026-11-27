@@ -112,6 +112,8 @@ export function ProjectLibrary() {
                         >
                           {title}
                         </h3>
+                        {/* The account locale reconciles while streamed route chunks hydrate.
+                            This timestamp can differ from the server's English snapshot. */}
                         <p
                           suppressHydrationWarning
                           className="shrink-0 cursor-text select-text text-xs text-muted-foreground"

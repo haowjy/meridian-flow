@@ -43,6 +43,7 @@ export class DocumentHistory {
     this.steps.endStep();
   }
 
+  /** Frees the history's Loro managers: before the docs are freed. */
   destroy(): void {
     this.active = false;
     this.steps.destroy();
@@ -122,6 +123,7 @@ export class DocumentHistory {
     if (shown === this.shown) return;
     this.shown = shown;
     for (const listener of this.listeners) listener();
+    // Not into one composing: a dispatch mid-composition commits its first keystroke as text.
     for (const editor of this.editors)
       if (editor !== source && !editor.isDestroyed && !editor.view.composing)
         editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));

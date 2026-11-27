@@ -53,6 +53,8 @@ export function ReviewChangesSurface({ editor }: { editor: Editor }) {
   const against = reference?.kind ?? "live";
   const referenceDocs = reference && reference.kind !== "live" ? reference.docs : null;
 
+  // Nothing to review closes onto the plain draft, once the list agrees the copy is not still
+  // syncing the draft's changes in.
   const closeIfEmpty = () => {
     const { mode } = latest.current;
     const left = rows.current?.filter((row) => !hidden.has(row.id));
@@ -195,6 +197,7 @@ function useTargetGone(mode: ReturnType<typeof useReviewMode>): boolean {
   if (!mode) return false;
   const target = referenceOf(mode.target);
   if (target.kind === "file") return trees.isComplete && trees.find(target.documentId) === null;
+  // Only a draft of the shown Work knows its sibling drafts.
   return (
     target.kind === "draft" &&
     drafts !== null &&

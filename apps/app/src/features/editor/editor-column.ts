@@ -1,3 +1,38 @@
+/**
+ * The editor's prose column — ONE geometry, owned here.
+ *
+ * Every editor surface (tracked and temp) shares a centered 48rem column.
+ * The document toolbar row starts exactly where the prose starts, so nothing
+ * shifts when switching tabs or when a host mounts the editor without it.
+ *
+ * The ProseMirror node spans the whole pane, so every press, sweep and drag in
+ * the pane is inside `view.dom`. Its own padding is the whole margin: the
+ * centring (whatever the pane has beyond 48rem, halved) plus the inset below.
+ * The text column sits where a centered 48rem wrapper with these insets put it:
+ *
+ *   pane (container)   leading (handle side)   trailing
+ *   < @2xl (42rem)     48                       32
+ *   @2xl – @3xl        56                       56
+ *   >= @3xl (48rem)    64                       64
+ *
+ * Every step answers to the PANE (EditorSurfaceFrame's `@container`), not the
+ * viewport: the side's document, a narrow window and the phone all get
+ * the narrow tiers because their pane is narrow, whatever the screen.
+ *
+ * Both gutters are load-bearing, because chrome drawn past the text edge lives
+ * in the manuscript's own scroll pane, which clips it:
+ * - LEADING holds the block handle and the table's row grips, so it never drops
+ *   below `MARGIN_GUTTER_MIN` (`surfaces/blocks/block-geometry.ts`, 48px).
+ * - TRAILING holds less: a full-width table's Add column tab, which reaches
+ *   `ADD_TAB_GAP + ADD_TAB` = 27px past the table (`surfaces/table/table-anchors.ts`),
+ *   so 32px is its floor.
+ * A narrow pane gives the difference back to the line on the trailing side
+ * (#744); wide panes stay symmetric around the centered 48rem column.
+ *
+ * Change any inset only by editing this file; never re-encode these classes
+ * at a call site.
+ */
+
 import { cn } from "@/lib/utils";
 
 export const editorColumnChrome =
@@ -13,6 +48,21 @@ export const editorColumnChrome =
  */
 export const editorColumnFill = "flex min-h-full flex-1 flex-col";
 
+/**
+ * Scroll past end: the manuscript keeps scrolling until the last block sits in
+ * the upper half of the pane, so a writer never has to type against the bottom
+ * edge of the screen, as Notion does.
+ *
+ * Half a viewport, which parks the last line just above the pane's midline at
+ * desktop geometry. Viewport-relative rather than a fixed height so the reserve
+ * stays proportional from a laptop to a large display.
+ *
+ * It belongs to the ProseMirror node itself rather than a wrapper: the reserve
+ * is click territory, and a press inside the editable element is ProseMirror's
+ * to answer with the caret at the end of the document. Chrome that measures the
+ * manuscript reads block boxes, never this one, because the prose node keeps
+ * answering `posAtCoords` far below the last line.
+ */
 export const editorProseScrollPastEnd = "pb-[50vh]";
 
 /**

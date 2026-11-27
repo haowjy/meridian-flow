@@ -53,6 +53,11 @@ export function focusMain(): void {
   );
 }
 
+/**
+ * A page load gives main the focus, so the writer's first keys land in its text rather than in
+ * the side panel's chat; not on a touch screen, where focusing a text opens the on-screen
+ * keyboard over it.
+ */
 if (typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches) focusMain();
 
 export function joinMain(surface: HTMLElement, { text }: { text: boolean }): () => void {

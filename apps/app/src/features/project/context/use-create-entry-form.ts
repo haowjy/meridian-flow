@@ -86,6 +86,10 @@ export function useCreateEntryForm({
   };
 }
 
+/**
+ * The name and kind a file typed at `path` is stored with: in an Agents location, the literal
+ * name as code text (Mars reads those bytes); anywhere else, the name codec's.
+ */
 function storedNameAt(
   scheme: ProjectContextTreeScheme,
   path: string,

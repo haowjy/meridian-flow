@@ -66,6 +66,11 @@ export function loadEdit(docs: RoomDocs, stored: StoredEdit): Edit {
   };
 }
 
+/**
+ * The edit made in `keys` since `since`, stored as it left `docs` (an AI write, design §5): every
+ * op from `since` to now in those docs is the write's, so a caller passes a copy that has taken
+ * nothing else in since. A doc `since` lacks is one the write made.
+ */
 export function editSince(docs: RoomDocs, since: RoomVersion, keys: Iterable<DocKey>): StoredEdit {
   const edit: Edit = { values: new Map(), texts: new Map(), read: new Map() };
   for (const key of keys) {

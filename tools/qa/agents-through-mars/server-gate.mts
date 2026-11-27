@@ -9,6 +9,7 @@ import { loopbackOrigin } from "../../dev/lib/dev-ports.ts";
 import { requireRunningStack } from "../../dev/lib/dev-stack.ts";
 
 const root = resolveCurrentRepoRoot();
+/** stdout and stderr together: `thread send` reports its tool results on stderr. */
 const mf = (...args: string[]) => {
   const run = spawnSync("./mf", args, { cwd: root, encoding: "utf8" });
   const output = `${run.stdout}${run.stderr}`;
@@ -62,7 +63,13 @@ try {
     const slug = `gate-${Date.now().toString(36)}`;
     const path = `agents://agents/${slug}.md`;
     const projectId = mf("project", "default").trim();
-    mf("doc", "put", path, "--text=---\nname: Gate\neffort: 7\n---\n\nBody.\n");
+    mf(
+      "doc",
+      "put",
+      path,
+      // `=` form: the parser reads a separate value that starts with a dash as another option.
+      "--text=---\nname: Gate\neffort: 7\n---\n\nBody.\n",
+    );
     try {
       const saved = http("POST", "/api/agents/save", {
         projectId,

@@ -59,6 +59,10 @@ export type TurnInverseQuery = {
   documentIds?: DocumentId[];
   path?: string;
   principal?: Principal;
+  /**
+   * Documents the caller writes after the inverse, in the same transaction: a commit takes their
+   * keys with its own, in one ID order after the list keys.
+   */
   alsoLock?: readonly DocumentId[];
   declared?: OwnerLocks;
   learned?: Learned;
@@ -87,6 +91,12 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
+  /**
+   * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
+   * reply's tree receipts and the grants of every document it writes.
+   * Read with no lock, for the caller to lock them first and declare them in the query.
+   * Throws `TreeOwnersMoved` when the documents move under the read.
+   */
   ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
   treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
   restoreStates(
@@ -127,6 +137,7 @@ async function prepare(
 ): Promise<{ plans: PreparedDocumentInverse[]; undoneByWriter: boolean }> {
   let undoneByWriter = false;
   const planOf = async (document: InverseDocument): Promise<PreparedDocumentInverse> => {
+    // The server answers its other requests between documents.
     await setImmediate();
     const entryPlanner = createCapturedReversalPlanner(document, query);
     try {

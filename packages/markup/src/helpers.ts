@@ -65,6 +65,11 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
     .children;
 }
 
+/**
+ * Keep canonical HTML tables opaque while container codecs reparse their
+ * serialized children into mdast. Interior `<p>`, `<thead>`, and nested table
+ * tags otherwise split one raw-HTML block into several Markdown blocks.
+ */
 function parseWithOpaqueHtmlTables(
   serialized: string,
   parseMarkdown: (content: string) => MdastRoot,
@@ -223,6 +228,10 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
   });
+  // A hard break ending the text has no Markdown spelling (`\` there is a
+  // literal backslash), so it escalates to the tag, as a sized picture does,
+  // and so does every break before it: remark writes a `\` break followed by
+  // raw HTML as a literal backslash.
   for (let index = tokens.length - 1; tokens[index]?.type === "break"; index--) {
     ensureBlockCodecRegistered("hard_break", ctx);
     tokens[index] = { type: "html", value: HARD_BREAK_TAG, marks: [] };
@@ -559,6 +568,7 @@ function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeConte
       mark.type.name === "code"
         ? plainText(group)
         : encodeLineEndings(inlineMdastToMarkdown(group, ctx));
+    // Nothing to wrap (text that is only a line ending): bare delimiters would read as a rule.
     if (inner === "") out.push(...inlineTokensToMdast(group, ctx));
     else out.push(...inlineMarkdownToMdast(codec.serialize(inner, mark.attrs, ctx), ctx));
   }
@@ -566,6 +576,11 @@ function inlineTokensToMdast(tokens: readonly InlineToken[], ctx: SerializeConte
   return out;
 }
 
+/**
+ * A line ending at the start of a mark's text stops the delimiter opening, and
+ * a blank line ends the paragraph; both lose or break the mark. A character
+ * reference reads back as the same text.
+ */
 function encodeLineEndings(markdown: string): string {
   return markdown.replace(/^\n+|\n(?=\n)/g, (run) => "&#xA;".repeat(run.length));
 }

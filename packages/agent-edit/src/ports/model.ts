@@ -65,6 +65,12 @@ export interface AgentEditModel extends DocumentModel {
 
   unitEditors(block: BlockRef, path: readonly number[]): EditorOf;
 
+  /**
+   * Every top-level block with its display hash and ProseMirror node, built in one walk so
+   * `ref`, `id`, `hash` and `node` always describe the same block.
+   *
+   * Projects on the document it is given. Hashes cover the blocks it returns.
+   */
   projectBlocks(doc: DocHandle): ProjectedBlock[];
 }
 

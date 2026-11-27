@@ -21,9 +21,13 @@ export function projectWorkDraftFiles(
     items.map((item) => {
       const live = tree?.findDocument(item.documentId);
       const location = live ? parseContextUri(live.uri) : null;
+      // Until the tree answers, a document the draft moves is live where it was, not at the
+      // draft's new path: opening it there would land on an address nothing holds yet.
       const movedFrom = item.tree?.movedFrom;
       return {
         documentId: item.documentId,
+        // The item owns a drafted move's current identity. The live tree still names the
+        // old location until Apply, but review surfaces must agree with the open draft editor.
         documentName: movedFrom
           ? item.documentName
           : live

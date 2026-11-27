@@ -129,8 +129,13 @@ export async function deriveDocumentOutputs(
   };
 }
 
+/**
+ * The cut's blocks in document order as Live reads them, normalized and hashed here, before the
+ * certify transaction: nothing downstream reads text back under the lock.
+ */
 export function createCutReader(deps: {
   schema: Schema;
+  /** A thunk: the runtime that owns the codec is built after the derivation service. */
   codec(): AgentEditCodecFactory;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): ReadCut {

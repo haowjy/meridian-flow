@@ -93,12 +93,17 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
   }
 }
 
+/**
+ * A bold element whose own style says it is not bold. Google Docs wraps its whole clipboard in
+ * `<b style="font-weight:normal">`, and reading that as bold makes every pasted word bold.
+ */
 function declaresNormalWeight(element: Element): boolean {
   if (element.localName !== "b" && element.localName !== "strong") return false;
   const weight = (element as HTMLElement).style?.fontWeight;
   return weight === "normal" || weight === "400";
 }
 
+/** Values `flattenDom` writes, and nothing else. */
 const NESTING_VALUES: Record<string, RegExp> = {
   "data-path": /^[-|>]{1,64}$/,
   "data-kind": /^ordered$/,

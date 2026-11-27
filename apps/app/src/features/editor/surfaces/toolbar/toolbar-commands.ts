@@ -234,6 +234,7 @@ function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   if (level) return editor.chain().focus().toggleHeadingLevel({ level }).run();
 
   switch (id) {
+    // Body text from any text block, a fence included: a level change touches paragraphs only.
     case "paragraph":
       return editor.chain().focus().setParagraph().run();
     case "bulletList":

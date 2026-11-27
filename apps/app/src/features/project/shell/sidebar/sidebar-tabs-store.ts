@@ -52,6 +52,7 @@ export const useSidebarTabs = create<SidebarTabs>()(
         const kept = Array.isArray(stored) ? inStripOrder(stored) : [];
         return { shown: kept.length > 0 ? kept : DEFAULT_TREE_TABS };
       },
+      // Rehydrated after mount: the server renders the default strip.
       skipHydration: true,
     },
   ),

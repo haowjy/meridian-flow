@@ -151,6 +151,15 @@ declare module "@tiptap/core" {
 
 const unclosed = new WeakMap<Slice, Slice>();
 
+/**
+ * ProseMirror lets a pasted node replace the block it lands in, instead of
+ * merging into it, when the pasted node type is `defining`. That is a flag on
+ * the type, and a heading is no longer a type: closing the slice's open start
+ * for a leveled paragraph gives replaceRange the same input a `defining`
+ * heading gave it. A list item replaces only an empty line, so a list pasted
+ * there keeps its first item. A destination with the same attributes still
+ * takes the content in place, as `defining` also lets it.
+ */
 function closeShapedSlice(slice: Slice, $dest: ResolvedPos): Slice {
   const first = slice.content.firstChild;
   const replaces =
@@ -175,6 +184,7 @@ export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
   return shapeForDestination(unclosed.get(slice) ?? slice, $dest);
 }
 
+/** A level the binding read from the room may be anything; only a real one makes a heading. */
 const paragraphTag = (node: ProseMirrorNode) =>
   HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
 
@@ -369,6 +379,8 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
         const { empty, $anchor } = editor.state.selection;
         if (!empty || $anchor.parent.type !== this.type) return false;
         if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
+        // A code document has no paragraph to turn the fence into, and the default
+        // Backspace would clear the fence's language and id: do nothing.
         if (!editor.schema.nodes.paragraph) return true;
         return editor.commands.setParagraph();
       },
@@ -505,6 +517,11 @@ export const MeridianTableCell = TableCell.extend({
   },
 });
 
+/**
+ * A picture's stored source. Rendered as `src` only when the browser may fetch it as written;
+ * a web address goes in `data-remote-src`, which the browser never fetches and the parse rule
+ * reads back; anything else is named by clipboard metadata (`links/link-clipboard.ts`).
+ */
 function pictureSourceAttributes(source: unknown): Record<string, string> {
   const stored = typeof source === "string" ? source : "";
   const src = inlinePictureSource(stored);

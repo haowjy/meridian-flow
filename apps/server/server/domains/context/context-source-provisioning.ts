@@ -337,6 +337,11 @@ async function ensureChatContextSource(
   return raced;
 }
 
+/**
+ * A chat's uploads store, keyed by the chat's thread id (no thread-row FK, so the chat may not
+ * exist yet). Reads never provision; the first upload does. Which chat to pass is
+ * `resolveTopPrimaryChat`'s answer, never `root_thread_id`.
+ */
 export function createChatContextDocumentStore(
   db: Database,
   projectId: string,

@@ -74,6 +74,8 @@ export function ReviewLaunchProvider({
   const sequence = useRef(0);
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
+      // The pin is written once the document is open, so a cancelled or failed navigation leaves
+      // no other host holding this document switched to the draft.
       const pin = () =>
         setDocumentView(accountId, projectId, target.documentId, {
           pin: { draftId: target.draftId, itemKey: target.itemKey },

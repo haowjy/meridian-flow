@@ -72,6 +72,10 @@ export function ProjectShell({
       gridTemplateRows={desktopGridTemplate.rows}
       style={
         {
+          // No rail, no curve: zero the chrome-field corner while no left rail
+          // sits beside main; when one does, leave the var unset so the utility's
+          // own fallback applies — globals.css is the single owner of the
+          // corner radius value.
           "--chrome-corner": leftWidth > 0 ? undefined : "0px",
           "--project-left-width": `${leftWidth}px`,
           "--project-left-handle-width": "0px",

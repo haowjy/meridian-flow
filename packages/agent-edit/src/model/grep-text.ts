@@ -1,3 +1,13 @@
+// The text `grep` matches, produced by one rule on both of grep's paths: the derivation
+// stores it per block, and a live hashline read computes it per block. Same blocks, same
+// function: the two agree by construction.
+//
+// A block is serialized the way a hashline body is (`serializeBlocks`, never the
+// whole-document `serialize`, which joins blocks with blank lines and writes an empty
+// paragraph as U+00A0) with every link and image destination spelled empty, so a match
+// never depends on which reader's address spelling a destination took. The block's text is
+// that markdown decoded to the writer's text view. A code file is not markdown: its block
+// is the code node's own text, with no fence.
 import type { DocumentLinkScope, MarkupCodec, PMNode } from "@meridian/markup";
 import { markdownPlainText } from "./markdown-text-view.js";
 
@@ -14,6 +24,16 @@ export function grepBlockText(destinationFree: string, node: PMNode, verbatim: b
   return verbatim ? node.textContent : markdownPlainText(destinationFree);
 }
 
+/**
+ * Where a range of a block's destination-free markdown sits in the block's real body.
+ *
+ * The two differ only inside link and image occurrences, so each occurrence's two spans
+ * (the markup package's own source spans, never a re-read of the link grammar) are
+ * compared: what both share at the front and at the back lines up, and what sits between
+ * (the destination, which the destination-free form spells empty) maps to the body's
+ * whole destination. A range that starts or ends inside it widens to cover it. Null when
+ * the two parses disagree on how many occurrences there are.
+ */
 export function bodyRange(
   markup: MarkupCodec,
   destinationFree: string,

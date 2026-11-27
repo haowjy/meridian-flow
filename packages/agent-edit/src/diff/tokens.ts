@@ -1,3 +1,12 @@
+/**
+ * The token model every diff caller shares: a document's top-level blocks flattened to block starts,
+ * words with the whitespace before them, punctuation, inline atoms and whole non-text blocks.
+ *
+ * A text token's key is its marks and text. Its leading whitespace stays outside the key because it
+ * depends on what precedes the token (a split turns " word" into "word"); alignment ignores it and
+ * the hunk layer reports a difference only where the same two tokens are neighbours on both sides.
+ */
+
 import { blankDocument, newBlockId } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
@@ -263,11 +272,13 @@ const coarse = <T>(a: T, b: T, empty: (x: T) => boolean): Array<[number, T]> => 
   ...(empty(b) ? [] : [[DIFF_INSERT, b] as [number, T]]),
 ];
 
+/** The one diff-match-patch call: a character diff of two strings, with no wall-clock deadline. */
 function textDiff(a: string, b: string): Array<[number, string]> {
   if (a.length + b.length > MAX_DIFF_CHARS) return coarse(a, b, (x) => !x);
   return makeDiff(a, b, NO_DEADLINE) as Array<[number, string]>;
 }
 
+/** Largest count of distinct keys one UTF-16 code per key can name (the surrogate block is skipped). */
 const MAX_CODES = 0xffff - 0x800 - 1;
 
 function encodeKeys(keys: readonly string[], codes: Map<string, string>): string | null {
@@ -381,6 +392,12 @@ const PART_KIND = {
   [DIFF_INSERT]: "added",
 } as const;
 
+/**
+ * Diff at word granularity over the review's own segments. The AI write lowering, the room writer,
+ * Review changes and an edit's excerpt all read it, so one edit has one set of changed words
+ * wherever it shows; the write then refines a changed run that only gained characters by character
+ * (`retainShared`).
+ */
 export function wordDiff(a: string, b: string): WordPart[] {
   const wa = splitWords(a);
   const wb = splitWords(b);

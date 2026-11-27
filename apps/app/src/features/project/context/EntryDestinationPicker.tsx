@@ -345,6 +345,7 @@ function OpenPicker({
         ];
       }}
     >
+      {/* Radix DropdownMenu has no standalone anchor. This inert trigger positions the externally opened picker at the row actions. */}
       <Button
         variant="quiet"
         tabIndex={-1}

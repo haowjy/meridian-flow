@@ -36,6 +36,13 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
 
   return (
     <nav aria-label={t`Breadcrumb`} className="flex min-w-0 flex-1 items-center">
+      {/* Separators live INSIDE each <li> — an <ol> only permits <li>
+          children. Width priority is deliberately asymmetric: the last
+          segment is what the user is looking at, so ancestors shrink first
+          (flex-shrink 3, ~36px floor) while the current segment shrinks
+          reluctantly (factor 1). Symmetric shrinking crushed the document
+          name to a few characters on deep trails while ancestors kept their
+          full 96px caps. */}
       <ol className="flex min-w-0 flex-1 items-center">
         {items.map((item, index) => {
           const separator =
@@ -74,6 +81,8 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
             <li key={item.key} className="flex min-w-9 shrink-[3] items-center">
               {separator}
               {item.segment.onSelect ? (
+                // -my-3 keeps the 44px target without growing the 20px trail row
+                // past the top bar's two-line band.
                 <button
                   type="button"
                   onClick={item.segment.onSelect}

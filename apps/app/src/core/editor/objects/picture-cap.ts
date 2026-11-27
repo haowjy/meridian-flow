@@ -11,6 +11,14 @@ export function pictureCapped(target: EventTarget | null): boolean {
   return target.getBoundingClientRect().height >= pictureCapHeight(target) - 1;
 }
 
+/**
+ * Keeps the cap still while a phone keyboard is up, for touch screens only.
+ *
+ * `interactive-widget=resizes-content` makes the keyboard shrink the pane, and
+ * viewport units with it, so no CSS unit outlasts it. A height drop at the same
+ * width while the writer is typing here is the keyboard, and the height from
+ * before it stands until the pane is back to full height or changes width.
+ */
 export function holdPictureCapThroughKeyboard(view: EditorView, pane: HTMLElement): () => void {
   let held = { width: 0, height: 0 };
   const observer = new ResizeObserver(([entry]) => {

@@ -221,6 +221,10 @@ function headingSlugEntries(
   return headings.map((heading, position) => ({ ...heading, slug: slugs[position] as string }));
 }
 
+/**
+ * The `#fragment` that reads each heading's section: its slug, or its hash when
+ * the slug is hex-shaped, since `resolveFragment` tries such fragments as hashes first.
+ */
 export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string | undefined> {
   return new Map(
     headingSlugEntries(ctx).map(({ slug, block }) => [

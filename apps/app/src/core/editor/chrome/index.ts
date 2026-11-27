@@ -42,6 +42,9 @@ export {
   type HoverProbeResolver,
   hoverOwner,
 } from "./hover-anchor";
+// `createHoverIntent` itself is deliberately NOT here. Approach chrome joins
+// the kernel's one approach (`registerHoverAnchor`); a lane with its own intent
+// has its own pointer, and four private pointers is the defect this replaced.
 export { CHROME_TIMING, type HoverIntentTimers } from "./hover-intent";
 export {
   KEYMAP_SCOPE_ORDER,

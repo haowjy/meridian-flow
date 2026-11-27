@@ -346,6 +346,7 @@ export type AppServices = {
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
+  /** Ends deleted threads' runs and subagent subtrees; `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
@@ -551,6 +552,7 @@ export async function createProductionAppPorts(input: {
         ),
       });
   });
+  // Throws here when the bundle lost the runner's worker or .wasm, so a broken build fails at boot.
   const scriptRunner = createQuickJsRunner();
   const mcpStore = createDrizzleConnectionStore({ db });
   const mcpConnections = createMcpConnections({
@@ -1159,6 +1161,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     backgroundTasks,
     orchestrator: { prepare: (input) => runner.prepare(input) },
     repos: { executionReports: ports.threadRepos.executionReports },
+    // The live hub, not the bare journal writer: background lifecycle must reach
+    // subscribers at append time, in append order. A notifier-relayed write lands
+    // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
     eventSink: ports.eventSink,

@@ -256,6 +256,11 @@ function withIdsOf(node: PMNode, model: PMNode): PMNode {
   return node.type.create(attrs, kids, node.marks);
 }
 
+/**
+ * `same-block-added-twice`: both sides made the same block at one place (equal but for ids: the same split, or the same
+ * paragraph typed twice). It is one block, and carries live's id, because live is the next review
+ * base. Returns the draft with its copy given live's ids.
+ */
 function unifyAdded(
   live: readonly PMNode[],
   draft: readonly PMNode[],

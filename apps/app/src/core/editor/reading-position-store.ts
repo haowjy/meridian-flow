@@ -74,6 +74,7 @@ export class ReadingPositionStore {
   save(roomKey: string, place: ReadingPosition, updatedAt: number): void {
     let entries = this.record.read() ?? [];
     const previous = entries.find((entry) => entry.roomKey === roomKey);
+    // A background view flushing an earlier gesture must not overwrite the last active view.
     if (previous && previous.updatedAt > updatedAt) return;
     entries = entries.filter((entry) => entry.roomKey !== roomKey);
     entries.push({ roomKey, place, updatedAt, accessedAt: updatedAt });

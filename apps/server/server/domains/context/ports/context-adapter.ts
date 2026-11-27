@@ -170,6 +170,7 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
+  /** Bind content for a document about to be created at `path`, outside any transaction. */
   bindTrackedDocument(path: string, content: string): Promise<Result<BoundWrite, AdapterFault>>;
   createTrackedDocument(
     path: string,

@@ -34,6 +34,20 @@ export function duplicateObject(editor: Editor, pos: number): boolean {
   return true;
 }
 
+/**
+ * Write one of the object's own attributes — its alt text, a figure's caption or
+ * label (§5.6). Which fields an object has is its registration's answer
+ * (`surfaceFields`), so this takes any of them and the surface never branches on
+ * the node type.
+ *
+ * **What the writer typed is what is stored.** The popover has no draft, so this
+ * runs per keystroke against a controlled input that renders the document back:
+ * a trim here took the space off the end of "Lanterns " before the next letter
+ * could follow it, and the space bar did nothing at all. The only normalization
+ * left is emptiness — a nullable field holding nothing but whitespace is a field
+ * nobody wrote, and the wire format needs the absent case to be absent
+ * (`caption` is a plain string in the schema, `alt` and `label` are nullable).
+ */
 export function setObjectField(
   editor: Editor,
   pos: number,
@@ -61,6 +75,15 @@ export async function copyText(text: string): Promise<void> {
   await copiedOrThrown(writeClipboardText(text));
 }
 
+/**
+ * A write as `verb-feedback` hears it.
+ *
+ * That layer reads the browser's own error names — `NotAllowedError` for a
+ * blocked clipboard, `SecurityError` for a tainted canvas — so a refusal is
+ * re-thrown as the error the browser threw rather than as a summary of it. A
+ * browser that never offered the page a clipboard threw nothing to re-throw,
+ * and reaches the writer as the generic failure it always has.
+ */
 async function copiedOrThrown(work: Promise<ClipboardWrite>): Promise<void> {
   const write = await work;
   if (write.status === "done") return;
@@ -68,6 +91,13 @@ async function copiedOrThrown(work: Promise<ClipboardWrite>): Promise<void> {
   throw new Error("This browser does not offer the page a clipboard.");
 }
 
+/**
+ * Mermaid emits `width="100%"` with the real dimensions in the `viewBox`,
+ * which is right for a diagram that flows in a page and useless for a file:
+ * an SVG with no intrinsic size rasterizes to nothing and opens at whatever
+ * the viewer feels like. Exports get their own sized copy of the markup; the
+ * rendered SVG in the document is never touched.
+ */
 export function sizedSvgMarkup(svg: string): { markup: string; width: number; height: number } {
   const parsed = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
   const [, , boxWidth, boxHeight] = (parsed.getAttribute("viewBox") ?? "")

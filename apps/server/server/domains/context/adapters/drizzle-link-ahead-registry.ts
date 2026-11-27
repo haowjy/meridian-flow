@@ -59,6 +59,7 @@ function atAddress(address: Address) {
     address.chatThreadId
       ? eq(linkAheadRefs.chatThreadId, address.chatThreadId)
       : isNull(linkAheadRefs.chatThreadId),
+    // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
     sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
     eq(linkAheadRefs.path, address.path),
   );
@@ -196,6 +197,8 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       root_thread_id: address.rootThreadId ?? null,
       chat_thread_id: address.chatThreadId ?? null,
     }));
+    // Every unsettled ref in an arrival's source may now reach it: a link's path is read through
+    // the tree's walk (`Kael/Note` reaches a Note in a twin folder), not compared as text.
     const pending = await currentDrizzleDb(this.db).execute<{
       ahead_id: string;
       path: string;

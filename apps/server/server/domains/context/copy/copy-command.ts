@@ -119,6 +119,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     const release = replay ? null : await holdOperation(input.request.operationId);
     try {
       replay = replay ?? (await commands.lookup(input.request.operationId));
+      // Reading holds no transaction. A source room that is not open loads through a second
+      // connection, so Copies that each held one while reading would starve the pool they
+      // wait on.
       const prepared = replay ? null : await prepare(selected);
       let claimed = false;
       try {
@@ -144,6 +147,8 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                 },
               );
             } catch (cause) {
+              // The Work lock found the destination's Work closed before anything was written. This
+              // command commits, so the objects the plan duplicated are released here.
               const returned = closedOwnerBounce(cause);
               if (!returned) throw cause;
               await deps.release.keys(putKeys);
@@ -160,6 +165,10 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
   }
 
+  /**
+   * Read every source, put every binary's bytes, and plan and bind the tree, before any
+   * transaction or lock is taken.
+   */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
     const purged: string[] = [];
@@ -337,6 +346,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           await delay(SOURCE_CATCH_UP_POLL_MS);
           continue;
         }
+        // Like any transient failure this is `io_error`: retryable, and never recorded, so a
+        // replay under the same operation ID reads again instead of being handed the first
+        // answer forever. The reason lets the replica stop after a bounded wait.
         return Err({
           code: "io_error",
           uri: source.uri,
@@ -396,6 +408,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     return Ok({ status: "copied", entries: entries.map(toEntry), folders, ...settled });
   }
 
+  /**
+   * The destination as it stands under the lock. A folder named by id may have moved since the
+   * route found it, which only changes its address; the lock this command holds is the old Work's
+   * namespace, so one that moved to another Work or scheme is sent again (nothing is stored).
+   */
   async function resolvedDestination(
     input: ContextCopyInput,
   ): Promise<Result<CopyDestinationHandoff, ContextError>> {

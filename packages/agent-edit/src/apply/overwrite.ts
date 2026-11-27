@@ -46,6 +46,8 @@ export function overwriteWithAssigned(input: {
       () => {
         if (input.blocks.length > 0)
           model.insertBlocks(handle, only, { blocks: [...input.blocks] });
+        // A Loro document with no block reads as one unstored empty paragraph, which goes away
+        // by itself once a block shows; a stored one is deleted.
         if (only && model.isLive(only) && model.getBlocks(handle).includes(only))
           model.deleteBlock(handle, only);
       },

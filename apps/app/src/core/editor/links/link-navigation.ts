@@ -29,6 +29,9 @@ export function linkClickIntent({
   if (shiftKey) return { action: "place-caret" };
   if (swept) return { action: "place-caret" };
 
+  // Ctrl on Windows and Linux, Cmd on macOS. Taking both is safe: macOS turns
+  // Ctrl+click into a context menu before it can become a click, and the claim
+  // ladder has already answered that one.
   if (ctrlKey || metaKey) return { action: "follow" };
 
   return { action: "follow" };

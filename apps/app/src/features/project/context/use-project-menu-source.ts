@@ -64,6 +64,7 @@ export function useProjectMenuSource({
     heading: string;
   } | null;
 }): ProjectMenuSource {
+  // The menu's moves and creates write the shell's version: it reads the same one.
   const version = useTreeVersion();
   const projectViews = useProjectTreeViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: null,

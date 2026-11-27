@@ -12,6 +12,11 @@ import { cn } from "@/lib/utils";
 
 import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 
+/**
+ * A parked host keeps the size of the slot it left and skips its subtree's layout and paint
+ * (`content-visibility: hidden` keeps the rendering state, so the reveal lays out once). At zero
+ * width a kept document or chat would re-lay out every word on each edit or streamed token.
+ */
 const PARKED_SURFACE_STYLE: CSSProperties = {
   position: "absolute",
   overflow: "hidden",
@@ -54,6 +59,9 @@ export function SlotGrid({
   const sizes = useGlide(gridRef, hosts.map((host) => `${host.key}:${host.slot}`).join());
 
   return (
+    // Hosts are in key order, not place order (see DesktopProject), so Tab would follow ids.
+    // reading-flow makes it follow the columns. Chromium only; it also keeps a stale order after an
+    // edit inside a host until the grid lays out again. Elsewhere Tab follows key order.
     <div
       ref={gridRef}
       className={cn("grid min-h-0 min-w-0 [reading-flow:grid-rows]", className)}
@@ -128,6 +136,11 @@ const boxOf = (host: HTMLElement): Box => ({
   height: host.offsetHeight,
 });
 
+/**
+ * Glides each host whose slot changed from where it was. Only position moves; the host is laid
+ * out at its new size from the start and clipped to its old size, so its text never scales. Rects
+ * stay current through resizes (a panel drag sets the grid's columns without a render).
+ */
 function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
   const placed = useRef(new Map<string, Placed>());
   const sizes = useRef(new Map<string, Size>());
@@ -176,6 +189,7 @@ function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
 }
 
 function glide(host: HTMLElement, from: Box, to: Box) {
+  // The side's slide-in would fade the arriving page; the glide is its entrance.
   for (const running of host.getAnimations()) if (running instanceof CSSAnimation) running.finish();
   const right = Math.max(0, to.width - from.width);
   const bottom = Math.max(0, to.height - from.height);

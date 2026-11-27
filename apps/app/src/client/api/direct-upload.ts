@@ -19,6 +19,7 @@ export type DirectUpload = {
 
 export class UploadRefusedError extends Error {}
 
+// XMLHttpRequest rather than fetch: only it reports bytes sent.
 function putFile(
   put: UploadSignedPut,
   file: File,

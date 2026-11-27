@@ -6,6 +6,7 @@ const spec = documentMarks.comment as MarkSpec;
 
 export const CommentMark = Mark.create({
   name: "comment",
+  // As the shared schema has them: the binding keys a mark by `excludes`, then by its JSON.
   inclusive: spec.inclusive,
   excludes: spec.excludes,
   addAttributes: () => ({

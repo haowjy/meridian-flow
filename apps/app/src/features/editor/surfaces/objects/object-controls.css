@@ -31,6 +31,13 @@
   background: var(--color-border-subtle);
 }
 
+/* The lightbox is a viewer, so it gives the whole frame to the canvas: no
+   dialog padding, no gaps, and the header is the only chrome above it.
+
+   How big the frame itself is belongs to the dialog shell's `workspace` size
+   (`chrome/EditorDialog.tsx`), not to this file — a max-width here would win
+   over the shell's utility class (unlayered CSS beats Tailwind's layer) and
+   split one number across two owners. */
 .meridian-object-lightbox {
   display: flex;
   flex-direction: column;
@@ -47,6 +54,9 @@
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
+/* Everything under the header is canvas, however tall the dialog turns out to
+   be: the viewport is the ceiling, so no height is spelled here. `min-height:
+   0` is what lets a flex child be shorter than the diagram inside it. */
 .meridian-lightbox-body,
 .meridian-lightbox-split {
   flex: 1;
@@ -150,6 +160,9 @@
   opacity: 0.85;
 }
 
+/* The canvas: a dot grid so pan and zoom have something to move against, and
+   `touch-action: none` because the viewer owns every pointer that lands here —
+   without it the browser claims two fingers for its own scroll and pinch. */
 .meridian-viewer-frame {
   position: relative;
   height: 100%;
@@ -223,6 +236,8 @@
 .meridian-editor .ProseMirror .meridian-diagram svg {
   max-width: 100%;
   height: auto;
+  /* The diagram is one object: SVG internals must not steal dragover or leave
+     `relatedTarget` null (Chrome) so the caret and the drop disagree. */
   pointer-events: none;
 }
 

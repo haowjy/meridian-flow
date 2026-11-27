@@ -6,7 +6,9 @@ export type ProjectNavigationPort = {
   subscribe(listener: () => void): () => void;
   flush(): void;
   settlePendingTraversal(): undefined | Promise<boolean>;
+  /** Synchronous same-entry snapshot or query repair; does not invoke a destination blocker. */
   replaceEntry(href: string, state: Record<string, unknown>): void;
+  /** Dispatch after the shared leave decision; the adapter bypasses duplicate blockers. */
   navigate(
     href: string,
     options: { replace: boolean; state?: Record<string, unknown> },
@@ -75,6 +77,8 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
   });
   function claimIntent(restoreNative: boolean) {
     revision += 1;
+    // Retire the old POP before cancelling its decision: its asynchronous
+    // blocker callback must not cancel the replacement writer intent.
     const restoration = restoreNative ? port.settlePendingTraversal() : undefined;
     cancelDecision?.();
     pending?.finish({ kind: "superseded" });
@@ -261,6 +265,8 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
       if (parsed.kind !== "valid") return;
       const pathOf = (href: string) => href.split(/[?#]/, 1)[0];
       if (pathOf(parsed.href) === pathOf(entry.href)) return;
+      // The destination does not change. Do not queue a destination blocker
+      // that could later compete with the writer's pending navigation.
       revision += 1;
       port.replaceEntry(parsed.href, entry.state);
     },
@@ -269,6 +275,8 @@ export function createProjectNavigation(port: ProjectNavigationPort) {
       address: ProjectAddress,
       mark?: Record<string, unknown>,
     ): Promise<ProjectAddressReplacement> {
+      // Address ownership effects may race a writer's destination command. A
+      // delayed repair must never retire that command or ask its leave guard.
       if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
       if (sameEntryAddress(entry, address) && !mark) return { kind: "replaced" };

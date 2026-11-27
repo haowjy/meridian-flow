@@ -2,6 +2,7 @@ import { freshBatchId } from "@meridian/contracts/protocol";
 import { EphemeralStore } from "loro-crdt";
 import { CrdtType, MessageType, type ProtocolMessage } from "loro-protocol";
 
+/** A peer's entry expires this long after its last update, as the client's does. */
 const PRESENCE_TIMEOUT_MS = 30_000;
 
 type Send = (message: ProtocolMessage) => void;

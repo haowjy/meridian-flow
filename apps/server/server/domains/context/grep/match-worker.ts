@@ -1,3 +1,13 @@
+/**
+ * Worker-thread entry: runs RE2 over text on behalf of `match-pool.ts`.
+ *
+ * Matching happens here, not on the server's event loop, because a single `re2js` call over a long
+ * line cannot be interrupted and no static pattern limit separates cheap patterns from slow ones.
+ * The pool terminates this thread when a request outlives its deadline. It handles one request at
+ * a time; the pattern travels with each request and the compiled form is cached by it.
+ *
+ * Imports only `re2js`, so the file runs unbundled and as its own bundle entry.
+ */
 import { parentPort } from "node:worker_threads";
 import { RE2JS } from "re2js";
 

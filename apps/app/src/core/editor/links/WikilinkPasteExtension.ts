@@ -24,6 +24,12 @@ declare module "@tiptap/core" {
   }
 }
 
+/**
+ * The parse extensions this extension contributes to the Markdown paste door:
+ * the one that keeps an escaped `\[[` visible to the transform below. Empty
+ * where it is not mounted, so the door can never keep a backslash that
+ * nothing spells out again.
+ */
 export function wikilinkPasteParsePlugins(editor: Editor): PluggableList {
   return editor.storage[WIKILINK_PASTE_NAME]?.markdownPastePlugins ?? [];
 }
@@ -42,6 +48,10 @@ export const WikilinkPasteExtension = Extension.create<WikilinkPasteOptions, Wik
   addProseMirrorPlugins() {
     const read = this.options.catalog;
     const editor = this.editor;
+    // ProseMirror's paste-without-formatting flag, ORed with "the destination
+    // is code", from `transformPastedText`. That hook and `transformPasted`
+    // run as a synchronous pair inside one parse of clipboard text, so the
+    // flag never outlives the paste that set it.
     let plainOrCode = false;
     // Where a drop from outside lands, which the transform cannot see. Cleared
     // after the event: ProseMirror handles a drop synchronously, and a drop it

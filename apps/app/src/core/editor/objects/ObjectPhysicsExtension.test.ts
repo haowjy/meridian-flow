@@ -16,6 +16,8 @@ import { selectedObject } from "./object-selection";
 
 let fixture: StandaloneEditor | null = null;
 
+// Arrow keys reach gapcursor, which measures the line to decide whether Down
+// leaves the block. jsdom cannot measure.
 installJsdomLayout();
 
 afterEach(() => {
@@ -176,6 +178,7 @@ describe("a peer deleting the selected object", () => {
     pair.peer.view.dispatch(pair.peer.state.tr.delete(at, at + (object?.nodeSize ?? 0)));
 
     pair.sync();
+    // The letter a keystroke commits, not a keypress: jsdom can't type at a caret.
     pair.local.view.dispatch(pair.local.state.tr.insertText("Z"));
 
     expect(pair.local.state.doc.textBetween(0, pair.local.state.doc.content.size, "\n")).toBe(

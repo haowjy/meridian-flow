@@ -301,6 +301,14 @@ export function TableChrome({ editor }: { editor: Editor }) {
         ) : null}
       </EditorMenu>
 
+      {/* The table's object controls: one ⋯, and only while the table is
+          selected. §5.4 rules out a hover icon row here — the grips already
+          own the top edge, and a second system would crowd them.
+
+          Measured rather than rendered inside the frame, unlike every other
+          object's row: a table is ProseMirror's own DOM rather than a node
+          view's, and a child inserted into it is read back as a document
+          change. */}
       <OverlayIconRow
         editor={editor}
         kind="table"
@@ -482,6 +490,8 @@ function useTableChromeRects(
     };
 
     measure();
+    // The table itself joins the cell and the manuscript root: a column drag
+    // resizes the frame live, before the width it settles on becomes a step.
     return watchManuscriptLayout(editor, [cell, cell.closest("table")], measure);
   }, [cell, editor]);
 

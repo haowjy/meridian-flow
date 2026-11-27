@@ -155,6 +155,8 @@ export function convergeThreadWorkBinding(
       threadId,
       projectId,
       refreshLists: false,
+      // The snapshot already carries the Work (`patchSnapshot`), and its reads belong to the
+      // thread sync alone.
       skipSnapshot: true,
     });
     convergeWorkProjection(client, { kind: "binding", projectId });

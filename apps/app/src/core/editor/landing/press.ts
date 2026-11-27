@@ -103,6 +103,12 @@ function lineIn(
   return landing.kind === "inline" ? TextSelection.create(state.doc, landing.pos) : null;
 }
 
+/**
+ * `handleClick`: a click on a container's own element, which has no text under
+ * it, takes the landing's selection. A caret already standing at the landing
+ * stays the browser's own, which knows the line it sits on (a landing
+ * dispatched at the end of a wrapped line would jump to the next line's start).
+ */
 export function pressOnInertTarget(view: EditorView, editor: Editor, event: MouseEvent): boolean {
   if (event.button !== 0 || !view.editable || !isContainerElement(view, event.target)) return false;
   const press = pressOutcome(

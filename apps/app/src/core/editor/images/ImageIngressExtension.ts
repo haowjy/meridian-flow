@@ -74,6 +74,15 @@ export const ImageIngressExtension = Extension.create({
     );
   },
 
+  /**
+   * The editor is going, so everything it was carrying goes with it.
+   *
+   * A picture lands through the editor that sent it: with no editor it would
+   * finish, write nothing, and leave a project asset no document mentions. The
+   * presence plugin releases this client's owner signal on the same teardown
+   * (`upload-presence.ts`), so peers stop being told a dead tab is still
+   * uploading.
+   */
   onDestroy() {
     for (const entry of ingressState(this.editor).pending.values()) {
       if (entry.kind === "upload") uploads.discard(entry.id);
@@ -157,6 +166,7 @@ export const ImageIngressExtension = Extension.create({
           ),
           clipboardTextSerializer: markdownClipboardSerializer,
           transformPasted: (slice, view) => {
+            // A drag moves pictures the editor already holds, as stored.
             if (view.dragging) {
               pasted = null;
               return slice;
@@ -167,6 +177,13 @@ export const ImageIngressExtension = Extension.create({
           },
         },
 
+        /**
+         * Read at the end of the task rather than inside the update itself.
+         * Two reasons, and they are the same reason: a plugin must not dispatch
+         * from its own `update`, and identity can only be read once the Loro
+         * binding has finished describing the document this transaction
+         * produced (`anchors.ts`).
+         */
         view: () => {
           let redraw = false;
           const scheduleSettle = () => {

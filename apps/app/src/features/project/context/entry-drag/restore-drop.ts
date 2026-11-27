@@ -1,3 +1,9 @@
+/**
+ * Planning a drop of Trash rows on the tree. A restore is a move out of Trash, so it follows the
+ * tree's destination rules (a folder, an area root, a row edge) but never crosses systems: it has
+ * no Copy to offer, so a project document can't go to Your files, nor the other way. Pure and
+ * synchronous: hovering plans on every `dragover`.
+ */
 import { t } from "@lingui/core/macro";
 import type { TrashEntry } from "@/client/query/useDocumentTrash";
 import type { TreeDestination } from "@/core/project-tree/tree-view";

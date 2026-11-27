@@ -80,6 +80,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   const treeInverse = createTurnTreeInverse({
     db: input.db,
     treeLists: input.treeLists,
+    // The receipts' own adapter; its text stack is this service's, read once it exists.
     history: () => treeHistory,
   });
   const treePlanOf = (query: TurnInverseQuery) =>
@@ -204,6 +205,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     } finally {
       for (const docs of held) docs.free();
     }
+    // Delivery reads the documents through their coordinators: only once the attempt completed.
     const deliver = async () => {
       for (const delivery of deliveries) await delivery();
     };
@@ -291,6 +293,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (query.declared && !within(query.declared, effect)) throw new TreeOwnersMoved([], effect);
       let treeReversed = 0;
       const operation = async () => {
+        // Each step plans again on the text it finds here, under the document key, so Live is
+        // read now, not as the capture saw it.
         for (const entry of documents)
           for (const [name, { room }] of entry.plan.document.rooms)
             entry.docs.set(name, await input.rooms.read(room));
@@ -309,6 +313,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
             throw new TreeOwnersMoved();
+          // The owners moved since the locks were chosen: past their order, so the caller runs again.
           const owners = { workIds: now.owners.works, lineageRootIds: now.owners.lineages };
           if (!within(effect, owners)) throw new TreeOwnersMoved([], owners);
           const done = await treeInverse.run(now, {
@@ -317,6 +322,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           });
           treeReversed = done.reversed;
         };
+        // A node a reply made is taken back once the text written into it is.
         await runText();
         await runTree();
         for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
@@ -330,6 +336,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           works,
           commitScope: (operation) => runInDrizzleSavepoint(input.db, operation),
           acquireMutationScope: async () => {
+            // The lists' keys come before every document key (the order in collab's CONTEXT.md).
             if (tree.lists.length) await input.treeLists.lock(tree.lists);
             const ids = new Set([...attempt.ids, ...(query.alsoLock ?? [])]);
             for (const id of [...ids].sort()) await lockDocumentMutation(db(), id);

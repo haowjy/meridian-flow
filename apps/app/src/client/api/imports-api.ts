@@ -61,6 +61,7 @@ export function createImport(projectId: string, selection: ImportSelection, sign
     signal,
   });
 }
+/** XHR exposes upload bytes; Fetch does not. Errors share the ordinary command contract. */
 export function sendImportFiles(
   projectId: string,
   importId: string,

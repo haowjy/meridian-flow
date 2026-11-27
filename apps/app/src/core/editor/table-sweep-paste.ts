@@ -1,3 +1,26 @@
+/**
+ * Paste over a swept rectangle of cells is a replace of the sweep.
+ *
+ * prosemirror-tables' own `handlePaste` fans a non-table clipboard into every
+ * swept cell (`clipCells` repeats it to fill the rectangle). Meridian's rule
+ * is the one paste means everywhere else: the sweep is a selection, and paste
+ * replaces the selection — the swept cells are emptied and the clipboard lands
+ * whole in the rectangle's top-left cell, in one transaction so one undo takes
+ * all of it back. The single exception is prosemirror-tables' own, kept
+ * deliberately: table content over a sweep stays the rectangle overwrite,
+ * because cells map onto cells. This plugin declines that case and the stock
+ * handler behind it answers.
+ *
+ * A plugin rather than an editor prop so its `handlePaste` sits in front of
+ * `tableEditing`'s on the same ladder: `MeridianTable` mounts it before its
+ * parent's plugins.
+ *
+ * A pasted image FILE never reaches this ladder: it carries no slice, so
+ * `ImageIngressExtension` claims it at the clipboard. That door still lands
+ * through `sweepReplaceLanding` below, so what "paste replaces a sweep" means
+ * is decided here once, whichever kind of clipboard arrives.
+ */
+
 import { Fragment, type Node as PMNode, type Slice } from "@tiptap/pm/model";
 import {
   type EditorState,
@@ -42,6 +65,8 @@ export function sweepReplaceLanding(
   if (!(state.selection instanceof CellSelection)) return null;
 
   const rect = selectedRect(state);
+  // Row-major, so the first entry is the rectangle's top-left cell — the
+  // landing, whichever corner the writer dragged from.
   const cells = rect.map.cellsInRect(rect);
   const transaction = state.tr;
   let landed: { from: number; to: number } | null = null;

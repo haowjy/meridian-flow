@@ -22,6 +22,16 @@ const MERMAID_BASE_CONFIG = {
   // Documents are author-controlled; resource CSP belongs to future app-wide policy.
 } as const;
 
+/**
+ * `id` is written into the markup, so every consumer needs its own: two faces
+ * of one diagram sharing an id collide over the arrow markers they reference,
+ * and the page's diagram loses its arrowheads the moment the dialog opens.
+ *
+ * The palette is re-read here rather than at import time. `initialize` is
+ * mermaid's only configuration door and it is global, so the theme is applied
+ * whenever it has changed since the last render — which is how a diagram
+ * already on the page follows the writer switching themes.
+ */
 export async function renderMermaid(id: string, source: string): Promise<string> {
   mermaidModule ??= import("mermaid").then(({ default: mermaid }) => {
     mermaid.initialize(MERMAID_BASE_CONFIG);
@@ -33,6 +43,8 @@ export async function renderMermaid(id: string, source: string): Promise<string>
   if (theme && theme.signature !== appliedTheme) {
     mermaid.initialize({
       ...MERMAID_BASE_CONFIG,
+      // `base` is the theme built to be overridden; the named themes ignore
+      // most of what `themeVariables` says.
       theme: "base",
       themeVariables: theme.variables,
       fontFamily: theme.fontFamily,

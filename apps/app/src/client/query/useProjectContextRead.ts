@@ -19,6 +19,7 @@ export function useProjectContextRead(
     queryKey: ["projects", projectId, "context", "read", documentId] as const,
     queryFn: () => getProjectDocumentRead(projectId, documentId ?? ""),
     enabled: documentId !== null,
+    // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,
     gcTime: 60_000,
     retry: 0,

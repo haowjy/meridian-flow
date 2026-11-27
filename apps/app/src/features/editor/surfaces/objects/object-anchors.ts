@@ -9,6 +9,17 @@ export type ObjectSurfaceTarget = {
   node: PMNode;
   kind: ObjectSurfaceKind;
   element: HTMLElement;
+  /**
+   * The node view's own element — where this object's chrome is RENDERED, so
+   * that scroll and reflow move the two as one piece and no measurement can
+   * strand it (`chrome/object-overlay.ts`).
+   *
+   * Safe because every object here is a React node view, and a node view
+   * ignores DOM changes outside its `contentDOM`: the manuscript's own
+   * elements are ProseMirror's, and a child inserted into one of those is read
+   * back as a document change. It already bounds the object for the selection
+   * ring, inline images included (`editor.css`).
+   */
   container: HTMLElement;
 };
 
@@ -21,6 +32,16 @@ function renderedBounds(node: PMNode, dom: HTMLElement): HTMLElement {
   return dom.querySelector("img") ?? dom;
 }
 
+/**
+ * The document position of the node rendered by `element`, or null when the
+ * element is not a node's own outermost DOM.
+ *
+ * `posAtDOM` answers differently for a node view's wrapper than for a plain
+ * rendered block — one off-by-one apart — so the candidate is verified by
+ * asking the view for that position's DOM back rather than guessed at. The
+ * check is what makes this work for React node views, node views the schema
+ * renders itself, and whatever a later lane registers.
+ */
 export function objectPosForElement(view: EditorView, element: HTMLElement): number | null {
   let candidate: number;
   try {

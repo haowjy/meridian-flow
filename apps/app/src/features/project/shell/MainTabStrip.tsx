@@ -93,6 +93,8 @@ export function useMainTabCommands({
       if (key === mainKey) show(next);
     },
     closeAll: async ({ keepMain }: { keepMain: boolean }) => {
+      // Main leaves first: while it still shows an item, that item's arrival puts its tab back
+      // (`useMainArrival`). An Untitled page leaves later than a filed one.
       if (!keepMain) await showEmpty();
       closeAllMainTabs(accountId, projectId, kind);
     },
@@ -191,6 +193,7 @@ export function MainTabStrip({
       {current ? null : (
         <BandIconButton
           label={newLabel}
+          // aria-disabled, not disabled: the tooltip has to say why it can't run.
           tooltip={onNew ? undefined : t`Open a Work to create an Untitled document`}
           aria-disabled={!onNew || undefined}
           onClick={onNew}
@@ -533,6 +536,12 @@ function TabCloseButton({
   );
 }
 
+/**
+ * While the writer closes tabs with the pointer, the tabs keep the width they had, so the next
+ * close lands under the pointer (Chrome's rule); they resize once the pointer leaves the strip.
+ * One value per window, outside the strip: each document has its own band, so closing main's tab
+ * draws a new strip.
+ */
 let heldTabWidth: number | null = null;
 const heldTabWidthListeners = new Set<() => void>();
 
@@ -545,11 +554,17 @@ function setHeldTabWidth(width: number | null) {
 function holdTabWidth(chip: HTMLElement | null) {
   if (!chip) return;
   const first = heldTabWidth === null;
+  // An inactive tab's width: at the minimum the open tab is wider (it keeps room for its close),
+  // and holding that would widen every tab under the pointer.
   const inactive = chip
     .closest("[data-main-tab-strip]")
     ?.querySelector('[role=tab][aria-selected="false"]')?.parentElement;
   setHeldTabWidth((inactive ?? chip).getBoundingClientRect().width);
   if (!first) return;
+  // Released when the pointer crosses out of the strip, presses anywhere else (a touch tap fires
+  // no move), or a mouse leaves the window from it; a touch lift also reports leaving to nowhere.
+  // Closing main's tab redraws the strip, and for a frame the pointer is over the band behind it:
+  // that crossing comes from outside the strip, so it doesn't count.
   const inStrip = (node: EventTarget | null) =>
     node instanceof Element && node.closest("[data-main-tab-strip]") !== null;
   const release = (event: PointerEvent) => {
@@ -630,9 +645,11 @@ function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
   event.preventDefault();
   const next = stops[Math.max(0, Math.min(stops.length - 1, to))];
   next?.focus({ preventScroll: true });
+  // The chip, not its overlay button, carries the scroll margin that clears the edge fade.
   next?.parentElement?.scrollIntoView({ inline: "nearest", block: "nearest" });
 }
 
+/** A plain mouse wheel only scrolls vertically; the strip turns that into its own scroll. */
 function scrollStripWithWheel(event: WheelEvent<HTMLDivElement>) {
   if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
   const linePx = event.deltaMode === event.nativeEvent.DOM_DELTA_LINE ? 16 : 1;
@@ -659,6 +676,8 @@ function TabChipFrame({
       {...tabProps}
       data-active-tab={active || undefined}
       className={cn(
+        // No h-full: items-stretch sizes the chip so the active tab's top margin subtracts from
+        // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
         "group scroll-mx-6 gap-1.5",
         tabChipClass(active),
         active && surface === "review" && "[--tab-chip-surface:var(--color-review)]",

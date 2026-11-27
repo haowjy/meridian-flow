@@ -27,6 +27,13 @@ export type TurnReversalServiceDeps = {
     import("./turn-inverse-service.js").TurnInverseService,
     "reverseTurn" | "reversalOwners"
   >;
+  /**
+   * Takes the owners' locks, then the chat's thread with them, in the order every Work mutation
+   * keeps (threads, Works, lineages, then the project's tree list when `treeListProjectId` is
+   * given), all before the documents' locks. Only `receiptWorkIds` have their threads locked, as
+   * the runtime locks them: their step ends those chats. `changed` is a thread that joined such
+   * a Work's tree meanwhile: the locks are not the tree's.
+   */
   lockOwners(input: {
     owners: OwnerLocks;
     receiptWorkIds: readonly WorkId[];
@@ -70,6 +77,12 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     }
   }
 
+  /**
+   * The click, in one transaction under its claim: the owners it locks, declared and locked
+   * first, then the turn's documents, then the Work receipts, so that both halves hold or
+   * neither does. `learned` is what an earlier attempt's commit found it needed
+   * (`untilOwnersHold`).
+   */
   async function reverse(
     command: ReverseThreadContextInput,
     projectId: ProjectId,

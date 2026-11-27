@@ -3,6 +3,8 @@
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
   position: relative;
+  /* Keeps the editor's own z-layers (the review bar, the word-count pill) below the pane's
+     header popups. */
   isolation: isolate;
 }
 
@@ -140,6 +142,19 @@
   pointer-events: none;
 }
 
+/* A picture is a big glyph. Its bottom sits on the text baseline, so the words
+   before it and after it stand at its foot, the line box grows as tall as the
+   picture, and what follows wraps onto the line below — the "in line" of Docs
+   and Word. It is the same object at the same size
+   mid-sentence or alone in its paragraph, and the prose column is its only
+   bound.
+
+   Baseline alignment is asked of TipTap's own inline wrapper, because that is
+   the box the line box is built out of. An inline-block takes its baseline from
+   its last in-flow line box, which would hang the font's descender under the
+   picture and float it off the baseline. So the wrapper inside it is a block
+   and everything inside THAT is block-level: with no line box to read, CSS
+   falls back to the bottom margin edge, and that edge is the picture's foot. */
 .meridian-editor .ProseMirror span.react-renderer.node-image {
   vertical-align: baseline;
 }
@@ -240,6 +255,11 @@
   font-size: var(--text-sm);
 }
 
+/* Object chrome is rendered inside the object's own node view and placed
+   absolutely in its corner (`chrome/object-overlay.ts`), so the node view is
+   what that corner is measured from. `relative` with no offsets moves nothing
+   and reserves nothing; the class is TipTap's container for a node view, which
+   is exactly the set of elements the manuscript does not own. */
 .meridian-editor .ProseMirror .react-renderer {
   position: relative;
 }
@@ -288,6 +308,14 @@
   vertical-align: bottom;
 }
 
+/* The jade ring a selected object wears — law 1's click, read back. A ring
+   rather than an outline so it follows the object's own radius, and jade
+   rather than the focus tone because selection is a state, not focus.
+
+   The class is ours, painted by a decoration object physics derives from the
+   selection. ProseMirror's own `ProseMirror-selectednode` is applied once by a
+   node view's lifecycle and does not survive the document rebuild a peer's
+   write causes — see `core/editor/objects`. */
 .meridian-editor .meridian-object-selected {
   outline: none;
   border-radius: var(--radius-md);
@@ -301,6 +329,11 @@
   cursor: default;
 }
 
+/* A table wears the same ring, one node in and turned inward.
+   In: the node ProseMirror decorates is prosemirror-tables' scroll wrapper,
+   which is the full column even when the grid is narrower or aligned right.
+   Inward: that wrapper scrolls, and a scroll container clips its children's
+   shadows, so an outward ring on the grid would be invisible. */
 .meridian-editor .tableWrapper.meridian-object-selected {
   box-shadow: none;
 }

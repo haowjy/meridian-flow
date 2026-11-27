@@ -15,6 +15,8 @@ import {
   TextQuote,
 } from "lucide-react";
 
+// Straight at the primitive: the chrome barrel carries the surface registry the block menu,
+// a user of this row, is listed in.
 import { EditorMenuItem } from "../../chrome/EditorMenu";
 import { type BlockTypeId, headingLevelOf, turnIntoBlockType } from "./toolbar-commands";
 import { blockTypeLabel } from "./toolbar-copy";

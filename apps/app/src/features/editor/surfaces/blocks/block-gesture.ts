@@ -192,6 +192,7 @@ function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
   const seam = seamIndexAtPointer(editor.view, pointerY);
   const transaction = moveBlockToSeamTransaction(editor.state, source, seam);
   if (!transaction) return;
+  // The hold and lift messages are meta-only and end nothing; the drop is the step boundary.
   endUndoStep(editor.state);
   editor.view.dispatch(transaction);
 }

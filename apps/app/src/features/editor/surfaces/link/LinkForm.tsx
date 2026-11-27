@@ -197,6 +197,8 @@ function LinkFields({
         if (linkInputStepsAsideFromReferences(value)) return null;
         return { query: value, text: value, triggerRange: { from: 0, to: value.length } };
       },
+      // Below the whole form, not at the caret: the field sits above Save, and
+      // a menu hanging from the caret covered it and swallowed its click.
       anchorRect: () => formRef.current?.getBoundingClientRect() ?? null,
     });
     transport.sync();

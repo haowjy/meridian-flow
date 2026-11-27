@@ -1,3 +1,11 @@
+/**
+ * The writer's name for a chat's Scratch: its first chat's title.
+ *
+ * A lineage is never named by its handle (`c12`) or its id. The live chat list
+ * answers first and stays current through renames. A lineage outlives its
+ * first chat's trash while a fork lives, and the live list has no trashed
+ * chats, so then the lineage route answers. Null until either does.
+ */
 import { useQuery } from "@tanstack/react-query";
 import { getContextLineage } from "@/client/api/projects-api";
 import { useProjectThreads } from "@/client/query/useProjectThreads";

@@ -13,6 +13,7 @@ export type ReleasePhase = "current" | "update-available" | "must-reload";
 
 const OWN_RELEASE = __MERIDIAN_RELEASE__;
 const IDLE_MS = 3_000;
+/** A hidden tab is not being typed in; this only lets the editors' local saves land first. */
 const HIDDEN_IDLE_MS = 1_500;
 const CHECK_MS = 1_000;
 

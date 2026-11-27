@@ -160,8 +160,18 @@ export type FileRef = TrackedFileRef | BinaryFileRef;
 
 export interface GrepPassage {
   excerpt: string;
+  /**
+   * Hash of the block the excerpt came from, so a caller can navigate back to
+   * the passage rather than to the top of the file. Present only for schemes
+   * whose documents are serialized as hashlines (drafted sources read
+   * through a thread view); its absence elsewhere is the contract, not an error.
+   */
   blockHash?: string;
   anchor?: { start: number; end: number };
+  /**
+   * The writer's text the first match covers (`excerpt` is markdown, which spells it
+   * escaped), for the app's door to find the passage again. Absent on results stored before grep.
+   */
   term?: string;
 }
 
@@ -190,6 +200,11 @@ export interface GrepQuery {
   mode: GrepMode;
   headLimit: number;
   signal: AbortSignal;
+  /**
+   * The documents the caller may read, asked before anything is matched or counted, each with
+   * the destination its access reads from: the text is read there, not where its source's
+   * scheme would send it (a moved document's content source is not its address's).
+   */
   readable(
     ids: readonly string[],
   ): Promise<ReadonlyMap<string, { level: "read" | "edit"; destination: FileDestination }>>;
@@ -263,8 +278,18 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
 
+  /**
+   * Bind content for a tracked document about to be created at `uri`.
+   * Runs outside any transaction (it may register ahead refs); a caller that
+   * creates inside its own transaction binds first (contract §6.2).
+   */
   bindTrackedDocument(uri: string, content: string): Promise<Result<BoundWrite, ContextError>>;
 
+  /**
+   * Claim and seed a new tracked URI without ever replacing an existing path.
+   * Its Markdown is bound here, outside any transaction; a caller inside
+   * its own transaction binds first and uses `createBoundDocument`.
+   */
   createTrackedDocument(
     uri: string,
     markdown: string,
@@ -291,6 +316,10 @@ export interface ContextPort {
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
+  /**
+   * One command on the tree of `area` (a source's top address): `make` decides under the
+   * list's lock and the records it makes join the caller's command transaction.
+   */
   treeCommand<T>(area: string, input: TreeCommandInput<T>): Promise<Result<T, ContextError>>;
 
   readTree<T>(area: string, input: TreeReadInput<T>): Promise<Result<T, ContextError>>;

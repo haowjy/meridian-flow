@@ -1,3 +1,38 @@
+/**
+ * The editor owns Tab and Shift-Tab, and never hands them back, except for the
+ * one press after an Escape that found nothing to close: the kernel lets that
+ * one through to the browser so the keyboard can leave the editor.
+ *
+ * Tab makes a tab. That is what a writer expects from every editor they have
+ * come from, and it is the one thing the browser's own Tab refuses to be: its
+ * Tab is a focus move. TipTap's table and list extensions bind the key where
+ * they have something to do and REFUSE it everywhere else, and a refusal is a
+ * leak — in a heading, in a paragraph, on the first list item, DOM focus lands
+ * on the nearest button in the app chrome while the ProseMirror selection
+ * stays where it was, and every keystroke after that is discarded in silence.
+ *
+ * So the rule is `UndoRedoKeymapExtension`'s: ownership that lapses on a
+ * refusal is not ownership. Every binding here consumes its key, and the only
+ * question is what it does with it, deepest owner first:
+ *
+ * - in a table, Tab walks cells — a grid has no room for indentation — unless
+ *   the caret stands in a list item or a fence INSIDE a cell, where the walk
+ *   declines and the deeper owner's rung below answers;
+ * - in a code fence, it indents, line-wise when something is selected;
+ * - in a list, it nests or lifts the item, refusal included;
+ * - anywhere else in prose, it inserts one tab character.
+ *
+ * Prose tabs reach the wire intact (law 9): a tab mid-line is literal
+ * markdown, while a LEADING tab would parse back as an indented code block,
+ * so the codec writes that one as `&#x9;` and reads it back as a tab. The
+ * round trip is pinned in `packages/markup`'s codec test, which is what makes
+ * this key safe to hand a writer.
+ *
+ * Registering through the kernel — rather than an `addKeyboardShortcuts` at
+ * some priority number — is what puts those four cases on one ladder, and
+ * what lets a future surface take Tab at `layer` scope while it is open
+ * without touching this file.
+ */
 import { isListed } from "@meridian/prosemirror-schema";
 import { type Editor, Extension } from "@tiptap/core";
 import {

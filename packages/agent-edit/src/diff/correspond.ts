@@ -375,6 +375,12 @@ const sameType = (a: PMNode, b: PMNode) => a.type === b.type;
 
 const squash = (n: PMNode) => n.textContent.replace(/\s+/gu, "");
 
+/**
+ * An unpaired block beside a pair is a piece when at least half its words are in the pair's other
+ * side and the pair reads better with it: the rest of a split or a join. Words segment differently
+ * on the two sides when a split lands inside a word of a script without spaces, so the piece also
+ * counts when pair and piece together are exact text of the other side.
+ */
 function findPieces(
   old: readonly PMNode[],
   next: readonly PMNode[],

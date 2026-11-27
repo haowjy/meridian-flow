@@ -34,6 +34,8 @@ export function ImageViewer({
       return;
     }
     refreshUsed.current = true;
+    // Signing is deterministic to the second, so a refresh often returns the URL that just
+    // failed; React then sets no new `src` and no second `onError` would come.
     void refresh().then((fresh) => {
       if (fresh === undefined || fresh === failed) setFailedUrl(failed);
     });

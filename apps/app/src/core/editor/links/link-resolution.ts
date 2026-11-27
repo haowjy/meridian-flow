@@ -119,6 +119,12 @@ function settledOver(
 const MAX_IN_FLIGHT = 4;
 const MAX_BATCH = 200;
 
+/**
+ * One question, and everything needed to settle it: which generation asked it,
+ * and the single waiter that gets the answer. Owning the waiter is the point —
+ * looking one up by key at completion time is how an answer from a project
+ * nobody is looking at any more ends up settling somebody else's promise.
+ */
 type Request = {
   readonly key: string;
   readonly question: LinkQuestion;
@@ -240,6 +246,8 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     };
     generation.asking.set(key, request);
     generation.answers.set(key, local.provisional ?? PENDING);
+    // Queued, not sent: the caller pumps once it has asked everything it has,
+    // so one scan of the document goes out as one batch.
     generation.queue.push(request);
     return promise;
   };

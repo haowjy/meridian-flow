@@ -387,6 +387,7 @@ async function readPlacedNodes(
           ])
         ).map((folder) => [folder.id, folder]),
       );
+      // A deleted Work's files read until its purge removes them, like its Scratch's source.
       const live = (row: SourceFacts) => !row.source.deletedAt && !row.sourceProject?.deletedAt;
       const classify = (row: SourceFacts, parentId: string | null) =>
         classifySourceIdentity({
@@ -491,6 +492,7 @@ export function createDrizzleProjectContextAvailability(
     },
 
     serializeCreate(entryId, create) {
+      // The transaction ends with the create, so the lock outlives its claim's commit.
       return runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db).execute(
           sql`SELECT pg_advisory_xact_lock(hashtextextended(${`create-entry:${entryId}`}, 0::bigint))`,
@@ -566,6 +568,7 @@ async function resolveHeldContextNode(input: {
     foldersById,
   });
   if (classification.kind === "not-visible") return null;
+  // Only after the fence: another project's deleted node must not read as `unreachable`.
   if (
     (found.deleted && !input.inTrash) ||
     found.source.deletedAt ||

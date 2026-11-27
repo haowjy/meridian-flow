@@ -232,6 +232,7 @@ export class ProjectDocumentNavigationAdapter {
     try {
       outcome = await this.run(projectId, request);
     } catch (error) {
+      // A door drops the promise: an open that threw would otherwise end in silence.
       reportError(error);
       outcome = { kind: "refused", reason: "lookup-failed" };
     }
@@ -325,6 +326,8 @@ export class ProjectDocumentNavigationAdapter {
     | { kind: "refused"; reason: "gone" | "lookup-failed" }
   > {
     const { standings } = this.dependencies;
+    // The list's own answer first: a row the caller carries, or the views' last render, can
+    // predate a delete.
     if (standings.standing(projectId, documentId).kind === "in-trash") return { kind: "trashed" };
     const placed = known ?? this.dependencies.locate(documentId);
     if (placed) return { kind: "identified", identity: placed };
@@ -455,6 +458,7 @@ export function ProjectDocumentNavigationProvider({
   const { open: openTrash } = useTrashNavigation();
   const standings = useProjectStandings();
   const trees = useProjectTrees(projectId);
+  // Read at each open, so a change of the list does not make a new adapter.
   const treesRef = useRef(trees);
   treesRef.current = trees;
   const locatable = useRef(new Set<() => void>());

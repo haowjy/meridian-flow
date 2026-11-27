@@ -26,6 +26,11 @@ import {
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
 export const LINK_REF_ATTRIBUTE = "data-meridian-ref";
 export const LINK_PROJECT_ATTRIBUTE = "data-meridian-project";
+/**
+ * What the paste transform leaves for the link mark's parser: a ref it chose
+ * to keep. Never copied and never allowed through the paste sanitizer, so
+ * clipboard HTML cannot set it.
+ */
 export const LINK_KEPT_REF_ATTRIBUTE = "data-meridian-kept-ref";
 
 const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipboard");
@@ -141,6 +146,9 @@ function keepPastedRefs(html: string, projectId: string | null): string {
       continue;
     }
     if (!address) {
+      // An upload copied before its catalog entry carries no address: outside
+      // its project there is nothing to bind, so the picture is not pasted. A
+      // figure is one picture; left behind, its shell parses as an empty figure.
       if (picture) (element.closest("figure[data-type='figure']") ?? element).remove();
       continue;
     }
@@ -190,6 +198,8 @@ function sourceResolution(
 ): LinkResolution {
   if (document) {
     const { documentId, uri } = document;
+    // The speller reads only `document.uri`; the answer carries no presence,
+    // so the other fields are neutral fillers, not facts about the document.
     return {
       kind: "document",
       document: {
@@ -250,6 +260,7 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
       clipboardSerializer: new NestingDOMSerializer(nodes, marks),
       transformPastedHTML: (html) => keepPastedRefs(html, resolution.assignment?.projectId ?? null),
       transformPasted: (slice, view) =>
+        // A drag inside the editor moves links it already holds, as stored.
         view.dragging
           ? slice
           : assignPastedSlice(

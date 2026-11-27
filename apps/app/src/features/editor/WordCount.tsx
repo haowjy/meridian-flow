@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 const COUNT_DELAY_MS = 300;
 
+/** A newline between blocks, or the last word of one and the first of the next would count as one. */
 const countAll = (editor: Editor) => {
   const { doc } = editor.state;
   return countWords(doc.textBetween(0, doc.content.size, "\n"));

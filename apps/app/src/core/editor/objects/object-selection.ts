@@ -14,6 +14,16 @@ import { isEditorObject, isOpaqueObject, isSourceBlock, objectBody } from "./obj
 
 export type ObjectAt = { node: PMNode; pos: number };
 
+/**
+ * Is a live caret in the node's text, as opposed to standing on the node? This
+ * decides whether a diagram shows its source or its picture, for the node view
+ * and for the landing walk alike.
+ *
+ * Two things are deliberately not "inside": a `NodeSelection` (how a writer
+ * picks a diagram up, not how they edit its text), and an unfocused editor,
+ * whose selection is only where the caret WOULD be. A drag blurs the editor, so
+ * a diagram drawn as a picture stays one for the drop.
+ */
 export function caretInsideNodeAt(state: EditorState, focused: boolean, pos: number): boolean {
   const node = state.doc.nodeAt(pos);
   if (!node || !focused || state.selection instanceof NodeSelection) return false;

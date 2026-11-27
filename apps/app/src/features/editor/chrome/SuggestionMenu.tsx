@@ -1,3 +1,25 @@
+/**
+ * SuggestionMenu — the list a writer types underneath, for `/` and for `@`.
+ *
+ * The writer never leaves the sentence: focus stays in the prose, the query
+ * they are typing IS the document text after the trigger, and this surface
+ * only shows what the trigger has already matched. That is why nothing here is
+ * focusable and why every row cancels its own mousedown — a menu that took
+ * focus would stop the next keystroke from filtering.
+ *
+ * The keyboard is not here either. Arrow keys and Enter are registered against
+ * the chrome kernel by whichever trigger opened the menu, at scope `layer`,
+ * from the moment it opens; this component follows the highlight with the
+ * scroll and renders it. Esc is the kernel's chain, reached by being an open
+ * layer.
+ *
+ * A lane brings rows and reacts to a choice. Everything below — the eight-row
+ * cap, the internal scroll, the fades on the list's own edges, the
+ * announcement the caret's own element has to carry — is one behavior both
+ * menus share, so neither lane can drift from the other on a Radix upgrade
+ * (§5.7's height rule).
+ */
+
 import type { Editor } from "@tiptap/core";
 import { ChevronRight } from "lucide-react";
 import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from "react";

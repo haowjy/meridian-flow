@@ -1,3 +1,9 @@
+// The one selector rule for `read`, `insert`, `replace` and `remove`.
+//
+// These cross-field checks run inside the zod contracts (`superRefine`), so the
+// executor refuses a bad combination before any handler or resolver runs. Each
+// rule is also stated in the field descriptions, because refinements don't
+// export to JSON Schema.
 import { splitDocumentFile } from "../document-address.js";
 
 export type SelectorCommand = "read" | "insert" | "replace" | "remove";

@@ -78,6 +78,9 @@ export const DocumentToolbar = memo(function DocumentToolbar({
     }),
     [editable, schemaType, uploadAvailable],
   );
+  // Compare the matrix, not transaction revisions: review metadata and focus
+  // transactions must not rebuild the row. Alignment's value and the heading
+  // level matter even when their active flag stays true (center to right).
   const { controls, alignment, headingLevel } =
     useEditorState({
       editor,
@@ -245,6 +248,9 @@ function ToolbarMenuControl({
   }
 
   return (
+    // Through `EditorMenu` like every other menu in the editor: the kernel sees
+    // the open layer, so Escape spends one step on it and the caret goes back
+    // to the prose rather than to this button.
     <EditorMenu
       editor={editor}
       id={`toolbar-${id}`}
@@ -258,6 +264,14 @@ function ToolbarMenuControl({
   );
 }
 
+/**
+ * A menu control's button, live or greyed.
+ *
+ * The rest props are the menu's. `EditorMenu` hands its trigger to Radix as a
+ * slot, so the press, the ARIA state, and the anchor's ref arrive here and go
+ * on through the tooltip to the button — a trigger that swallowed them would
+ * be a control that cannot be opened.
+ */
 function MenuTrigger({
   label,
   blockedReason,

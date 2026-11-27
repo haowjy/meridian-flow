@@ -8,6 +8,7 @@ import {
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectReadEnabled } from "./project-read-gate";
 
+/** A project's catalog lives under the project key so the creation gate covers it. */
 export const agentCatalogQueryKey = (accountId: string, projectId?: string) =>
   projectId
     ? (["projects", projectId, "agent-catalog", accountId] as const)

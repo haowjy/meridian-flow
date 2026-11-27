@@ -9,6 +9,7 @@ export function createModelDocumentEdits(input: { service(): TurnInverseService 
       model: true as const,
       documentIds: [request.documentId as DocumentId],
       threadId: request.threadId as ThreadId,
+      // A deleted document has no address of its own: results name it by the model's path.
       path: request.command.file,
       turnId: request.context.turnId as TurnId | undefined,
       responseIdentity: request.context.responseIdentity,

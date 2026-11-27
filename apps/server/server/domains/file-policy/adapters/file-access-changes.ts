@@ -36,6 +36,7 @@ export function createPgFileAccessChanges(input: {
   return {
     subscribe: local.subscribe,
     async publish(change) {
+      // NOTIFY inside the ambient transaction is delivered at its commit.
       await currentDrizzleDb(input.db).execute(
         sql`select pg_notify(${CHANNEL}, ${JSON.stringify(change)})`,
       );

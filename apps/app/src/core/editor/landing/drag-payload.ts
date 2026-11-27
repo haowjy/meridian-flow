@@ -1,3 +1,5 @@
+/** What a drag carries, decided from its types alone (the data is hidden until the drop). */
+
 export const MERIDIAN_ENTRIES_MIME = "application/x-meridian-entries";
 
 export type DragPayloadKind = "entries" | "files" | "none";

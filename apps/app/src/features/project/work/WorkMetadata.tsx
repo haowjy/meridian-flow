@@ -158,6 +158,8 @@ export function WorkGoal({
   const goalId = useId();
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
+  // An expanded goal can't be measured for clamping, so new text starts
+  // folded and is measured afresh: a short one then drops Show less.
   const [shownGoal, setShownGoal] = useState(work.goal);
   if (shownGoal !== work.goal) {
     setShownGoal(work.goal);

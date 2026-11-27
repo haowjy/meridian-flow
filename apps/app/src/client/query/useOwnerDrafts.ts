@@ -257,6 +257,11 @@ export function useOwnerDrafts(
   return useDraftLists(projectId, owners, options).get(owner ?? "") ?? DISABLED;
 }
 
+/**
+ * Whether a page only this draft holds: its row is new and no live tree has the document, so Live
+ * has no version of it to show (design §6). A list another tab's Apply has not refetched yet
+ * still calls the row new; the live tree already has it.
+ */
 export function useDraftOnly(
   projectId: string,
   owner: string | null,

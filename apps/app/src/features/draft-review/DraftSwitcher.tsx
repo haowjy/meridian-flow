@@ -103,6 +103,10 @@ export function DraftSwitcher({
   );
 }
 
+/**
+ * The other owners' drafts, folded behind the scope's own unless one of them is on screen. The
+ * menu remounts it on each open, so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
+ */
 function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; folded: boolean }) {
   const [open, setOpen] = useState(() => !folded || drafts.some((draft) => draft.current));
   return (

@@ -58,6 +58,7 @@ export function clipboardItemStates(
 
   return {
     cut: { active: false, blockedBy: readOnly ?? write },
+    // Copying is reading; a document nobody may change is still readable.
     copy: { active: false, blockedBy: write },
     paste: { active: false, blockedBy: readOnly ?? read },
   };

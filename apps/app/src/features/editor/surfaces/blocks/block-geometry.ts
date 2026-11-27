@@ -1,6 +1,9 @@
 import type { EditorView } from "@tiptap/pm/view";
 
 import { type ObjectBody, objectBody } from "@/core/editor/objects";
+// Straight at the primitive rather than through `chrome/index.ts`: that barrel
+// also carries the surface registry this lane is listed in, so the barrel route
+// is a module cycle.
 import { type OverlayBox, overlayRect } from "@/features/editor/chrome/manuscript-overlay";
 
 import { type BlockTarget, blockAt, objectIsWholeBlock } from "./block-targets";

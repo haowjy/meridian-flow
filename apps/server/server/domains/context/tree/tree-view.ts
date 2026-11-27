@@ -52,6 +52,7 @@ export type VisibleDocument = {
   id: DocumentId;
   contextSourceId: ContextSourceId;
   folderId: FolderId | null;
+  /** The filename as the view shows it, extension included: never render it with an extension. */
   name: string;
   segment: string;
   extension: string;
@@ -160,6 +161,15 @@ type NodeSlot = {
 
 type SlotHit = { key: number; id: string; how: number };
 
+/**
+ * The node of one kind that the view shows at each slot (source, parent, segment), read as
+ * `childAtSegment` in `@meridian/contracts/protocol` reads it: a `~` suffix reaches the child whose id
+ * begins with it, the lowest id if two do, and one that reaches none reads as its name; a name
+ * reaches the child of that name with no suffix. At a `folder` level of a path, a folder of the
+ * name answers when the plain twin is a document (the lowest id). One statement for any number of
+ * slots: each is a `LATERAL` probe of the relation, which keeps a Work's union planned as index
+ * probes (see the store page); only a segment with a suffix scans its parent's children.
+ */
 async function nodesAt(
   db: DrizzleDb,
   view: TreeView,

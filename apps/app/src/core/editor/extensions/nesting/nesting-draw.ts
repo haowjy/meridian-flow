@@ -1,3 +1,9 @@
+/**
+ * Draws lists and quotes. Both are runs of sibling blocks, so the indent, the quote bars, the
+ * marker and the number come from one decoration per block, taken from `nest`'s reading of
+ * the siblings, not from wrapper elements. Numbers are drawn with generated content
+ * (`data-number`): CSS counters cannot tell where a list restarts among siblings.
+ */
 import {
   type BlockFacts,
   innermostListStep,
@@ -62,6 +68,7 @@ function drawContainer(container: ProseMirrorNode, start: number, out: Decoratio
     if (listSteps > 0) {
       classes.push("meridian-listed");
       style += ` --nest-marker: ${offset(facts.steps.slice(0, innermostList + 1))};`;
+      // The DOM is flat, so a screen reader learns the depth from the block itself.
       attrs["aria-level"] = String(listSteps);
     }
     if (quoted) {

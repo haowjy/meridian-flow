@@ -25,6 +25,7 @@ export function ChooserMark({ className }: { className?: string }) {
 
 export function withRowNote(children: ReactNode, note: ReactNode, end?: ReactNode): ReactNode {
   const hasNote = !(note === null || note === undefined || note === false || note === "");
+  // Without a note or mark the children pass through as they are: an `asChild` row slots onto one child.
   if (!hasNote && !end) return children;
   return (
     <>

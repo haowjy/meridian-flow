@@ -72,6 +72,7 @@ function DiagramErrorCard({
           type="button"
           size="sm"
           variant="ghost"
+          // A press here must not carry a caret into the fence underneath.
           onMouseDown={(event) => event.preventDefault()}
           onClick={onEditSource}
         >

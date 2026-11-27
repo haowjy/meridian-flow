@@ -1,3 +1,9 @@
+/**
+ * The one traversal of stored link occurrences: link runs, `image` and `figure`.
+ *
+ * The client binder and agent-edit's ref assignment walk ProseMirror through
+ * here, and `parseWithSpans` aligns its source spans to this exact order.
+ */
 import { storedLinkRef } from "@meridian/contracts";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
@@ -161,6 +167,7 @@ export function blockOccurrenceSpans(
 function collectSources(node: AstRecord, out: SourceOccurrence[]): SourceOccurrence[] {
   const span = spanOf(node);
   if (node.type === "link") {
+    // A link with no text becomes no run (an image inside one carries no link mark).
     if (span && hasText(node))
       out.push({ kind: "link", span, link: { url: node.url, title: node.title } });
   } else if (node.type === "image" || parseImageHtmlAst(node)) {
@@ -181,6 +188,11 @@ function hasText(node: AstRecord): boolean {
   return Array.isArray(node.children) && (node.children as AstRecord[]).some(hasText);
 }
 
+/**
+ * Adjacent links with one destination are one run in ProseMirror: the parse
+ * gives their text the same mark. Only emphasis delimiters may sit between
+ * them, since anything else becomes unlinked text that ends the run.
+ */
 function mergeAdjacentLinks(sources: SourceOccurrence[], source: string): SourceOccurrence[] {
   const merged: SourceOccurrence[] = [];
   for (const entry of sources) {

@@ -22,6 +22,11 @@ export interface Removal {
   seen: ReadonlyMap<DocKey, DocVersion>;
 }
 
+/**
+ * Whether an `order` value is a key, so the block is in place. Anything else is a removal: a
+ * record, or an older build's `null`. A key is base-62 and never starts with `{`, so no read
+ * parses a record to tell.
+ */
 export function isOrderKey(value: unknown): value is string {
   return typeof value === "string" && !value.startsWith("{");
 }

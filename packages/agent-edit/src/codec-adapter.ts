@@ -20,8 +20,16 @@ export interface AgentEditCodec {
 
   serializeBlock(block: PMNode, hash: string): string;
 
+  /**
+   * Bodies of blocks shown to the model under `hashes[i]`, recording the links each
+   * showed in the shown-link ledger. Compose the line with `toHashline`.
+   */
   serializeBlocks(blocks: readonly PMNode[], hashes: readonly string[]): string[];
 
+  /**
+   * The blocks at `picked` of a whole document, each as it sits there (its containers' prefixes
+   * and its gap), recording the links they showed. `hashes` are the whole document's.
+   */
   serializeSelection(
     document: readonly PMNode[],
     hashes: readonly string[],
@@ -31,6 +39,11 @@ export interface AgentEditCodec {
   shownLinks: ShownLinkLedger["shownLinks"];
 }
 
+/**
+ * Parse is pure syntax and needs no scope; serializing does. Each command
+ * takes the codec for its scope once at entry, after its host prepared the
+ * scope, and passes that codec down.
+ */
 export interface AgentEditCodecFactory {
   readonly markup: MarkupCodec;
   parse(content: string): ParsedContent;

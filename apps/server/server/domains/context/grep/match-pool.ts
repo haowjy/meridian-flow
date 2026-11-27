@@ -85,6 +85,7 @@ export async function runMatch<Op extends MatchRequest["op"]>(
       worker.on("error", onError);
       worker.on("exit", onExit);
       signal.addEventListener("abort", onAbort, { once: true });
+      // An abort between the entry check and this listener never fires the listener.
       if (signal.aborted) return onAbort();
       worker.postMessage(request);
     });

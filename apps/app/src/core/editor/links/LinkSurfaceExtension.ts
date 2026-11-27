@@ -107,6 +107,10 @@ export const LinkSurfaceExtension = Extension.create({
     const editor = this.editor;
     const { surface, resolution } = this.storage;
 
+    // What the current press started from: where the pointer was, and where
+    // the writer's selection was before ProseMirror moved it. The selection is
+    // an anchor rather than two numbers — a press and its click are two events,
+    // and a peer's write can land between them.
     let press: { origin: LinkPoint; selection: EditorAnchor } | null = null;
     let releaseHover: (() => void) | null = null;
 
@@ -230,6 +234,16 @@ export const LinkSurfaceExtension = Extension.create({
           };
           editor.on("transaction", followDocument);
 
+          /**
+           * A selection that is one internal link's text is also the entry the link names, handed
+           * to the app. ProseMirror's own `dragstart` ran first (its listeners predate the plugin
+           * views) and made the selection an ordinary text drag, so a drop back into this editor
+           * moves the text as it always did; the app's drag only decides what a drop elsewhere
+           * means. This listener sees the drag ProseMirror started (`view.dragging`), never starts
+           * one: an unselected press still sweeps a selection (law 7), a selection that is more than
+           * the link, an image or a block is ProseMirror's alone, and with no app registered the
+           * text just drags as text.
+           */
           const announceDrag = (event: DragEvent) => {
             if (!view.dragging || !surface.dragSource) return;
             const dragged = selectedLinkEntry(view, event);
@@ -277,6 +291,8 @@ export const LinkSurfaceExtension = Extension.create({
              * nothing to do with the manuscript.
              */
             auxclick(view, event) {
+              // Non-primary covers the right button too in some browsers, and
+              // that one belongs to the claim ladder.
               if (event.button !== MIDDLE_BUTTON) return false;
               return handleLinkPress(view, event, event.button);
             },
@@ -321,6 +337,12 @@ function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
   };
 }
 
+/**
+ * The stored link under a rendered anchor. The ref never reaches the DOM, so
+ * it is read from the mark at the anchor's own start: one character in, a
+ * one-character link reads the link after it. The rendered href stands in
+ * when the anchor no longer maps to a link.
+ */
 function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
   const link = linkAt(view.state, view.posAtDOM(anchor, 0));
   if (link) return linkKeyOfMark(link.attributes);
@@ -330,6 +352,19 @@ function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
   };
 }
 
+/**
+ * Put the selection back where the press found it.
+ *
+ * ProseMirror places the caret on `mousedown`, long before the gesture is
+ * known to be a follow, and preventing that would take drag-selection from a
+ * link with it. So the caret moves and comes back, and what the writer keeps
+ * is the end state: the place they return to from the new tab.
+ *
+ * Where the press found it is resolved from the held anchor rather than from the
+ * numbers it had then. A peer who types one line up between the press and the
+ * click moves every position in the document, and clamping stale numbers to the
+ * document's size puts the caret in the middle of somebody else's sentence.
+ */
 function restoreSelection(view: EditorView, selection: EditorAnchor | undefined): void {
   const at = selection && resolveAnchorIn(view.state, selection);
   if (!at) return;
@@ -339,6 +374,8 @@ function restoreSelection(view: EditorView, selection: EditorAnchor | undefined)
   const size = doc.content.size;
   const $from = doc.resolve(Math.min(at.from, size));
   const $to = doc.resolve(Math.min(at.to, size));
+  // `between` lands on the nearest valid text position rather than throwing,
+  // which matters when a peer reshaped the block during the press.
   view.dispatch(view.state.tr.setSelection(TextSelection.between($from, $to)));
 }
 

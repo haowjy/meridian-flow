@@ -856,6 +856,8 @@ export function runTreeCommand(
           if (!named.has(result.go.node.id)) named.set(result.go.node.id, { from, goes: true });
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
+      // As the sidebar's `outermost`: a node named twice, or inside a folder also named, moves once,
+      // with that folder; it counts as moved when the folder does.
       const decided: Decided[] = [];
       let made = 0;
       for (const item of going) {
@@ -1105,6 +1107,7 @@ export function runTreeUndo(
       remember(cx, back.id, entry.node);
     }
   }
+  // The answers about sources the locks missed were guesses: nothing of this commits.
   judge.assertLocked();
   const after =
     scope.view.draft !== null && inLive ? scope.writer.view(LIVE) : scope.writer.view(scope.view);

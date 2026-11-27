@@ -245,6 +245,16 @@ export function createDrizzleDocumentTrash(deps: {
     });
   }
 
+  /**
+   * Empties one Trash entry: a `purge` record naming the delete, then the content of the
+   * documents it took. The whole subtree goes in one submission (a folder purged while a child's
+   * row stands fails the deferred foreign key). Null when the entry is not there, a node outside
+   * it stands inside it, or a Work can still bring it back: retention waits.
+   *
+   * What holds a document is asked before the purge, under the list's key: the purge removes the
+   * rows the question reads. The first submission makes nothing (a read under the key, which the
+   * transaction keeps), the second purges.
+   */
   async function purgeEntry(list: TreeList, deleteId: string): Promise<Released | null> {
     try {
       return await runInDrizzleTransaction(deps.db, async () => {
@@ -275,6 +285,8 @@ export function createDrizzleDocumentTrash(deps: {
         await deps.tree.submit({
           lists: [list],
           make: ([{ writer }]) => {
+            // The records admitted since the first submission may have put a node inside:
+            // the purge names exactly what this one found, and the replay rescues the rest.
             writer.purge("system", taken.entry, taken.nodes);
           },
         });
@@ -286,6 +298,11 @@ export function createDrizzleDocumentTrash(deps: {
     }
   }
 
+  /**
+   * The Trash entries whose nodes have all been in Trash since `cutoff`, oldest first. The page
+   * key is the database's own text of the time: a JS date would drop its microseconds and the
+   * same entry would come back as the next page.
+   */
   async function dueEntries(cutoff: Date, after: { at: string; id: string } | undefined) {
     const rowsDue = await currentDrizzleDb(deps.db).execute<{
       deleteId: string;
@@ -319,6 +336,9 @@ export function createDrizzleDocumentTrash(deps: {
       return await runInDrizzleTransaction(deps.db, async () => {
         const owner = await ownerOfDocument(tx(), documentId);
         if (!owner) return null;
+        // Its owner's list holds its create (no view shows it, so nothing moved it to another
+        // list) and is the one an Undo of the Discard reshows it from: a read of what is still
+        // unsettled, under the list's key.
         await deps.tree.submit({
           lists: [owner],
           make: (copies) => {
@@ -333,6 +353,8 @@ export function createDrizzleDocumentTrash(deps: {
           .limit(1);
         if (!still) return null;
         if ((await deps.purges.settle([documentId])) === "pending") return null;
+        // The list that holds its create says the content is gone: the browsers keeping a copy
+        // of a Discarded document delete it on this record, the one fact they can trust.
         await deps.tree.submit({
           lists: [owner],
           make: (copies) => {
@@ -453,6 +475,7 @@ export function createDrizzleDocumentTrash(deps: {
         const before = count;
         for (const { id } of candidates)
           await finish(await isolated(id, () => purgeUnviewed(id as DocumentId, cutoff)));
+        // A candidate that waits stays a candidate: stop when a pass releases nothing.
         if (count === before) break;
       }
       return count;

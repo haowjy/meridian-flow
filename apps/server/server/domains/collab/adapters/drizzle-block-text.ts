@@ -12,10 +12,18 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { BlockText } from "../domain/ports/block-text.js";
 import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
 
+/**
+ * The version text derivations compare: the live row's, and 0 for a document no live row places.
+ * Needs `treeNodes` left-joined on the document.
+ */
 export const liveLocationVersion = sql<bigint>`coalesce(${treeNodes.locationVersion}, 0)`.mapWith(
   BigInt,
 );
 
+/**
+ * Both predicates need `documentBlockRooms` left-joined to `documents` and `treeNodes`.
+ * `cutBehind`: the derivation's cut differs from the document's saved content or location.
+ */
 const cutBehind = [
   ne(documentBlockRooms.cutContentSeq, documents.contentSeq),
   sql`${documentBlockRooms.cutLocationVersion} <> coalesce(${treeNodes.locationVersion}, 0)`,
@@ -28,6 +36,11 @@ export const staleForReaders = or(
   otherExtractor,
 ) as SQL;
 
+/**
+ * What the sweep should derive: no room, or behind and written by this build or an older one.
+ * Builds overlap briefly in a deploy; a room a newer extractor certified is that build's to keep
+ * current, and certify refuses this build's writes to it, so retrying it only burns attempts.
+ */
 export const staleForSweep = or(
   isNull(documentBlockRooms.roomId),
   and(

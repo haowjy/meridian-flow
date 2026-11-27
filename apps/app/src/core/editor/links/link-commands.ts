@@ -45,6 +45,11 @@ export type LinkSelection = {
   from: number;
   to: number;
   attributes: Record<string, unknown>;
+  /**
+   * The mark object itself. ProseMirror interns marks by attributes, so this
+   * is the identity that survives a remap: the same link resolved before and
+   * after an edit above it comes back as the same object.
+   */
   identity: Mark;
 };
 
@@ -132,6 +137,16 @@ export function mapLinkDraft(
   return { ...draft, ...at };
 }
 
+/**
+ * The same link after a document change, or null when the writer's link is
+ * gone. What keeps a surface aimed at one link from acting on another.
+ *
+ * Coordinates outlive the thing that was at them. A peer deletes the link and
+ * the words after it slide back into those numbers; a peer edits the href and
+ * the same range now means a different destination. Both read as "still there"
+ * to a position alone, so the mark decides: same attributes, same destination,
+ * and anything else means this surface has nothing left to act on.
+ */
 export function relocateLink(
   state: EditorState,
   link: { anchor: LinkAnchor; identity: Mark },

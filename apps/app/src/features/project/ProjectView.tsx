@@ -116,6 +116,10 @@ export function ProjectView(props: ProjectViewProps) {
     (editorWorkId === noWork?.id ? noWork : works?.find((work) => work.id === editorWorkId)) ??
     null;
 
+  // Gate the whole project on prefs-store hydration so DesktopProject mounts
+  // exactly once against final persisted prefs. rehydrate() is synchronous
+  // (localStorage), so this is at most one frame — no visible flash. Gating here
+  // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   const onSelectEditorContextPath = useCallback(
     (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {

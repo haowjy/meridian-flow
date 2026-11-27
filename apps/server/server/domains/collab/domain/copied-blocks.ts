@@ -57,6 +57,11 @@ export function createCopyIdentityMap(input: {
   };
 }
 
+/**
+ * A source maps to exactly one copy. Two targets for one source (a nested selection copied
+ * twice) would let the last win and send the copied set's internal links outside it, so
+ * the caller must collapse the selection first.
+ */
 function indexOnce<Entry, Target>(
   entries: readonly Entry[],
   key: (entry: Entry) => string,
@@ -114,6 +119,9 @@ function remappedAttrs(
       const settled = aheadSettlements?.get(identity);
       const target = settled ? map.documents.get(settled) : undefined;
       if (target) return documentAttrs(target, suffix, attrs.title);
+      // An ahead ref settles only on a document. A folder may have arrived at its address
+      // since it was minted (a writer links a folder before creating it), and the copy of
+      // that folder is what the link now names.
       const address =
         occurrence.kind === "link" ? resolveDocumentHref(attrs.href, sourceHolderUri) : null;
       const folder = address ? map.foldersAt.get(address.uri) : undefined;

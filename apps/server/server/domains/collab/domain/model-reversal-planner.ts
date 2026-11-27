@@ -14,6 +14,10 @@ export type ModelInverseQuery = TurnInverseQuery & { model: true };
 export type UndoablePart = StoredInversePart & { edit: NonNullable<StoredInversePart["edit"]> };
 export const undoable = (part: StoredInversePart): part is UndoablePart => part.edit !== null;
 
+/**
+ * One immutable capture's reversal policy. A retry creates a new planner from a new capture. The
+ * caller frees it: it takes planned steps back on private copies of the captured rooms.
+ */
 export function createCapturedReversalPlanner(document: InverseDocument, query: TurnInverseQuery) {
   const own = entries(document.history, query.threadId);
   const actions = inspectionActions(document.history, own);

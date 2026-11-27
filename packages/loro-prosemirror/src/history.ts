@@ -20,6 +20,10 @@ import { type SelectionCursors, selectionCursors } from "./cursors.js";
 export { UNTRACKED_ORIGIN };
 
 const GROUP_MS = 500;
+/**
+ * Steps kept. A step can be any number of items on a manager (a peer's import splits typing into
+ * one per commit), so the managers keep every item, and a step leaves the history whole (`forget`).
+ */
 const DEPTH = 500;
 
 type End = "anchor" | "head";
@@ -63,6 +67,7 @@ export class UndoHistory {
   private open: Step | null = null;
   private tag: { step: number; selection: SelectionCursors } | null = null;
   private readonly popped = new Map<End, Uint8Array>();
+  /** The cursors the last push handed to Loro: still ours to free. */
   private pushed: Cursor[] = [];
   private ids = 0;
   private joining = false;

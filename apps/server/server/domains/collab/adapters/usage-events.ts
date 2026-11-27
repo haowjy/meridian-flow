@@ -28,6 +28,7 @@ export function createUsageEvents(db: Database, sink: EventSink | undefined): Us
   if (!sink) return { pressUndone() {}, turnUndone() {} };
   const eventSink = sink;
   const afterCommit = (send: () => void | Promise<void>) => {
+    // Outside a transaction it runs now, detached: an event never fails the command.
     if (!deferUntilDrizzleCommit(send))
       void Promise.resolve()
         .then(send)

@@ -33,6 +33,7 @@ export function createAgentEditRouter(input: { core: AgentEditCore }): AgentEdit
             ? ({ kind: "draft", draftId: destination.draftId } as const)
             : ({ kind: "live" } as const),
       };
+      // An edits read shows history, not the document: it records no frontier.
       const readCore = () =>
         input.core.read(
           command,

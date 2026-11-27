@@ -545,6 +545,8 @@ export function createDrizzleDocumentLinkScopes(deps: {
     prepare,
     holder({ documentId, view }) {
       const snapshot = storage.getStore();
+      // A settled snapshot only inherited (a timer, a deferred callback) answers for
+      // nobody; holders taken while it was open keep it.
       if (!snapshot?.open) {
         observer.unscoped(documentId);
         return createHolderLinkScope({ uri: null, projectId: "", view }, EMPTY_CATALOG);

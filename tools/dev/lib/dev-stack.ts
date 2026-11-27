@@ -45,6 +45,7 @@ function ps(args: string[]): string {
       stdio: ["ignore", "pipe", "ignore"],
     });
   } catch (error) {
+    // `ps -p` exits non-zero when the pid is gone; anything else means `ps` itself is broken.
     if (typeof (error as { status?: unknown }).status === "number") return "";
     throw error;
   }
@@ -113,6 +114,7 @@ export function retireStack(
       );
     }
   }
+  // Only this stack's record: a start that overlapped the stop has written its own.
   if (readStackState(checkout)?.pid === stack.pid) {
     fs.rmSync(path.join(checkout, STATE_FILE), { force: true });
   }
@@ -243,6 +245,7 @@ export async function stopStack(checkout: string): Promise<boolean> {
     while (isAlive(supervisor.pid) && Date.now() < deadline) await sleep(200);
   }
   await terminateTree([...stack.values()], supervisorAlive ? 0 : 5_000);
+  // A supervisor that stopped cleanly has retired its own record; one still here belongs to a supervisor that was killed or could not reach Tailscale.
   if (readStackState(checkout)?.pid === state.pid) retireStack(checkout, state);
   return stack.size > 0;
 }

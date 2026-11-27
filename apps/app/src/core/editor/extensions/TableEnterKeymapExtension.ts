@@ -1,3 +1,11 @@
+/**
+ * Keeps Enter from deleting a swept rectangle of table cells.
+ *
+ * Carets and text ranges decline here, so ProseMirror's base Enter chain splits
+ * cell paragraphs exactly as it splits prose elsewhere. A non-text selection
+ * that reaches table scope is consumed unchanged: the base chain would delete a
+ * `CellSelection`, and Enter must never empty every cell in a sweep.
+ */
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 

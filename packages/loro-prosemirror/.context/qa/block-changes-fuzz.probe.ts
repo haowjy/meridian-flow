@@ -48,6 +48,7 @@ const read = (d) => readProseMirror(d, schema);
 const render = (d) => JSON.stringify(read(d).toJSON());
 const textOfDoc = (doc) => (doc ? inText(doc, (t) => t.toString()) : "");
 const say = (...parts) => process.stdout.write(`${parts.join(" ")}\n`);
+/** A text doc's delta with each style set in key order: Loro's order follows the history, not the value. */
 const deltaOf = (doc) =>
   doc
     ? inText(doc, (t) => t.toDelta()).map((op) =>
@@ -322,6 +323,7 @@ export function runScript(seed, { verbose = false } = {}) {
     try {
       const r = run(cmd);
       commit(d.live, r.live);
+      // A room forwards its forks on every Live commit, before the fork's own batch lands.
       d.forward();
       commit(d, r.fork);
       d.forward();
@@ -711,6 +713,9 @@ export function runScript(seed, { verbose = false } = {}) {
       const ids = charIds(d.textOf(id));
       const live = (at) => liveIds.has(ids[at]);
       if (!withExtras(draftsBefore[i], text, live)) {
+        // Text the other draft deleted comes back as one run of new characters, placed by Loro beside this
+        // draft's own re-created insertion at the same gap: on either side. Counted, not failed (reported to
+        // the text Undo redesign); a character the draft had that is gone still fails.
         const left = [...text];
         for (const ch of draftsBefore[i]) {
           const at = left.indexOf(ch);
@@ -1252,6 +1257,7 @@ export function runScript(seed, { verbose = false } = {}) {
         if (g.chance(0.5)) writerEdit();
       }
     }
+    // After the seeded steps, so a seed's script up to here is what it was before these cases.
     halves();
     neighbours();
     syncLive();

@@ -81,6 +81,8 @@ function parseImageHtmlAttributes(
   const src = attributes.get("src");
   const alt = attributes.get("alt");
   const title = attributes.get("title");
+  // A bare `alt` or `title` with no value says nothing about the picture, and
+  // the round-trip would invent `alt=""` for it.
   if (typeof src !== "string" || alt === null || title === null) return null;
 
   const width = parseWidth(attributes.get("width"));

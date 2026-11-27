@@ -1,3 +1,9 @@
+/**
+ * A Work's drafts (design §2, "The draft row stays, and a Work has several"): the list the version
+ * chip shows, `+ New draft`, rename, `Delete draft` and its Undo, which draft a chat writes into,
+ * and the purge of a draft deleted 30 days ago. Lock order: the Work's row first (the owner slot),
+ * then the draft rows; the purge then takes the draft's tree lists, then its forks' documents.
+ */
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import { newDraftId } from "@meridian/contracts";
 import type { WorkDraft } from "@meridian/contracts/drafts";

@@ -209,6 +209,9 @@ export function createEditorChrome(hoverTimers?: HoverIntentTimers): {
         : layerRetreats.at(-1);
       if (!retreat) return false;
       if (retreat.backtrack()) return true;
+      // With a real layer, its existing close path owns Radix animation and
+      // focus return. Before React registers that layer, the semantic lease is
+      // the only owner available and closes the suggestion directly.
       if (topmost) return false;
       retreat.dismiss();
       return true;

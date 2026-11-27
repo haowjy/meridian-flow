@@ -44,6 +44,7 @@ export class LoroDocument {
     return hash;
   }
 
+  /** The one ref of a block id, so a ref keeps its identity across reads. */
   ref(id: BlockId): LoroBlock {
     let ref = this.refs.get(id);
     if (!ref) {
@@ -192,6 +193,8 @@ export function loroModel(schema: Schema): LoroDocumentModel {
           key: block.id,
           hash: document.hashOf(block.id),
           fullHash: fullHashForBlockId(block.id),
+          // The model reads and writes Markdown, which has no ids, so its view of a block has none:
+          // a block it leaves alone compares equal to its own Markdown and keeps its id.
           node: withoutBlockIds(nodeOf(schema, block)),
         }),
       );

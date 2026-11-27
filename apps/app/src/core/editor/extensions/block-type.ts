@@ -2,6 +2,12 @@ import { InputRule } from "@tiptap/core";
 import type { Attrs, NodeType, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
+/**
+ * What `node` keeps when it becomes `type`, with `attrs` on top: its id, its place in quotes and
+ * lists and every other attribute `type` also has. Every door that
+ * changes a block's type goes through here; ProseMirror's `setBlockType` and TipTap's `setNode`
+ * start from defaults.
+ */
 function retypedAttrs(node: ProseMirrorNode, type: NodeType, attrs: Attrs = {}): Attrs {
   const kept: Record<string, unknown> = {};
   for (const name of Object.keys(type.spec.attrs ?? {})) {

@@ -13,6 +13,8 @@ import { caretHomeFromObjectTransaction, typeBesideObjectTransaction } from "./o
 
 let fixture: StandaloneEditor | null = null;
 
+// Arrow keys reach gapcursor, which measures the line to decide whether Down
+// leaves the block. jsdom cannot measure.
 installJsdomLayout();
 
 afterEach(() => {

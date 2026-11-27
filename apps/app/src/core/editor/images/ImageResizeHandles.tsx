@@ -125,6 +125,23 @@ export function ImageResizeHandles({
   );
 }
 
+/**
+ * The widest this picture can be drawn and still be seen whole: the NARROWEST
+ * box between it and the manuscript.
+ *
+ * Not the block it stands in. That block can be wider than what the writer can
+ * see of it — a table cell inside the grid's horizontal scroller is the case
+ * that proved it, and reading the block alone let a drag push the far grips out
+ * past the scroller's edge where no pointer can reach them. So every box on the
+ * way out is asked, and the smallest answer wins; each of them is a real
+ * boundary, because a box narrower than its child is a box that clips or
+ * scrolls it. The walk ends at the manuscript, which is the outermost thing a
+ * picture is ever bounded by.
+ *
+ * Inline boxes are skipped rather than named: a picture's own wrapper and
+ * TipTap's node-view container are both inline, and a box that does not bound a
+ * line has no width to offer.
+ */
 function visibleBoundWidth(element: HTMLElement): number | null {
   let narrowest: number | null = null;
   for (let at = element.parentElement; at; at = at.parentElement) {

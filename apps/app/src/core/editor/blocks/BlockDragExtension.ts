@@ -95,6 +95,10 @@ export const BlockDragExtension = Extension.create({
             if (message !== undefined) return message;
             if (!current) return null;
             const carried = carryAnchor(current.hold, transaction.mapping);
+            // A deleted block leaves nothing to hold — which only the mapping
+            // of a local edit can say, and only for an editor with no shared
+            // document behind it. Identity answers on read, where the binding
+            // has finished describing the document this transaction produced.
             return carried ? { ...current, hold: carried } : null;
           },
         },

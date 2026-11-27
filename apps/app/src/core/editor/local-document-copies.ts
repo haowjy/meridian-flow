@@ -49,12 +49,18 @@ function parseName(name: string): { key: string; incarnation: number } {
     : { key: name.slice(0, at), incarnation: Number(name.slice(at + 1)) };
 }
 
+/**
+ * A room's copy key, with no incarnation: `LocalDocumentCopies.current` says which one is open now.
+ * A fork room's copy is named under its document's, so the document's copies are its Live copy and
+ * every fork copy of it, found and deleted together.
+ */
 export function documentSessionPersistenceKey(accountId: AccountId, room: DocumentRoom) {
   const live = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(room.documentId)}`;
   return room.kind === "live" ? live : `${live}/fork/${encodeURIComponent(room.draftId)}`;
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
+/** Opens the database `name` if it exists; null when it does not, and none is created. */
 function openExisting(idb: IDBFactory, name: string): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
     const request = idb.open(name);
@@ -135,6 +141,7 @@ export class LocalDocumentCopies {
     return `meridian:local-copy:v2:${name}`;
   }
 
+  /** The incarnation of the room's copy that sessions open now. Synchronous: a session is made where it is needed. */
   current(key: string): number {
     return Number(this.pointers.getItem(`${POINTER_PREFIX}${key}`) ?? 0);
   }

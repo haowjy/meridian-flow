@@ -6,6 +6,14 @@ import { cn } from "@/lib/utils";
 
 import { useChromeLayer } from "./chrome-layers";
 
+/**
+ * How much screen a dialog is entitled to. The shell owns both numbers, so a
+ * surface never has to out-specify them from its own stylesheet: a `form` is a
+ * centered card that stops growing once its fields are readable, a `workspace`
+ * is a frame whose only ceiling is the viewport, because the content in it — a
+ * diagram on a pan/zoom canvas — is the reason the writer opened the dialog.
+ * `svh` rather than `vh`: a phone's URL bar must not clip the header off.
+ */
 const DIALOG_SIZES = {
   form: "max-w-[min(64rem,92vw)]",
   workspace: "h-[88svh] w-[94vw] max-w-none",

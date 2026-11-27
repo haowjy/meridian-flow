@@ -38,6 +38,11 @@ export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvas
     };
   }, [maxFitScale]);
 
+  /**
+   * The stage carries the content's intrinsic size because the content itself
+   * usually will not: mermaid emits `width="100%"`, and an unsized wrapper
+   * around it measures zero and fits to nothing.
+   */
   useLayoutEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -64,6 +69,11 @@ export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvas
   }, []);
 
   return (
+    // The pill is a SIBLING of the gesture host, not a child of it. The viewer
+    // takes pointer capture on `pointerdown` anywhere in its host, which would
+    // redirect the `pointerup` away from a button inside and swallow the click
+    // — measured in the browser, not guessed at. The host is the viewport;
+    // chrome sits beside it.
     <div className="meridian-viewer-frame">
       <div className="meridian-viewer-canvas" ref={hostRef}>
         <div className="meridian-viewer-stage" ref={stageRef}>

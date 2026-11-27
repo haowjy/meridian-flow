@@ -325,6 +325,7 @@ export function useAssetImageRenderState(input: {
           name: signed.name,
           mimeType: signed.mimeType,
           sizeBytes: signed.sizeBytes,
+          // A picture still in a Work's draft is not in the live tree the download route reads.
           downloadUrl: owner ? signed.signedUrl : documentDownloadUrl(routeAssetDocumentId),
         };
         fileFactsRef.current = file;

@@ -15,6 +15,7 @@ export function createWorkDraftReviewService(input: {
   purgeDiscards: CollabDrafts["draftReview"]["purgeDiscards"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   folderIds(draftId: DraftId): Promise<{ id: string }[]>;
+  /** The cut the draft's rows are read at: call it before reading them. */
   treeCut(draftId: DraftId): Promise<TreeSaw>;
   pending: Pick<WorkDraftPendingStore, "listDraftsChangingDocument" | "countPendingInProject">;
 }): Pick<CollabDrafts, "draftReview"> {

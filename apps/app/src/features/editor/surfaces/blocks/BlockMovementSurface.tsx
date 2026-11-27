@@ -160,6 +160,9 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
 
   return (
     <>
+      {/* The handle stays mounted for the whole gesture even while it is
+          invisible: it holds the pointer capture that keeps a touch drag from
+          turning into a page scroll. */}
       {handle
         ? createPortal(
             <button
@@ -224,6 +227,14 @@ export function BlockMovementSurface({ editor }: { editor: Editor }) {
   );
 }
 
+/**
+ * The handle's top-left in the pointer's own space, which is where Radix hangs
+ * a menu from.
+ *
+ * Read off the element rather than passed down from the placement, because the
+ * two are in different coordinate spaces on purpose: the handle is drawn in the
+ * manuscript pane's, and the pane is what carries it through a scroll.
+ */
 function handleAnchorPoint(handle: HTMLElement): { x: number; y: number } {
   const box = handle.getBoundingClientRect();
   return { x: box.left, y: box.top };
@@ -236,6 +247,8 @@ function openBlockMenuAt(editor: Editor, pos: number, open: (hold: NodeHold) => 
     ? selectObjectTransaction(editor.state, target.pos)
     : editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(target.pos + 1)));
   if (selection) editor.view.dispatch(selection);
+  // Held from the state the selection left behind: the block moved if the
+  // press selected an object, and the menu belongs to where it is now.
   const hold = holdBlock(editor.state, target.pos);
   if (hold) open(hold);
 }

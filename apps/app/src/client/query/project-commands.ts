@@ -10,6 +10,7 @@ import { projectIdOfQueryKey, projectQueryKeys } from "./project-query-keys";
 
 export const PROJECT_CREATE_KIND = "project_create";
 
+/** What the record stores: the identity the client minted, so a resend creates the same project. */
 export type ProjectCreateBody = { id: string; title: string; userId: string };
 
 type ProjectResult = Project | (StoredResult & { project?: Project });
@@ -79,6 +80,11 @@ export function projectCreationFor(
   return found;
 }
 
+/**
+ * The driver each account runs in this tab, for the loader and the read gate, which run outside
+ * React. The loader asks for its own account's: during an account switch it runs before the new
+ * provider mounts, while the old account's driver is still the mounted one.
+ */
 type AccountJournal = { driver: CommandDriver | null; opened: Deferred };
 type Deferred = { promise: Promise<void>; resolve: () => void };
 
@@ -153,6 +159,7 @@ export function projectDomain(client: QueryClient): CommandDomain {
       const journal = journalOf(accountId);
       journal.driver = driver;
       mountedAccount = accountId;
+      // A journal that cannot be read leaves no creations to find, and the loader goes on.
       const { resolve } = journal.opened;
       void opened.then(resolve, resolve);
       return () => {

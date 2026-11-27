@@ -225,6 +225,8 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
         const lineage = await deps.lineages.byRef(projectId, handle);
         return lineage ? { owner: `chat ${chatTitle(lineage.title ?? null)}` } : null;
       }
+      // Measured on deepseek-flash: without the reached address and "is w3", the
+      // model read this as an alias and wrote to the handle anyway (6/6).
       const address = formatParsedContextUri("scratch", "", authority);
       const reached =
         authority.kind === "work"

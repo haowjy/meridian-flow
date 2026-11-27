@@ -8,6 +8,10 @@ import type {
 export interface DocumentCommands {
   lookup(key: CommandLookupKey): Promise<CommandLookup>;
   await(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
+  /**
+   * Claims the id and runs the effect in one transaction that holds no second connection.
+   * An id already taken throws `CommandExistsError`.
+   */
   run<R extends StoredDocumentCommandResult>(
     envelope: CommandEnvelope,
     effect: () => Promise<R>,

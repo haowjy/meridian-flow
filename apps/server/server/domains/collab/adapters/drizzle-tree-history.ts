@@ -85,6 +85,8 @@ export function createDrizzleTreeHistory(
         })
         .returning({ id: treeEditReceipts.id });
       if (!row) throw new Error("A tree receipt was not inserted");
+      // A node's counter is the document's own for a document, so one ordinal orders its text
+      // edits and tree changes; a folder has no document, and the counter takes any node id.
       const nodes = input.nodes.some((node) => node.nodeId === input.subject)
         ? input.nodes
         : [{ nodeId: input.subject, beforeAt: null, afterAt: null }, ...input.nodes];
@@ -166,6 +168,8 @@ export function createDrizzleTreeHistory(
         )
         .orderBy(desc(treeEditReceipts.seq))
         .limit(1);
+      // What a receipt took from the path it was written at comes first: a blocker moved aside
+      // from a path never stands in for what was deleted there.
       if (written) return { node: written.node, folder: at.endsWith("/") };
       const touched = (address: string | null, node: string) =>
         address === at ||

@@ -32,6 +32,7 @@ export const membersOf = (name: string, key: string): string[] => {
 
 export const TEXT_KEY = "t";
 
+/** An inline node is one U+FFFC carrying the `inline` style, written in the same commit. */
 export const SENTINEL = "￼";
 export const INLINE_STYLE = "inline";
 
@@ -67,6 +68,10 @@ export interface NodeRule {
 
 export type StyleExpand = "before" | "after" | "both" | "none";
 
+/**
+ * The schema facts the shape reads, built from a ProseMirror schema by the binding
+ * (`shapeSchemaOf` in `@meridian/loro-prosemirror`), so this package has no ProseMirror at runtime.
+ */
 export interface ShapeSchema {
   node(name: string): NodeRule | undefined;
   root: string;

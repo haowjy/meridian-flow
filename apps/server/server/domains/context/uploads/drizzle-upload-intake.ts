@@ -24,6 +24,7 @@ async function lockIntakeKey(db: Database, projectId: string, intakeId: string):
   );
 }
 
+/** An intake's owning chat never changes, so it is safe to read before any lock. A source upload has none. */
 async function readIntakeOwner(
   db: Database,
   where: ReturnType<typeof and>,
@@ -47,6 +48,10 @@ async function lockChat(db: Database, projectId: string, chatId: string | null):
   );
 }
 
+/**
+ * An upload's address is derived from its chat's current handle, never frozen: a chat that has no
+ * row yet has no handle, so its uploads read as the chat-relative `uploads://name` until it does.
+ */
 function uploadUri(chatRef: string | null, path: string): string {
   return canonicalContextUri(
     "uploads",
@@ -104,6 +109,7 @@ async function projectOwnedBy(db: Database, projectId: string, actorUserId: stri
   return Boolean(project);
 }
 
+/** Runs in `reserve`, which already holds the owning chat's lock. */
 async function resolveOwner(
   db: Database,
   owner: Extract<UploadOwner, { kind: "chat" }>,
@@ -178,6 +184,8 @@ export function createDrizzleUploadIntakeRepository(
               ? { sourceId: null, chatRef: null }
               : null;
         if (!placement) return { kind: "owner_unavailable" };
+        // A source upload's id is the client's: the link to the file stands before the file does.
+        // An id a document already holds would make that link name someone else's file.
         const documentId = requester.kind === "source" ? input.intakeId : crypto.randomUUID();
         if (
           requester.kind === "source" &&

@@ -74,6 +74,7 @@ function documentOrder(
 
   for (let row = 0; row < matching.length; row++) {
     for (const column of tight[row]) {
+      // Real columns are sorted by old occurrence, before equivalent unmatched dummies.
       if (column >= oldColumns || column === matching[row]) break;
       if (owner[column] >= 0 && owner[column] < row) continue;
       if (force(row, column)) break;

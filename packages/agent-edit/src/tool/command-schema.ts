@@ -68,6 +68,11 @@ const INVERSE_COUNT = z
   .optional()
   .describe("How many edits to undo, all or nothing. Default 1.");
 
+/**
+ * Which version of a document to read. It has no default: omitted
+ * means the version this thread's writes change, which the host decides per
+ * document. `read`, `grep`, `ls` and `from` share this one description.
+ */
 export const DocumentVersionSchema = z
   .enum(["draft", "live"])
   .describe(

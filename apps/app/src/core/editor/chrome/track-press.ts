@@ -5,12 +5,24 @@ export function pastSlop(dx: number, dy: number): boolean {
 }
 
 type PressHost = {
+  /**
+   * The press travelled past the slop, at `at` (the move, or the release of a
+   * flick that sent none). Record `at` before doing anything that dispatches:
+   * a late lift must drop where the button came up, not where it went down.
+   * Returns the handler for every move from `at` on.
+   */
   lift(at: MouseEvent): (event: MouseEvent) => void;
   end(how: "click" | "drop" | "cancel", at: MouseEvent | null): void;
 };
 
 export type PressStart = Pick<MouseEvent, "type" | "clientX" | "clientY"> & { pointerId?: number };
 
+/**
+ * Follows one press and decides click or lift. A `mousedown` ends on `mouseup`
+ * and a `pointerdown` on `pointerup`: a handle that prevents `pointerdown` gets
+ * no mouse events, and a touch tap's `pointerup` comes before its `mousedown`.
+ * A `pointermove` without the left bit counts as a release. Returns `stop`.
+ */
 export function trackPress(press: PressStart, host: PressHost): () => void {
   const ac = new AbortController();
   const listen = <K extends keyof WindowEventMap>(

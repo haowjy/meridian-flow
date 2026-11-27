@@ -89,6 +89,8 @@ function chipAround(doc: PMNode, pos: number): Mark | null {
   return before && after && before.eq(after) ? before : null;
 }
 
+// The same address counts as the same chip: the paste pipeline may give the
+// pasted copy a ref the chip in the document doesn't carry yet.
 function isOtherChip(link: Mark | null, around: Mark | null): boolean {
   return link !== null && !(around !== null && link.attrs.href === around.attrs.href);
 }

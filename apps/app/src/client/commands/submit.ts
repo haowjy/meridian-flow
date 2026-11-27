@@ -7,6 +7,7 @@ import {
 } from "@meridian/command-driver";
 import { notifyFailure } from "@/components/app/failure-toast";
 
+/** The device could not keep a command: the writer was told once (the toast), so no caller says it again. */
 export class DeviceRefusedError extends Error {
   readonly name = "DeviceRefusedError";
   constructor() {

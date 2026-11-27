@@ -27,6 +27,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
           </div>
         ) : null}
 
+        {/* Relative: a refused title rename floats under the band from here. */}
         <div className="relative flex min-w-0 flex-1 items-center self-stretch">{title}</div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 self-stretch">

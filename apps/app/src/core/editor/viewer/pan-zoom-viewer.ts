@@ -1,3 +1,28 @@
+/**
+ * viewer-core — pan and zoom over any element, on one PointerEvent code path.
+ *
+ * Mouse, touch, and pen are the same gesture stream here: `pointerdown` with
+ * one live pointer is a drag, with two it is a pinch, and neither branch knows
+ * which device it is serving. That single path is why this file is short —
+ * it is also the thing svg-pan-zoom cannot do, being touch-events-only and
+ * older than Pointer Events (spike verdict, 2026-07-29).
+ *
+ * **Transform-only, on a host we own.** The viewer writes exactly one
+ * property, `content.style.transform`, and never touches the element inside —
+ * no `viewBox` rewrite, no DOM restructure, so a rendered SVG stays byte-exact
+ * for copy, download, and re-measure. The caller wraps its content in the
+ * transform host and gives it a size; the viewer measures that host's layout
+ * box (`offsetWidth`, which a transform does not affect) and moves it.
+ *
+ * **Writes are rAF-throttled; reads are not.** Every getter answers from state
+ * synchronously, so a caller never has to know a frame is pending. Only the
+ * DOM write waits.
+ *
+ * View state is deliberately DISPOSABLE: nothing here
+ * persists, and a viewer that is destroyed and rebuilt opens fitted. There is
+ * no restore path to keep honest.
+ */
+
 import {
   clampScale,
   fitScale,
@@ -35,6 +60,7 @@ export type PanZoomViewer = {
   readonly pan: ViewerPoint;
   readonly fitted: boolean;
   sizes(): ViewerSizes;
+  /** `at` is host-relative; omitted means the host's center. */
   zoomBy(factor: number, at?: ViewerPoint): void;
   zoomTo(scale: number, at?: ViewerPoint): void;
   panBy(delta: ViewerPoint): void;

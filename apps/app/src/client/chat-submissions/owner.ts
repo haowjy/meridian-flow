@@ -277,6 +277,8 @@ export class ChatSubmissionOwner {
           },
           { signal: requestSignal },
         ).then((response) => {
+          // The list rows carry the pending mode (`effectiveAiWriteMode`); a queued or cancelled
+          // switch changes it, and the toolbar reads it before the snapshot lands.
           void invalidateWriteModeReads(queryClient, projectId);
           return response;
         });
@@ -625,6 +627,7 @@ export class ChatSubmissionOwner {
         this.rebuild();
         return;
       }
+      // A newer addressed intent may have arrived while confirmation was in flight.
       const records = readChatSubmissionSnapshot(accountId);
       if (!records || records.some((entry) => entry.threadId === threadId)) return;
       const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });

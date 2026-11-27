@@ -20,6 +20,12 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   actionRequired: DeserializedThreadSnapshot["actionRequired"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
+  /**
+   * The thread's history is in the transcript store (or its load failed). Not
+   * merely fetched: a render can see the accepted snapshot a commit before its
+   * turns reach the store, and a reader that took that for "history is empty"
+   * would give up on a turn that is about to arrive.
+   */
   settled: boolean;
   isError: boolean;
   isFetching: boolean;
@@ -69,6 +75,9 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
         }
       },
     }),
+    // Mounting never reads by itself: the sync asks for a read when it needs one. A cached
+    // snapshot joins the stream and its replay brings it up to date (for example a background
+    // child's report waking the parent), so a warm switch downloads nothing.
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnMount: false,
     enabled: !isPendingCreation && !accountSignal.aborted,

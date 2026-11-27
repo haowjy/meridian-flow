@@ -46,11 +46,23 @@ export function ObjectLightbox({
     <EditorDialog
       editor={editor}
       id="object-lightbox"
+      // Open on its hold rather than on the resolved target: a remote write
+      // rebuilds the node view under the dialog, and the writer is still
+      // looking at the same diagram. A frame with nothing to draw is a frame,
+      // and closing here would lose the dialog on every peer keystroke.
       open={open}
       onOpenChange={onOpenChange}
       title={provider ? t`Diagram` : t`Image`}
       size="workspace"
       className="meridian-object-lightbox"
+      // Ctrl+Enter is the escape hatch's keyboard twin (§4), inside the dialog
+      // as well as on the selected block. It rides the dialog's layer rather
+      // than a listener of this component's: focus is in portalled content, so
+      // the kernel's document route is what hears it — and the binding is then
+      // one the kernel can list, scope, and refuse a second claimant for.
+      //
+      // The dialog's key, not the pane's: it has to open a pane that is closed,
+      // and a pane cannot register the chord that summons it.
       keys={
         provider
           ? {
@@ -197,6 +209,11 @@ function SourcePane({
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
+  // The writer asked for this pane and it exists to be typed in, so it takes
+  // the caret — but it has to win an argument first. The dialog's focus scope
+  // and the ⋯ menu that opened the pane both restore focus asynchronously on
+  // their way out, so a focus set now is taken back a moment later. Claiming
+  // it once the churn has passed is the whole trick; measured in the browser.
   useEffect(() => {
     const timer = window.setTimeout(() => areaRef.current?.focus(), SOURCE_FOCUS_DELAY_MS);
     return () => window.clearTimeout(timer);

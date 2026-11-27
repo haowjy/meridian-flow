@@ -99,6 +99,7 @@ export function levelAt(
   grants: readonly NodeGrant[],
   at: FileDestination,
 ): FileDecision {
+  // Precedence order: the first term at the minimum names the limit.
   const terms: Term[] = [
     { cap: personLevel(facts, grants), limit: "not_found" },
     ...lifecycleTerms(facts, at),
@@ -126,6 +127,14 @@ export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): Fil
   );
 }
 
+/**
+ * Deleted anywhere up the chain: none, except at a draft destination whose
+ * draft outlived the document's own delete (`survivingDraft`, keyed on the
+ * destination, never on which view supplied the facts: a writer's review list
+ * reads draft views for a live destination). Its owning Work archived, or
+ * deleted and not yet purged: read. A draft also takes its own owner's
+ * lifecycle (§2).
+ */
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
   const deleted = facts.deleted && !(at.kind === "draft" && facts.survivingDraft);

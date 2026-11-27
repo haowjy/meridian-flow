@@ -190,6 +190,7 @@ function executePlan(
       const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
       if (!applied.ok) return applyError(applied.code, applied.message);
       for (const other of plan.edit.tookFrom ?? []) model.recordPieces(doc, plan.edit.block, other);
+      // After the write: writing into an empty document's paragraph gives it a new id.
       accumulator.touchedHashes.add(model.getBlockId(plan.edit.block));
       break;
     }
@@ -209,6 +210,7 @@ function executePlan(
     }
     case "delete":
       model.deleteBlock(doc, plan.edit.block);
+      // After the delete: a record whose blocks show no change yet is retired as it is written.
       if (plan.edit.pieceOf) model.recordPieces(doc, plan.edit.pieceOf, plan.edit.block);
       if (plan.removesBlock) {
         accumulator.deletedHashes.add(plan.blockId);

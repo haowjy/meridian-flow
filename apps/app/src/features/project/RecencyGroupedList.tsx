@@ -17,6 +17,7 @@ function recencyGroup(iso: string, nowMs: number): RecencyGroup {
   if (Number.isNaN(at)) return "earlier";
   const today = startOfDay(nowMs);
   if (at >= today) return "today";
+  // Day arithmetic, not a fixed 86400000: a DST day is not 24 hours long.
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   return at >= yesterday.getTime() ? "yesterday" : "earlier";

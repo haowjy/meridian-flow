@@ -130,6 +130,11 @@ if (( ${#forbidden_safety_fallbacks[@]} > 0 )); then
   exit 1
 fi
 
+# This client's own presence has exactly one owner, the presence port in
+# apps/app/src/core/editor/local-presence.ts, which holds the room's one
+# EphemeralStore. A second store, or writes past the port, is the suspension
+# defect returning: a write made while presence is suspended is lost, and resume
+# republishes a stale snapshot over it.
 local_presence_bypass=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && local_presence_bypass+=("$hit")
@@ -149,6 +154,8 @@ if (( ${#local_presence_bypass[@]} > 0 )); then
   exit 1
 fi
 
+# Model-provider env vars carry a FLOW_ prefix so agent CLIs in the same shell
+# never read the app's keys, and SDKs never fall back to their default names.
 bare_provider_env=()
 while IFS= read -r hit; do
   [[ -n "$hit" ]] && bare_provider_env+=("$hit")

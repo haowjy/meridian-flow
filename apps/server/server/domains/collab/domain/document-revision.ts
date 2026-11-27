@@ -39,6 +39,12 @@ export function inView<T extends { revision: string | null }>(read: T, draft: st
   return draft && read.revision ? { ...read, revision: viewRevision(read.revision, draft) } : read;
 }
 
+/**
+ * One agent `read` of a document in a holder's spelling: each block's body, destination-free
+ * markdown, grep text, and the links it spells, plus the revision. One projection serves all
+ * of it; the revision follows the render because projecting can repair the document.
+ * `verbatim` is a code file, whose grep text is its code node's text.
+ */
 export function readHashlines(
   doc: DocHandle,
   version: Uint8Array,

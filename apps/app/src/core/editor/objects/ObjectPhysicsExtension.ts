@@ -177,6 +177,7 @@ export const ObjectPhysicsExtension = Extension.create({
           return newState.tr.setSelection(TextSelection.near(after.$from));
         },
 
+        /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
           // Walking ONTO an object starts from prose beside
@@ -287,6 +288,7 @@ export const ObjectPhysicsExtension = Extension.create({
             if (!transaction) return false;
             view.dispatch(transaction);
             view.focus();
+            // Selected first, as for a double-click: closing the surface lands here.
             if (objectTypeSpec(node)?.clickEngages?.(event.target)) {
               engage(editor, view.state, view.dispatch.bind(view));
             }
@@ -304,6 +306,7 @@ export const ObjectPhysicsExtension = Extension.create({
                 view.state,
                 at.pos < view.state.selection.from ? -1 : 1,
               );
+              // Run before PM starts delaying native selection updates for a drag.
               if (transaction) view.dispatch(transaction);
               return false;
             },
@@ -425,6 +428,7 @@ function objectSelectionExtensionBindings(): Record<string, KeymapBinding> {
     ),
   );
   if (mac) {
+    // macOS text controls also expose Emacs-style selection gestures.
     for (const [key, direction] of Object.entries({
       a: -1,
       b: -1,
@@ -443,6 +447,7 @@ function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
   return (state, dispatch) => {
     const transaction = objectTextSelectionTransaction(state, direction);
     if (transaction) dispatch?.(transaction);
+    // The browser extends this model range, not the native typing caret.
     return false;
   };
 }

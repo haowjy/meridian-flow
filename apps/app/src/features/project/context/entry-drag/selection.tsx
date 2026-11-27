@@ -35,6 +35,11 @@ export type EntrySelection = {
   replace(keys: readonly string[]): void;
   clear(): void;
   focus(): void;
+  /**
+   * Soon after `focus`, puts focus back on the first selected row on screen when it was lost or
+   * sits on another selected row or where `focus` waited for one. Moved and copied rows arrive in their folder over several commits, and a
+   * keyed reorder moves a focused row's node, which blurs it without remounting it.
+   */
   settleFocus(): void;
   register(entry: DragEntry, active: boolean): () => void;
   grant(entry: DragEntry, grants: readonly SelectionGrant[], list: EntryList): () => void;
@@ -71,6 +76,12 @@ export function useEntrySelection(): EntrySelection {
   const painting = useRef(false);
   const settling = useRef(false);
 
+  /**
+   * Marks where each run of selected rows that touch on screen starts and ends,
+   * so a run draws as one block. Rows sit at different depths under separate
+   * wrappers, and a section header can sit between two rows, so touching is
+   * read from geometry, once per commit, not per row.
+   */
   const paintRuns = useCallback(() => {
     if (painting.current) return;
     painting.current = true;

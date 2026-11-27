@@ -13,6 +13,11 @@ import { useIsThreadPendingCreation } from "@/client/stores";
 import type { ListQueryStatus } from "./list-query";
 import { threadQueryKeys } from "./thread-query-keys";
 
+/**
+ * The turn cards read what became of their drafted documents, and nothing pushes that to them:
+ * every Apply or Discard (the writer's, a peer's, per change or whole) calls this. A read already
+ * in flight is the one the writer waits on, so it is not restarted.
+ */
 export function refreshTurnCards(queryClient: QueryClient, documentId?: string): Promise<void> {
   return queryClient.invalidateQueries(
     {

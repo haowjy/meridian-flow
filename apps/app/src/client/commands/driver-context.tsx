@@ -105,6 +105,7 @@ export function CommandDriverProvider({
       if (driver.getSnapshot().paused) driver.resume();
       driver.nudge();
     };
+    // A page in the back-forward cache or frozen keeps a lock it cannot use.
     const suspend = () => driver.suspend();
     const resume = () => driver.resume();
     window.addEventListener("online", nudge);

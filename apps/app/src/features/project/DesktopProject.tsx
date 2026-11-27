@@ -51,6 +51,7 @@ import {
 } from "./side/SideView";
 import { useMainItem } from "./views";
 
+/** Below sidebar (264) + side panel (360) + 360 for main, the side panel folds so main keeps its room. */
 const COMPACT_DESKTOP_QUERY = "(max-width: 983px)";
 const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
 
@@ -349,6 +350,15 @@ function SideEmpty({ projectId }: { projectId: string }) {
   );
 }
 
+/**
+ * The sidebar lying over main dismisses as the phone's drawer does: Escape (not one a field
+ * inside handles itself) returns the focus to the sidebar toggle, and a press on the page beside
+ * it, or Tab out onto it, leaves the focus there. Only the page counts: a dialog or menu over it
+ * is a layer above the sidebar, and the toggle is its own control. Focus the app moves onto the
+ * page in answer to a press in the sidebar (a new chat's composer after Chat) is not the writer
+ * leaving. The layer is always mounted, so the sidebar is never remounted (`SlotGrid`); beside
+ * main it has no `onDismiss` and does nothing.
+ */
 function SidebarOver({
   over,
   onFold,

@@ -82,6 +82,12 @@ interface NormalizedParams extends ResolveWriteParams {
   content: string;
 }
 
+/**
+ * A write resolved up to ref assignment: scope, find matches and splices are fixed,
+ * and `written` holds every parsed node assignment will see (a find's
+ * reconstructed groups included), so the host can load what they name
+ * before `assign` runs synchronously over the prepared scope.
+ */
 export type WritePlan =
   | {
       ok: true;
@@ -187,6 +193,7 @@ function assignPlannedWrite(
   return { ok: true, edits };
 }
 
+/** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
 function assignScope(
   ctx: ConcreteResolveContext,
   step: Extract<PlannedStep, { kind: "replace" | "spliced" }>,
@@ -306,6 +313,7 @@ function planReplace(
     if (!sectionCheck.ok) return sectionCheck;
     return replaceScopeWithCopies(ctx, params, scope.scope, params.blocks);
   }
+  // Parsed content stands for itself: an empty paragraph is a block even though it spells "".
   if (params.content.length === 0 && !params.parsedContent) {
     return error("invalid_write", "replace content must not be empty; `remove` removes blocks");
   }

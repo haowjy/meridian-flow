@@ -21,6 +21,7 @@ import {
 
 export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 3;
 export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v3:";
+/** Per-chat `seq` counters. Outside the record prefix, so enumerating records never sees them. */
 export const CHAT_SUBMISSION_SEQ_PREFIX = "meridian:chat-submission-seq:v1:";
 
 export type ChatSubmissionStorage = {
@@ -194,7 +195,9 @@ function parseSubmission(value: unknown): ChatSubmission | null {
       ? {
           creation: {
             ...(creation as Omit<NonNullable<ChatSubmission["creation"]>, "overrides">),
+            // A record an older build stored has no draft id: the chat it creates gets one now.
             draftId: isDraftId(creation.draftId) ? creation.draftId : newDraftId(),
+            // A record from before the pair was one field parses to no overrides.
             overrides: threadOverridesSchema.safeParse(creation.overrides).data ?? NO_OVERRIDES,
           },
         }
@@ -251,6 +254,7 @@ export class DeviceChatSubmissionJournal {
     return this.snapshot() ?? this.lastKnown;
   }
 
+  /** Null means unavailable, never an authoritative empty journal. */
   snapshot(): ChatSubmission[] | null {
     const accountId = this.state?.accountId;
     if (!accountId) return [];
@@ -286,6 +290,12 @@ export class DeviceChatSubmissionJournal {
     }
   }
 
+  /**
+   * Write a record. A new one gets the chat's next `seq`: the larger of the chat's durable
+   * counter and its largest held `seq`, plus one, with the counter raised in the same
+   * synchronous step (localStorage has no await between them); an existing one keeps its
+   * `seq`. Two tabs appending in the same tick can tie, and the id breaks that tie.
+   */
   record(accountId: string, entry: NewChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
     const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));

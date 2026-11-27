@@ -1,3 +1,22 @@
+/**
+ * EditorMenu — the one menu every editor surface opens.
+ *
+ * Two anchorings, one component. A menu the writer summoned from a control
+ * hangs off that control (`trigger`); a menu the context-menu router claimed
+ * hangs off the pointer (`at`), through a zero-size anchor placed where the
+ * click landed. Radix's DropdownMenu has no Anchor part, so that anchor is the
+ * trigger — which is why anchoring lives here once instead of in six lanes.
+ *
+ * Radix is NOT wrapped away: it keeps ownership of dismissal, outside-click,
+ * and roving focus. What this adds is subordination —
+ * the open menu registers as a layer so the Esc chain knows its place, and
+ * every close path hands the caret back to the prose.
+ *
+ * `modal={false}` deliberately: a modal menu freezes the page behind it, and
+ * the page behind it is the writer's chapter. Clicking away must land the
+ * caret where they clicked, not just dismiss.
+ */
+
 import type { Editor } from "@tiptap/core";
 import type { ComponentProps, ReactNode } from "react";
 
@@ -64,7 +83,15 @@ export function EditorMenu({
       {trigger ? (
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger aria-hidden tabIndex={-1} style={pointerAnchorStyle(at)} />
+        <DropdownMenuTrigger
+          aria-hidden
+          tabIndex={-1}
+          // The pointer's own position, with no size and no hit area: it
+          // exists to be measured, never pressed. Geometry rather than theme,
+          // so it is inline style — a utility class that failed to ship would
+          // silently drop the menu in the top-left corner.
+          style={pointerAnchorStyle(at)}
+        />
       )}
       <DropdownMenuContent
         align={align}

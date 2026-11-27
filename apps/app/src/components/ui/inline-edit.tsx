@@ -26,6 +26,8 @@ export function InlineEditInput({
         value={value}
         placeholder={placeholder}
         {...props}
+        // Zero width with a full min-width: the twin alone sizes the cell; the
+        // input contributes nothing (a text input is ~3ch wide by default).
         className={cn(fieldReset, "col-start-1 row-start-1 w-0 min-w-full")}
       />
     </span>

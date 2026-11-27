@@ -16,6 +16,7 @@ declare module "@tiptap/core" {
 
 const passageKey = new PluginKey<DecorationSet>("passage-highlight");
 const PASSAGE_META = "passage-highlight";
+/** Matches the CSS fade, so the mark is removed once it has finished going. */
 const HIGHLIGHT_DURATION_MS = 3_400;
 const EDGE_MARGIN_PX = 24;
 

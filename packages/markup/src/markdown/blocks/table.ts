@@ -12,6 +12,10 @@ import { parseHtmlTable, serializeHtmlTable } from "./table-html.js";
 
 const GFM_INGRESS_HARD_BREAK = "<br/>";
 
+/**
+ * Remark cannot recognize a pipe-table row continued by a Markdown hard break.
+ * Fold that ingress-only spelling before parsing; serialization never emits it.
+ */
 export function normalizeGfmTableHardBreaks(source: string): string {
   return prepareGfmTableHardBreaks(source).value;
 }

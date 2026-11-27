@@ -7,6 +7,10 @@ let shape: ShapeSchema | null = null;
 
 export const roomSchema = () => (schema ??= buildDocumentSchema());
 
+/**
+ * Every copy configures its styles from the shared schema, not the editor's TipTap schema, so every
+ * peer stores marks alike.
+ */
 export const documentShape = (): ShapeSchema => (shape ??= shapeSchemaOf(roomSchema()));
 
 export function roomContent(docs: RoomDocs) {

@@ -1,3 +1,9 @@
+/*
+ * Everything Meridian-specific about the architecture map. The engine (tools/architecture-map)
+ * names no project; the pages in this directory are the content. The browser imports this file
+ * too, so it stays plain data: no functions, no imports. tools/architecture-map/README.md has the
+ * reference for each key.
+ */
 export default {
   title: "Meridian architecture",
 

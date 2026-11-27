@@ -34,6 +34,10 @@ export interface Edit {
   read: Map<DocKey, DocVersion>;
 }
 
+/**
+ * Add to `into` what `docs` show now of the text docs `edit` wrote and of those under every block
+ * its structure values name, keeping a doc's first reading: call it just after the edit.
+ */
 export function readOf(
   docs: RoomDocs,
   edit: Pick<Edit, "values" | "texts">,
@@ -97,6 +101,8 @@ export function putBackValues(
     return { changes: answerRemovals(docs, before, { typed: text.inserted }), values: back };
   const read = options.view ?? new StructureView(docs);
   const puts = planOf(docs, read, values);
+  // A removal record put back goes in as it was first, so the removals written below read the
+  // blocks under it.
   for (const { name, key, value, at } of puts) {
     if (at === undefined || value !== undefined)
       inMap(structure, name, (map) => {
@@ -105,6 +111,8 @@ export function putBackValues(
       });
     keysOf(back, name).set(key, { before: values.get(name)?.get(key)?.left, left: undefined });
   }
+  // A removal counts the text under it as the run leaves it, a block the run puts back under it
+  // included.
   const removals = puts.filter(({ at }) => at !== undefined);
   if (removals.length > 0) {
     const wrote = puts.some(({ value, at }) => at === undefined || value !== undefined);
@@ -228,6 +236,12 @@ function planOf(docs: RoomDocs, view: StructureView, values: EditValues): Put[] 
   return puts;
 }
 
+/**
+ * Take `edits` back on `docs` (a press's Undo, an AI write's): each text doc by its inverse
+ * (`textInverse`), in a commit by `by`; then every structure value in one commit by `by`
+ * (`putBackValues`), after the text, so a removal record it writes counts the text put back.
+ * `view` reads the structure as it is. Returns the changes.
+ */
 export function takeBack(
   docs: RoomDocs,
   edits: readonly Edit[],
@@ -240,6 +254,7 @@ export function takeBack(
   const inserted = new Set<DocKey>();
   for (const edit of edits) {
     for (const [key, span] of edit.texts) {
+      // A draft's span of a doc it reads through Live: the text stays Live's.
       const doc = docs.doc(key);
       if (!doc) continue;
       const inverse = textInverse(docs, doc, span);
@@ -349,6 +364,7 @@ function putBackBy(
   return (from, to) =>
     inText(doc, (text) => {
       for (let at = from; at < to; at++) {
+        // Loro reads no editor at the second half of a surrogate pair.
         const peer = text.getEditorOf(at);
         if (peer !== undefined && !side(peer)) return false;
       }

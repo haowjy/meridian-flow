@@ -73,6 +73,12 @@ export type LoroRoomTransportOptions = {
 export type LoroRoomTransport = {
   send(batch: Uint8Array): void;
   whenCurrentChangesAcknowledged(): Promise<void>;
+  /**
+   * Resolves once every batch sent so far is acknowledged. A room that is not joined (offline or
+   * signed out) is waited for until it joins and its Join's batch (what the server lacks, the
+   * typing done while away included) is acknowledged; it resolves when the room ends. A fork room never covers the Live ops its copy
+   * forwards, so a press waits on this, not on `whenCurrentChangesAcknowledged`.
+   */
   whenSentAcknowledged(): Promise<void>;
   serverVersion(): RoomVersion;
   readonly synced: boolean;
@@ -92,6 +98,7 @@ const RESET_REASONS: Readonly<Record<string, RoomResetReason>> = {
 };
 
 const RETRY_MS = [250, 1_000, 2_500, 5_000, 10_000];
+/** Room payload per fragment, under the protocol's 256 KiB message limit with header room. */
 const FRAGMENT_BYTES = MAX_MESSAGE_SIZE - 4 * 1024;
 
 function resetState(reason: RoomResetReason): RoomConnectionState {
@@ -141,6 +148,11 @@ export function createLoroRoomTransport({
   let attempt = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const unacked = new Map<string, RoomVersion>();
+  /**
+   * `whenSentAcknowledged` callers, each with the batches it waits on: those unacked when it last
+   * saw the room connected, or null until it is again (a dropped socket's batches go in the next
+   * Join's batch, which is sent before the room reads as connected).
+   */
   const sentWaiters = new Set<{ ids: Set<string> | null; resolve: () => void }>();
   const settleSentWaiters = () => {
     for (const waiter of sentWaiters) {
@@ -163,6 +175,11 @@ export function createLoroRoomTransport({
     resolveSynced = resolve;
   });
   let synced = false;
+  /**
+   * Until synced: the Join's version, and what the transport handed the copy (its version at the
+   * Join and each batch received since). Decided from what was handed, not `copy.version()`: the
+   * composition guard can hold a batch and import it later without the transport seeing it.
+   */
   let catchUp: { want: RoomVersion; handed: Map<DocKey, DocVersion> } | null = null;
   const settleSynced = () => {
     if (synced || !catchUp || !versionCovers(catchUp.handed, catchUp.want)) return;
@@ -301,6 +318,7 @@ export function createLoroRoomTransport({
         if (reset) return end(resetState(reset));
         if (message.appCode === LORO_JOIN_ERROR.PERMISSION_DENIED.appCode)
           return end({ kind: "unauthorized", reason: message.appCode, code: message.code });
+        // A Join this build could not form: retrying sends the same one.
         if (message.appCode === LORO_JOIN_ERROR.BAD_AUTH.appCode)
           return end({ kind: "terminal", reason: message.appCode });
         socket?.close(1000, "rejoin");
@@ -362,6 +380,7 @@ export function createLoroRoomTransport({
     clearTimeout(retryTimer);
     retryTimer = undefined;
     attempt += 1;
+    // Signed out lasts until a Join is answered, so a retry doesn't flash the sign-in prompt away.
     if (state.kind !== "signed-out") emitStatus({ kind: "connecting", attempt });
     const ws = new WebSocket(buildSameOriginWsUrl(LORO_WS_PATH));
     ws.binaryType = "arraybuffer";

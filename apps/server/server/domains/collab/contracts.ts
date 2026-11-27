@@ -240,6 +240,11 @@ export type HashlineRead = {
   ): { start: number; end: number } | null;
 };
 
+/**
+ * Whole-document reads and writes. Writes take `BoundWrite`: bind it with
+ * `bindMarkdown` before opening any transaction, then apply it inside one
+ * (contract §6.2).
+ */
 export type MarkdownDocumentStore = LinkBinder & {
   readForExport: import("./domain/markdown-document.js").MarkdownDocumentEngine["readForExport"];
   readVersionedMarkdown(

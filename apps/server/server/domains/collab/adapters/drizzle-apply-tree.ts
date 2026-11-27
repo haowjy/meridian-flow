@@ -1,3 +1,13 @@
+/**
+ * Tree half of Apply: the drafted records of the click's items become live copies in the lists
+ * that hold them (`applyDraft`), in the click's transaction, and the command keeps what Un-Apply
+ * needs of each list (`apply_command_trees`). It reports which items landed, read from the lists
+ * under their keys; the caller (`drizzle-apply-click.ts`) decides every answer and the text half.
+ *
+ * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the draft;
+ * the lists' keys come next (`lockItems`), then the documents', and only then the writes.
+ */
+
 import type { CommandId, DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";

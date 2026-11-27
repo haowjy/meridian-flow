@@ -183,7 +183,8 @@ export function createLoroGateway(services: LoroGatewayServices) {
     let target: FileTarget =
       room.kind === "fork"
         ? { kind: "draft", documentId, draftId: room.draftId }
-        : { kind: "restore", documentId };
+        : // A document in Trash takes text until its node is purged, so the room reads through Trash.
+          { kind: "restore", documentId };
     let found = await findAccess(userId, target);
     if (!found && room.kind === "live")
       for (const draftId of await services.documents.draftsHolding(documentId)) {
@@ -266,6 +267,8 @@ export function createLoroGateway(services: LoroGatewayServices) {
     };
     connection.joined.set(name, joined);
     access.register(joined.registration, admission.accessKeys);
+    // A change between admission and registration reached no room. Registered now, the room
+    // hears every later change: ask once more, and end the room when the answer moved.
     const settled = await findAccess(userId, admission.target);
     if (
       !settled ||

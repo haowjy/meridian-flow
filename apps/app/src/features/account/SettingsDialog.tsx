@@ -1,3 +1,17 @@
+/**
+ * SettingsDialog — the single settings surface for the authenticated app,
+ * rendered as a routed overlay: setting `?settings=<section>` on any
+ * authenticated route opens it. URL-addressable by construction — Back closes
+ * it, refresh restores it, and a shared link lands on the exact section — while
+ * the one component behaves identically over every authenticated route.
+ *
+ * Two presentations, one mounted Dialog and one routed mechanism:
+ * - Desktop: centered modal with a left section rail.
+ * - Phone (`usePhoneShell()`): full-screen takeover (fade only, no zoom) via
+ *   `PhoneSettingsContent` — WebKit blanks transform-animated content under
+ *   overflow clipping + radius.
+ */
+
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
@@ -142,6 +156,7 @@ export function SettingsDialog() {
         </PhoneSettingsContent>
       ) : (
         <DialogContent className="@container/settings flex h-[540px] max-w-[min(48rem,calc(100%-2rem))] gap-0 overflow-hidden rounded-lg p-0">
+          {/* A container can't query itself, so the direction switch lives one level in. */}
           <div className="flex min-w-0 flex-1 flex-col @[40rem]/settings:flex-row">
             <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-ink-fill px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
               <DialogTitle className="px-2">
@@ -289,6 +304,7 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
 }
 
 function PreferencesSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
+  // Translated control labels react to the active locale, independently of account values.
   useLingui();
   const settings = useSharedAccountSettings();
   const language = settings.preference("language");

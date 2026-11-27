@@ -34,6 +34,11 @@ function hasAsciiControl(value: string): boolean {
 
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
+/**
+ * An internal link is a Context URI: a known scheme followed by `://`, in any
+ * case, exactly as `resolveDocumentHref` reads it. `kb:x` is neither internal
+ * nor a web link.
+ */
 function internalScheme(value: string, scheme: string): boolean {
   return INTERNAL_SCHEMES.has(scheme) && value.slice(scheme.length + 1).startsWith("//");
 }

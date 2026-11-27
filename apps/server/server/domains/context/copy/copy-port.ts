@@ -52,6 +52,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           copy,
           scheme: end.adapter.name as ContextScheme,
           dir: end.path.split("/").filter(Boolean),
+          // A port's primary Work is not the owner of a project scheme's namespace.
           workScopeId: isWorkScopedScheme(end.adapter.name as ContextScheme)
             ? end.workScopeId
             : null,

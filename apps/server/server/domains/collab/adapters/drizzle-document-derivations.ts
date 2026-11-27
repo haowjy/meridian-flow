@@ -30,6 +30,11 @@ import { liveLocationVersion, staleForSweep } from "./drizzle-block-text.js";
 
 export type ReadLiveCopy = (documentId: DocumentId) => Promise<LoroDocument>;
 
+/**
+ * Caller owns the document mutation lock for this transaction. The cut reads the Live room as
+ * this process holds it, with the rows the transaction sees merged in, so it may run ahead of
+ * `content_seq` by typing not yet saved; the save that stores that typing makes the cut stale.
+ */
 export async function captureDocumentDerivation(
   tx: DrizzleDb,
   documentId: DocumentId,
@@ -63,6 +68,7 @@ export async function captureDocumentDerivation(
   };
 }
 
+/** Rows per statement: bounded by the driver's parameter limit. */
 const WRITE_CHUNK = 1000;
 
 const EMPTY_DOCUMENT_HASH = documentHash([], []);
@@ -73,6 +79,11 @@ function chunks<T>(rows: readonly T[]): T[][] {
   return out;
 }
 
+/**
+ * Caller owns the document mutation lock for this transaction. The outputs arrive already
+ * normalized and hashed: nothing here reads block text back, and the block diff writes only the
+ * blocks whose content hash changed.
+ */
 export async function certifyDocumentDerivation(
   tx: DrizzleDb,
   cut: DocumentDerivationCut,
@@ -86,6 +97,7 @@ export async function certifyDocumentDerivation(
     .where(eq(documents.id, cut.documentId))
     .limit(1);
   if (content?.seq !== w.contentSeq) return false;
+  // A document no live row places derives at version 0; a replay that moves one waits here.
   const [location] = await tx
     .select({ version: treeNodes.locationVersion })
     .from(treeNodes)
@@ -157,6 +169,8 @@ export async function certifyDocumentDerivation(
     await tx
       .delete(documentBlocks)
       .where(and(eq(documentBlocks.roomId, roomId), inArray(documentBlocks.blockId, ids)));
+  // A content hash does not cover how the text was extracted, so rows from an older extractor
+  // certify nothing: every block is rewritten once.
   const current = room?.extractorVersion === w.extractorVersion;
   const written = outputs.blocks.filter(
     (block) => !(current && stored.get(block.id)?.equals(block.contentHash)),
@@ -188,6 +202,7 @@ export async function certifyDocumentDerivation(
   return true;
 }
 
+/** Registry recovery the derive step drives; the collab domain never imports the registry. */
 export type AheadRegistrationRecovery = {
   registerUnregistered(
     scope: { documentId: DocumentId } | undefined,

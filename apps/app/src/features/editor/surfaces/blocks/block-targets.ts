@@ -32,6 +32,9 @@ export function blockAtIndex(doc: PMNode, index: number): BlockTarget | null {
 export function blockAt(doc: PMNode, pos: number): BlockTarget | null {
   const clamped = Math.max(0, Math.min(pos, doc.content.size));
   const $pos = doc.resolve(clamped);
+  // Depth 0 is a position BETWEEN top-level blocks (a pointer in the gap, a
+  // node selection on a top-level block). `index(0)` then names the block
+  // after the gap, and at the very end of the document there is none.
   const index = $pos.depth === 0 ? Math.min($pos.index(0), doc.childCount - 1) : $pos.index(0);
   return blockAtIndex(doc, index);
 }
@@ -96,6 +99,8 @@ export function moveBlockToSeamTransaction(
   const seam = seams[seamIndex];
   const tr = state.tr;
   tr.delete(run.pos, run.end);
+  // The seam was measured on the document before the lift, so a seam below the
+  // run has shifted up by exactly the run's size.
   const landing = seam < run.pos ? seam : seam - size;
   tr.insert(landing, Fragment.fromArray(moved));
 

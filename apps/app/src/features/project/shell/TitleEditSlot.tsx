@@ -47,6 +47,8 @@ export function TitleEditSlot({
     triggerRef: RefObject<HTMLButtonElement | null>;
   }) => ReactNode;
 }) {
+  // `unchanged` stays the title the edit started from, so committing the
+  // refused text again (Enter or blur on the reopened field) retries it.
   const [editing, setEditing] = useState<{
     initial: string;
     unchanged: string;

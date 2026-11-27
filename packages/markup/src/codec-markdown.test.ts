@@ -22,6 +22,10 @@ import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 describe("markdown codec round-trip corpus", () => {
   const codec = markdownCodec({ schema });
 
+  // Tab is a key a writer presses in prose (the editor inserts one), so the
+  // wire has to carry it. A tab in the middle of a line is literal; a LEADING
+  // tab would parse back as an indented code block, so it goes out as a
+  // character reference and comes back a tab.
   it("carries a tab through prose, wherever in the line it falls", () => {
     const withTabs = [
       paragraph(t("mid\tsentence tab")),

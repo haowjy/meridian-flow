@@ -31,6 +31,7 @@ export type UndoOutcome =
   | "insufficient_undo"
   | "nothing_to_revert";
 
+// Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
 export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
 
 export interface AgentEditBlockItem {

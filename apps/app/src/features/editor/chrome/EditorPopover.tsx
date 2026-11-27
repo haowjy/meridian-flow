@@ -139,6 +139,7 @@ export function EditorPopover({
         onOpenAutoFocus={focusOnOpen === "prose" ? preventFocusIn : undefined}
         onCloseAutoFocus={layer.onCloseAutoFocus}
         onEscapeKeyDown={layer.onEscapeKeyDown}
+        // Focus alone is not a dismissal here; see the header.
         onFocusOutside={preventDismissal}
       >
         {layer.scope(children)}

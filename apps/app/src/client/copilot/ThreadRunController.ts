@@ -84,6 +84,7 @@ export class ThreadRunController {
     this.accountId = options.accountId;
   }
 
+  /** Pair provider effect setup with disposal; construction is render-pure. */
   activate(): void {
     if (this.accountSignal.aborted) return;
     this.disposed = false;

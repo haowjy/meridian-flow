@@ -1,3 +1,10 @@
+/**
+ * ContextFS's bind-outside, apply-inside layer for whole-document writes
+ * (contract §6.2): written Markdown is bound before the command transaction
+ * opens, because binding may register ahead refs, which takes namespace keys
+ * the command transaction will hold; the transaction then applies the
+ * bound write and checks it was bound for what occupies the path now.
+ */
 import { classifyFiletype, documentFilenameAt } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
@@ -58,6 +65,10 @@ export class BoundWrites {
     return false;
   }
 
+  /**
+   * The tracked document at `path`, read before any command transaction so
+   * content can be bound against it; the transaction looks it up again.
+   */
   async lookup(path: string): Promise<Result<ContextDocument | null, AdapterFault>> {
     const existing = await this.deps.findDocument(path);
     if (existing.ok && existing.value && existing.value.fileType !== null) {

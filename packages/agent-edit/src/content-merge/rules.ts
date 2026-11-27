@@ -1,3 +1,8 @@
+/**
+ * Every rule the content merge applies beyond a plain merge (a change only one side made applies; the
+ * same change on both sides applies once). This is the only place a rule's name is declared: adding
+ * one is the owner's decision (`../../.context/content-merge.md`), and it needs a case row.
+ */
 export const RULES = {
   "draft-wins-text": "Both sides changed the same words differently: the draft's text stands.",
   "whole-block-unit":

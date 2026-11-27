@@ -162,6 +162,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         const observe = (threadId: string, observation: SyncObservation) => {
           switch (observation.kind) {
             case "turn":
+              // The sync asks for its own read at a turn's end.
               turnChanged(threadId, observation.turnId, observation.status, { snapshot: false });
               break;
             case "read":

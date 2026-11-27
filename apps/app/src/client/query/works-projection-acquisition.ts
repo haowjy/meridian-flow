@@ -52,6 +52,7 @@ const nextStartedByProject = new Map<string, number>();
 
 export type WorksRequestStart = { order: number; at: number };
 
+/** Registers request start before any loader or live network work begins. */
 export function beginWorksSnapshotRequest(projectId: string): WorksRequestStart {
   const order = (nextStartedByProject.get(projectId) ?? 0) + 1;
   nextStartedByProject.set(projectId, order);

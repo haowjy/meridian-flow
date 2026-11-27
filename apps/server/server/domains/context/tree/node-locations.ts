@@ -16,6 +16,7 @@ export async function recordLocationHistory(
   history: { vacated: readonly VacatedLocation[]; claimed: readonly ClaimedLocation[] },
 ): Promise<void> {
   const tx = currentDrizzleDb(db);
+  // Bound statement parameter counts, not the atomic operation. Every batch joins the same transaction.
   for (const [sourceId, entries] of bySource(history.vacated)) {
     for (let offset = 0; offset < entries.length; offset += 500) {
       const batch = entries.slice(offset, offset + 500);

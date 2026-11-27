@@ -289,6 +289,10 @@ function AgentPackagesSaveLines({
   ));
 }
 
+/**
+ * Full-width document row: hover washes the row, click opens the file. A document the turn
+ * deleted is not a door: its old address may hold another document now.
+ */
 function DocumentRow({
   document,
   state,

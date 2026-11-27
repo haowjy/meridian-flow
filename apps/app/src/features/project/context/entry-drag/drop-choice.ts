@@ -1,3 +1,15 @@
+/**
+ * What a drop that asks offers. A list row dropped within one list moves at
+ * once. One dropped on another list (the project's files and Your files are
+ * two) can only be copied, and any other source names a document without being
+ * a row to reposition, so the list holds the drop as a `PendingChoice` and asks
+ * at the drop point: Move, Copy or Cancel, or Copy and Cancel between lists. The hover
+ * hint, the decision to ask and the menu all come from `dropChoices`, derived
+ * from `resolveDrop` against the trees as they are when each asks, so a
+ * destination renamed or removed while the menu was open is judged by
+ * identity, not by what the drop saw. A new action is a new item here and a
+ * branch in the list's `choose`; the menu's mechanics don't change.
+ */
 import { t } from "@lingui/core/macro";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";

@@ -1,3 +1,30 @@
+/**
+ * Editing a fence through a textarea, without eating a collaborator's words.
+ *
+ * A `<textarea>` reports a whole string, not an edit. Diffing that string
+ * against the *current* document is wrong the moment anyone else is typing:
+ * text a peer added since the pane rendered was never in the writer's textarea,
+ * so the diff reads it as a deletion and the CRDT merges that faithfully. The
+ * collaborator's line disappears, and nothing about the transaction says it was
+ * an accident.
+ *
+ * So the diff runs against what the pane RENDERED — which is exactly what the
+ * writer edited — and its offsets are mapped forward through every LOCAL
+ * transaction that has landed since, ProseMirror's own answer to "where is
+ * that text now". With nobody else typing the mapping is empty and this is one
+ * `insertText`.
+ *
+ * A peer's write is the case the mapping cannot answer: it arrives as a
+ * replacement of the whole document, so every offset maps to a boundary. The
+ * document is re-read instead, and when the fence itself changed underneath
+ * the writer the pane has no usable base at all until the next render supplies
+ * one — refusing there is what keeps the diff from reading the peer's new line
+ * as the writer's deletion.
+ *
+ * The rebase resets on every render that shows new document text, so the base
+ * and the mapping can never disagree about which version they describe.
+ */
+
 import type { Editor } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Mapping } from "@tiptap/pm/transform";

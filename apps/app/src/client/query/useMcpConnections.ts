@@ -49,6 +49,10 @@ export function invalidateMcpConnections(queryClient: QueryClient, accountId: st
   return queryClient.invalidateQueries({ queryKey: mcpConnectionsRoot(accountId) });
 }
 
+/**
+ * Writes what the writer just did into every list that holds the connection, then asks again.
+ * A single connection's answer carries no shadow, so the list's own is kept.
+ */
 export function useMcpConnectionCache() {
   const queryClient = useQueryClient();
   const accountId = useAccountId();

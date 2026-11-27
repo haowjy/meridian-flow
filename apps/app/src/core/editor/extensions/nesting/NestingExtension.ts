@@ -213,6 +213,7 @@ export const NestingExtension = Extension.create({
             // Prose, in the document or a cell; a fence or an object keeps its own keys.
             appliesTo: (context) => context.owner === "document" || context.owner === "table-cell",
             bindings: {
+              // A link the keyboard focused follows on Enter (`LinkSurfaceExtension`).
               Enter: (state, dispatch, view) =>
                 (!view || view.dom.ownerDocument.activeElement === view.dom) &&
                 enterInNesting(state, dispatch),

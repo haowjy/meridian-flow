@@ -695,6 +695,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       let address = existing ?? (await resolveCreated(false));
       if (isToolError(address)) return address;
 
+      // The effect can run again: `copied` stays what the source read gave, and each attempt
+      // remaps its own copy of it to the document that attempt made.
       const placedAt = (address: ResolvedDocumentAddress) => {
         if (engine.command !== "copy" || !copied) return copied;
         return {
@@ -812,6 +814,9 @@ function effectSettler(
   edit: NonNullable<ToolHandlerContext["modelEdit"]>,
   command: WriteToolInput["command"],
 ): (effect: () => Promise<unknown>) => Promise<unknown> {
+  // What a command's effect leaves in memory outlives its rollback. The reply's own updates are
+  // the one such state an effect writes; each attempt starts from, and a rolled-back one returns
+  // to, what the reply held before it.
   const run = async (effect: () => Promise<unknown>, retried: boolean) => {
     const restore = ctx.frontiers?.reply?.checkpoint();
     const settled = await attempt(effect, retried).catch((cause) => {

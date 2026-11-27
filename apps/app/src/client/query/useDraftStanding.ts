@@ -6,6 +6,14 @@ import { projectReadEnabled } from "./project-read-gate";
 import { projectThreadsQueryOptions } from "./useProjectThreads";
 import { useWorks, useWorksSnapshot } from "./useWorks";
 
+/**
+ * Whether the project still has a draft: a Work names it as its default (a deleted Work too, until
+ * its purge deletes the draft), a Work being created does, a chat does, or a Work lists it among
+ * its drafts. The server lists an id it doesn't store as empty, since a browser mints one before
+ * its create lands, so the draft's own list can't say. `gone` only once every list was read after
+ * this asked and none names it; null until then, and while a read fails (offline, a link keeps its
+ * draft). A Work's drafts are read only when nothing cheaper names the draft.
+ */
 export function useDraftStanding(
   projectId: string,
   draftId: string | null,

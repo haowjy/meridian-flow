@@ -1,3 +1,11 @@
+/**
+ * Keeps block ids right from the transaction. Tiptap's `splitBlock` copies a block's attributes to
+ * both halves and a paste brings the copied blocks' ids along, so after a local change a block can
+ * have no id or share one. The block that was already there keeps the id: the one the old document's
+ * block maps to. A split's first half is that block, except when Enter was pressed at the start and
+ * left it empty, where the half that holds the text is.
+ */
+
 import { loroSyncKey, REMOTE_META } from "@meridian/loro-prosemirror";
 import { hasBlockId, newBlockId } from "@meridian/prosemirror-schema";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -13,6 +21,11 @@ function blocksOf(doc: ProseMirrorNode): Array<{ node: ProseMirrorNode; pos: num
   return out;
 }
 
+/**
+ * Typing, deleting inside one textblock and marks never change which blocks there are. Except in a
+ * block with no id: the empty document's one paragraph is that until its first keystroke, which
+ * would otherwise store it with none.
+ */
 function keepsBlocks(transaction: Transaction): boolean {
   return transaction.steps.every((step, index) => {
     if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) return true;

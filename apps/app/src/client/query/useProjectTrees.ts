@@ -114,6 +114,7 @@ export function useProjectTreesAt(projectId: string): (view: TreeVersion["view"]
       read.set(view, held);
       return held;
     };
+    // `version` is the replay's input: the copy changing is what rebuilds the trees
   }, [
     project,
     account,

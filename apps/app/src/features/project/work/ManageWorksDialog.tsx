@@ -77,6 +77,8 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
     deletion.dismissAll();
     onClose();
   };
+  // A change row opens its review in main: the dialog gets out of its way on a push or a
+  // traversal, through the goal guard. The shell's own replaces repair the address in place.
   const router = useRouter();
   const leave = useRef((_: HistoryAction) => leaveVia(close));
   leave.current = (action) => leaveVia(close, () => undoTraversal(action));
@@ -153,6 +155,7 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             <Trans>Manage Works and review their changes</Trans>
           </DialogDescription>
         </DialogHeader>
+        {/* The bleed is the room the Work list's rows reach into (-mx-2), so it never scrolls sideways. */}
         <div ref={body} className="-mx-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2">
           {view.kind === "list" ? (
             <WorkCollection
@@ -227,6 +230,7 @@ function OpenedWork({
   const creation = creations.get(workId);
   if (work && work.id !== noWork?.id)
     return (
+      // Keyed: goal edits and the changes list belong to one Work.
       <WorkDetail
         key={work.id}
         projectId={projectId}

@@ -23,6 +23,7 @@ export function storedDocumentName(typed: string, current?: NamedRow): StoredFil
   if (stored.ok || (current && !current.editable)) return stored;
   const name = normalEntryName("document", typed);
   const normal = storedFilename(name, current);
+  // A name that would read as another type (`data.json.md`) is kept whole, as the replay keeps it.
   return normal.ok ? normal : { ok: true, name, filename: { name, extension: "", filetype: null } };
 }
 

@@ -216,6 +216,8 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
 }
 
 export function workDomain(client: QueryClient): CommandDomain {
+  // A record settled before the tab opened is in every read the tab starts; only the route's
+  // threads and Works, read on the server first, may predate it.
   const opened = Date.now();
   const settled = (record: CommandRecord, operation: WorkOperation) => {
     const { projectId } = record.body as WorkCommandBody;

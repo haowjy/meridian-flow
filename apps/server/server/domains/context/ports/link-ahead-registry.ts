@@ -55,7 +55,12 @@ export interface LinkAheadRegistry {
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
   registerInCommand(registrations: readonly AheadRegistration[]): Promise<void>;
+  /** Caller transaction already holds every canonical target namespace key. */
   registerWithinTransaction(registrations: readonly AheadRegistration[]): Promise<void>;
+  /**
+   * Inside the caller's transaction, which already holds each arrival's namespace key. Takes no
+   * lock; skips deleted documents and draft-only membership. Returns rows settled.
+   */
   settleArrivals(documentIds: readonly DocumentId[]): Promise<number>;
   /**
    * Client-minted refs (contract §11.3): registers one page of ahead ids the link index holds

@@ -26,6 +26,11 @@ export function getLinkAnswerCache(editor: Editor | null | undefined): LinkAnswe
   return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
 }
 
+/**
+ * The cache and requester for a view built while its editor is constructing,
+ * when `isDestroyed` still reads true: a mark or node view must watch its key
+ * at mount, or a link already in the document is never asked about.
+ */
 export function mountedLinks(editor: Editor): MountedLinks | null {
   const storage = editor.storage[LINK_SURFACE_NAME];
   return storage ? { resolution: storage.resolution, requester: storage.requester } : null;

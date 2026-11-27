@@ -7,6 +7,10 @@ const WIKILINK = /!?\[\[([^[\]\r\n]+)\]\]/g;
 const FOOTNOTE = /\[\^[^[\]\s\\]+\]/g;
 const CALLOUT = /^\[![\w-]+\]/;
 
+/**
+ * Text nodes that open a quote's first line. The text handler has no ancestor chain, and a
+ * quote is a step in its blocks' nesting, so the paragraph codec records them.
+ */
 const calloutLeads = new WeakSet<object>();
 
 export function markQuoteLead(node: object | undefined): void {
@@ -51,6 +55,8 @@ function verbatimSpans(node: object, value: string, info: { before: string; afte
   for (const match of value.matchAll(FOOTNOTE)) {
     const start = match.index;
     const end = start + match[0].length;
+    // `[^1](url)`, `[^1][x]`, `[a][^1]` and `![^1]` can still form a link or
+    // image, so those stay escaped.
     const previous = start ? value[start - 1] : info.before.at(-1);
     const next = end < value.length ? value[end] : info.after[0];
     if (previous !== "]" && previous !== "!" && next !== "(" && next !== "[")

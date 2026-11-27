@@ -36,12 +36,17 @@ import {
   writeProseMirror,
 } from "../../src/index.js";
 
+/** The histories' clock stands still: typing joins a step until the probe ends it, on any machine. */
 const clock = () => 1_700_000_000_000;
 
+// HANDLES=1: every Loro handle the probe makes must be freed by the end (document-model's
+// handles.ts). Loro registers each handle for finalization and unregisters it on `free()`, so what
+// is still registered at exit was never freed.
 const unfreed = new Map<object, string>();
 if (process.env.HANDLES) {
   const { register, unregister } = FinalizationRegistry.prototype;
   FinalizationRegistry.prototype.register = function (target, held, token) {
+    // wasm-bindgen's own closure wrappers (the callbacks handed to Loro) are not handles.
     if (token && target.constructor.name !== "Function") {
       const frame = (new Error().stack ?? "").split("\n").find((l) => l.includes("/src/") && !l.includes("handles.ts"));
       unfreed.set(token, `${target.constructor.name} ${frame?.trim() ?? ""}`);
@@ -183,6 +188,8 @@ function run(seed: number): string | null {
       schema.text("word ".repeat(1 + Math.floor(rand() * 4)).trim()),
     );
   const owned: RoomDocs[] = [];
+  // Peer ids come from the seed and `salt` (a stream of their own, so they leave the edits alone):
+  // Loro orders concurrent ops by peer id, so a failure that depends on them must come back.
   let peers = seed * 7919 + salt * 104729;
   // The writer picks new order keys with Math.random: seed it too, so a seed replays exactly.
   let keys = peers ^ 0x5bd1e995;
@@ -214,6 +221,9 @@ function run(seed: number): string | null {
     return out;
   };
   const inside = (t: Place) => t.pos + 1 + Math.floor(rand() * (t.node.content.size + 1));
+  // A place inside `t` that cuts no typed word: the words each editor types sit between spaces,
+  // and a split in one would let a Join of the halves make the word again from copies, so an
+  // Undo of that Join would look like it took the word.
   const between = (t: Place) => {
     const text = t.node.textBetween(0, t.node.content.size, undefined, "\ufffc");
     let at = Math.floor(rand() * (text.length + 1));
@@ -445,6 +455,9 @@ function run(seed: number): string | null {
     observe(e, "run");
     return ran;
   };
+  // An Undo keeps every word the other editor typed (it may hide the block they are in). A word
+  // may be glued to its neighbour (the Join of a split drops the space at the cut), so it is
+  // looked for inside the text, not as a word of its own.
   const undoKeeps = (e: Editor, when: string) => {
     const other = typed[e.name === "A" ? "B" : "A"];
     const before = words(e);
@@ -485,6 +498,9 @@ function run(seed: number): string | null {
     for (const word of saw) if (!after.has(word)) deleted.add(word);
     stepDeleted.set(step, deleted);
   };
+  // From an empty Redo, Ctrl+Z k times, then Redo until none is left, with no batch between: the
+  // same document. A Redo can take two steps when one of them now changes nothing (a peer deleted
+  // the text it puts back), so the Redos are not counted.
   const chain = (e: Editor, when: string) => {
     if (e.history.canRedo() || !release(e)) return null;
     const start = e.view.state.doc;
@@ -649,6 +665,7 @@ function run(seed: number): string | null {
         if (!e.history.canRedo()) sinceRedo[e.name as "A" | "B"].clear();
       }
     }
+    // Restores written on an import go out with the next batch: exchange until nothing moves.
     for (let round = 0; round < 4; round++) {
       sync(a, b);
       sync(b, a);
@@ -1002,6 +1019,9 @@ function racedRemovals(): string[] {
         return settle(r, "a peer's Undo put back text A deleted", (t) => (t === "FFirst.|Last." ? null : `shows "${t}"`));
       },
     },
+    // B Backspaces "f", "e", "d" before it sees A's delete of "f": Loro stores the run as one delete
+    // op with a negative length whose `start_id` is "d", the lowest id. A's Ctrl+Z puts its "f"
+    // back over B's delete of it (design §2: holes are accepted).
     "a peer's Backspace run deleted text A deleted": {
       room: () => room([p("a", "abcdefgh."), p("z", "Last.")]),
       run: (r) => {
@@ -1891,6 +1911,8 @@ function racedRemovals(): string[] {
   return failures;
 }
 
+// WASM memory only grows: a copy of Loro's that frees every handle stops growing once the probe's
+// largest document has fit, a leak grows with every seed.
 const wasmMemory = (
   createRequire(import.meta.url)(
     join(dirname(createRequire(import.meta.url).resolve("loro-crdt")), "loro_wasm.js"),

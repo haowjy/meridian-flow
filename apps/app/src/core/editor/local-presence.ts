@@ -35,6 +35,7 @@ export function createLocalPresence(self: string): LocalPresence {
     if (event.by === "local") return;
     for (const handler of [...handlers]) handler();
   });
+  // Peers drop an entry PRESENCE_TIMEOUT_MS after its last write, so a still caret is re-sent.
   const refresh = setInterval(() => {
     if (suspensions === 0 && desired) store.set(self, desired);
   }, PRESENCE_TIMEOUT_MS / 3);

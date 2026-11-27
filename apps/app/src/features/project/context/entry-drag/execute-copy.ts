@@ -41,6 +41,11 @@ function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
   };
 }
 
+/**
+ * The server answers `source_behind` (a 503) after a short wait; typing this tab holds reaches
+ * it, so the Copy is sent again, slower each time, for as long as it takes. Temporary: Copy moves
+ * onto the command driver, which owns this wait.
+ */
 const RESEND_FIRST_MS = 500;
 const RESEND_LAST_MS = 5_000;
 

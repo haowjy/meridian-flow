@@ -1,3 +1,17 @@
+/**
+ * Keeps an escaped `\[[` (or `\[\[`) as the characters it spells when the
+ * clipboard door reads Markdown. `WikilinkPasteExtension` contributes it, so
+ * it is only ever mounted beside the transform that spells the escape out.
+ *
+ * Markdown's own escape turns `\[` into `[`, so by the time a paste reaches
+ * the wikilink transform an escaped `\[[Name]]` would look exactly like a
+ * link the writer meant. This micromark text construct claims the escape
+ * first (ahead of the core character escape) and hands the raw characters to
+ * the text node, so the transform can see the escape, leave the brackets as
+ * text, and drop the backslash. Code is never tokenized as text, so a code
+ * span keeps its backslash.
+ */
+
 import type { Plugin } from "unified";
 
 const BACKSLASH = 92;
@@ -28,6 +42,7 @@ function tokenize(effects: Effects, ok: State, nok: State): State {
     effects.exit(TOKEN);
     return ok(code);
   };
+  // `\[` then `[`, or `\[` then `\[`: Meridian's own Markdown writes `\[\[`.
   const second: State = (code) => {
     if (code === BACKSLASH) {
       effects.consume(code);

@@ -21,6 +21,7 @@ import { createNoopEventSink } from "../observability/index.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
+  // Registration and uploads commit in their own root transactions: committed-data isolation.
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
   afterAll(async () => {
     await deleteDrizzleRows(db, [users]);

@@ -73,11 +73,13 @@ export function AccountMenu() {
         <DropdownMenuItem onSelect={() => dispatch(() => open())}>{t`Settings`}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
+          {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}
           <a
             href="/logout"
             aria-disabled={leaving}
             onClick={(event) => {
               if (!clearBeforeSignOut) return;
+              // The account's local copies go before the browser leaves for the sign-out.
               event.preventDefault();
               if (!leaving) leave();
             }}

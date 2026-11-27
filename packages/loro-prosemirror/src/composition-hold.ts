@@ -122,6 +122,11 @@ export function forwardLocalWrite(live: RoomDocs, changed: Iterable<DocKey>) {
   forwardInto(hold, new Set(changed));
 }
 
+/**
+ * Register a draft's fork to be forwarded on every batch its Live copy imports; returns the
+ * unregister. Its holder (the fork's session) registers it for the fork's whole life, so a fork
+ * no editor shows (a Review reference) is forwarded too. `publish` sends what a forward restores.
+ */
 export function registerDraft(draft: RoomDocs, publish: PublishWrite): () => void {
   if (!draft.live) throw new Error("registerDraft takes a draft's fork");
   const hold = holdFor(draft);

@@ -27,6 +27,10 @@ function blockIdIn(node: Node): string | null {
   return id;
 }
 
+/**
+ * The reading line: the top of the prose column, below its top inset. Measured from the pane's
+ * edge instead, a document read from its first line reopens scrolled by the inset.
+ */
 function readingLine(editor: Editor, pane: HTMLElement): number {
   return (
     pane.getBoundingClientRect().top +
@@ -82,6 +86,13 @@ export function captureReadingPosition(editor: Editor, pane: HTMLElement): Readi
   }
 }
 
+/**
+ * Scroll to the saved reading line, then restore the selection, without focus or scrollIntoView.
+ * A selection the restored viewport doesn't show (the writer scrolled without clicking, or away
+ * from a passage they selected) becomes a caret at the reading line instead: left off-screen, the
+ * first focus or keystroke scrolls back to it, and ProseMirror's own post-focus check does exactly
+ * that for a selection at the document start.
+ */
 export function restoreReadingPosition(
   editor: Editor,
   pane: HTMLElement,

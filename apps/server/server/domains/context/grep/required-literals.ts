@@ -30,10 +30,12 @@ export function requiredLiterals(pattern: string): string[] | undefined {
       if (/[A-Za-z]/u.test(next)) endRun();
       else run.push(next);
     } else if (char === "[") {
+      // A leading `]` (after an optional `^`) is a member, not the end.
       let j = i + 1;
       if (chars[j] === "^") j += 1;
       if (chars[j] === "]") j += 1;
       while (j < chars.length && chars[j] !== "]") {
+        // `[:alpha:]` inside a class has its own `]`.
         if (chars[j] === "[" && chars[j + 1] === ":") {
           const close = chars.indexOf("]", j + 2);
           if (close < 0) return undefined;

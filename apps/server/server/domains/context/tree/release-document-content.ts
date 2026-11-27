@@ -60,6 +60,7 @@ export async function releaseDocumentContent(
   const list = held.map(({ id }) => id as DocumentId);
   if (list.length === 0) return { documentIds: [], storageUrls: [] };
   deferUntilDrizzleCommit(() => collab.endRooms(list));
+  // A fork's delete takes its room's snapshots (a trigger); the live room's go by key.
   await tx.delete(documentForks).where(inArray(documentForks.documentId, list));
   await tx
     .delete(documentSnapshots)

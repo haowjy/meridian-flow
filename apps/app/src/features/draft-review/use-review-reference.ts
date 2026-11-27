@@ -34,6 +34,7 @@ export function useReviewReference(mode: ReviewMode | null): ReviewReference | n
         ? { documentId: mode.documentId, draftId: target.draftId }
         : {
             documentId: target.documentId,
+            // A document the draft made has no fork: the draft shows its Live room.
             draftId: files?.some((file) => file.documentId === target.documentId && file.item.isNew)
               ? undefined
               : mode.draftId,

@@ -21,6 +21,11 @@ export type DocumentCreationAggregate = {
 
 export function createDocumentCreationAggregate(input: {
   atomic<T>(operation: () => Promise<T>): Promise<T>;
+  /**
+   * Arrival hook (contract §9.3), inside `atomic` once identity and content exist. The
+   * command already holds the documents' namespace key. A draft's create is no arrival:
+   * it never comes through here.
+   */
   onArrivals?(documentIds: readonly DocumentId[]): Promise<unknown>;
 }): DocumentCreationAggregate {
   const createDocumentsAtomically: DocumentCreationAggregate["createDocumentsAtomically"] = (

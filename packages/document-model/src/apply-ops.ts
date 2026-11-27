@@ -152,6 +152,7 @@ export function applyOps(
     ops.filter((op): op is Extract<ShapeOp, { kind: K }> => op.kind === kind);
 
   const random = options.random ?? Math.random;
+  /** Order keys this call gave, so a later op places after a block an earlier one stored. */
   const placed = new Map<BlockId, string>();
   const stored = new Map<BlockId, BlockId>();
   const store = (id: BlockId): BlockId => {

@@ -1,3 +1,8 @@
+// Cross-field rules for `from`, the source of a block copy or a document copy.
+//
+// They run inside the `write` contract (`superRefine`) beside the selector
+// rule, and the field descriptions state them, since refinements don't export
+// to JSON Schema.
 import { splitDocumentFile } from "../document-address.js";
 
 export interface CopySourceFields {

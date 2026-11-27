@@ -31,6 +31,14 @@ declare module "@tiptap/core" {
   }
 }
 
+/**
+ * A paste's imports, waiting to be anchored.
+ *
+ * The transform that leaves a link behind runs before the transaction exists,
+ * so its positions arrive with the paste itself and are carried here until the
+ * settled state can pin them: inside `apply` the Loro binding may still be
+ * describing the document the transaction replaced.
+ */
 export type LandingImports = { imports: readonly PastedImageImport[]; range: AnchorRange };
 
 export type ImageIngressPluginState = {

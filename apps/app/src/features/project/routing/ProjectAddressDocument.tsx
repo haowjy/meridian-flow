@@ -68,6 +68,8 @@ export function ProjectAddressDocument({
 }) {
   const admissionInput = useRef({ address, result, draftItemKey });
   admissionInput.current = { address, result, draftItemKey };
+  // Address projections are rebuilt from JSON snapshots. Their object identity is not an
+  // admission event; only their serialized meaning is.
   const admissionFingerprint = JSON.stringify({ result, draftItemKey });
   useEffect(() => {
     const { address, result, draftItemKey } = admissionInput.current;

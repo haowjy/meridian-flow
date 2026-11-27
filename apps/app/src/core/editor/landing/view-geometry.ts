@@ -15,6 +15,7 @@ function nodeRect(view: EditorView): Geometry["rectOf"] {
   };
 }
 
+/** Focus reads `editor.isFocused`, the same answer the diagram's node view draws from. */
 export function viewGeometry(view: EditorView, editor: Editor): Geometry {
   return {
     rectOf: nodeRect(view),

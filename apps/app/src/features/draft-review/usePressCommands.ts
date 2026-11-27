@@ -116,6 +116,11 @@ export function usePressCommands({
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
+    /**
+     * Reads the lists again; a row a press took or gave back shows once this lands. An Undo
+     * turn reads its turn's card again too, dropping a read already out, so any card read that
+     * lands after this says whether the press is in force (`RestoreEntry.since`).
+     */
     const refresh = async (scope: Scope) => {
       if (scope.kind === "turn" && threadId)
         void queryClient.refetchQueries(
@@ -217,6 +222,8 @@ export function usePressCommands({
       const { seat, place } = seatOf(taken, async () => (await entry.undo()).ok);
       place(pressed.placement);
       const undo = async (): Promise<Undone> => {
+        // An Apply's Undo takes a created document out of Live: main, read before, follows it to
+        // the draft's plain page, where it is a draft's document again.
         const main = presented?.mainDocumentId(projectId);
         const answer = await unpress(pressed.commandId, pressed.drafts, scope);
         if (typeof answer === "string")
@@ -281,6 +288,7 @@ export function usePressCommands({
       const inScope = lists.flatMap(({ listed }) => listed.items);
       const nodes = target.documents ?? inScope.map((item) => item.documentId);
       const taken = inScope.filter((item) => all || nodes.includes(item.documentId));
+      // Discard all takes folders with only a tree change too: they have no row.
       const folders = all
         ? lists.flatMap(({ draft, listed }) =>
             listed.folders.map((folder) => ({ draft, id: folder.id })),
@@ -362,6 +370,7 @@ export function usePressCommands({
           (step) => run(target, input, step, heldRows),
         );
       let entry: PressEntry | null = null;
+      // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows(scope).map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? folderName(node);
       if (verdict === "discard" && target.whole) {

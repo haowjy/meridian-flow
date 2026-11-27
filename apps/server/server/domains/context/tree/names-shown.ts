@@ -75,6 +75,7 @@ export function splitSegments(path: string): { segments: string[]; folder: boole
 
 export function candidates(segment: string, last: boolean, folder: boolean): string[] {
   const canonical = last && !folder ? canonicalLeaf(segment) : segment;
+  // What was written is a name before it is an alias: a folder named `ch1.md` is not `ch1`.
   return canonical === segment ? [segment] : [segment, canonical];
 }
 

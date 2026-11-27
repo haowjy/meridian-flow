@@ -3,6 +3,7 @@ import { wordDiff } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 
+/** The one schema an inverse reads and writes blocks with: nodes of another instance don't compare. */
 export const inverseSchema = buildDocumentSchema();
 
 export function deltaExcerpt(stored: StoredDelta | null): { before: string; after: string } {

@@ -28,6 +28,7 @@ import type { TreeDestination, TreeView } from "./tree-view";
 
 export class TreeActions {
   constructor(
+    /** The list's session, read at each call: a rebuild gives it a new document. */
     private readonly session: () => TreeListSession | null,
     private readonly actor: string,
     private readonly version: () => TreeVersion = () => LIVE_VERSION,

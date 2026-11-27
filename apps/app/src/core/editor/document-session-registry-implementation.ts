@@ -93,6 +93,7 @@ export class DocumentSessionRegistry {
     return this.rooms.get(sessionRoomKey(room))?.session ?? null;
   }
 
+  /** The rooms of one document: its forks first, then its Live room, the order they are torn down in. */
   private roomsOf(documentId: DocumentId): string[] {
     const keys = [...this.rooms.keys()].filter(
       (key) => this.rooms.get(key)?.lease.documentId === documentId,
@@ -370,6 +371,7 @@ export class DocumentSessionRegistry {
     },
   ): { session: DocumentSession; hold: Promise<CopyHold>; retired: Promise<void> } {
     const incarnation = this.copies.current(copyKey);
+    // Named from the incarnation just read: another tab can advance the pointer in between.
     const name = incarnationName(copyKey, incarnation);
     const hold = this.copies.hold(name);
     const session = this.createSession(

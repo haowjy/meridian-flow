@@ -7,6 +7,7 @@ import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/st
 
 let fixture: StandaloneEditor | null = null;
 
+// Tab reaches prosemirror-tables, which asks the view where the textblock ends.
 installJsdomLayout();
 
 afterEach(() => {

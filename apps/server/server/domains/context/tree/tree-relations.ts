@@ -1,3 +1,15 @@
+/**
+ * The two relations every reader of the tree composes: `visibleDocuments(view)` and
+ * `visibleFolders(view)`, over `tree_nodes` (live) and `draft_tree_nodes` (a Work's view). The
+ * rows are written only by the replay of the project's list (`adapters/tree-list-rows.ts`);
+ * nothing here filters a hidden or tombstoned row, because there is none.
+ *
+ * A Work's view is the index-friendly union, not a left join: `tree_nodes` rows the Work has no
+ * row for, then the Work's own rows. A path walk over it must step one level at a time with a
+ * `LATERAL (... OFFSET 0)` subquery or a query per level; a recursive step that joins the
+ * relation without it is planned as a hash join of the whole relation (measured in
+ * `context/.context/tree-list-store.md`).
+ */
 import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";

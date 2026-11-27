@@ -55,6 +55,10 @@ export function projectChatDrafts(
   return projected;
 }
 
+/**
+ * Points a chat's lineage at another draft of its Work. It goes in the Work's draft lane too, so a
+ * draft made just before (`+ New draft`) exists when the server points the chat at it.
+ */
 export function useSetChatDraft(projectId: string, workId: string) {
   const driver = useCommandDriver();
   return (thread: { id: string; rootThreadId: string }, draftId: string) => {

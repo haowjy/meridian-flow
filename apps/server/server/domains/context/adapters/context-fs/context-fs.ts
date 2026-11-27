@@ -99,6 +99,14 @@ export interface ContextFSDeps {
   threadView?: ThreadContextView;
 }
 
+/**
+ * Store-backed file tree for project and work context schemes.
+ *
+ * Content lives in Loro rooms: the tree is the project's list (read through the store's views,
+ * written by records made at the call), and read/write content flows through the collab domain.
+ * A create, move or delete runs in one command transaction: the Work and draft locks first,
+ * then the list's lock inside `treeListStore.submit`, then the document's own.
+ */
 export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
@@ -470,6 +478,8 @@ export class ContextFS implements ContextSchemeAdapter {
     const { folders, documents } = await this.store.listTree(await this.readTreeView());
     const folderPaths = new Map<string | null, string | null>([[null, ""]]);
     const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    // Null for a folder whose chain to the root is incomplete (a deleted ancestor): its
+    // documents are not candidates, rather than listed at the source root.
     const folderPath = (id: string | null): string | null => {
       const known = folderPaths.get(id);
       if (known !== undefined) return known;
@@ -623,6 +633,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const fromSourceId = await this.store.contextSourceId();
     return this.inTreeCommand({ ...input, fromSourceId }, async (target) => {
       let arrived: readonly string[] = [];
+      // Under the transaction's locks, so the owners' lifecycles read now are the ones that commit.
       const judge = await (input.owners ?? NO_OWNERS).judge();
       const result = await this.writes.run(target, (scope) => {
         const made = input.make(scope, judge);

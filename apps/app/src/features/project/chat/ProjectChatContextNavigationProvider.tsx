@@ -53,6 +53,8 @@ export function ProjectChatContextNavigationProvider({
   const { noWork } = useWorks(projectId);
   const noWorkId = noWork?.id;
   const { threads } = useProjectThreads(projectId);
+  // The chat's own lineage answers to its handle even after its first chat is
+  // trashed (a fork keeps the notes); the live list is only for other chats.
   const ownHandle = useLineage(projectId, rootThreadId ? { rootThreadId } : null)?.rootThreadRef;
   const lineages = useMemo<ChatLineages>(
     () => ({
@@ -134,6 +136,8 @@ export function ProjectChatContextNavigationProvider({
       if (chatIdForUploadsUri(uri, chats)) return null;
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return null;
+      // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
+      // `scratch://x` is the chat's lineage or the active Work, so name that owner's handle.
       const ownerRef = target.rootThreadId
         ? target.rootThreadId === rootThreadId
           ? ownHandle

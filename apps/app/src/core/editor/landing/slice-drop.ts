@@ -25,6 +25,12 @@ type SliceSource = {
 
 const copyModifier = /Mac/i.test(globalThis.navigator?.platform ?? "") ? "altKey" : "ctrlKey";
 
+/**
+ * The drag's source, read from `view.dragging`. ProseMirror keeps the node
+ * selection there for its own drop handler but leaves it out of the public
+ * type; without it a moved node's deletion would fall back to whatever the
+ * document selection happens to be.
+ */
 export function dragSource(view: EditorView, event: DragEvent): SliceSource {
   const dragging = view.dragging as { node?: NodeSelection } | null;
   return {

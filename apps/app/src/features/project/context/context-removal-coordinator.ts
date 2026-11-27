@@ -169,6 +169,7 @@ export class ContextRemovalCoordinator {
     documentId: string,
     landed?: (landing: MainLanding | null) => void,
   ): void {
+    // The pin's follow asks again on each render until main has left.
     if (this.unavailable() || this.isGoingBack(projectId, documentId)) return;
     this.beginOwnRemoval(projectId, [documentId], (landing) => {
       this.forget(projectId, [documentId]);

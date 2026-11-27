@@ -1,3 +1,25 @@
+/**
+ * When the manuscript may have moved.
+ *
+ * Every floating thing in the editor asks the same question, and getting the
+ * list of answers wrong is invisible until a writer scrolls: the block handle
+ * kept its own shorter list for a while and stranded at its old viewport top on
+ * every scroll. So the list lives here once, and both halves of the chrome
+ * kernel use it — the React surfaces to re-measure their anchors, the kernel
+ * extension to re-ask what is under a pointer that never moved.
+ *
+ * Four sources, and the transaction is the one a surface forgets: an element
+ * that keeps its size and its identity still travels when a block above it
+ * grows, when the writer moves it with Alt+Arrow, or when a peer's write lands
+ * three paragraphs up. A ResizeObserver on the anchor sees none of those, so a
+ * surface watching only itself paints over whatever slid into its old corner.
+ *
+ * The manuscript's own root is observed alongside the anchor for the layout
+ * that changes with no transaction at all: a diagram finishing its render, an
+ * image arriving, a font swapping. Those grow the document, and everything
+ * below them moves without ever changing shape.
+ */
+
 import type { Editor } from "@tiptap/core";
 
 export function watchManuscriptLayout(

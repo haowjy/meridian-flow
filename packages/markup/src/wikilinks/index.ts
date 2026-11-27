@@ -48,6 +48,10 @@ type SyntaxNode = {
   data?: { destination?: SourceRange };
 };
 
+/**
+ * Record each inline link/image destination's source span on its node. No default
+ * handler claims the `resourceDestination` wrapper token, so this adds, never replaces.
+ */
 function destinationSpans(this: Processor): void {
   const data = this.data();
   data.fromMarkdownExtensions = [
@@ -96,6 +100,7 @@ function mask(source: string, ranges: readonly SourceRange[]): string {
   for (const span of [...ranges].sort((a, b) => a.from - b.from)) {
     if (span.from < cursor) continue;
     result += source.slice(cursor, span.from);
+    // Non-whitespace placeholders preserve offsets without manufacturing indented code.
     result += source.slice(span.from, span.to).replace(/[^\r\n]/g, "x");
     cursor = span.to;
   }
@@ -135,12 +140,14 @@ function discoverComments(
     };
     comments.push(comment);
     hidden.push(comment);
+    // Fences/backticks in this comment must not govern the next opener.
     code = null;
   }
   return comments;
 }
 
 export function scanWikilinks(sourceText: string, options: WikilinkScanOptions = {}): WikilinkScan {
+  // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const prose = options.context === "prose";
   let source = sourceText;
   if (!prose) {
@@ -163,6 +170,7 @@ export function scanWikilinks(sourceText: string, options: WikilinkScanOptions =
   findings.push(...comments);
   hidden.push(...comments);
 
+  // Comments may contain Markdown fences themselves. Mask them before the authoritative parse.
   const blocked = [...hidden];
   if (!prose)
     walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {

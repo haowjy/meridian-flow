@@ -27,6 +27,7 @@ export type TreeListStatus =
   | "denied";
 
 export type TreeListSnapshot = {
+  /** The copy. A copy of another list is replaced by a new document: read it from the snapshot each time. */
   readonly doc: LoroDoc;
   readonly version: number;
   readonly status: TreeListStatus;
@@ -70,6 +71,7 @@ export class TreeListSession {
   private tabs: BroadcastChannel | null = null;
   private transport: LoroRoomTransport | null = null;
   private stopLocal: (() => void) | null = null;
+  /** Counts changes to any copy as they land: `version` publishes a microtask later, and a record appended in this one must be in the next replay. */
   private edits = 0;
   private changed = false;
   private readonly retired: LoroDoc[] = [];
@@ -96,6 +98,7 @@ export class TreeListSession {
           return;
         }
         const loaded = await store.read();
+        // `close()` frees the doc: after an await, nothing touches it once the session closed.
         if (this.isClosed) {
           void store.close();
           return;
@@ -188,6 +191,7 @@ export class TreeListSession {
     const doc = freshDoc();
     this.watch(doc);
     this.store?.compact(new Map([[LIST, doc.export({ mode: "snapshot" })]])).catch(noop);
+    // A render may still hold the old copy's snapshot: it is freed with the session.
     this.retired.push(this.current.doc);
     this.publish({ doc, version: this.current.version + 1 });
     return "rejoin";

@@ -62,6 +62,10 @@ class MergeChangesNothing extends Error {}
 type DocumentChange = (doc: LoroDocument) => Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
+  /**
+   * A copy of `room` as agent-edit's model reads it, for `read` to use and drop: it is freed when
+   * `read` settles, so nothing may keep it.
+   */
   readRoom<T>(room: DocumentRoom, read: (doc: LoroDocument) => Promise<T>): Promise<T>;
   currentBlocks(documentId: DocumentId): Promise<PMNode[] | null>;
   serializeVersionedDocument(
@@ -83,6 +87,11 @@ export type MarkdownDocumentEngine = {
     origin: DocumentSeedOrigin,
   ): Promise<Result<void, SyncError>>;
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
+  /**
+   * Installs the first states of documents the caller's transaction just created, from
+   * `encodeSeed` (null for a document with no text, which needs no row). Rooms hear of it after
+   * commit. It derives nothing: the caller refreshes the projections once its transaction commits.
+   */
   installSeeds(
     seeds: readonly { documentId: DocumentId; state: Uint8Array | null }[],
   ): Promise<void>;

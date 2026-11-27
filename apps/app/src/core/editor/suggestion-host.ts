@@ -16,6 +16,8 @@ export function editorSuggestionHost(
       const releaseKeymap = chrome.registerKeymap({
         id,
         scope: "layer",
+        // Registration precedes the React layer by one frame so the first key
+        // cannot outrun its menu. Chrome retains that host policy.
         layer: null,
         ...(route === "chrome" ? { route: "chrome" as const } : {}),
         bindings,

@@ -105,12 +105,19 @@ function absorbs(version: MergedTok[], hunks: Hunk[], baseToks: Tok[]): boolean 
   return true;
 }
 
+/**
+ * The draft's text for a window both sides changed, when it already carries live's change there (no
+ * conflict). Live's text never wins this way: a live version that seems to contain the draft's change
+ * can still have rewritten what the draft deleted, and the draft's text is the conflict default anyway.
+ */
 export function draftAbsorbsLive(
   liveVersion: MergedTok[],
   draftVersion: MergedTok[],
   liveHunks: Hunk[],
   baseToks: Tok[],
 ): MergedTok[] | null {
+  // A paragraph start that live removed (a join) and the draft retyped (a type change) is still
+  // there in the draft: same paragraph count or it isn't absorbed.
   const paragraphStarts = (v: MergedTok[]) => v.filter((o) => isBlockTok(o.tok)).length;
   if (paragraphStarts(liveVersion) !== paragraphStarts(draftVersion)) return null;
   return absorbs(draftVersion, liveHunks, baseToks) ? draftVersion : null;
@@ -222,7 +229,7 @@ export function mergeMarks(
     ];
     if (inLive === inBase ? inDraft : inDraft === inBase ? inLive : inDraft) merged.push(mark);
   }
-  const sorted = Mark.setFrom(merged) as Mark[];
+  const sorted = Mark.setFrom(merged) as Mark[]; // schema order, as ProseMirror keeps them
   const marksKey = sorted.length ? JSON.stringify(sorted.map((m) => m.toJSON())) : "";
   const tok: TextTok = {
     kind: "text",
@@ -270,6 +277,8 @@ export function dropMovedText(
     for (let insAt = 0; insAt < inserted.length - best.len; insAt++)
       for (const delAt of positions.get(inserted[insAt][0].key) ?? []) {
         if (deleted.length - delAt <= best.len) break;
+        // Extend each matching diagonal only from its start, not again at every suffix.
+        // Ascending seed order preserves the first-inserted, first-deleted tie rule.
         if (
           insAt > 0 &&
           delAt > 0 &&

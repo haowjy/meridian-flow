@@ -295,6 +295,7 @@ export function useTreeDropTarget(
   const dropProps = useMemo<DropProps>(
     () => ({
       onDragEnter: hover,
+      // A drag that began inside this target never fires `dragenter` here.
       onDragOver: hover,
       onDragLeave(event) {
         if (claim(event)) release();
@@ -332,6 +333,7 @@ export function useTreeDropTarget(
   };
 }
 
+/** Prevents an unclaimed desktop file drop from navigating the browser away. */
 export function useWindowDropGuard() {
   useEffect(() => {
     const guard = (event: globalThis.DragEvent) => {

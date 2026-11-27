@@ -36,6 +36,11 @@ const onlyInDraft = (draft: DraftId, node: unknown) => sql`EXISTS (
   SELECT 1 FROM ${draftTreeNodes} n
   WHERE n.draft_id = ${draft} AND n.id = ${node} AND n.exists_only_in_draft)`;
 
+/**
+ * A part no Undo, nor the writer's revert, has taken back: taking it back again would put its
+ * deleted text back twice. An Undo of `ownTurn` doesn't count: the turn's own undo is in its plan
+ * too, and taking back both, newest first, leaves the text as it was before the turn.
+ */
 const notTakenBack = (ownTurn?: TurnId) => sql`NOT EXISTS (
   SELECT 1 FROM ${documentEditParts} u JOIN ${documentEdits} e ON e.id = u.edit_id
   WHERE (e.kind = 'undo' OR (e.kind = 'revert' AND e.actor = 'human'))

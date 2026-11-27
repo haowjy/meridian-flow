@@ -23,6 +23,7 @@ export function resolveLaunchLocator(input: {
   );
   if (tab && tab.kind !== "new") return { ...routeTargetForTab(tab), documentId };
   if (input.addressNamesIt && input.addressed.kind === "document") {
+    // The address spells its path without the leading slash; routes, tabs and launches spell it with.
     return contextRouteRequest({
       ...requested,
       scheme: input.addressed.scheme,

@@ -1,3 +1,14 @@
+/**
+ * ContextFS's tree writes in one source: each is one `treeListStore.submit` on the source's list,
+ * made in the caller's transaction at the call. The path is resolved against the list's own copy
+ * inside `make`, under the list's lock. A write answers with what the replay shows afterwards
+ * (final names, and paths whose segments carry a twin's `~id`); a refusal makes no record. No
+ * write is refused for a name a sibling has: it makes a twin (rule 14).
+ *
+ * Callers hold the Work and draft locks their command transaction took and no document or
+ * namespace key (the list's key sorts before those).
+ */
+
 import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { ContextSiblingPosition, Filetype } from "@meridian/contracts/protocol";
 import { childAtSegment, readSegment } from "@meridian/contracts/protocol";
@@ -321,6 +332,8 @@ export function createSourceTree(deps: {
         const ids: string[] = [];
         for (const group of groups) {
           const projection = writer.view(target.view);
+          // Ranks are minted once per level: a create's own replay per node would cost a
+          // replay of the whole list each.
           const at = indexAt(projection, group.parent, input.position);
           const siblings = childrenOf(projection, group.parent);
           const rootRanks = generateNKeysBetween(

@@ -125,6 +125,11 @@ function changedAttrs(
   return changed;
 }
 
+/**
+ * The node at `path` in the codec's round trip of the top-level block, read where it sits: a
+ * further paragraph of an item read alone would start an item. A block that opens two lists at
+ * once parses after the empty paragraph that carries the outer item, so its block is the last.
+ */
 function shownNode(walk: Walk, path: readonly number[]): Block | null {
   if (!walk.shown && walk.shownBy) {
     const { body, open } = walk.shownBy.place();
@@ -163,6 +168,11 @@ interface LoweredText {
   kept: Array<{ unit: number; modelUnit: number; ordinal: number }>;
 }
 
+/**
+ * The units of a textblock as a string: its text, and one character per inline atom type,
+ * the same on both sides. Atoms compare by type; a changed attribute is a change to the atom.
+ * A character no text holds stands for each type, so no text can pass for an atom.
+ */
 function unitStrings(before: Block, after: Block) {
   const text = before.textContent + after.textContent;
   const codes = new Map<string, string>();

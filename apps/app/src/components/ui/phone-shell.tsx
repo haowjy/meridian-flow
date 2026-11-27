@@ -39,6 +39,7 @@ export function PhoneTakeover({
         onEscapeKeyDown={ignoreFieldEscape}
         className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
       >
+        {/* Solid background, no backdrop-filter: iOS repaints a blurred header badly. */}
         <header
           className="shrink-0 border-b border-border-subtle bg-background"
           style={{ paddingTop: "env(safe-area-inset-top)" }}
